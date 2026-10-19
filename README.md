@@ -8,9 +8,9 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 ## Status
 
-**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's WASD and mouse drive CJ on a flat test plane, and his movement moves the Skyrim player. Nothing from San Andreas is drawn in Skyrim yet. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
+**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's WASD and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and his movement moves the Skyrim player. Nothing from San Andreas is drawn in Skyrim yet. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
-Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## How it will work
 
@@ -37,7 +37,7 @@ San Andreas walking and driving on Skyrim's ground is the hardest part, so it co
 - One car, driven on Skyrim terrain, drawn by Skyrim.
 - No guns, NPCs, quests or wanted level yet.
 
-San Andreas loads collision as static per-sector files, so building Skyrim's ground there at runtime is the open question. The first try spawns collision objects around CJ; if pool limits get in the way, the fallback is hooking San Andreas's collision queries to read Skyrim's mesh directly. Once CJ and the car stand on Skyrim's ground, everything after it is known work.
+San Andreas loads collision as static per-sector files, so Skyrim's ground is built there at runtime: collision objects spawned around CJ from the chunks Skyrim streams, under a floating origin (see [docs/DESIGN.md](docs/DESIGN.md#ground-skyrims-collision-in-san-andreas)). Once CJ and the car stand on Skyrim's ground, everything after it is known work.
 
 ## Requirements (planned)
 

@@ -313,3 +313,63 @@ TEST_CASE("input and pose round-trip through their slots")
     CHECK(back.viewPitch == 0.25f);
     CHECK(back.handover == 3);
 }
+
+TEST_CASE("the ring delivers collision chunks in order, across the wrap point")
+{
+    Pair p;
+    p.Tick(3);
+    REQUIRE(p.sa->IsUp());
+
+    // 4 MiB ring; push 12 MB through it in 300 KB messages.
+    std::vector<std::uint8_t> payload(300000);
+    std::uint32_t             sent = 0, received = 0;
+    for (int round = 0; round < 40; ++round) {
+        for (std::size_t i = 0; i < payload.size(); ++i) {
+            payload[i] = static_cast<std::uint8_t>(sent + i);
+        }
+        REQUIRE(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size())));
+        ++sent;
+        p.sa->Receive([&](MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+            CHECK(a_type == MessageType::CollisionChunk);
+            REQUIRE(a_size == 300000);
+            CHECK(a_data[0] == static_cast<std::uint8_t>(received));
+            CHECK(a_data[299999] == static_cast<std::uint8_t>(received + 299999));
+            ++received;
+        });
+    }
+    CHECK(received == sent);
+}
+
+TEST_CASE("the ring refuses messages when full or too large, and only runs from Skyrim to San Andreas")
+{
+    Pair p;
+    p.Tick(3);
+    const auto                ignore = [](MessageType, const std::uint8_t*, std::uint32_t) {};
+    std::vector<std::uint8_t> payload(1500000);
+    CHECK(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));
+    CHECK(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));
+    CHECK_FALSE(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));  // 4 MiB
+    CHECK_FALSE(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), kRingToSanAndreasCapacity));
+    CHECK_FALSE(p.sa->Send(MessageType::CollisionChunk, payload.data(), 1));
+    CHECK(p.skyrim->Receive(ignore) == 0);
+    CHECK(p.sa->Receive(ignore) == 2);
+    CHECK(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));
+}
+
+TEST_CASE("nothing is sent while the link is down, and a restarted San Andreas drops stale chunks")
+{
+    Pair p;
+    p.Tick(1);
+    const auto   ignore = [](MessageType, const std::uint8_t*, std::uint32_t) {};
+    std::uint8_t byte = 42;
+    CHECK_FALSE(p.skyrim->Send(MessageType::CollisionChunk, &byte, 1));
+
+    p.Tick(3);
+    REQUIRE(p.skyrim->Send(MessageType::CollisionChunk, &byte, 1));
+    p.sa.reset();
+    p.Tick(1);
+    p.sa = std::make_unique<Link>(Side::SanAndreas, p.saLog.Fn(), p.name);
+    p.Tick(3);
+    REQUIRE(p.sa->IsUp());
+    CHECK(p.sa->Receive(ignore) == 0);
+}

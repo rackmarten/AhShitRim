@@ -4,6 +4,7 @@
 
 #include "link.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 
@@ -33,6 +34,34 @@ namespace AhShitRim
         Side Other(Side a_side)
         {
             return a_side == Side::Skyrim ? Side::SanAndreas : Side::Skyrim;
+        }
+
+        RingHeader* Ring(std::uint8_t* a_base)
+        {
+            return At<RingHeader>(a_base, kOffsetRingToSanAndreas);
+        }
+
+        std::uint8_t* RingData(RingHeader* a_ring)
+        {
+            return reinterpret_cast<std::uint8_t*>(a_ring + 1);
+        }
+
+        void CopyIn(RingHeader* a_ring, std::uint64_t a_pos, const void* a_src, std::uint32_t a_size)
+        {
+            const std::uint64_t cap = a_ring->capacity;
+            const std::uint64_t at = a_pos & (cap - 1);
+            const std::uint64_t first = (std::min)(static_cast<std::uint64_t>(a_size), cap - at);
+            std::memcpy(RingData(a_ring) + at, a_src, static_cast<std::size_t>(first));
+            std::memcpy(RingData(a_ring), static_cast<const std::uint8_t*>(a_src) + first, static_cast<std::size_t>(a_size - first));
+        }
+
+        void CopyOut(RingHeader* a_ring, std::uint64_t a_pos, void* a_dst, std::uint32_t a_size)
+        {
+            const std::uint64_t cap = a_ring->capacity;
+            const std::uint64_t at = a_pos & (cap - 1);
+            const std::uint64_t first = (std::min)(static_cast<std::uint64_t>(a_size), cap - at);
+            std::memcpy(a_dst, RingData(a_ring) + at, static_cast<std::size_t>(first));
+            std::memcpy(static_cast<std::uint8_t*>(a_dst) + first, RingData(a_ring), static_cast<std::size_t>(a_size - first));
         }
 
         template <class TSlot, class T>
@@ -110,6 +139,7 @@ namespace AhShitRim
             header->headerSize = sizeof(LinkHeader);
             header->mappingSize = kMappingSize;
             header->creatorVersion = kProtocolVersion;
+            Ring(base)->capacity = kRingToSanAndreasCapacity;
             Atomic(header->magic).store(kMagic, std::memory_order_release);
         }
 
@@ -154,6 +184,11 @@ namespace AhShitRim
                     "protocol mismatch: the shared memory was created with protocol v{}, this {} speaks v{}; update both halves to the same release",
                     header->creatorVersion, SideName(_side), kProtocolVersion));
                 return;
+            }
+            if (_side == Side::SanAndreas) {
+                // Anything still in the ring was sent to an earlier San Andreas.
+                RingHeader* ring = Ring(Base());
+                Atomic(ring->tail).store(Atomic(ring->head).load(std::memory_order_acquire), std::memory_order_release);
             }
             _attached.store(true, std::memory_order_release);
         }
@@ -239,5 +274,52 @@ namespace AhShitRim
     bool Link::ReadPlayer(PlayerState& a_out) const
     {
         return IsUp() && SeqRead(At<PlayerSlot>(Base(), kOffsetPlayerSlot), a_out);
+    }
+
+    bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
+    {
+        if (_side != Side::Skyrim || !IsUp()) {
+            return false;
+        }
+        RingHeader*         ring = Ring(Base());
+        const std::uint64_t total = sizeof(MessageHeader) + static_cast<std::uint64_t>(a_size);
+        const std::uint64_t head = Atomic(ring->head).load(std::memory_order_relaxed);
+        const std::uint64_t tail = Atomic(ring->tail).load(std::memory_order_acquire);
+        if (total > ring->capacity - (head - tail)) {
+            return false;
+        }
+        const MessageHeader message{ static_cast<std::uint16_t>(a_type), 0, a_size };
+        CopyIn(ring, head, &message, sizeof(message));
+        CopyIn(ring, head + sizeof(message), a_payload, a_size);
+        Atomic(ring->head).store(head + total, std::memory_order_release);
+        return true;
+    }
+
+    std::size_t Link::Receive(const std::function<void(MessageType, const std::uint8_t*, std::uint32_t)>& a_handler)
+    {
+        if (_side != Side::SanAndreas || !_attached.load(std::memory_order_acquire) || GetState() == State::Disabled) {
+            return 0;
+        }
+        RingHeader*         ring = Ring(Base());
+        const std::uint64_t head = Atomic(ring->head).load(std::memory_order_acquire);
+        std::uint64_t       tail = Atomic(ring->tail).load(std::memory_order_relaxed);
+        std::size_t         count = 0;
+        while (head - tail >= sizeof(MessageHeader)) {
+            MessageHeader message{};
+            CopyOut(ring, tail, &message, sizeof(message));
+            if (sizeof(MessageHeader) + static_cast<std::uint64_t>(message.size) > head - tail) {
+                _log(std::format("inbound ring corrupt (message of {} bytes), dropping it", message.size));
+                tail = head;
+                break;
+            }
+            _receiveBuffer.resize(message.size);
+            CopyOut(ring, tail + sizeof(message), _receiveBuffer.data(), message.size);
+            tail += sizeof(message) + message.size;
+            Atomic(ring->tail).store(tail, std::memory_order_release);
+            a_handler(static_cast<MessageType>(message.type), _receiveBuffer.data(), message.size);
+            ++count;
+        }
+        Atomic(ring->tail).store(tail, std::memory_order_release);
+        return count;
     }
 }

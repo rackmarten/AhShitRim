@@ -2,6 +2,7 @@
 // Documents/My Games/Skyrim Special Edition/SKSE/AhShitRim.log.
 
 #include "link/LinkService.h"
+#include "collision/CollisionSampler.h"
 #include "player/PlayerSync.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
@@ -20,6 +21,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         switch (a_msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
             AhShitRim::PlayerSync::OnDataLoaded();
+            AhShitRim::CollisionSampler::OnDataLoaded();
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
         case SKSE::MessagingInterface::kNewGame:

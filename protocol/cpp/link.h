@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "../ahshitrim_protocol.h"
 
@@ -49,6 +50,12 @@ namespace AhShitRim
         void WritePlayer(const Protocol::PlayerState& a_value);
         bool ReadPlayer(Protocol::PlayerState& a_out) const;
 
+        // The ring from Skyrim to San Andreas. Send (Skyrim side only) returns false when the link is
+        // down, the ring is full or the message can never fit. Receive (San Andreas side only) drains
+        // it, calling a_handler(type, payload, size) per message, and returns the message count.
+        bool        Send(Protocol::MessageType a_type, const void* a_payload, std::uint32_t a_size);
+        std::size_t Receive(const std::function<void(Protocol::MessageType, const std::uint8_t*, std::uint32_t)>& a_handler);
+
     private:
         void TryMap();
         void Detach();
@@ -68,5 +75,6 @@ namespace AhShitRim
         bool                       _peerSeen = false;
         std::uint64_t              _peerHeartbeat = 0;
         std::uint64_t              _peerSeenMs = 0;
+        std::vector<std::uint8_t>  _receiveBuffer;
     };
 }

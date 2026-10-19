@@ -1,8 +1,8 @@
 # skse
 
-SKSE plugin (C++, CommonLibSSE-NG) that runs inside Skyrim. Later increments sample Skyrim's collision for San Andreas and draw CJ and his car; see [docs/DESIGN.md](../docs/DESIGN.md).
+SKSE plugin (C++, CommonLibSSE-NG) that runs inside Skyrim. It samples Skyrim's collision for San Andreas; later increments draw CJ and his car; see [docs/DESIGN.md](../docs/DESIGN.md).
 
-It logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`) and, in `src/player/PlayerSync.cpp`, hands the player to San Andreas and back with F10: Skyrim's input goes to CJ, and CJ's pose moves the Skyrim player. Lines are prefixed `link:` and `player sync:`.
+It logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`) and, in `src/player/PlayerSync.cpp`, hands the player to San Andreas and back with F10: Skyrim's input goes to CJ, and CJ's pose moves the Skyrim player. Meanwhile `src/collision/` (ported from PerkeleRim) streams the terrain and statics around the player to San Andreas. Lines are prefixed `link:`, `player sync:` and `collision:`.
 
 - `src/` plugin source
 - `extern/CommonLibSSE-NG` git submodule ([alandtse/CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG), pinned to release tag `v10.1.0`)

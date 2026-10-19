@@ -1,5 +1,6 @@
 #include "player/PlayerSync.h"
 
+#include "collision/CollisionSampler.h"
 #include "input.h"
 #include "link/LinkService.h"
 #include "pose.h"
@@ -58,6 +59,9 @@ namespace AhShitRim::PlayerSync
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu, a_paused);
             input.handover = state.handover;
             input.heading = state.heading;
+            input.anchor[0] = state.anchor.x;
+            input.anchor[1] = state.anchor.y;
+            input.anchor[2] = state.anchor.z;
             link.WriteInput(input);
         }
 
@@ -85,6 +89,7 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             state.owned = false;
+            CollisionSampler::Stop();
             state.input.ReleaseAll();
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && (state.sneak || player->IsSneaking())) {
                 player->AsActorState()->actorState1.sneaking = false;
@@ -124,6 +129,8 @@ namespace AhShitRim::PlayerSync
             state.statTime = 0.0f;
             state.frames = state.placed = state.newPoses = 0;
             Publish();
+            auto* worldspace = a_player->GetWorldspace();
+            CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
                 state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading);
         }
@@ -206,6 +213,7 @@ namespace AhShitRim::PlayerSync
                     state.lastPoseFrame = pose.frame;
                 }
             }
+            CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
 
             state.frames++;
             state.statTime += a_delta;

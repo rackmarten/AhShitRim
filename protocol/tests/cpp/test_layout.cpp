@@ -28,24 +28,30 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v3 constants")
+TEST_CASE("protocol v4 constants")
 {
-    CHECK(kProtocolVersion == 3);
+    CHECK(kProtocolVersion == 4);
     CHECK(kPlayerCrouching == 0x4);
-    CHECK(kMappingSize == 4096);
+    CHECK(kMappingSize == 4194688);
+    CHECK(kCollisionChunkUnits == 2048);
+    CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(kPeerTimeoutMs == 2000);
     CHECK((std::wstring_view(kMappingName) == L"Local\\AhShitRim.Link"));  // doctest cannot print wide strings
     CHECK(static_cast<std::uint32_t>(Side::Skyrim) == 0);
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v2 slot layout")
+TEST_CASE("the v4 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
-    CHECK(kOffsetPlayerSlot == 192);
-    CHECK(sizeof(InputState) == 48);
+    CHECK(kOffsetPlayerSlot == 208);
+    CHECK(sizeof(InputState) == 64);
+    CHECK(offsetof(InputState, anchor) == 44);
     CHECK(sizeof(PlayerState) == 48);
     CHECK(offsetof(InputSlot, value) == 8);
     CHECK(offsetof(PlayerSlot, value) == 8);
-    CHECK(kOffsetPlayerSlot + sizeof(PlayerSlot) <= kMappingSize);
+    CHECK(kOffsetPlayerSlot + sizeof(PlayerSlot) <= kOffsetRingToSanAndreas);
+    CHECK(kOffsetRingToSanAndreas == 320);
+    CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
+    CHECK(sizeof(CollisionChunkHeader) == 40);
 }

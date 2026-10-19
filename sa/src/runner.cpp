@@ -1,5 +1,7 @@
 #include "runner.h"
 
+#include "chunk_world.h"
+#include "ground.h"
 #include "input.h"
 #include "log.h"
 #include "pose.h"
@@ -8,13 +10,10 @@
 #include <plugin.h>
 
 #include <CAudioEngine.h>
-#include <CBuilding.h>
 #include <CCamera.h>
 #include <CCarCtrl.h>
 #include <CClothes.h>
-#include <CColModel.h>
 #include <CMenuManager.h>
-#include <CModelInfo.h>
 #include <CPad.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
@@ -22,6 +21,7 @@
 #include <CStreaming.h>
 #include <CTaskSimplePlayerOnFoot.h>
 #include <CTimer.h>
+#include <CStats.h>
 #include <CWanted.h>
 #include <CWorld.h>
 #include <common.h>
@@ -69,15 +69,6 @@ namespace AhShitRim::Runner
             0x6F7900,  // CTrain::DoTrainGenerationAndRemoval
         };
         constexpr std::uintptr_t kHasCollisionLoaded = 0x410CE0;  // CColStore::HasCollisionLoaded: always yes
-
-        // ---- The test plane ----
-
-        // An invisible box, its top face at kPlaneTop, high above where San Andreas's map (now
-        // empty) and its sea would be.
-        constexpr float kPlaneHalfSize = 500.0f;  // metres
-        constexpr float kPlaneThickness = 2.0f;
-        constexpr float kPlaneTop = 500.0f;
-        constexpr float kFellOffBelow = 30.0f;  // CJ this far under the plane is put back on it
 
         // Physics breaks above 30 frames a second.
         constexpr double kFrameSeconds = 1.0 / 30.0;
@@ -143,7 +134,7 @@ namespace AhShitRim::Runner
             }
         }
 
-        // ---- Empty world, test plane, CJ ----
+        // ---- Empty world, CJ ----
 
         template <class TPool>
         int RemoveAll(TPool* a_pool)
@@ -171,46 +162,10 @@ namespace AhShitRim::Runner
             Log(std::format("runner: world emptied ({} buildings, {} dummies, {} objects taken out)", buildings, dummies, objects));
         }
 
-        void BuildPlane()
-        {
-            int id = 19999;  // model ids 18631..19999 are unused in San Andreas
-            while (id > 18630 && CModelInfo::GetModelInfo(id)) {
-                --id;
-            }
-            if (id == 18630) {
-                Log("runner: no free model id for the test plane");
-                return;
-            }
-
-            auto* col = new CColModel();
-            col->AllocateData(0, 1, 0, 0, 0, false);
-            const CVector min(-kPlaneHalfSize, -kPlaneHalfSize, -kPlaneThickness);
-            const CVector max(kPlaneHalfSize, kPlaneHalfSize, 0.0f);
-            col->m_pColData->m_pBoxes[0].Set(min, max, 0, 0, 0);  // SURFACE_DEFAULT
-            col->m_boundBox.m_vecMin = min;
-            col->m_boundBox.m_vecMax = max;
-            col->m_boundSphere.m_vecCenter = CVector(0.0f, 0.0f, -kPlaneThickness / 2);
-            col->m_boundSphere.m_fRadius = kPlaneHalfSize * 1.42f;
-            col->m_nColSlot = 0;
-
-            auto* info = CModelInfo::AddAtomicModel(id);
-            info->SetColModel(col, false);
-
-            auto* plane = new CBuilding();
-            plane->SetModelIndexNoCreate(id);
-            plane->SetPosn(CVector(0.0f, 0.0f, kPlaneTop));
-            plane->bUsesCollision = true;
-            plane->bIsVisible = false;  // nothing to draw, and invisible entities are never streamed
-            plane->bDontStream = true;
-            plane->m_nAreaCode = 0;
-            CWorld::Add(plane);
-            Log(std::format("runner: test plane {:.0f} m square at height {:.0f} m (model {})", 2 * kPlaneHalfSize, kPlaneTop, id));
-        }
-
         void PlaceCj(CPlayerPed* a_ped, float a_skyrimHeading)
         {
             const float rotation = Pose::SanAndreasHeading(a_skyrimHeading);
-            CVector     at(0.0f, 0.0f, kPlaneTop + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + 0.05f);
+            CVector     at(0.0f, 0.0f, Ground::kHeight + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + 0.05f);
             a_ped->SetPosn(at);
             a_ped->SetHeading(rotation);
             a_ped->m_fHeadingCurrent = rotation;
@@ -253,7 +208,6 @@ namespace AhShitRim::Runner
         void OnGameStarted()
         {
             EmptyWorld();
-            BuildPlane();
             auto* ped = FindPlayerPed(0);
             if (ped) {
                 PlaceCj(ped, 0.0f);
@@ -266,8 +220,11 @@ namespace AhShitRim::Runner
             FrontEndMenuManager.m_bMenuActive = false;
             FrontEndMenuManager.m_bPrefsVsync = false;  // gta-reversed: m_bPrefsFrameLimiter; the Idle hook caps the rate
             Mute();
+            // A fresh game's CJ is out of breath after a few seconds of sprinting: full stamina
+            // gives him San Andreas's longest sprint (he still tires, unlike the cheat).
+            CStats::SetStatValue(STAT_STAMINA, 1000.0f);
             state.inGame = true;
-            Log(ped ? "runner: CJ is on the test plane" : "runner: could not create CJ");
+            Log(ped ? "runner: CJ waits for Skyrim's ground (stamina at its maximum)" : "runner: could not create CJ");
         }
 
         // ---- Frame rate ----
@@ -333,8 +290,9 @@ namespace AhShitRim::Runner
             }
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
+                ChunkWorld::Begin(a_input.handover, a_input.anchor);
                 PlaceCj(a_ped, a_input.heading);
-                Log(std::format("runner: handover {}, CJ back at the spawn facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
+                Log(std::format("runner: handover {}, CJ at the handover spot facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
             }
             if (!owned) {
                 return;
@@ -404,10 +362,8 @@ namespace AhShitRim::Runner
             if (auto* wanted = ped->GetWanted()) {
                 wanted->m_nWantedLevel = 0;
             }
-            if (ped->GetPosition().z < kPlaneTop - kFellOffBelow) {
-                PlaceCj(ped, Pose::HeadingOf(ped->GetForward().x, ped->GetForward().y));
-                Log("runner: CJ fell off the test plane, put back on it");
-            }
+            ChunkWorld::Receive();
+            ChunkWorld::Update(ped, state.spawn);
             PublishPose(ped);
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.

@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 3;
+    inline constexpr std::uint32_t kProtocolVersion = 4;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -26,12 +26,18 @@ namespace AhShitRim::Protocol
     // A peer counts as gone when its heartbeat hasn't moved for this long.
     inline constexpr std::uint32_t kPeerTimeoutMs = 2000;
 
-    // Section layout (byte offsets from the start of the mapping): the header, then the latest-value
-    // slots. Rings follow in later versions.
+    // Collision chunks are squares of this many Skyrim units (about 29 m) on a grid anchored at
+    // Skyrim's world (0, 0): chunk (x, y) starts at (x * size, y * size).
+    inline constexpr std::uint32_t kCollisionChunkUnits = 2048;
+
+    // Section layout (byte offsets from the start of the mapping): the header, the latest-value
+    // slots, then the ring from Skyrim to San Andreas.
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
-    inline constexpr std::uint32_t kOffsetPlayerSlot = 192;
-    inline constexpr std::uint32_t kMappingSize = 4096;
+    inline constexpr std::uint32_t kOffsetPlayerSlot = 208;
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 320;        // RingHeader, data follows
+    inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
+    inline constexpr std::uint32_t kMappingSize = 4194688;               // 320 + 64 + 4 MiB
 
     enum class Side : std::uint32_t
     {
@@ -86,9 +92,10 @@ namespace AhShitRim::Protocol
         float         moveX;       // -1..1, positive to the right
         float         moveY;       // -1..1, positive forwards
         std::uint32_t buttons;     // kButton*
-        std::uint32_t handover;    // counts handovers; a new value puts CJ back at the test plane's spawn
+        std::uint32_t handover;    // counts handovers; a new value puts CJ at anchor and drops older collision chunks
         float         heading;     // the Skyrim player's heading at that handover, Skyrim radians; CJ spawns facing it
-        std::uint32_t reserved;
+        float         anchor[3];   // the Skyrim player's feet at that handover, Skyrim world units (v4)
+        std::uint8_t  reserved[8];
     };
 
     struct InputSlot
@@ -125,6 +132,51 @@ namespace AhShitRim::Protocol
         std::uint8_t  pad[8];
     };
 
+    // ---- Ring (single producer, single consumer) ----
+    //
+    // Skyrim produces, San Andreas consumes. head and tail are monotonic byte counts; position =
+    // count % capacity. A record is a MessageHeader plus payload and may wrap around the end. San
+    // Andreas drops whatever is left in the ring when it attaches, so stale messages from an earlier
+    // session never arrive.
+
+    struct RingHeader
+    {
+        std::uint32_t capacity;
+        std::uint32_t reserved0;
+        std::uint64_t head;
+        std::uint8_t  reserved1[16];
+        std::uint64_t tail;  // own 32-byte half, away from head
+        std::uint8_t  reserved2[24];
+    };
+
+    enum class MessageType : std::uint16_t
+    {
+        CollisionChunk = 1,  // Skyrim -> San Andreas
+    };
+
+    struct MessageHeader
+    {
+        std::uint16_t type;  // MessageType
+        std::uint16_t reserved;
+        std::uint32_t size;  // payload bytes after this header
+    };
+
+    // Payload: this header, then vertexCount * float[3] vertices (Skyrim units, relative to origin),
+    // then indexCount uint32 triangle indices. Triangles wind counterclockwise seen from outside in
+    // Skyrim space (from above for the land: cross(b - a, c - a) points up). A newer chunk with the
+    // same x/y and generation replaces the older one.
+    struct CollisionChunkHeader
+    {
+        std::int32_t  chunkX;
+        std::int32_t  chunkY;
+        std::uint32_t worldspace;  // form id
+        std::uint32_t generation;  // InputState.handover this chunk belongs to
+        float         origin[3];   // Skyrim world units
+        std::uint32_t vertexCount;
+        std::uint32_t indexCount;
+        std::uint32_t reserved;
+    };
+
 #pragma pack(pop)
 
     // Frozen header layout. Never change these.
@@ -141,14 +193,15 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 48);
+    static_assert(sizeof(InputState) == 64);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
     static_assert(offsetof(InputState, buttons) == 32);
     static_assert(offsetof(InputState, handover) == 36);
     static_assert(offsetof(InputState, heading) == 40);
-    static_assert(sizeof(InputSlot) == 64);
+    static_assert(offsetof(InputState, anchor) == 44);
+    static_assert(sizeof(InputSlot) == 80);
     static_assert(sizeof(PlayerState) == 48);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);
@@ -157,10 +210,22 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(PlayerState, viewPitch) == 40);
     static_assert(offsetof(PlayerState, handover) == 44);
     static_assert(sizeof(PlayerSlot) == 64);
+    static_assert(sizeof(RingHeader) == 64);
+    static_assert(offsetof(RingHeader, head) == 8);
+    static_assert(offsetof(RingHeader, tail) == 32);
+    static_assert(sizeof(MessageHeader) == 8);
+    static_assert(offsetof(MessageHeader, size) == 4);
+    static_assert(sizeof(CollisionChunkHeader) == 40);
+    static_assert(offsetof(CollisionChunkHeader, origin) == 16);
+    static_assert(offsetof(CollisionChunkHeader, vertexCount) == 28);
+    static_assert(offsetof(CollisionChunkHeader, indexCount) == 32);
 
     // Section layout follows from the struct sizes.
     static_assert(kOffsetInputSlot == kOffsetHeader + sizeof(LinkHeader));
     static_assert(kOffsetPlayerSlot == kOffsetInputSlot + sizeof(InputSlot));
     static_assert((kOffsetInputSlot + offsetof(InputSlot, value) + offsetof(InputState, mouseX)) % 8 == 0);
-    static_assert(kMappingSize >= kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetRingToSanAndreas >= kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetRingToSanAndreas % 64 == 0);
+    static_assert(kMappingSize == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
+    static_assert((kRingToSanAndreasCapacity & (kRingToSanAndreasCapacity - 1)) == 0);
 }

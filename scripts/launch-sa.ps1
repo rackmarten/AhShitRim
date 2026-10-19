@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Starts GTA: San Andreas (gta_sa.exe from SaPath in local.props) hidden: windowed and minimized,
-    straight into an empty world with CJ on the test plane, and waits until the ASI says so.
+    straight into an empty world with CJ waiting for Skyrim's ground, and waits until the ASI says so.
     With -Visible it opens in a small 800x600 window instead (without taking the focus), to watch CJ.
 .EXAMPLE
     scripts/launch-sa.ps1
@@ -35,10 +35,10 @@ while ((Get-Date) -lt $deadline) {
         throw "San Andreas exited (code $($process.ExitCode)) before CJ was ready. Check scripts/logs.ps1 -Target sa."
     }
     if ((Test-Path $log) -and (Get-Item $log).LastWriteTime -gt $launched) {
-        $ready = Select-String -Path $log -Pattern 'runner: CJ is on the test plane', 'runner: could not create CJ' -SimpleMatch | Select-Object -First 1
+        $ready = Select-String -Path $log -Pattern 'runner: CJ waits for Skyrim''s ground', 'runner: could not create CJ' -SimpleMatch | Select-Object -First 1
         if ($ready) {
             if ($ready.Line -like '*could not*') { throw "San Andreas started, but the ASI could not create CJ. Check scripts/logs.ps1 -Target sa." }
-            Write-Host "San Andreas is up (pid $($process.Id)), CJ is on the test plane$(if ($Visible) { ', window visible' } else { ', minimized' })." -ForegroundColor Green
+            Write-Host "San Andreas is up (pid $($process.Id)), CJ waits for Skyrim's ground$(if ($Visible) { ', window visible' } else { ', minimized' })." -ForegroundColor Green
             return
         }
     }

@@ -17,6 +17,9 @@ add_executable(protocol_tests
     tests/cpp/test_link.cpp
     tests/cpp/test_input.cpp
     tests/cpp/test_pose.cpp
+    tests/cpp/test_collision.cpp
+    tests/cpp/test_ground.cpp
+    tests/cpp/test_fall_rescue.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)
