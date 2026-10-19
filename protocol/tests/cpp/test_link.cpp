@@ -1,0 +1,248 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+
+#include <doctest/doctest.h>
+
+#include <atomic>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "../../cpp/link.h"
+
+using namespace AhShitRim;
+using namespace AhShitRim::Protocol;
+
+namespace
+{
+    // Each test gets its own section, so tests never see each other's state.
+    std::wstring UniqueName()
+    {
+        static std::atomic<int> counter{ 0 };
+        return L"Local\\AhShitRim.Test." + std::to_wstring(::GetCurrentProcessId()) + L"." + std::to_wstring(counter++);
+    }
+
+    struct Logged
+    {
+        std::vector<std::string> lines;
+
+        Link::LogFn Fn()
+        {
+            return [this](std::string_view a_line) { lines.emplace_back(a_line); };
+        }
+
+        bool Has(std::string_view a_needle) const
+        {
+            for (const auto& line : lines) {
+                if (line.find(a_needle) != std::string::npos) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+
+    struct Pair
+    {
+        std::wstring          name = UniqueName();
+        Logged                skyrimLog, saLog;
+        std::unique_ptr<Link> skyrim = std::make_unique<Link>(Side::Skyrim, skyrimLog.Fn(), name);
+        std::unique_ptr<Link> sa = std::make_unique<Link>(Side::SanAndreas, saLog.Fn(), name);
+        std::uint64_t         now = 1000;
+
+        void Tick(int a_times = 1, std::uint64_t a_stepMs = 50)
+        {
+            for (int i = 0; i < a_times; ++i) {
+                now += a_stepMs;
+                if (skyrim) {
+                    skyrim->Tick(now);
+                }
+                if (sa) {
+                    sa->Tick(now);
+                }
+            }
+        }
+    };
+
+    // Raw view of a section, for faking a peer of another version.
+    struct RawSection
+    {
+        HANDLE        handle = nullptr;
+        std::uint8_t* base = nullptr;
+
+        explicit RawSection(const std::wstring& a_name, std::uint32_t a_size = kMappingSize)
+        {
+            handle = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, a_size, a_name.c_str());
+            base = static_cast<std::uint8_t*>(::MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+        }
+        ~RawSection()
+        {
+            ::UnmapViewOfFile(base);
+            ::CloseHandle(handle);
+        }
+        LinkHeader* Header() { return reinterpret_cast<LinkHeader*>(base); }
+    };
+}
+
+TEST_CASE("link comes up once both sides tick")
+{
+    Pair p;
+    p.Tick(1);
+    CHECK_FALSE(p.skyrim->IsUp());  // first heartbeat read only seeds
+    CHECK(p.skyrim->GetState() == Link::State::Waiting);
+    p.Tick(2);
+    CHECK(p.skyrim->IsUp());
+    CHECK(p.sa->IsUp());
+    CHECK(p.skyrimLog.Has("created shared memory"));
+    CHECK(p.saLog.Has("joined shared memory"));
+    CHECK(p.skyrimLog.Has("link up: San Andreas plugin pid " + std::to_string(::GetCurrentProcessId()) + ", protocol v1"));
+    CHECK(p.saLog.Has("link up: Skyrim plugin pid"));
+}
+
+TEST_CASE("the San Andreas side can start first")
+{
+    const std::wstring name = UniqueName();
+    Logged             saLog, skyrimLog;
+    Link               sa(Side::SanAndreas, saLog.Fn(), name);
+    std::uint64_t      now = 1000;
+    for (int i = 0; i < 20; ++i) {
+        sa.Tick(now += 50);  // nobody there yet
+    }
+    CHECK(sa.GetState() == Link::State::Waiting);
+    CHECK(saLog.Has("created shared memory"));
+
+    Link skyrim(Side::Skyrim, skyrimLog.Fn(), name);
+    for (int i = 0; i < 3; ++i) {
+        now += 50;
+        sa.Tick(now);
+        skyrim.Tick(now);
+    }
+    CHECK(sa.IsUp());
+    CHECK(skyrim.IsUp());
+}
+
+TEST_CASE("a peer that left its pid behind without a heartbeat never looks alive")
+{
+    const std::wstring name = UniqueName();
+    RawSection         raw(name);
+    raw.Header()->headerSize = sizeof(LinkHeader);
+    raw.Header()->mappingSize = kMappingSize;
+    raw.Header()->creatorVersion = kProtocolVersion;
+    raw.Header()->magic = kMagic;
+    PeerInfo& dead = raw.Header()->peers[static_cast<int>(Side::SanAndreas)];
+    dead.pid = 1234;  // crashed without detaching
+    dead.version = kProtocolVersion;
+    dead.heartbeat = 77;
+
+    Logged log;
+    Link   skyrim(Side::Skyrim, log.Fn(), name);
+    for (std::uint64_t now = 1000; now < 5000; now += 50) {
+        skyrim.Tick(now);
+    }
+    CHECK(skyrim.GetState() == Link::State::Waiting);
+    CHECK_FALSE(log.Has("link up"));
+}
+
+TEST_CASE("link goes down when the peer stops ticking or detaches")
+{
+    Pair p;
+    p.Tick(3);
+    REQUIRE(p.skyrim->IsUp());
+
+    // San Andreas stalls (a long load, say) past the timeout.
+    for (int i = 0; i < 50; ++i) {
+        p.now += 50;
+        p.skyrim->Tick(p.now);
+    }
+    CHECK_FALSE(p.skyrim->IsUp());
+    CHECK(p.skyrimLog.Has("link down: no heartbeat from the San Andreas plugin for 2000 ms"));
+
+    p.Tick(2);
+    CHECK(p.skyrim->IsUp());
+
+    p.sa.reset();  // clean detach
+    p.Tick(1);
+    CHECK_FALSE(p.skyrim->IsUp());
+    CHECK(p.skyrimLog.Has("link down: the San Andreas plugin detached"));
+}
+
+TEST_CASE("a restarted peer comes back up")
+{
+    Pair p;
+    p.Tick(3);
+    REQUIRE(p.skyrim->IsUp());
+
+    p.skyrim.reset();
+    p.Tick(1);
+    CHECK(p.saLog.Has("link down: the Skyrim plugin detached"));
+    p.skyrim = std::make_unique<Link>(Side::Skyrim, p.skyrimLog.Fn(), p.name);
+    p.Tick(3);
+    CHECK(p.skyrim->IsUp());
+    CHECK(p.sa->IsUp());
+}
+
+TEST_CASE("a peer speaking another protocol version disables the link")
+{
+    Pair p;
+    p.Tick(3);
+    REQUIRE(p.skyrim->IsUp());
+
+    // Pretend the San Andreas side was replaced by one speaking v99.
+    p.sa.reset();
+    RawSection raw(p.name);
+    PeerInfo&  sa = raw.Header()->peers[static_cast<int>(Side::SanAndreas)];
+    sa.pid = 1234;
+    sa.version = 99;
+    p.Tick(1);
+    CHECK(p.skyrim->GetState() == Link::State::Disabled);
+    CHECK(p.skyrimLog.Has("protocol mismatch: the San Andreas plugin speaks v99, this Skyrim plugin speaks v1"));
+
+    // Disabled stays disabled, even if the peer goes away.
+    sa.version = 0;
+    p.Tick(5);
+    CHECK(p.skyrim->GetState() == Link::State::Disabled);
+}
+
+TEST_CASE("a section created by another protocol version disables the joining side")
+{
+    const std::wstring name = UniqueName();
+    RawSection         raw(name, kMappingSize);
+    raw.Header()->headerSize = sizeof(LinkHeader);
+    raw.Header()->mappingSize = kMappingSize;
+    raw.Header()->creatorVersion = 99;
+    raw.Header()->magic = kMagic;
+
+    Logged log;
+    Link   sa(Side::SanAndreas, log.Fn(), name);
+    sa.Tick(1000);
+    CHECK(sa.GetState() == Link::State::Disabled);
+    CHECK(log.Has("protocol mismatch: the shared memory was created with protocol v99, this San Andreas plugin speaks v1"));
+    // Its version is published anyway, so the creator side can report the mismatch as well.
+    CHECK(raw.Header()->peers[static_cast<int>(Side::SanAndreas)].version == kProtocolVersion);
+}
+
+TEST_CASE("a section still being initialized is waited for")
+{
+    const std::wstring name = UniqueName();
+    RawSection         raw(name);  // zero-filled: magic 0
+
+    Logged log;
+    Link   skyrim(Side::Skyrim, log.Fn(), name);
+    skyrim.Tick(1000);
+    CHECK(skyrim.GetState() == Link::State::Waiting);
+    CHECK(raw.Header()->peers[static_cast<int>(Side::Skyrim)].pid == 0);  // nothing published yet
+}
+
+TEST_CASE("a foreign section is rejected")
+{
+    const std::wstring name = UniqueName();
+    RawSection         raw(name);
+    raw.Header()->magic = 0xDEADBEEF;
+
+    Logged log;
+    Link   skyrim(Side::Skyrim, log.Fn(), name);
+    skyrim.Tick(1000);
+    CHECK(skyrim.GetState() == Link::State::Disabled);
+    CHECK(log.Has("not an AhShitRim link"));
+}

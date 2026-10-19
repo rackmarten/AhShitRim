@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "ahshitrim-protocol-tests",
+  "version-semver": "0.1.0",
+  "description": "Unit tests for the AhShitRim link protocol.",
+  "supports": "windows & x64",
+  "dependencies": [
+    "doctest"
+  ]
+}

@@ -1,0 +1,6 @@
+[submodule "skse/extern/CommonLibSSE-NG"]
+	path = skse/extern/CommonLibSSE-NG
+	url = https://github.com/alandtse/CommonLibSSE-NG.git
+[submodule "sa/extern/plugin-sdk"]
+	path = sa/extern/plugin-sdk
+	url = https://github.com/DK22Pac/plugin-sdk.git

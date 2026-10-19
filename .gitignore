@@ -1,0 +1,48 @@
+# --- Game assets: never commit (see README.md#game-assets) ---
+*.nif
+*.dds
+*.bsa
+*.ba2
+*.esm
+*.esl
+*.esp
+*.pex
+*.img
+*.dff
+*.txd
+*.col
+*.ifp
+*.ipl
+*.ide
+/extracted/
+/dumps/
+
+# --- C++ / CMake / vcpkg ---
+build/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+vcpkg_installed/
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.asi
+
+# --- Editors / OS ---
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
+*:Zone.Identifier
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Local machine config ---
+local.props

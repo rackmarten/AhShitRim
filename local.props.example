@@ -1,0 +1,11 @@
+<!--
+  Local machine paths. Copy to local.props (gitignored) and edit.
+  Read by scripts/*.ps1.
+-->
+<Project>
+  <PropertyGroup>
+    <SkyrimPath>C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition</SkyrimPath>
+    <!-- The San Andreas 1.0 US folder (gta_sa.exe), with an ASI loader installed. -->
+    <SaPath>C:\Games\Grand Theft Auto San Andreas</SaPath>
+  </PropertyGroup>
+</Project>
