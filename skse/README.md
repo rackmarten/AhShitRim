@@ -2,7 +2,7 @@
 
 SKSE plugin (C++, CommonLibSSE-NG) that runs inside Skyrim. Later increments sample Skyrim's collision for San Andreas and draw CJ and his car; see [docs/DESIGN.md](../docs/DESIGN.md).
 
-For now it logs `AhShitRim loaded` and the game runtime version to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, and starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`). Link state is logged there too, prefixed `link:`.
+It logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`) and, in `src/player/PlayerSync.cpp`, hands the player to San Andreas and back with F10: Skyrim's input goes to CJ, and CJ's pose moves the Skyrim player. Lines are prefixed `link:` and `player sync:`.
 
 - `src/` plugin source
 - `extern/CommonLibSSE-NG` git submodule ([alandtse/CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG), pinned to release tag `v10.1.0`)

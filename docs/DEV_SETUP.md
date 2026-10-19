@@ -79,9 +79,13 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 scripts/build.ps1                  # both halves, Release
 scripts/build.ps1 -Target skse     # SKSE plugin only (-Configuration Debug for a debug build)
 scripts/build.ps1 -Target sa       # San Andreas ASI only
-scripts/test.ps1                   # game-free unit tests: protocol header layout and link handshake (doctest)
+scripts/test.ps1                   # game-free unit tests: protocol layout, link, input mapping, pose (doctest)
 scripts/deploy-local.ps1           # copy both plugins into the games (close the games first)
 scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader log
+scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ is on the test plane
+scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
+scripts/restart-games.ps1 -Build   # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim
+scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, hold W, check CJ walks
 ```
 
 From WSL, call the same scripts through Windows PowerShell, e.g. `powershell.exe -File scripts/build.ps1`.
@@ -94,7 +98,7 @@ The first SKSE build takes a while (often 15 to 25 minutes): vcpkg builds the de
 ### Handshake check
 
 1. Start Skyrim with `skse64_loader.exe` and wait for the main menu.
-2. Start `<SaPath>\gta_sa.exe` and wait for its menu. Both can run windowed side by side; the order doesn't matter.
+2. Start San Andreas with `scripts/launch-sa.ps1` (or `<SaPath>\gta_sa.exe`, which starts minimized as well). The order doesn't matter.
 3. Run `scripts/logs.ps1`. Expect, in both `AhShitRim.log` files:
    - `AhShitRim loaded (...)`: the Skyrim runtime version on one side, `1.0 US` (compact or HOODLUM) on the other
    - `link: started (protocol v1)`, then `created shared memory` on whichever started first and `joined shared memory` on the other
@@ -102,6 +106,13 @@ The first SKSE build takes a while (often 15 to 25 minutes): vcpkg builds the de
 4. Quit San Andreas: Skyrim's log shows `link down: the San Andreas plugin detached` (or `no heartbeat ... for 2000 ms` if it didn't exit cleanly). Start it again and the link comes back up.
 
 On any San Andreas exe other than 1.0 US, its log says which version it found and that it isn't starting.
+
+### Driving CJ from Skyrim
+
+1. `scripts/restart-games.ps1` (add `-SaVisible` to watch San Andreas in a small window).
+2. Load a save in Skyrim and stand somewhere flat (San Andreas's ground is a flat test plane for now).
+3. Press F10: Skyrim switches to first person, and WASD, the mouse, Shift (sprint), Space (jump), C (crouch) and Alt (walk) now drive CJ, whose movement moves you. F10 again gives the player back.
+4. `scripts/logs.ps1` shows `player sync:` once a second on the Skyrim side and `runner:` every 5 s on the San Andreas side (frames, inputs, CJ's position).
 
 ## How the builds work
 
@@ -122,5 +133,6 @@ On any San Andreas exe other than 1.0 US, its log says which version it found an
 
 - **`... was unexpected at this time` when entering the developer shell:** a quote character in your `PATH` confuses `VsDevCmd.bat`. The scripts strip quotes for their own process, but it's worth fixing the entry in System Properties > Environment Variables.
 - **No `AhShitRim.log` in San Andreas's `scripts` folder:** the ASI loader isn't installed or isn't loading from `scripts`. Reinstall it from the downgrader, and check `scripts\global.ini` has `LoadPlugins=1`.
+- **San Andreas exits or crashes at start:** its log ends with a `crash:` line (the address and the exe addresses on the stack; match them against gta-reversed) or stops before `runner: CJ is on the test plane`. Another ASI that patches the same functions is the usual suspect; only SilentPatch, ModLoader and the ASI loader are tested.
 - **San Andreas's log says the game version isn't supported:** you started the Steam exe (`gta-sa.exe`) or a copy Steam updated. Start the downgraded `gta_sa.exe`, or run the downgrader again.
 - **Skyrim crashes at start, or SKSE says the plugin is incompatible:** the game updated. Update SKSE and Address Library to match.

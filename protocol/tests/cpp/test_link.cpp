@@ -96,7 +96,7 @@ TEST_CASE("link comes up once both sides tick")
     CHECK(p.sa->IsUp());
     CHECK(p.skyrimLog.Has("created shared memory"));
     CHECK(p.saLog.Has("joined shared memory"));
-    CHECK(p.skyrimLog.Has("link up: San Andreas plugin pid " + std::to_string(::GetCurrentProcessId()) + ", protocol v1"));
+    CHECK(p.skyrimLog.Has("link up: San Andreas plugin pid " + std::to_string(::GetCurrentProcessId()) + ", protocol v" + std::to_string(kProtocolVersion)));
     CHECK(p.saLog.Has("link up: Skyrim plugin pid"));
 }
 
@@ -196,7 +196,7 @@ TEST_CASE("a peer speaking another protocol version disables the link")
     sa.version = 99;
     p.Tick(1);
     CHECK(p.skyrim->GetState() == Link::State::Disabled);
-    CHECK(p.skyrimLog.Has("protocol mismatch: the San Andreas plugin speaks v99, this Skyrim plugin speaks v1"));
+    CHECK(p.skyrimLog.Has("protocol mismatch: the San Andreas plugin speaks v99, this Skyrim plugin speaks v" + std::to_string(kProtocolVersion)));
 
     // Disabled stays disabled, even if the peer goes away.
     sa.version = 0;
@@ -217,7 +217,7 @@ TEST_CASE("a section created by another protocol version disables the joining si
     Link   sa(Side::SanAndreas, log.Fn(), name);
     sa.Tick(1000);
     CHECK(sa.GetState() == Link::State::Disabled);
-    CHECK(log.Has("protocol mismatch: the shared memory was created with protocol v99, this San Andreas plugin speaks v1"));
+    CHECK(log.Has("protocol mismatch: the shared memory was created with protocol v99, this San Andreas plugin speaks v" + std::to_string(kProtocolVersion)));
     // Its version is published anyway, so the creator side can report the mismatch as well.
     CHECK(raw.Header()->peers[static_cast<int>(Side::SanAndreas)].version == kProtocolVersion);
 }
@@ -245,4 +245,71 @@ TEST_CASE("a foreign section is rejected")
     skyrim.Tick(1000);
     CHECK(skyrim.GetState() == Link::State::Disabled);
     CHECK(log.Has("not an AhShitRim link"));
+}
+
+TEST_CASE("slots are empty until written, and reads need the link up")
+{
+    Pair        p;
+    InputState  input{};
+    PlayerState player{};
+    p.Tick(3);
+    REQUIRE(p.skyrim->IsUp());
+    CHECK_FALSE(p.sa->ReadInput(input));
+    CHECK_FALSE(p.skyrim->ReadPlayer(player));
+
+    input.frame = 1;
+    p.skyrim->WriteInput(input);
+    p.sa.reset();  // detaches: the Skyrim side goes down and stops reading
+    p.Tick(1);
+    CHECK_FALSE(p.skyrim->IsUp());
+    CHECK_FALSE(p.skyrim->ReadPlayer(player));
+}
+
+TEST_CASE("input and pose round-trip through their slots")
+{
+    Pair p;
+    p.Tick(3);
+    REQUIRE(p.sa->IsUp());
+
+    InputState input{};
+    input.frame = 42;
+    input.flags = kInputOwnsPlayer;
+    input.mouseX = 1234.5;
+    input.mouseY = -6.25;
+    input.moveX = -1.0f;
+    input.moveY = 1.0f;
+    input.buttons = kButtonSprint | kButtonJump;
+    input.handover = 3;
+    input.heading = 1.5f;
+    p.skyrim->WriteInput(input);
+
+    InputState got{};
+    REQUIRE(p.sa->ReadInput(got));
+    CHECK(got.frame == 42);
+    CHECK(got.flags == kInputOwnsPlayer);
+    CHECK(got.mouseX == 1234.5);
+    CHECK(got.mouseY == -6.25);
+    CHECK(got.moveX == -1.0f);
+    CHECK(got.moveY == 1.0f);
+    CHECK(got.buttons == (kButtonSprint | kButtonJump));
+    CHECK(got.handover == 3);
+    CHECK(got.heading == 1.5f);
+
+    PlayerState pose{};
+    pose.frame = 7;
+    pose.flags = kPlayerValid;
+    pose.offset[0] = 70.0f;
+    pose.velocity[1] = -140.0f;
+    pose.viewPitch = 0.25f;
+    pose.handover = 3;
+    p.sa->WritePlayer(pose);
+    p.sa->WritePlayer(pose);  // the newest write wins, a reader never sees a half-written one
+
+    PlayerState back{};
+    REQUIRE(p.skyrim->ReadPlayer(back));
+    CHECK(back.frame == 7);
+    CHECK(back.offset[0] == 70.0f);
+    CHECK(back.velocity[1] == -140.0f);
+    CHECK(back.viewPitch == 0.25f);
+    CHECK(back.handover == 3);
 }

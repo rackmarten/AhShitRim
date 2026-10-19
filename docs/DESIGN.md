@@ -1,6 +1,6 @@
 # AhShitRim: design
 
-> Status: milestone 1 in progress. The two plugins build, load in their games and find each other over shared memory (protocol v1). Nothing is simulated or drawn yet.
+> Status: milestone 1 in progress. San Andreas runs hidden as a simulator of CJ on a flat test plane, driven from Skyrim with F10, and CJ's movement moves the Skyrim player (protocol v3). Nothing from San Andreas is drawn in Skyrim yet.
 
 AhShitRim runs **GTA: San Andreas** and **Skyrim Anniversary Edition** at the same time. Skyrim owns the world and draws everything; San Andreas runs hidden and simulates CJ, his cars, his guns and his cheat codes.
 
@@ -57,14 +57,22 @@ Whichever wins is recorded here.
 
 ### Running San Andreas hidden
 
-San Andreas runs windowed and hidden, started and driven from Skyrim. Its physics stays capped at 30 fps, since higher frame rates break it.
+San Andreas runs windowed and minimized, started by `scripts/launch-sa.ps1` and driven from Skyrim. AhShitRim does this in its own ASI rather than with a windowed-mode mod, to keep San Andreas as close to headless as it gets:
+
+- **Window** (`sa/src/window.cpp`): RenderWare opens its windowed video mode, and every Direct3D device is created windowed and without vsync. The window is minimized and never activated (`launch-sa.ps1 -Visible` shows it in a small 800x600 window instead, still without taking the focus, to watch CJ). Losing the focus never reaches San Andreas, which would otherwise pause its loop and sounds and open its menu, and it can't move the cursor.
+- **Straight into a game** (`sa/src/runner.cpp`): the splashes, movies and main menu are skipped and a new game loads (about a second, with no map). The mission script never runs; CJ is created where it would have created him.
+- **Empty world**: map collision and IPLs are never streamed in, and every building, dummy and object loaded at start is taken out of the world. No peds, traffic, parked cars, trains, planes or wanted level. CJ stands on an invisible 1 km square test plane, 500 m up, built at runtime as a collision-only model.
+- **Frame rate**: physics stays capped at 30 fps, since higher frame rates break it. While hidden nothing is rendered (San Andreas's `Idle` runs the simulation and returns before drawing), so the only cost is the simulation. Peds' bones are only posed while rendering; CJ's model in Skyrim, which needs his skeleton, will have to pose them itself. Sounds are muted.
+- **Hooks**: functions that only need to be disabled are hooked at their start; the per-frame ones (`Idle`, `FrontendIdle`, `CPad::UpdatePads`) are hooked at their call sites once the window shows, after every other plugin has patched the game, because SilentPatch patches a call inside `Idle`'s first bytes.
+
+F10 in Skyrim hands the player to San Andreas, as in PerkeleRim: Skyrim forwards WASD, mouse look, sprint, jump, crouch and walk (see [PROTOCOL.md](PROTOCOL.md#latest-value-slots)), forces its first-person camera and moves its player by CJ's offset from the handover spot every frame, looking where San Andreas's camera looks. Escape, Tab, M and the console stay Skyrim's; a pausing menu pauses San Andreas too. The handover ends on F10, when the link goes down, the player dies or the game moves the player (load door, fast travel), or when a game loads.
 
 ## 4. Milestone 1: on the ground
 
 | Step | What |
 |---|---|
 | Scaffold (done) | Both plugins build and load; shared memory handshake, protocol v1 |
-| Hidden runner | San Andreas started hidden from Skyrim, input forwarded |
+| Hidden runner (done) | San Andreas started hidden, driven from Skyrim with F10, CJ on a test plane (protocol v3) |
 | Ground | Skyrim's collision built in San Andreas around CJ (the make-or-break part) |
 | CJ | CJ drawn in Skyrim from San Andreas's own model |
 | Car | The Greenwood driven on Skyrim's roads |
@@ -76,7 +84,7 @@ San Andreas runs windowed and hidden, started and driven from Skyrim. Its physic
 | `skse/` | SKSE plugin; `extern/CommonLibSSE-NG` submodule |
 | `sa/` | ASI plugin; `extern/plugin-sdk` submodule |
 | `protocol/` | Shared protocol header, C++ link code and its game-free tests |
-| `scripts/` | `build.ps1`, `deploy-local.ps1`, `test.ps1`, `logs.ps1` |
+| `scripts/` | `build.ps1`, `deploy-local.ps1`, `test.ps1`, `logs.ps1`, `launch-sa.ps1`, `restart-games.ps1`, `fake-skyrim.ps1` |
 | `docs/` | This document, [PROTOCOL.md](PROTOCOL.md), [DEV_SETUP.md](DEV_SETUP.md) |
 
 ## 6. Risks

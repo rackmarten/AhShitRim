@@ -2,6 +2,7 @@
 // Documents/My Games/Skyrim Special Edition/SKSE/AhShitRim.log.
 
 #include "link/LinkService.h"
+#include "player/PlayerSync.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
@@ -13,6 +14,21 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         a_skse->RuntimeVersion().string("."));
 
     AhShitRim::LinkService::Start();
+    AhShitRim::PlayerSync::Install();
+
+    SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
+        switch (a_msg->type) {
+        case SKSE::MessagingInterface::kDataLoaded:
+            AhShitRim::PlayerSync::OnDataLoaded();
+            break;
+        case SKSE::MessagingInterface::kPreLoadGame:
+        case SKSE::MessagingInterface::kNewGame:
+            AhShitRim::PlayerSync::OnGameLoad();
+            break;
+        default:
+            break;
+        }
+    });
 
     return true;
 }

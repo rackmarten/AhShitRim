@@ -28,12 +28,24 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v1 constants")
+TEST_CASE("protocol v3 constants")
 {
-    CHECK(kProtocolVersion == 1);
+    CHECK(kProtocolVersion == 3);
+    CHECK(kPlayerCrouching == 0x4);
     CHECK(kMappingSize == 4096);
     CHECK(kPeerTimeoutMs == 2000);
     CHECK((std::wstring_view(kMappingName) == L"Local\\AhShitRim.Link"));  // doctest cannot print wide strings
     CHECK(static_cast<std::uint32_t>(Side::Skyrim) == 0);
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
+}
+
+TEST_CASE("the v2 slot layout")
+{
+    CHECK(kOffsetInputSlot == 128);
+    CHECK(kOffsetPlayerSlot == 192);
+    CHECK(sizeof(InputState) == 48);
+    CHECK(sizeof(PlayerState) == 48);
+    CHECK(offsetof(InputSlot, value) == 8);
+    CHECK(offsetof(PlayerSlot, value) == 8);
+    CHECK(kOffsetPlayerSlot + sizeof(PlayerSlot) <= kMappingSize);
 }

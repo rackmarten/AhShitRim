@@ -4,6 +4,7 @@
 
 #include "link.h"
 
+#include <cstring>
 #include <format>
 
 namespace AhShitRim
@@ -32,6 +33,38 @@ namespace AhShitRim
         Side Other(Side a_side)
         {
             return a_side == Side::Skyrim ? Side::SanAndreas : Side::Skyrim;
+        }
+
+        template <class TSlot, class T>
+        void SeqWrite(TSlot* a_slot, const T& a_value)
+        {
+            auto seq = Atomic(a_slot->seq);
+            const std::uint32_t n = seq.load(std::memory_order_relaxed);
+            seq.store(n + 1, std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_release);
+            std::memcpy(&a_slot->value, &a_value, sizeof(T));
+            seq.store(n + 2, std::memory_order_release);
+        }
+
+        template <class TSlot, class T>
+        bool SeqRead(TSlot* a_slot, T& a_out)
+        {
+            auto seq = Atomic(a_slot->seq);
+            for (int attempt = 0; attempt < 64; ++attempt) {
+                const std::uint32_t before = seq.load(std::memory_order_acquire);
+                if (before == 0) {
+                    return false;
+                }
+                if (before & 1) {
+                    continue;
+                }
+                std::memcpy(&a_out, &a_slot->value, sizeof(T));
+                std::atomic_thread_fence(std::memory_order_acquire);
+                if (seq.load(std::memory_order_relaxed) == before) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -182,5 +215,29 @@ namespace AhShitRim
         ::CloseHandle(static_cast<HANDLE>(_mapping));
         _mapping = nullptr;
         _state.store(State::Detached, std::memory_order_release);
+    }
+
+    void Link::WriteInput(const InputState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<InputSlot>(base, kOffsetInputSlot), a_value);
+        }
+    }
+
+    bool Link::ReadInput(InputState& a_out) const
+    {
+        return IsUp() && SeqRead(At<InputSlot>(Base(), kOffsetInputSlot), a_out);
+    }
+
+    void Link::WritePlayer(const PlayerState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<PlayerSlot>(base, kOffsetPlayerSlot), a_value);
+        }
+    }
+
+    bool Link::ReadPlayer(PlayerState& a_out) const
+    {
+        return IsUp() && SeqRead(At<PlayerSlot>(Base(), kOffsetPlayerSlot), a_out);
     }
 }

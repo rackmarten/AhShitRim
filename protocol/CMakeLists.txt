@@ -1,4 +1,5 @@
-# Unit tests for the link: header layout, version check, handshake and heartbeat.
+# Unit tests for the link (header layout, version check, handshake, heartbeat, slots), the input
+# mapping and the pose conversion.
 # Standalone (no CommonLibSSE-NG, no plugin-sdk), so it builds in seconds. Run with scripts/test.ps1.
 cmake_minimum_required(VERSION 3.21)
 
@@ -14,6 +15,8 @@ add_executable(protocol_tests
     tests/cpp/main.cpp
     tests/cpp/test_layout.cpp
     tests/cpp/test_link.cpp
+    tests/cpp/test_input.cpp
+    tests/cpp/test_pose.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)
@@ -22,3 +25,9 @@ endif()
 
 enable_testing()
 add_test(NAME protocol_tests COMMAND protocol_tests)
+
+# Stands in for the Skyrim plugin to drive a running San Andreas (scripts/fake-skyrim.ps1). Not a test.
+add_executable(fake_skyrim cpp/link.cpp tools/fake_skyrim.cpp)
+if(MSVC)
+    target_compile_options(fake_skyrim PRIVATE /W4 /permissive- /utf-8)
+endif()

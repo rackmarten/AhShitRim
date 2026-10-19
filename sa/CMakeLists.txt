@@ -49,11 +49,12 @@ target_compile_options(plugin_sa PRIVATE /sdl- /MP /W0)
 target_compile_options(plugin_sa PUBLIC /wd4073)  # "initializers put in library initialization area"
 
 # ---- The ASI plugin ----
-add_library(AhShitRim SHARED src/main.cpp ../protocol/cpp/link.cpp)
+add_library(AhShitRim SHARED src/main.cpp src/window.cpp src/runner.cpp ../protocol/cpp/link.cpp)
 set_target_properties(AhShitRim PROPERTIES SUFFIX ".asi")
 target_include_directories(AhShitRim PRIVATE src ../protocol/cpp)
 target_link_libraries(AhShitRim PRIVATE plugin_sa)
-target_compile_options(AhShitRim PRIVATE /W4 /utf-8 /MP /Zi)
+# plugin-sdk headers (angle brackets) are not held to /W4.
+target_compile_options(AhShitRim PRIVATE /W4 /external:anglebrackets /external:W0 /utf-8 /MP /Zi)
 target_compile_definitions(AhShitRim PRIVATE AHSHITRIM_VERSION="${PROJECT_VERSION}")
 # Ship the .pdb next to the .asi in Release too, for crash dumps.
-target_link_options(AhShitRim PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+target_link_options(AhShitRim PRIVATE /DEBUG /OPT:REF /OPT:ICF /MAP)

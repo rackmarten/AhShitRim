@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Hidden San Andreas runner: the ASI starts San Andreas windowed and minimized (`scripts/launch-sa.ps1`, `-Visible` for a small 800x600 window), keeps it simulating without the focus, skips the splashes, movies and main menu, and starts a new game without the mission script in an empty world (no map collision or IPLs, no peds, traffic or wanted level). CJ stands on an invisible flat test plane; physics runs at 30 frames a second, nothing is rendered while hidden, and sounds are muted.
+- F10 in Skyrim hands the player to San Andreas and back. While handed over, WASD, mouse look, Shift (sprint), Space (jump), C (crouch) and Alt (walk) drive CJ, and his position, heading and velocity move the Skyrim player in first person. Escape, Tab, M and the console stay Skyrim's.
+- Protocol v2 and v3: an input slot (Skyrim to San Andreas) and a pose slot (San Andreas to Skyrim, with CJ's crouch, which makes Skyrim sneak), with game-free tests for the input mapping and the pose conversion.
+- `scripts/restart-games.ps1` (the whole test loop in one command) and `scripts/fake-skyrim.ps1` (drives a running San Andreas without Skyrim and checks CJ walks).
 - README: concept, architecture, planned features, milestone 1, requirements and asset policy.
 - Scaffold: SKSE plugin (`skse/`, CommonLibSSE-NG v10.1.0, CMake + vcpkg) and 32-bit San Andreas ASI plugin (`sa/`, plugin-sdk, CMake with the Visual Studio generator). Both log when they load; the ASI refuses to start on any exe but GTA: San Andreas 1.0 US and logs why.
 - Protocol v1 link ([docs/PROTOCOL.md](docs/PROTOCOL.md)): a shared memory section with magic, protocol version and a heartbeat per side. Each side logs when the other appears, disappears or speaks another version. The same link code compiles into both plugins (64-bit and 32-bit).

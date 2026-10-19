@@ -2,7 +2,8 @@
 // San Andreas ASI plugin 32-bit) and by the protocol tests. Windows-only; the implementation lives
 // in link.cpp so this header stays free of <Windows.h>.
 //
-// Threading: Tick() may run on its own thread; GetState() is safe from any thread.
+// Threading: Tick() may run on its own thread; GetState() and the slot reads and writes are safe
+// from any thread.
 
 #pragma once
 
@@ -40,6 +41,13 @@ namespace AhShitRim
 
         State GetState() const { return _state.load(std::memory_order_acquire); }
         bool  IsUp() const { return GetState() == State::Up; }
+
+        // Latest-value slots. Writes need our side attached (they're dropped otherwise), reads need
+        // the link up; a read returns false when the slot was never written or stayed torn.
+        void WriteInput(const Protocol::InputState& a_value);
+        bool ReadInput(Protocol::InputState& a_out) const;
+        void WritePlayer(const Protocol::PlayerState& a_value);
+        bool ReadPlayer(Protocol::PlayerState& a_out) const;
 
     private:
         void TryMap();

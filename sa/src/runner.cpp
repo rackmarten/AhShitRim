@@ -1,0 +1,489 @@
+#include "runner.h"
+
+#include "input.h"
+#include "log.h"
+#include "pose.h"
+#include "window.h"
+
+#include <plugin.h>
+
+#include <CAudioEngine.h>
+#include <CBuilding.h>
+#include <CCamera.h>
+#include <CCarCtrl.h>
+#include <CClothes.h>
+#include <CColModel.h>
+#include <CMenuManager.h>
+#include <CModelInfo.h>
+#include <CPad.h>
+#include <CPlayerPed.h>
+#include <CPools.h>
+#include <CPopulation.h>
+#include <CStreaming.h>
+#include <CTaskSimplePlayerOnFoot.h>
+#include <CTimer.h>
+#include <CWanted.h>
+#include <CWorld.h>
+#include <common.h>
+
+#include <safetyhook.hpp>
+
+#include <Windows.h>
+#include <timeapi.h>
+
+#include <algorithm>
+#include <cmath>
+#include <format>
+
+#pragma comment(lib, "winmm.lib")
+
+namespace AhShitRim::Runner
+{
+    namespace
+    {
+        // ---- San Andreas 1.0 US addresses (gta-reversed names) ----
+
+        int32_t& gGameState = *reinterpret_cast<int32_t*>(0xC8D4C0);
+        constexpr int32_t kGameStateFrontendLoading = 5;  // GAME_STATE_FRONTEND_LOADING: past the splashes and movies
+
+        // Call sites, redirected rather than hooking the functions' first bytes: SilentPatch patches
+        // calls inside Idle's first bytes after this ASI has loaded, which broke an inline hook there.
+        constexpr std::uintptr_t kCallIdle = 0x53ECBD;          // AppEventHandler: Idle(void* render), one in-game frame
+        constexpr std::uintptr_t kCallFrontendIdle = 0x53ECCB;  // AppEventHandler: FrontendIdle(), one main menu frame
+        constexpr std::uintptr_t kCallUpdatePads = 0x53BEE6;    // CGame::Process: CPad::UpdatePads
+        constexpr std::uintptr_t kScriptsProcess = 0x46A000;  // CTheScripts::Process
+        constexpr std::uintptr_t kStartLoadingTune = 0x507410;  // CAudioEngine::StartLoadingTune (thiscall)
+
+        // Hooked to do nothing: no map streaming, no population.
+        constexpr std::uintptr_t kNoOps[] = {
+            0x410860,  // CColStore::LoadCollision
+            0x410AD0,  // CColStore::EnsureCollisionIsInMemory
+            0x410C00,  // CColStore::RequestCollision
+            0x405170,  // CIplStore::LoadIpls
+            0x4053F0,  // CIplStore::EnsureIplsAreInMemory
+            0x4045B0,  // CIplStore::AddIplsNeededAtPosn
+            0x616650,  // CPopulation::Update
+            0x4341C0,  // CCarCtrl::GenerateRandomCars
+            0x6F3F40,  // CTheCarGenerators::Process
+            0x6CD2F0,  // CPlane::DoPlaneGenerationAndRemoval
+            0x6F7900,  // CTrain::DoTrainGenerationAndRemoval
+        };
+        constexpr std::uintptr_t kHasCollisionLoaded = 0x410CE0;  // CColStore::HasCollisionLoaded: always yes
+
+        // ---- The test plane ----
+
+        // An invisible box, its top face at kPlaneTop, high above where San Andreas's map (now
+        // empty) and its sea would be.
+        constexpr float kPlaneHalfSize = 500.0f;  // metres
+        constexpr float kPlaneThickness = 2.0f;
+        constexpr float kPlaneTop = 500.0f;
+        constexpr float kFellOffBelow = 30.0f;  // CJ this far under the plane is put back on it
+
+        // Physics breaks above 30 frames a second.
+        constexpr double kFrameSeconds = 1.0 / 30.0;
+
+        void(__cdecl* g_idle)(void*) = nullptr;  // whatever the call sites called before
+        void(__cdecl* g_frontendIdle)() = nullptr;
+        void(__cdecl* g_updatePads)() = nullptr;
+        SafetyHookInline g_scriptsProcess;
+        SafetyHookInline g_startLoadingTune;
+        SafetyHookInline g_noOps[std::size(kNoOps)];
+        SafetyHookInline g_hasCollisionLoaded;
+
+        struct State
+        {
+            bool          inGame = false;
+            bool          menuSkipped = false;
+            CVector       spawn;  // CJ's position at the last (re)spawn
+            std::uint32_t handover = 0;
+            bool          owned = false;
+            bool          paused = false;
+            bool          haveMouse = false;
+            double        mouseX = 0.0;
+            double        mouseY = 0.0;
+            std::uint32_t frame = 0;
+
+            LARGE_INTEGER frequency{};
+            LARGE_INTEGER lastFrame{};
+
+            // Stats.
+            bool          settledLogged = false;
+            std::uint64_t statStartMs = 0;
+            int   frames = 0;
+            int   inputs = 0;
+        } state;
+
+        void __cdecl NoOp() {}
+        bool __cdecl Yes() { return true; }
+
+        void Mute()
+        {
+            AudioEngine.SetEffectsMasterVolume(0);
+            AudioEngine.SetMusicMasterVolume(0);
+        }
+
+        // The loading tune is muted rather than skipped: loading ends by stopping it.
+        void __fastcall StartLoadingTuneHook(CAudioEngine* a_audio)
+        {
+            Mute();
+            g_startLoadingTune.thiscall(a_audio);
+        }
+
+        // ---- Straight into a game ----
+
+        void __cdecl FrontendIdleHook()
+        {
+            // The main menu never opens: with it inactive, the game loop goes on to load a new game.
+            FrontEndMenuManager.m_bStartUpFrontEndRequested = false;  // gta-reversed: m_bActivateMenuNextFrame
+            FrontEndMenuManager.m_bMenuActive = false;
+            if (!state.menuSkipped) {
+                state.menuSkipped = true;
+                Mute();
+                Log("runner: main menu skipped, starting a new game");
+            }
+        }
+
+        // ---- Empty world, test plane, CJ ----
+
+        template <class TPool>
+        int RemoveAll(TPool* a_pool)
+        {
+            int removed = 0;
+            for (int i = 0; a_pool && i < a_pool->m_nSize; ++i) {
+                if (auto* entity = a_pool->GetAt(i)) {
+                    CWorld::Remove(entity);
+                    entity->bUsesCollision = false;
+                    entity->bIsVisible = false;
+                    ++removed;
+                }
+            }
+            return removed;
+        }
+
+        void EmptyWorld()
+        {
+            const int buildings = RemoveAll(CPools::ms_pBuildingPool);
+            const int dummies = RemoveAll(CPools::ms_pDummyPool);
+            const int objects = RemoveAll(CPools::ms_pObjectPool);
+            CPopulation::PedDensityMultiplier = 0.0f;
+            CCarCtrl::CarDensityMultiplier = 0.0f;
+            CWanted::SetMaximumWantedLevel(0);
+            Log(std::format("runner: world emptied ({} buildings, {} dummies, {} objects taken out)", buildings, dummies, objects));
+        }
+
+        void BuildPlane()
+        {
+            int id = 19999;  // model ids 18631..19999 are unused in San Andreas
+            while (id > 18630 && CModelInfo::GetModelInfo(id)) {
+                --id;
+            }
+            if (id == 18630) {
+                Log("runner: no free model id for the test plane");
+                return;
+            }
+
+            auto* col = new CColModel();
+            col->AllocateData(0, 1, 0, 0, 0, false);
+            const CVector min(-kPlaneHalfSize, -kPlaneHalfSize, -kPlaneThickness);
+            const CVector max(kPlaneHalfSize, kPlaneHalfSize, 0.0f);
+            col->m_pColData->m_pBoxes[0].Set(min, max, 0, 0, 0);  // SURFACE_DEFAULT
+            col->m_boundBox.m_vecMin = min;
+            col->m_boundBox.m_vecMax = max;
+            col->m_boundSphere.m_vecCenter = CVector(0.0f, 0.0f, -kPlaneThickness / 2);
+            col->m_boundSphere.m_fRadius = kPlaneHalfSize * 1.42f;
+            col->m_nColSlot = 0;
+
+            auto* info = CModelInfo::AddAtomicModel(id);
+            info->SetColModel(col, false);
+
+            auto* plane = new CBuilding();
+            plane->SetModelIndexNoCreate(id);
+            plane->SetPosn(CVector(0.0f, 0.0f, kPlaneTop));
+            plane->bUsesCollision = true;
+            plane->bIsVisible = false;  // nothing to draw, and invisible entities are never streamed
+            plane->bDontStream = true;
+            plane->m_nAreaCode = 0;
+            CWorld::Add(plane);
+            Log(std::format("runner: test plane {:.0f} m square at height {:.0f} m (model {})", 2 * kPlaneHalfSize, kPlaneTop, id));
+        }
+
+        void PlaceCj(CPlayerPed* a_ped, float a_skyrimHeading)
+        {
+            const float rotation = Pose::SanAndreasHeading(a_skyrimHeading);
+            CVector     at(0.0f, 0.0f, kPlaneTop + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + 0.05f);
+            a_ped->SetPosn(at);
+            a_ped->SetHeading(rotation);
+            a_ped->m_fHeadingCurrent = rotation;
+            a_ped->m_fHeadingGoal = rotation;
+            a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+            TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
+            state.spawn = at;
+        }
+
+        // What the script command CREATE_PLAYER does (gta-reversed's PlayerCommands.cpp).
+        CPlayerPed* CreateCj()
+        {
+            if (CStreaming::ms_aInfoForModel[0].m_nLoadState != 1) {  // LOADSTATE_LOADED
+                CStreaming::RequestSpecialModel(0, "player", 0x2 | 0x8 | 0x10);  // game required, keep in memory, priority
+                CStreaming::LoadAllRequestedModels(true);
+            }
+            CPlayerPed::SetupPlayerPed(0);
+            auto* ped = FindPlayerPed(0);
+            if (!ped) {
+                return nullptr;
+            }
+            ped->SetCharCreatedBy(2);  // PED_MISSION
+            CPlayerPed::DeactivatePlayerPed(0);
+            PlaceCj(ped, 0.0f);
+            CPlayerPed::ReactivatePlayerPed(0);
+            ped->m_pIntelligence->m_TaskMgr.SetTask(new CTaskSimplePlayerOnFoot(), 4, false);  // TASK_PRIMARY_DEFAULT
+            CClothes::RebuildPlayer(ped, false);
+            return ped;
+        }
+
+        // The mission script never runs. CGame::Initialise runs it once to create the player (and
+        // then processes the camera, which needs him), so CJ is created here instead.
+        void __cdecl ScriptsProcessHook()
+        {
+            if (!FindPlayerPed(0)) {
+                Log(CreateCj() ? "runner: CJ created in place of the mission script" : "runner: could not create CJ");
+            }
+        }
+
+        void OnGameStarted()
+        {
+            EmptyWorld();
+            BuildPlane();
+            auto* ped = FindPlayerPed(0);
+            if (ped) {
+                PlaceCj(ped, 0.0f);
+            }
+            TheCamera.Restore();
+            TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
+            TheCamera.SetFadeColour(0, 0, 0);
+            TheCamera.Fade(0.0f, 1);  // fade in
+            FrontEndMenuManager.m_bStartUpFrontEndRequested = false;
+            FrontEndMenuManager.m_bMenuActive = false;
+            FrontEndMenuManager.m_bPrefsVsync = false;  // gta-reversed: m_bPrefsFrameLimiter; the Idle hook caps the rate
+            Mute();
+            state.inGame = true;
+            Log(ped ? "runner: CJ is on the test plane" : "runner: could not create CJ");
+        }
+
+        // ---- Frame rate ----
+
+        void WaitForFrame()
+        {
+            if (!state.frequency.QuadPart) {
+                ::QueryPerformanceFrequency(&state.frequency);
+                ::QueryPerformanceCounter(&state.lastFrame);
+                return;
+            }
+            const LONGLONG frame = static_cast<LONGLONG>(kFrameSeconds * state.frequency.QuadPart);
+            LARGE_INTEGER  now;
+            ::QueryPerformanceCounter(&now);
+            const LONGLONG due = state.lastFrame.QuadPart + frame;
+            if (now.QuadPart < due) {
+                const DWORD ms = static_cast<DWORD>((due - now.QuadPart) * 1000 / state.frequency.QuadPart);
+                if (ms > 1) {
+                    ::Sleep(ms - 1);
+                }
+                do {
+                    ::QueryPerformanceCounter(&now);
+                } while (now.QuadPart < due);
+            }
+            // Fell behind by more than a frame (a load, a hitch): start counting again from now.
+            state.lastFrame.QuadPart = now.QuadPart - due > frame ? now.QuadPart : due;
+        }
+
+        // ---- Input and pose ----
+
+        void PublishPose(CPlayerPed* a_ped)
+        {
+            Pose::SanAndreasPose sa;
+            const auto&          pos = a_ped->GetPosition();
+            sa.position = { pos.x, pos.y, pos.z };
+            sa.spawn = { state.spawn.x, state.spawn.y, state.spawn.z };
+            // m_vecMoveSpeed is per 1/50 s step.
+            sa.velocity = { a_ped->m_vecMoveSpeed.x * 50.0f, a_ped->m_vecMoveSpeed.y * 50.0f, a_ped->m_vecMoveSpeed.z * 50.0f };
+            const auto& forward = a_ped->GetForward();
+            sa.forward = { forward.x, forward.y, forward.z };
+            const auto& front = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecFront;
+            sa.view = { front.x, front.y, front.z };
+            sa.grounded = a_ped->bIsStanding;
+            sa.crouching = a_ped->bIsDucking;
+            GetLink().WritePlayer(Pose::ToPlayerState(sa, ++state.frame, state.handover));
+        }
+
+        void ApplyInput(const Protocol::InputState& a_input, CPlayerPed* a_ped)
+        {
+            const bool owned = (a_input.flags & Protocol::kInputOwnsPlayer) != 0;
+            const bool paused = (a_input.flags & Protocol::kInputPaused) != 0;
+            if (owned != state.owned) {
+                state.owned = owned;
+                state.haveMouse = false;
+                state.statStartMs = 0;
+                state.frames = state.inputs = 0;
+                Log(owned ? "runner: Skyrim hands the player to CJ" : "runner: Skyrim has the player back");
+            }
+            if (paused != state.paused) {
+                state.paused = paused;
+                CTimer::m_UserPause = paused;
+                Log(paused ? "runner: a Skyrim menu pauses the game" : "runner: unpaused");
+            }
+            if (a_input.handover != state.handover) {
+                state.handover = a_input.handover;
+                PlaceCj(a_ped, a_input.heading);
+                Log(std::format("runner: handover {}, CJ back at the spawn facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
+            }
+            if (!owned) {
+                return;
+            }
+
+            const auto pad = Input::ToPad(a_input);
+            auto&      s = CPad::GetPad(0)->NewState;
+            s = {};
+            s.LeftStickX = pad.leftStickX;
+            s.LeftStickY = pad.leftStickY;
+            s.ButtonCross = pad.buttonCross;
+            s.ButtonSquare = pad.buttonSquare;
+            s.ShockButtonL = pad.shockButtonL;
+            s.m_bPedWalk = pad.pedWalk;
+
+            // Skyrim sends totals; San Andreas wants this frame's movement.
+            double dx = 0.0, dy = 0.0;
+            if (state.haveMouse) {
+                dx = std::clamp(a_input.mouseX - state.mouseX, -1000.0, 1000.0);
+                dy = std::clamp(a_input.mouseY - state.mouseY, -1000.0, 1000.0);
+            }
+            state.mouseX = a_input.mouseX;
+            state.mouseY = a_input.mouseY;
+            state.haveMouse = true;
+            auto& mouse = CPad::NewMouseControllerState;
+            mouse = {};
+            // Vertical movement is flipped: passed through as is, CJ's camera looked down when the
+            // mouse moved up (tested in game). San Andreas's own invert settings don't apply here.
+            mouse.x = static_cast<float>(dx);
+            mouse.y = static_cast<float>(-dy);
+            state.inputs++;
+        }
+
+        void __cdecl UpdatePadsHook()
+        {
+            g_updatePads();
+            auto* ped = state.inGame ? FindPlayerPed(0) : nullptr;
+            Protocol::InputState input{};
+            if (!ped || !GetLink().ReadInput(input)) {
+                if (state.owned || state.paused) {
+                    input = {};  // link down: Skyrim has the player back, nothing is paused
+                    input.handover = state.handover;
+                    if (ped) {
+                        ApplyInput(input, ped);
+                    }
+                }
+                return;
+            }
+            ApplyInput(input, ped);
+        }
+
+        void __cdecl IdleHook(void* a_render)
+        {
+            WaitForFrame();
+            // Hidden, nothing is drawn: Idle simulates and returns before rendering.
+            g_idle(Window::Visible() ? a_render : nullptr);
+            if (!state.inGame) {
+                return;
+            }
+
+            auto* ped = FindPlayerPed(0);
+            if (!ped) {
+                return;
+            }
+            CPopulation::PedDensityMultiplier = 0.0f;
+            CCarCtrl::CarDensityMultiplier = 0.0f;
+            if (auto* wanted = ped->GetWanted()) {
+                wanted->m_nWantedLevel = 0;
+            }
+            if (ped->GetPosition().z < kPlaneTop - kFellOffBelow) {
+                PlaceCj(ped, Pose::HeadingOf(ped->GetForward().x, ped->GetForward().y));
+                Log("runner: CJ fell off the test plane, put back on it");
+            }
+            PublishPose(ped);
+
+            // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.
+            const std::uint64_t now = ::GetTickCount64();
+            if (!state.statStartMs) {
+                state.statStartMs = now;
+            }
+            state.frames++;
+            if ((state.owned || !state.settledLogged) && now - state.statStartMs >= 5000) {
+                state.settledLogged = true;
+                const auto& p = ped->GetPosition();
+                Log(std::format("runner: {} frames, {} inputs in {:.1f} s; CJ at ({:.1f},{:.1f},{:.1f}) speed {:.1f} m/s{}",
+                    state.frames, state.inputs, (now - state.statStartMs) / 1000.0,
+                    p.x, p.y, p.z, std::hypot(ped->m_vecMoveSpeed.x, ped->m_vecMoveSpeed.y) * 50.0f, ped->bIsStanding ? ", standing" : ", in the air"));
+            }
+            if (now - state.statStartMs >= 5000) {
+                state.statStartMs = now;
+                state.frames = state.inputs = 0;
+            }
+        }
+
+        // Points the call at a_site to a_detour; returns what it called before, or nullptr when the
+        // site is not a call (then it is left alone).
+        template <class T>
+        T RedirectCall(std::uintptr_t a_site, T a_detour)
+        {
+            auto* code = reinterpret_cast<std::uint8_t*>(a_site);
+            if (code[0] != 0xE8) {
+                Log(std::format("runner: 0x{:X} is not a call, not redirected", a_site));
+                return nullptr;
+            }
+            auto*       rel = reinterpret_cast<std::int32_t*>(code + 1);
+            const auto  before = static_cast<std::uintptr_t>(a_site + 5 + *rel);
+            DWORD       old = 0;
+            ::VirtualProtect(rel, 4, PAGE_EXECUTE_READWRITE, &old);
+            *rel = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(a_detour) - (a_site + 5));
+            ::VirtualProtect(rel, 4, old, &old);
+            return reinterpret_cast<T>(before);
+        }
+
+        template <class T>
+        SafetyHookInline Hook(std::uintptr_t a_address, T a_detour)
+        {
+            auto hook = safetyhook::create_inline(reinterpret_cast<void*>(a_address), reinterpret_cast<void*>(a_detour));
+            if (!hook) {
+                Log(std::format("runner: could not hook 0x{:X}", a_address));
+            }
+            return hook;
+        }
+    }
+
+    void Install()
+    {
+        ::timeBeginPeriod(1);
+        g_scriptsProcess = Hook(kScriptsProcess, &ScriptsProcessHook);
+        g_startLoadingTune = Hook(kStartLoadingTune, &StartLoadingTuneHook);
+        for (std::size_t i = 0; i < std::size(kNoOps); ++i) {
+            g_noOps[i] = Hook(kNoOps[i], &NoOp);
+        }
+        g_hasCollisionLoaded = Hook(kHasCollisionLoaded, &Yes);
+
+        // WinMain shows the window once RenderWare is up, right before its game loop starts: skip the
+        // splashes and movies there. (plugin-sdk's initRwEvent is a void() event on a bool function
+        // and lost its result, so San Andreas quit.)
+        // The frame hooks go in there too, after every other plugin (SilentPatch) has patched the game.
+        Window::OnShown([] {
+            gGameState = kGameStateFrontendLoading;
+            Log("runner: splashes and movies skipped");
+            g_idle = RedirectCall(kCallIdle, &IdleHook);
+            g_frontendIdle = RedirectCall(kCallFrontendIdle, &FrontendIdleHook);
+            g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
+            if (!g_idle || !g_frontendIdle || !g_updatePads) {
+                Log("runner: a frame hook is missing; San Andreas will not run as intended");
+            }
+        });
+        plugin::Events::initGameEvent += [] { OnGameStarted(); };
+        Log("runner: hooks installed (no scripts, no map streaming, no population, 30 fps)");
+    }
+}
