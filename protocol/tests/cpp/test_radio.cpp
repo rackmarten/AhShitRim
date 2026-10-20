@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <map>
 #include <ostream>
 #include <string>
 
@@ -80,28 +81,119 @@ TEST_CASE("nothing plays before tuning in")
     CHECK_FALSE(s.MoodChanged(true));
 }
 
-TEST_CASE("the wheel dials through San Andreas's stations, Radio Sovngarde and off, round and round")
+TEST_CASE("the wheel dials through San Andreas's stations, Radio Sovngarde, Sweetroll FM and off, round and round")
 {
     CHECK(Dial(1, 1) == 2);
     CHECK(Dial(11, 1) == kSovngarde);
-    CHECK(Dial(kSovngarde, 1) == kRadioOff);
+    CHECK(Dial(kSovngarde, 1) == kSweetroll);
+    CHECK(Dial(kSweetroll, 1) == kRadioOff);
     CHECK(Dial(kRadioOff, 1) == 1);
     CHECK(Dial(1, -1) == kRadioOff);
+    CHECK(Dial(kRadioOff, -1) == kSweetroll);
     CHECK(Dial(3, -2) == 1);
     CHECK(Dial(kEmergency, 1) == 1);
     CHECK(Dial(-1, -1) == kRadioOff);
-    CHECK(Dial(5, 26) == 5);
+    CHECK(Dial(5, 28) == 5);
+    std::int8_t at = 1;
+    for (int i = 0; i < 14; ++i) {
+        at = Dial(at, 1);
+    }
+    CHECK(at == 1);  // 14 stops round
+}
+
+TEST_CASE("San Andreas's radio is off on the stations Skyrim plays and on off")
+{
+    CHECK(SaStation(1) == 1);
+    CHECK(SaStation(11) == 11);
+    CHECK(SaStation(kSovngarde) == kSaRadioOff);
+    CHECK(SaStation(kSweetroll) == kSaRadioOff);
+    CHECK(SaStation(kRadioOff) == kSaRadioOff);
+    CHECK(SkyrimPlays(kSovngarde));
+    CHECK(SkyrimPlays(kSweetroll));
+    CHECK_FALSE(SkyrimPlays(11));
+    CHECK_FALSE(SkyrimPlays(kRadioOff));
 }
 
 TEST_CASE("station names and which ones silence Skyrim's music")
 {
     CHECK(StationName(6) == "Radio Los Santos");
     CHECK(StationName(kSovngarde) == "Radio Sovngarde");
+    CHECK(StationName(kSweetroll) == "Sweetroll FM");
     CHECK(StationName(kRadioOff) == "Radio Off");
+    CHECK(StationName(13) == "Sweetroll FM");
+    CHECK(StationName(14) == "Radio Off");
     CHECK(StationName(-1).empty());
-    CHECK(StationName(14).empty());
+    CHECK(StationName(15).empty());
     CHECK(Plays(1));
     CHECK(Plays(kSovngarde));
+    CHECK(Plays(13));
+    CHECK_FALSE(Plays(14));
     CHECK_FALSE(Plays(kRadioOff));
     CHECK_FALSE(Plays(-1));
+}
+
+TEST_CASE("Sweetroll FM plays every track once before any repeats, never one twice in a row")
+{
+    Shuffle s(kSweetrollTracks, 5);
+    s.Tune();
+    std::string_view last;
+    for (int round = 0; round < 50; ++round) {
+        std::map<std::string_view, int> played;
+        for (std::size_t i = 0; i < kSweetrollTracks.size(); ++i) {
+            const auto track = s.Next();
+            CHECK(track != last);
+            CHECK(std::find(kSweetrollTracks.begin(), kSweetrollTracks.end(), track) != kSweetrollTracks.end());
+            played[track]++;
+            last = track;
+        }
+        CHECK(played.size() == kSweetrollTracks.size());
+    }
+}
+
+TEST_CASE("Sweetroll FM starts on a random track when tuned in")
+{
+    std::map<std::string_view, int> firsts;
+    for (std::uint32_t seed = 1; seed <= 40; ++seed) {
+        Shuffle s(kSweetrollTracks, seed * 7919u);
+        s.Tune();
+        firsts[s.Next()]++;
+    }
+    CHECK(firsts.size() > 3);
+}
+
+TEST_CASE("Sweetroll FM with two tracks alternates, with one repeats it")
+{
+    constexpr std::string_view two[] = { "a.xwm", "b.xwm" };
+    Shuffle s(two, 9);
+    auto last = s.Next();
+    for (int i = 0; i < 20; ++i) {
+        const auto track = s.Next();
+        CHECK(track != last);
+        last = track;
+    }
+    constexpr std::string_view one[] = { "a.xwm" };
+    s.SetTracks(one);
+    CHECK(s.Next() == "a.xwm");
+    CHECK(s.Next() == "a.xwm");
+}
+
+TEST_CASE("Sweetroll FM with no tracks installed plays nothing")
+{
+    Shuffle s;
+    CHECK(s.Size() == 0);
+    s.Tune();
+    CHECK(s.Next().empty());
+    CHECK(s.Current().empty());
+    s.SetTracks(kSweetrollTracks);
+    CHECK_FALSE(s.Next().empty());
+    s.SetTracks({});
+    CHECK(s.Next().empty());
+}
+
+TEST_CASE("Sweetroll FM's tracks are under Music\\AhShitRim\\SweetrollFM as .xwm")
+{
+    for (const auto track : kSweetrollTracks) {
+        CHECK(track.starts_with("music\\ahshitrim\\sweetrollfm\\"));
+        CHECK(track.ends_with(".xwm"));
+    }
 }

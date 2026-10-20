@@ -4,6 +4,8 @@
 #include "link/LinkService.h"
 #include "radio.h"
 
+#include <filesystem>
+
 #undef GetObject  // windows.h
 
 namespace AhShitRim::Audio
@@ -14,7 +16,7 @@ namespace AhShitRim::Audio
         // audio menu. Master and music come from the default objects.
         constexpr RE::FormID kEffectsCategory = 0x000172A1;
 
-        constexpr float kEndedSeconds = 2.0f;  // a Sovngarde track counts as over once it stopped playing this long
+        constexpr float kEndedSeconds = 2.0f;  // a station's track counts as over once it stopped playing this long
 
         constexpr std::uint16_t kFadeMs = 500;
 
@@ -33,6 +35,9 @@ namespace AhShitRim::Audio
             RE::Setting*      masterVolume = nullptr;  // fAudioMasterVolume: the master slider has no category
 
             Radio::Sovngarde  sovngarde{ static_cast<std::uint32_t>(::GetTickCount64()) };
+            Radio::Shuffle    sweetroll{ {}, static_cast<std::uint32_t>(::GetTickCount64() >> 3) };  // its installed tracks
+            bool              sweetrollWarned = false;  // tuned in with none installed, logged
+            bool              tunedIn = false;          // a station Skyrim plays was just tuned in: its first track next
             RE::BSSoundHandle track;
             bool              trackPaused = false;
             bool              trackStarted = false;  // seen playing once: only then can it have ended
@@ -92,12 +97,19 @@ namespace AhShitRim::Audio
             state.trackPaused = false;
         }
 
+        // The next track of the station tuned in (Radio Sovngarde or Sweetroll FM).
         void PlayNext(float a_volume)
         {
             StopTrack();
-            auto* calendar = RE::Calendar::GetSingleton();
-            const auto next = state.sovngarde.Next(state.combat, calendar ? calendar->GetHour() : 12.0f);
-            const std::string path(next.path);
+            state.tunedIn = false;
+            const auto name = Radio::StationName(state.station);
+            std::string path;
+            if (state.station == Radio::kSweetroll) {
+                path = state.sweetroll.Next();
+            } else {
+                auto* calendar = RE::Calendar::GetSingleton();
+                path = state.sovngarde.Next(state.combat, calendar ? calendar->GetHour() : 12.0f).path;
+            }
             RE::BSResource::ID id;
             id.GenerateFromPath(path.c_str());
             RE::BSAudioManager::GetSingleton()->GetSoundHandleByFile(state.track, id, 0x1A, 128);
@@ -105,18 +117,19 @@ namespace AhShitRim::Audio
             state.trackStarted = false;
             state.trackSilent = 0.0f;
             if (!state.track.IsValid()) {
-                SKSE::log::warn("audio: Radio Sovngarde could not open {}, trying another in {:.0f} s", path, kRetrySeconds);
+                SKSE::log::warn("audio: {} could not open {}, trying another in {:.0f} s", name, path, kRetrySeconds);
                 state.trackLength = kRetrySeconds;
                 return;
             }
             state.track.SetVolume(a_volume);
             state.track.Play();
             state.trackLength = static_cast<float>(state.track.GetDuration()) / 1000.0f;
-            SKSE::log::info("audio: Radio Sovngarde plays {} ({:.0f} s)", path, state.trackLength);
+            SKSE::log::info("audio: {} plays {} ({:.0f} s)", name, path, state.trackLength);
         }
 
-        // Radio Sovngarde while it is tuned in: the next track when one ends or the mood changes.
-        void Sovngarde(float a_delta, float a_volume)
+        // A station Skyrim plays while it is tuned in: the next track when one ends, or on Radio
+        // Sovngarde when the mood changes.
+        void PlayStation(float a_delta, float a_volume)
         {
             if (state.trackPaused) {
                 state.track.Play();
@@ -138,7 +151,8 @@ namespace AhShitRim::Audio
                 state.trackSilent = state.trackStarted && !playing ? state.trackSilent + a_delta : 0.0f;
                 ended = state.trackSilent >= kEndedSeconds || (state.trackLength > 0.0f && state.trackSeconds > state.trackLength + 1.0f);
             }
-            if (state.sovngarde.Current().kind == Radio::Kind::None || ended || state.sovngarde.MoodChanged(state.combat)) {
+            const bool moodChanged = state.station == Radio::kSovngarde && state.sovngarde.MoodChanged(state.combat);
+            if (state.tunedIn || ended || moodChanged) {
                 PlayNext(a_volume);
             } else if (state.track.IsValid()) {
                 state.track.SetVolume(a_volume);
@@ -175,6 +189,17 @@ namespace AhShitRim::Audio
         if (!state.music || !state.effects) {
             SKSE::log::warn("audio: sound categories missing (effects {}, music {}): those follow full volume", state.effects != nullptr, state.music != nullptr);
         }
+
+        // Sweetroll FM plays the tracks installed as loose files (the working directory is Skyrim's).
+        std::vector<std::string_view> installed;
+        for (const auto track : Radio::kSweetrollTracks) {
+            std::error_code error;
+            if (std::filesystem::exists(std::filesystem::path("Data") / std::string(track), error)) {
+                installed.push_back(track);
+            }
+        }
+        state.sweetroll.SetTracks(installed);
+        SKSE::log::info("audio: Sweetroll FM has {} of {} tracks installed in Data\\Music\\AhShitRim\\SweetrollFM", installed.size(), Radio::kSweetrollTracks.size());
     }
 
     void Update(float a_delta, bool a_owned, bool a_paused, const Protocol::PlayerState* a_pose)
@@ -193,14 +218,21 @@ namespace AhShitRim::Audio
             if (const auto name = Radio::StationName(station); !name.empty() && inVehicle) {
                 SaHud::ShowRadioStation(std::string(name), retuning);
             }
-            if (station == Radio::kSovngarde && state.station != Radio::kSovngarde) {
-                state.sovngarde.Tune();
-                auto* player = RE::PlayerCharacter::GetSingleton();
-                state.combat = player && player->IsInCombat();
-                state.combatFlip = 0.0f;
-            }
-            if (station != Radio::kSovngarde) {
+            if (station != state.station) {
                 StopTrack();
+                state.tunedIn = Radio::SkyrimPlays(station);
+                if (station == Radio::kSovngarde) {
+                    state.sovngarde.Tune();
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    state.combat = player && player->IsInCombat();
+                    state.combatFlip = 0.0f;
+                } else if (station == Radio::kSweetroll) {
+                    state.sweetroll.Tune();
+                    if (state.sweetroll.Size() == 0 && !state.sweetrollWarned) {
+                        SKSE::log::warn("audio: Sweetroll FM has no tracks installed (Data\\Music\\AhShitRim\\SweetrollFM), so it stays silent");
+                        state.sweetrollWarned = true;
+                    }
+                }
             }
             SKSE::log::info("audio: radio {}{}", station == Protocol::kRadioNone ? "none"sv : Radio::StationName(station), retuning ? " (retuning)" : "");
             state.station = station;
@@ -210,8 +242,8 @@ namespace AhShitRim::Audio
         SilenceSkyrimMusic(Radio::Plays(station));
         if (a_paused) {
             SetPaused(true);
-        } else if (station == Radio::kSovngarde && !retuning) {
-            Sovngarde(a_delta, volumes.music);
+        } else if (Radio::SkyrimPlays(station) && !retuning && (station != Radio::kSweetroll || state.sweetroll.Size() > 0)) {
+            PlayStation(a_delta, volumes.music);
         }
     }
 }

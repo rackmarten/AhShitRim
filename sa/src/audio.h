@@ -4,7 +4,7 @@
 
 class CPlayerPed;
 
-// San Andreas's own sound while Skyrim has handed the player over (protocol v7): CJ, his vehicles,
+// San Andreas's own sound while Skyrim has handed the player over (protocol v8): CJ, his vehicles,
 // his weapons and his speech, played by San Andreas's audio engine where its camera is (which
 // Skyrim's follows), and its radio in vehicles.
 // - San Andreas makes every sound buffer with DirectSound's global focus, so it plays while its
@@ -13,8 +13,8 @@ class CPlayerPed;
 //   for the radio; 0 while Skyrim has the player. A pausing Skyrim menu pauses every sound.
 // - The world's own ambience stays off: city noise and weather, area ambience tracks, the police
 //   scanner, distant gunfire.
-// - The mouse wheel in Skyrim dials the radio (Radio::Dial). The User Track Player slot is Radio
-//   Sovngarde: San Andreas's radio is off there, and Skyrim plays its own music.
+// - The mouse wheel in Skyrim dials the radio (Radio::Dial). After San Andreas's stations come Radio
+//   Sovngarde and Sweetroll FM: San Andreas's radio is off there, and Skyrim plays them.
 // Game thread only.
 namespace AhShitRim::Audio
 {

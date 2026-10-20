@@ -285,8 +285,8 @@ int main(int argc, char** argv)
     failed += !gotIn;
     run(2.0, [] { return false; });  // CJ shuts the door before he can drive
 
-    // The radio (v7): the Sandking's own station, then the wheel dials through every station,
-    // Radio Sovngarde and off, round to where it started.
+    // The radio (v8): the Sandking's own station, then the wheel dials through every station,
+    // Radio Sovngarde, Sweetroll FM and off (14 stops), round to where it started.
     {
         Protocol::PlayerState p{};
         link.ReadPlayer(p);

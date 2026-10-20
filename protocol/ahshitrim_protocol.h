@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 7;
+    inline constexpr std::uint32_t kProtocolVersion = 8;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -152,7 +152,7 @@ namespace AhShitRim::Protocol
         float         viewHeading;  // San Andreas's camera, radians; Skyrim's first-person camera follows it
         float         viewPitch;    // radians
         std::uint32_t handover;     // InputState.handover this pose belongs to
-        std::int8_t   radioStation;  // v7: San Andreas's radio station playing in CJ's vehicle (eRadioID), kRadioNone if none
+        std::int8_t   radioStation;  // v8: the radio dial's station in CJ's vehicle (Radio::StationName: 1..11 San Andreas's, 12 Radio Sovngarde, 13 Sweetroll FM, 14 off), kRadioNone if none
         std::uint8_t  reserved0;
         std::uint16_t reserved1;
         std::uint32_t reserved2;

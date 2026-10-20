@@ -2,7 +2,9 @@
 .SYNOPSIS
     Copies the built plugins into the local game installs (paths from local.props): the SKSE
     plugin into Skyrim's Data/SKSE/Plugins (with AhShitRim.ini pointing it at SaPath, where it reads
-    San Andreas's fonts and HUD sprites), the ASI into San Andreas's scripts folder.
+    San Andreas's fonts and HUD sprites) and Sweetroll FM's tracks (music/sweetrollfm/*.xwm and
+    music/CREDITS.md, once scripts/encode-music.ps1 made them) into Data/Music/AhShitRim/SweetrollFM,
+    the ASI into San Andreas's scripts folder.
     Run scripts/build.ps1 first. Close both games before deploying.
 #>
 param(
@@ -34,6 +36,17 @@ if ($Target -in 'all', 'skse') {
     $ini = Join-Path $plugins 'AhShitRim.ini'
     Set-Content -Path $ini -Encoding ascii -Value @('[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')")
     Write-Host "Wrote $ini"
+
+    # Sweetroll FM's tracks, the same layout as the release.
+    $tracks = @(Get-ChildItem -ErrorAction SilentlyContinue (Join-Path $RepoRoot 'music/sweetrollfm/*.xwm'))
+    if ($tracks.Count -gt 0) {
+        $station = Join-Path $skyrim 'Data/Music/AhShitRim/SweetrollFM'
+        New-Item -ItemType Directory -Force $station | Out-Null
+        Copy-Item -Force (@($tracks.FullName) + (Join-Path $RepoRoot 'music/CREDITS.md')) $station
+        Write-Host "Copied $($tracks.Count) Sweetroll FM tracks -> $station"
+    } else {
+        Write-Host 'No Sweetroll FM tracks in music/sweetrollfm (scripts/encode-music.ps1 makes them): it stays silent.'
+    }
 }
 
 if ($Target -in 'all', 'sa') {

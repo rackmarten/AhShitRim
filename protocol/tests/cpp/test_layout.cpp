@@ -30,7 +30,7 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v7 constants")
 {
-    CHECK(kProtocolVersion == 7);
+    CHECK(kProtocolVersion == 8);
     CHECK(kPlayerRadioRetuning == 0x10);
     CHECK(kRadioNone == -1);
     CHECK(kPlayerCrouching == 0x4);
