@@ -318,7 +318,7 @@ namespace AhShitRim::ChunkWorld
         });
     }
 
-    void Update(CPlayerPed* a_ped, CVector& a_spawn)
+    void Update(CPlayerPed* a_ped, CVector& a_spawn, bool a_following)
     {
         Ground::Vec3 shift;
         if (state.ready && state.origin.Recenter(ToVec(a_ped->GetPosition()), shift)) {
@@ -344,7 +344,7 @@ namespace AhShitRim::ChunkWorld
                 return;
             }
         }
-        if (!CTimer::m_UserPause) {
+        if (!CTimer::m_UserPause && !a_following) {
             Catch(a_ped);
         }
 

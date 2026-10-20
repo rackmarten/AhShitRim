@@ -7,7 +7,8 @@
 // and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
 // CJ in it and turned its wheels. A re-anchor in the ZR-350 (fast travel, far off and far below)
 // takes CJ out and removes the vehicles, holds him until ground comes there, and he walks on it.
-// Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
+// Scenes (v9) there: CJ turns to a speaker, gestures at a shout, follows a walking Skyrim player,
+// sits where it sits and walks on when it lets go. Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
 // (launch-sa.ps1).
 //
 // Usage: fake_skyrim [seconds of W, default 3]
@@ -121,8 +122,15 @@ int main(int argc, char** argv)
     std::uint32_t  frame = 0;
     std::uint32_t  handoverId = 0;
     float          anchor[3] = { kAnchor[0], kAnchor[1], kAnchor[2] };
+    Protocol::InputState scene{};  // v9: the scene flags, offset, heading and shout count to send
     const auto     publish = [&](bool a_owned) {
         auto s = input.Build(++frame, a_owned, true);
+        s.flags |= scene.flags;
+        for (int i = 0; i < 3; ++i) {
+            s.sceneOffset[i] = scene.sceneOffset[i];
+        }
+        s.sceneHeading = scene.sceneHeading;
+        s.shoutCount = scene.shoutCount;
         s.handover = handoverId;
         s.heading = 0.0f;
         s.anchor[0] = anchor[0];
@@ -286,7 +294,7 @@ int main(int argc, char** argv)
     failed += !gotIn;
     run(2.0, [] { return false; });  // CJ shuts the door before he can drive
 
-    // The radio (v9): the Sandking's own station, then the wheel dials through every station,
+    // The radio (v10): the Sandking's own station, then the wheel dials through every station,
     // Radio Sovngarde, Sweetroll FM and off (14 stops), round to where it started.
     {
         Protocol::PlayerState p{};
@@ -436,6 +444,102 @@ int main(int argc, char** argv)
     const float walked = std::hypot(after.offset[0], after.offset[1]) * Pose::kMetersPerUnit;
     std::printf("vehicles: after the re-anchor CJ walked %.1f m on foot\n", walked);
     failed += !(after.handover == handoverId && walked > 3.0f);
+
+    // Scenes (v9). Talking: CJ turns to the speaker due east.
+    run(1.0, [] { return false; });
+    scene.flags = Protocol::kInputFace;
+    scene.sceneHeading = Pose::kPi / 2.0f;
+    run(1.5, [] { return false; });
+    Protocol::PlayerState facing{};
+    link.ReadPlayer(facing);
+    std::printf("scenes: talking, CJ turned to heading %.2f (the speaker at %.2f)\n", facing.heading, scene.sceneHeading);
+    failed += !(std::abs(facing.heading - scene.sceneHeading) < 0.1f);
+    scene.flags = 0;
+
+    // Shouting: CJ's gesture moves his arms while he stands.
+    Protocol::BodyState still{}, gesture{};
+    run(1.0, [&] { return false; });
+    link.ReadBody(still);
+    scene.shoutCount++;
+    float gestured = 0.0f;
+    run(1.5, [&] {
+        if (link.ReadBody(gesture) && gesture.boneCount == still.boneCount) {
+            for (std::uint32_t i = 0; i < gesture.boneCount; i++) {
+                for (int k = 0; k < 3; k++) {
+                    gestured = (std::max)(gestured, std::abs(gesture.bones[i].translation[k] - still.bones[i].translation[k]));
+                }
+            }
+        }
+        return false;
+    });
+    std::printf("scenes: shouting, a bone moved up to %.2f m from standing\n", gestured * Pose::kMetersPerUnit);
+    failed += !(gestured * Pose::kMetersPerUnit > 0.05f);
+
+    // Following Skyrim's player in a scene: it walks east at 1.5 m/s, then sits, then CJ has it back.
+    Protocol::PlayerState from{};
+    link.ReadPlayer(from);
+    scene.flags = Protocol::kInputScripted;
+    scene.sceneHeading = Pose::kPi / 2.0f;
+    for (int i = 0; i < 3; ++i) {
+        scene.sceneOffset[i] = from.offset[i];
+    }
+    const std::uint64_t walkFrom = ms();
+    run(3.0, [&] {
+        scene.sceneOffset[0] = from.offset[0] + 1.5f * Pose::kUnitsPerMeter * static_cast<float>(ms() - walkFrom) / 1000.0f;
+        return false;
+    });
+    Protocol::PlayerState led{};
+    link.ReadPlayer(led);
+    const float behind = std::hypot(led.offset[0] - scene.sceneOffset[0], led.offset[1] - scene.sceneOffset[1]) * Pose::kMetersPerUnit;
+    std::printf("scenes: following, CJ %.2f m from Skyrim's player after %.1f m, heading %.2f\n", behind,
+        (scene.sceneOffset[0] - from.offset[0]) * Pose::kMetersPerUnit, led.heading);
+    failed += !(behind < 0.3f && std::abs(led.heading - scene.sceneHeading) < 0.1f);
+
+    scene.flags = Protocol::kInputScripted | Protocol::kInputSeated;
+    const float floorZ = scene.sceneOffset[2];
+    scene.sceneOffset[2] = floorZ + 0.45f * Pose::kUnitsPerMeter;  // a chair's seat
+    run(2.0, [] { return false; });
+    Protocol::BodyState seated{};
+    float seatLow = 0.0f, seatHigh = 0.0f;
+    const bool seatSkinned = link.ReadBody(seated) && Extent(received, seated, seatLow, seatHigh);
+    // And over the seat: his body's middle (where his hips are), not half a metre behind it.
+    float seatOff = 1e9f;
+    if (const auto model = seatSkinned ? received.Model(seated.model) : std::nullopt) {
+        std::vector<Body::Matrix34> bones;
+        for (std::uint32_t i = 0; i < seated.boneCount; i++) {
+            bones.push_back(Body::ToMatrix(seated.bones[i]));
+        }
+        double sx = 0.0, sy = 0.0;
+        std::size_t n = 0;
+        for (const auto& mesh : model->meshes) {
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++, n++) {
+                Body::Vec3 p, nrm;
+                Body::Skin(bones.data(), seated.boneCount, mesh.Vertex(i), p, nrm);
+                sx += p.x;
+                sy += p.y;
+            }
+        }
+        if (n) {
+            seatOff = std::hypot(seated.feet[0] + static_cast<float>(sx / n) - scene.sceneOffset[0], seated.feet[1] + static_cast<float>(sy / n) - scene.sceneOffset[1]) *
+                      Pose::kMetersPerUnit;
+        }
+    }
+    const float soles = (seated.feet[2] + seatLow - floorZ) * Pose::kMetersPerUnit;
+    std::printf("scenes: seated, CJ %.2f m tall, his middle %.2f m from the seat, his soles %.2f m over the floor\n", (seatHigh - seatLow) * Pose::kMetersPerUnit,
+        seatOff, soles);
+    failed += !(seatSkinned && (seatHigh - seatLow) * Pose::kMetersPerUnit < 1.5f && seatOff < 0.25f && std::abs(soles) < 0.25f);
+
+    scene.flags = 0;
+    Protocol::PlayerState freed{}, walkedOn{};
+    run(1.0, [] { return false; });
+    link.ReadPlayer(freed);
+    input.SetKey(Input::kDikW, true);
+    run(1.5, [] { return false; });
+    input.SetKey(Input::kDikW, false);
+    link.ReadPlayer(walkedOn);
+    const float onFoot = std::hypot(walkedOn.offset[0] - freed.offset[0], walkedOn.offset[1] - freed.offset[1]) * Pose::kMetersPerUnit;
+    std::printf("scenes: CJ has the player back and walked %.1f m%s\n", onFoot, (walkedOn.flags & Protocol::kPlayerGrounded) ? ", standing" : ", in the air");
+    failed += !(onFoot > 1.0f && (walkedOn.flags & Protocol::kPlayerGrounded));
 
     // Past 1 km in the Sandking: San Andreas moves its floating origin under CJ, and he must stay
     // in the car, on the ground, without a jump in where Skyrim puts him. Flat ground is streamed

@@ -46,7 +46,11 @@ namespace AhShitRim::CjBody
             std::uint32_t model = 0;
             std::uint32_t boneCount = 0;
             bool          poseLogged = false;
+            bool          havePelvis = false;
+            CVector       pelvis;  // his pelvis joint from his position, last posed frame (metres)
         } state;
+
+        constexpr int kBonePelvis = 2;  // BONE_PELVIS
 
         // Full animation updates for CJ, as if he were on screen: hidden, San Andreas draws nothing,
         // never sees him on screen and only moves his root (RpAnimBlendClumpUpdateAnimations with
@@ -232,6 +236,12 @@ namespace AhShitRim::CjBody
         }
     }
 
+    bool Pelvis(CVector& a_offset)
+    {
+        a_offset = state.pelvis;
+        return state.havePelvis;
+    }
+
     void Install()
     {
         g_updateAnim = safetyhook::create_inline(reinterpret_cast<void*>(kUpdateAnim), reinterpret_cast<void*>(&UpdateAnimHook));
@@ -289,6 +299,18 @@ namespace AhShitRim::CjBody
         for (std::uint32_t i = 0; i < state.boneCount; i++) {
             const auto world = Body::SkinToWorld(ToFrame(skinToBone[i]), ToFrame(matrices[i]), atomicFrame, local);
             body.bones[i] = Body::ToBone(world, Vec(feet));
+        }
+        // His pelvis joint, for seating him where Skyrim's player sits (Scenes).
+        state.havePelvis = false;
+        for (int i = 0; i < hierarchy->numNodes; i++) {
+            if (hierarchy->pNodeInfo[i].nodeID == kBonePelvis) {
+                const Body::Vec3 at{ matrices[i].pos.x, matrices[i].pos.y, matrices[i].pos.z };
+                const auto       joint = local ? Body::Apply(atomicFrame, at) : at;
+                const auto&      position = a_ped->GetPosition();
+                state.pelvis = CVector(joint.x - position.x, joint.y - position.y, joint.z - position.z);
+                state.havePelvis = true;
+                break;
+            }
         }
         const auto toSkyrim = [&](const CVector& a_point, float (&a_out)[3]) {
             const CVector d = a_point - spawnFeet;

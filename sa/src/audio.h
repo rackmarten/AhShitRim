@@ -4,7 +4,7 @@
 
 class CPlayerPed;
 
-// San Andreas's own sound while Skyrim has handed the player over (protocol v9): CJ, his vehicles,
+// San Andreas's own sound while Skyrim has handed the player over (protocol v10): CJ, his vehicles,
 // his weapons and his speech, played by San Andreas's audio engine where its camera is (which
 // Skyrim's follows), and its radio in vehicles.
 // - San Andreas makes every sound buffer with DirectSound's global focus, so it plays while its

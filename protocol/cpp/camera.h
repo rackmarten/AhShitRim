@@ -57,17 +57,33 @@ namespace AhShitRim::Camera
         Multiply(zx, y, out);
     }
 
+    // What Skyrim's camera rotation a_skyrim, built for a view turned to (a_fromHeading, a_fromPitch),
+    // does on top of plain heading and pitch: its own local axes, and in a dialogue its turn to the
+    // speaker. Kept from before a menu, it leaves that turn out.
+    inline void OffsetOf(const Matrix& a_skyrim, float a_fromHeading, float a_fromPitch, Matrix& out)
+    {
+        Matrix from, fromT;
+        Basis(a_fromHeading, a_fromPitch, 0.0f, from);
+        Transpose(from, fromT);
+        Multiply(fromT, a_skyrim, out);
+    }
+
+    // A view turned to (a_heading, a_pitch, a_roll) with an OffsetOf on top.
+    inline void Apply(const Matrix& a_offset, float a_heading, float a_pitch, float a_roll, Matrix& out)
+    {
+        Matrix to;
+        Basis(a_heading, a_pitch, a_roll, to);
+        Multiply(to, a_offset, out);
+    }
+
     // Skyrim's camera rotation a_skyrim was built for a view turned to (a_fromHeading, a_fromPitch);
     // returns it turned to (a_heading, a_pitch, a_roll) instead. Whatever Skyrim's camera node does
     // on top of plain heading and pitch (its own local axes) carries over unchanged.
     inline void Retarget(const Matrix& a_skyrim, float a_fromHeading, float a_fromPitch, float a_heading, float a_pitch, float a_roll, Matrix& out)
     {
-        Matrix from, fromT, to, offset;
-        Basis(a_fromHeading, a_fromPitch, 0.0f, from);
-        Transpose(from, fromT);
-        Multiply(fromT, a_skyrim, offset);
-        Basis(a_heading, a_pitch, a_roll, to);
-        Multiply(to, offset, out);
+        Matrix offset;
+        OffsetOf(a_skyrim, a_fromHeading, a_fromPitch, offset);
+        Apply(offset, a_heading, a_pitch, a_roll, out);
     }
 
 }

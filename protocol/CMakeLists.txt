@@ -30,6 +30,7 @@ add_executable(protocol_tests
     tests/cpp/test_radio.cpp
     tests/cpp/test_activate.cpp
     tests/cpp/test_anchor.cpp
+    tests/cpp/test_scene.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

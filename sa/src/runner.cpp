@@ -8,6 +8,7 @@
 #include "log.h"
 #include "model_sender.h"
 #include "pose.h"
+#include "scenes.h"
 #include "vehicles.h"
 #include "window.h"
 
@@ -332,6 +333,7 @@ namespace AhShitRim::Runner
             state.spawnCount = a_input.spawnCount;
             state.haveSpawn = true;
             Audio::OnInput(a_input, Vehicles::Driven(a_ped) != nullptr);
+            const bool following = Scenes::OnInput(a_ped, a_input, owned);
             if (!owned) {
                 return;
             }
@@ -339,14 +341,18 @@ namespace AhShitRim::Runner
             const auto pad = Input::ToPad(a_input, Vehicles::Driven(a_ped) != nullptr);
             auto&      s = CPad::GetPad(0)->NewState;
             s = {};
-            s.LeftStickX = pad.leftStickX;
-            s.LeftStickY = pad.leftStickY;
-            s.ButtonCross = pad.buttonCross;
-            s.ButtonSquare = pad.buttonSquare;
-            s.ButtonTriangle = pad.buttonTriangle;
-            s.RightShoulder1 = pad.rightShoulder1;
-            s.ShockButtonL = pad.shockButtonL;
-            s.m_bPedWalk = pad.pedWalk;
+            if (following) {
+                // Skyrim moves the player: CJ follows it, the keys do nothing; the mouse still looks round.
+            } else {
+                s.LeftStickX = pad.leftStickX;
+                s.LeftStickY = pad.leftStickY;
+                s.ButtonCross = pad.buttonCross;
+                s.ButtonSquare = pad.buttonSquare;
+                s.ButtonTriangle = pad.buttonTriangle;
+                s.RightShoulder1 = pad.rightShoulder1;
+                s.ShockButtonL = pad.shockButtonL;
+                s.m_bPedWalk = pad.pedWalk;
+            }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
             double dx = 0.0, dy = 0.0;
@@ -408,7 +414,8 @@ namespace AhShitRim::Runner
                 wanted->m_nWantedLevel = 0;
             }
             ChunkWorld::Receive();
-            ChunkWorld::Update(ped, state.spawn);
+            ChunkWorld::Update(ped, state.spawn, Scenes::Following());
+            Scenes::Update(ped, state.spawn);
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
