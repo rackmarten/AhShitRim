@@ -4,6 +4,7 @@
 #include "body.h"
 #include "camera.h"
 #include "collision/CollisionSampler.h"
+#include "hud/SaHud.h"
 #include "input.h"
 #include "link/LinkService.h"
 #include "pose.h"
@@ -285,6 +286,7 @@ namespace AhShitRim::PlayerSync
             state.owned = false;
             CollisionSampler::Stop();
             DrawSkyrimPlayer();
+            SaHud::ClearText();
             state.input.ReleaseAll();
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && (state.sneak || player->IsSneaking())) {
                 player->AsActorState()->actorState1.sneaking = false;
@@ -446,6 +448,7 @@ namespace AhShitRim::PlayerSync
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 }
+                SaHud::Update(a_delta, state.owned, MenuHasInput());
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
@@ -517,6 +520,12 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikF10) {
                         if (button->IsDown()) {
                             Toggle();
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikSlash && state.owned) {
+                        if (button->IsDown() && !MenuHasInput()) {
+                            SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
                         }
                         continue;
                     }

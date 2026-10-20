@@ -21,6 +21,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikTab = 0x0F;
     inline constexpr std::uint32_t kDikGrave = 0x29;
     inline constexpr std::uint32_t kDikM = 0x32;
+    inline constexpr std::uint32_t kDikSlash = 0x35;
     inline constexpr std::uint32_t kDikF10 = 0x44;
 
     inline constexpr std::uint32_t kDikW = 0x11;

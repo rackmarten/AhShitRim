@@ -1,5 +1,5 @@
 # Unit tests for the link (header layout, version check, handshake, heartbeat, slots, rings), the input
-# mapping, the pose conversion, the ground, and CJ's model and skeleton.
+# mapping, the pose conversion, the ground, CJ's model and skeleton, and the HUD's fonts and layout.
 # Standalone (no CommonLibSSE-NG, no plugin-sdk), so it builds in seconds. Run with scripts/test.ps1.
 cmake_minimum_required(VERSION 3.21)
 
@@ -25,6 +25,8 @@ add_executable(protocol_tests
     tests/cpp/test_body.cpp
     tests/cpp/test_texture_decode.cpp
     tests/cpp/test_vehicle.cpp
+    tests/cpp/test_txd.cpp
+    tests/cpp/test_hud.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

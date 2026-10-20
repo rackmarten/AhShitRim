@@ -1,0 +1,408 @@
+#include "hud/SaHud.h"
+
+#include "hud/Overlay.h"
+#include "hud_layout.h"
+#include "txd.h"
+
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+
+namespace AhShitRim::SaHud
+{
+    namespace
+    {
+        using namespace HudLayout;
+
+        // Overlay textures, after its white one.
+        enum TextureId : std::uint32_t
+        {
+            kFont2 = 1,  // Gothic and Menu
+            kFont1,      // Subtitles and Pricedown
+            kFist,
+        };
+
+        // Skyrim's HUD clips hidden while San Andreas has the player, under
+        // _root.HUDMovieBaseInstance.
+        constexpr const char* kSkyrimHud[] = { "CompassShoutMeterHolder", "Health", "Magica", "Stamina", "Crosshair" };
+
+        struct Timed
+        {
+            std::string text;
+            float       age = 0.0f;
+            float       hold = 0.0f;  // seconds at full before fading out; 0 = not showing
+            float       fadeIn = 0.25f;
+            float       fadeOut = 0.5f;
+
+            void Show(std::string a_text, float a_hold)
+            {
+                text = std::move(a_text);
+                age = 0.0f;
+                hold = a_hold;
+            }
+
+            void Tick(float a_delta)
+            {
+                if (hold > 0.0f) {
+                    age += a_delta;
+                    if (age > fadeIn + hold + fadeOut) {
+                        hold = 0.0f;
+                    }
+                }
+            }
+
+            float Alpha() const
+            {
+                if (hold <= 0.0f) {
+                    return 0.0f;
+                }
+                if (age < fadeIn) {
+                    return age / fadeIn;
+                }
+                return std::clamp(1.0f - (age - fadeIn - hold) / fadeOut, 0.0f, 1.0f);
+            }
+        };
+
+        struct State
+        {
+            bool             loaded = false;
+            HudFont::Values  values{};
+            Timed            missionTitle{ {}, 0.0f, 0.0f, 0.25f, 1.0f };
+            Timed            big;
+            const TextStyle* bigStyle = &kBigMessage;
+            Timed            help;
+            Timed            subtitle;
+            float            fade = 0.0f, fadeFrom = 0.0f, fadeTarget = 0.0f, fadeTime = 0.0f, fadeSeconds = 0.0f;
+            float            letterbox = 0.0f;  // 0..1, how far the bars are in
+            bool             letterboxOn = false;
+            int              wanted = 0;
+            int              demo = 0;
+            std::uint32_t    frame = 0;
+            bool             skyrimHudHidden = false;
+            bool             loggedScreen = false;
+        } state;
+
+        std::vector<std::uint8_t> ReadFile(const std::filesystem::path& a_path)
+        {
+            std::ifstream file(a_path, std::ios::binary);
+            return file ? std::vector<std::uint8_t>(std::istreambuf_iterator<char>(file), {}) : std::vector<std::uint8_t>{};
+        }
+
+        constexpr const char* kIni = "Data/SKSE/Plugins/AhShitRim.ini";
+
+        // [SanAndreas] Path in AhShitRim.ini next to the plugin (Skyrim runs in its own folder).
+        std::filesystem::path SanAndreasPath()
+        {
+            auto trim = [](const std::string& a_text) {
+                const auto first = a_text.find_first_not_of(" \t\r");
+                const auto last = a_text.find_last_not_of(" \t\r");
+                return first == std::string::npos ? std::string{} : a_text.substr(first, last - first + 1);
+            };
+            std::ifstream file(kIni);
+            std::string   line, section;
+            while (std::getline(file, line)) {
+                line = trim(line);
+                const auto equals = line.find('=');
+                if (line.starts_with('[')) {
+                    section = line;
+                } else if (section == "[SanAndreas]" && equals != std::string::npos && trim(line.substr(0, equals)) == "Path") {
+                    return std::filesystem::path(trim(line.substr(equals + 1)));
+                }
+            }
+            return {};
+        }
+
+        Overlay::Image ImageOf(const Txd::Texture* a_texture)
+        {
+            return a_texture ? Overlay::Image{ a_texture->width, a_texture->height, a_texture->rgba } : Overlay::Image{};
+        }
+
+        std::uint32_t Packed(Colour a_colour) { return a_colour.r | (a_colour.g << 8) | (a_colour.b << 16) | (static_cast<std::uint32_t>(a_colour.a) << 24); }
+
+        // ---- Drawing ----
+
+        struct Frame
+        {
+            Screen                     screen;
+            std::vector<Overlay::Quad> quads;
+
+            void Box(const Rect& a_rect, Colour a_colour)
+            {
+                if (a_colour.a > 0) {
+                    quads.push_back({ Overlay::kWhite, a_rect.x0, a_rect.y0, a_rect.x1, a_rect.y1, 0.0f, 0.0f, 1.0f, 1.0f, Packed(a_colour) });
+                }
+            }
+
+            void Bar(const Rect& a_rect, float a_fraction, Colour a_colour)
+            {
+                const auto bar = BarOf(screen, a_rect, a_fraction, a_colour);
+                Box(bar.border, WithAlpha(kBlack, a_colour.a / 255.0f));
+                Box(bar.full, bar.fullColour);
+                Box(bar.empty, bar.emptyColour);
+            }
+
+            // a_text in a_style: its outline (SetEdge) in black first, as copies one edge out all
+            // round, then the letters in a_colour. a_x overrides the style's x (pixels).
+            void Text(const TextStyle& a_style, std::string_view a_text, Colour a_colour, float a_x = -1.0f)
+            {
+                if (a_colour.a == 0 || a_text.empty()) {
+                    return;
+                }
+                const auto placed = Place(state.values, screen, a_style, a_text);
+                const auto glyphs = HudFont::Layout(state.values, placed.params, a_text, a_x >= 0.0f ? a_x : placed.x, placed.y);
+                const auto texture = HudFont::FontOf(a_style.style) == 0 ? kFont2 : kFont1;
+                if (a_style.edge > 0) {
+                    const float         out = OutlinePixels(screen, a_style);
+                    const std::uint32_t drop = Packed(WithAlpha(kBlack, a_colour.a / 255.0f));
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dy = -1; dy <= 1; dy++) {
+                            if (dx == 0 && dy == 0) {
+                                continue;
+                            }
+                            for (const auto& g : glyphs) {
+                                quads.push_back({ texture, g.x0 + dx * out, g.y0 + dy * out, g.x1 + dx * out, g.y1 + dy * out, g.u0, g.v0, g.u1, g.v1, drop });
+                            }
+                        }
+                    }
+                }
+                const std::uint32_t colour = Packed(a_colour);
+                for (const auto& g : glyphs) {
+                    quads.push_back({ texture, g.x0, g.y0, g.x1, g.y1, g.u0, g.v0, g.u1, g.v1, colour });
+                }
+            }
+        };
+
+        // The top right HUD, from the Skyrim player.
+        void DrawHud(Frame& a_frame, RE::PlayerCharacter* a_player)
+        {
+            const auto icon = WeaponIcon(a_frame.screen);
+            a_frame.quads.push_back({ kFist, icon.x0, icon.y0, icon.x1, icon.y1, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF });
+
+            auto* calendar = RE::Calendar::GetSingleton();
+            a_frame.Text(kClock, ClockText(calendar ? calendar->GetHour() : 0.0f), kClock.colour);
+
+            // No armour yet: San Andreas hides the bar at 0.
+            const float health = a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            const float maxHealth = a_player->GetActorValueMax(RE::ActorValue::kHealth);
+            const float fraction = maxHealth > 0.0f ? health / maxHealth : 0.0f;
+            // Under a tenth San Andreas flashes it, off every 8th frame.
+            if (fraction >= 0.1f || (state.frame / 8) % 2 == 0) {
+                a_frame.Bar(HealthBar(a_frame.screen), fraction, kRed);
+            }
+
+            const std::int64_t gold = a_player->GetGoldAmount();
+            a_frame.Text(kMoney, MoneyText(gold), MoneyColour(gold));
+
+            if (state.wanted > 0) {
+                for (int i = 0; i < kStarCount; i++) {
+                    a_frame.Text(kWantedStar, "]", i < state.wanted ? kGold : kBlack, StarRight(a_frame.screen, i));
+                }
+            }
+        }
+
+        void DrawText(Frame& a_frame)
+        {
+            // The cutscene bars under the text, so subtitles show on the bottom one.
+            if (state.letterbox > 0.0f) {
+                auto top = LetterboxTop(a_frame.screen);
+                auto bottom = LetterboxBottom(a_frame.screen);
+                top.y1 *= state.letterbox;
+                bottom.y0 = a_frame.screen.height - (a_frame.screen.height - bottom.y0) * state.letterbox;
+                a_frame.Box(top, kBlack);
+                a_frame.Box(bottom, kBlack);
+            }
+            if (const float alpha = state.help.Alpha(); alpha > 0.0f) {
+                a_frame.Box(HelpBox(state.values, a_frame.screen, state.help.text), WithAlpha(kHelpBox, alpha));
+                a_frame.Text(kHelp, state.help.text, WithAlpha(kHelp.colour, alpha));
+            }
+            if (const float alpha = state.subtitle.Alpha(); alpha > 0.0f) {
+                a_frame.Text(kSubtitles, state.subtitle.text, WithAlpha(kSubtitles.colour, alpha));
+            }
+            if (const float alpha = state.missionTitle.Alpha(); alpha > 0.0f) {
+                a_frame.Text(kMissionTitle, state.missionTitle.text, WithAlpha(kMissionTitle.colour, alpha));
+            }
+            if (state.fade > 0.0f) {
+                a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(kBlack, state.fade));
+            }
+            // Big messages show over the fade, as "wasted" does over San Andreas's.
+            if (const float alpha = state.big.Alpha(); alpha > 0.0f) {
+                a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, alpha));
+            }
+        }
+
+        // Skyrim's compass, attribute bars and crosshair hidden (each frame, as Skyrim's HUD modes show
+        // them again), and given back as they were once San Andreas lets go.
+        void HideSkyrimHud(bool a_hide)
+        {
+            if (!a_hide && !state.skyrimHudHidden) {
+                return;
+            }
+            const bool first = a_hide && !state.skyrimHudHidden;
+            state.skyrimHudHidden = a_hide;
+            SKSE::GetTaskInterface()->AddUITask([a_hide, first]() {
+                static bool wasVisible[std::size(kSkyrimHud)] = {};
+                static bool logged = false;
+                auto*       ui = RE::UI::GetSingleton();
+                auto        menu = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
+                auto*       movie = menu ? menu->uiMovie.get() : nullptr;
+                if (!movie) {
+                    return;
+                }
+                for (std::size_t i = 0; i < std::size(kSkyrimHud); i++) {
+                    RE::GFxValue clip;
+                    const auto   path = std::string("_root.HUDMovieBaseInstance.") + kSkyrimHud[i];
+                    if (!movie->GetVariable(&clip, path.c_str()) || !clip.IsDisplayObject()) {
+                        if (!logged) {
+                            SKSE::log::warn("sa hud: Skyrim's HUD clip {} was not found", path);
+                        }
+                        continue;
+                    }
+                    if (first) {
+                        RE::GFxValue visible;
+                        wasVisible[i] = !clip.GetMember("_visible", &visible) || !visible.IsBool() || visible.GetBool();
+                    }
+                    clip.SetMember("_visible", RE::GFxValue(a_hide ? false : wasVisible[i]));
+                }
+                logged = true;
+            });
+        }
+
+        void TickFade(float a_delta)
+        {
+            if (state.fadeSeconds <= 0.0f) {
+                state.fade = state.fadeTarget;
+                return;
+            }
+            state.fadeTime = (std::min)(state.fadeTime + a_delta, state.fadeSeconds);
+            state.fade = state.fadeFrom + (state.fadeTarget - state.fadeFrom) * (state.fadeTime / state.fadeSeconds);
+        }
+    }
+
+    void Load()
+    {
+        auto* window = RE::BSGraphics::Renderer::GetCurrentRenderWindow();
+        if (!Overlay::Install(window ? window->swapChain : nullptr)) {
+            SKSE::log::warn("sa hud: no swap chain to draw on, San Andreas's HUD stays off");
+            return;
+        }
+        const auto sa = SanAndreasPath();
+        if (sa.empty()) {
+            SKSE::log::warn("sa hud: no [SanAndreas] Path in {}, San Andreas's HUD stays off", kIni);
+            return;
+        }
+        const auto dat = ReadFile(sa / "data" / "fonts.dat");
+        if (!HudFont::Parse(std::string_view(reinterpret_cast<const char*>(dat.data()), dat.size()), state.values)) {
+            SKSE::log::warn("sa hud: {} didn't read ({} bytes), San Andreas's HUD stays off", (sa / "data" / "fonts.dat").string(), dat.size());
+            return;
+        }
+        std::uint32_t skipped = 0;
+        const auto    fontsData = ReadFile(sa / "models" / "fonts.txd");
+        const auto    fonts = Txd::Read(fontsData.data(), fontsData.size(), &skipped);
+        const auto    hudData = ReadFile(sa / "models" / "hud.txd");
+        const auto    hud = Txd::Read(hudData.data(), hudData.size(), &skipped);
+        const auto*   font2 = Txd::Find(fonts, HudFont::kTextureNames[0]);
+        const auto*   font1 = Txd::Find(fonts, HudFont::kTextureNames[1]);
+        const auto*   fist = Txd::Find(hud, "fist");
+        if (!font1 || !font2 || !fist) {
+            SKSE::log::warn("sa hud: San Andreas's fonts or HUD sprites are missing ({} font textures, {} HUD textures, {} skipped), its HUD stays off",
+                fonts.size(), hud.size(), skipped);
+            return;
+        }
+        std::vector<Overlay::Image> images(3);
+        images[kFont2 - 1] = ImageOf(font2);
+        images[kFont1 - 1] = ImageOf(font1);
+        images[kFist - 1] = ImageOf(fist);
+        Overlay::SetImages(std::move(images));
+        state.loaded = true;
+        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures)", sa.string(), fonts.size(), hud.size());
+    }
+
+    void Update(float a_delta, bool a_owned, bool a_menu)
+    {
+        HideSkyrimHud(a_owned);
+        if (!state.loaded) {
+            return;
+        }
+        state.frame++;
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle }) {
+            timed->Tick(a_delta);
+        }
+        TickFade(a_delta);
+        const float slide = a_delta / 0.5f;
+        state.letterbox = std::clamp(state.letterbox + (state.letterboxOn ? slide : -slide), 0.0f, 1.0f);
+
+        Frame frame;
+        float width = 0.0f, height = 0.0f;
+        if (!Overlay::ScreenSize(width, height)) {
+            return;
+        }
+        frame.screen = ScreenOf(width, height);
+        if (!state.loggedScreen) {
+            state.loggedScreen = true;
+            SKSE::log::info("sa hud: screen {}x{}, {:.3f} x {:.3f} pixels per HUD unit", width, height, frame.screen.unitX, frame.screen.unitY);
+        }
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (a_owned && !a_menu && player) {
+            DrawHud(frame, player);
+        }
+        DrawText(frame);
+        Overlay::Submit(std::move(frame.quads));
+    }
+
+    void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }
+
+    void ShowBigMessage(BigMessage a_message, float a_seconds)
+    {
+        state.bigStyle = a_message == BigMessage::MissionPassed ? &kMissionPassed : &kBigMessage;
+        state.big.Show(a_message == BigMessage::Wasted ? "wasted" : a_message == BigMessage::Busted ? "busted" : "mission passed!", a_seconds);
+        state.big.fadeIn = 0.65f;  // San Andreas brings "wasted" up over about two thirds of a second
+    }
+
+    void ShowHelp(std::string a_text, float a_seconds) { state.help.Show(std::move(a_text), a_seconds); }
+
+    void ShowSubtitle(std::string a_text, float a_seconds) { state.subtitle.Show(std::move(a_text), a_seconds); }
+
+    void FadeTo(float a_black, float a_seconds)
+    {
+        state.fadeFrom = state.fade;
+        state.fadeTarget = std::clamp(a_black, 0.0f, 1.0f);
+        state.fadeTime = 0.0f;
+        state.fadeSeconds = (std::max)(a_seconds, 0.0f);
+    }
+
+    void SetLetterbox(bool a_on) { state.letterboxOn = a_on; }
+
+    void SetWantedLevel(int a_stars) { state.wanted = std::clamp(a_stars, 0, kStarCount); }
+
+    void ClearText()
+    {
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle }) {
+            timed->hold = 0.0f;
+        }
+        FadeTo(0.0f, 0.0f);
+        state.letterboxOn = false;
+    }
+
+    void NextDemo()
+    {
+        static constexpr const char* kSteps[] = { "mission title", "wasted", "busted", "mission passed", "help box", "subtitles", "fade to black",
+            "letterbox", "wanted stars", "off" };
+        const int step = state.demo;
+        state.demo = (state.demo + 1) % static_cast<int>(std::size(kSteps));
+        ClearText();
+        SetWantedLevel(0);
+        switch (step) {
+        case 0: ShowMissionTitle("Jarl Johnson"); break;
+        case 1: ShowBigMessage(BigMessage::Wasted); break;
+        case 2: ShowBigMessage(BigMessage::Busted); break;
+        case 3: ShowBigMessage(BigMessage::MissionPassed); break;
+        case 4: ShowHelp("Welcome to Los Solitude. Press F to get into a vehicle and F again to get out of it."); break;
+        case 5: ShowSubtitle("Ah shit, here we go again."); break;
+        case 6: FadeTo(1.0f, 1.0f); break;
+        case 7: SetLetterbox(true); ShowSubtitle("Thane of Grove Street.", 6.0f); break;
+        case 8: SetWantedLevel(3); break;
+        default: break;
+        }
+        SKSE::log::info("sa hud: demo {} ({})", step + 1, kSteps[step]);
+    }
+}

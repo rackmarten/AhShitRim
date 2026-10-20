@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Copies the built plugins into the local game installs (paths from local.props): the SKSE
-    plugin into Skyrim's Data/SKSE/Plugins, the ASI into San Andreas's scripts folder.
+    plugin into Skyrim's Data/SKSE/Plugins (with AhShitRim.ini pointing it at SaPath, where it reads
+    San Andreas's fonts and HUD sprites), the ASI into San Andreas's scripts folder.
     Run scripts/build.ps1 first. Close both games before deploying.
 #>
 param(
@@ -28,7 +29,11 @@ function Copy-WithPdb($binary, $destDir) {
 
 if ($Target -in 'all', 'skse') {
     $skyrim = Get-RequiredSetting $config 'SkyrimPath'
-    Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") (Join-Path $skyrim 'Data/SKSE/Plugins')
+    $plugins = Join-Path $skyrim 'Data/SKSE/Plugins'
+    Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
+    $ini = Join-Path $plugins 'AhShitRim.ini'
+    Set-Content -Path $ini -Encoding ascii -Value @('[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')")
+    Write-Host "Wrote $ini"
 }
 
 if ($Target -in 'all', 'sa') {

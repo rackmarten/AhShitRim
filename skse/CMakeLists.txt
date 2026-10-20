@@ -20,10 +20,12 @@ add_commonlibsse_plugin(
     ${PROJECT_NAME}
     NAME "AhShitRim"
     AUTHOR "Marek Uncik"
-    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp ../protocol/cpp/link.cpp
+    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/Overlay.cpp ../protocol/cpp/link.cpp
 )
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 target_include_directories(${PROJECT_NAME} PRIVATE src ../protocol/cpp)
 # The shared link code includes <Windows.h> itself and must not pick up CommonLib's PCH.
 set_source_files_properties(../protocol/cpp/link.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+# So does the overlay, which needs the real d3d11.h.
+set_source_files_properties(src/hud/Overlay.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)

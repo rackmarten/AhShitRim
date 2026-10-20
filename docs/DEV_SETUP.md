@@ -92,7 +92,7 @@ From WSL, call the same scripts through Windows PowerShell, e.g. `powershell.exe
 
 The first SKSE build takes a while (often 15 to 25 minutes): vcpkg builds the dependencies and CommonLibSSE-NG compiles from source. The first San Andreas build compiles plugin-sdk's few hundred files once. Later builds are incremental. Outputs:
 
-- `skse/build/release/AhShitRim.dll` (+ `.pdb`), deployed to `<SkyrimPath>\Data\SKSE\Plugins\`
+- `skse/build/release/AhShitRim.dll` (+ `.pdb`), deployed to `<SkyrimPath>\Data\SKSE\Plugins\`, next to an `AhShitRim.ini` the deploy writes with `[SanAndreas] Path=<SaPath>`: the plugin reads San Andreas's fonts and HUD sprites from there at startup
 - `sa/build/Release/AhShitRim.asi` (+ `.pdb`), deployed to `<SaPath>\scripts\`
 
 ### Handshake check

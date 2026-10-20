@@ -3,6 +3,7 @@
 
 #include "link/LinkService.h"
 #include "collision/CollisionSampler.h"
+#include "hud/SaHud.h"
 #include "player/PlayerSync.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
@@ -22,6 +23,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         case SKSE::MessagingInterface::kDataLoaded:
             AhShitRim::PlayerSync::OnDataLoaded();
             AhShitRim::CollisionSampler::OnDataLoaded();
+            AhShitRim::SaHud::Load();
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
         case SKSE::MessagingInterface::kNewGame:
