@@ -2,6 +2,8 @@
 
 #include "../../cpp/input.h"
 
+#include <string>
+
 using namespace AhShitRim;
 using namespace AhShitRim::Input;
 
@@ -28,7 +30,8 @@ TEST_CASE("keys that stay with Skyrim never reach San Andreas")
     CHECK(ActionFromScanCode(kDikM) == Action::None);
     CHECK(ActionFromScanCode(kDikGrave) == Action::None);
     CHECK(ActionFromScanCode(kDikF10) == Action::None);
-    CHECK(ActionFromScanCode(0x12) == Action::None);  // E: nothing on foot yet
+    CHECK(ActionFromScanCode(kDikE) == Action::None);  // E activates on Skyrim's side
+    CHECK(ActionFromScanCode(kDikE, KeyLayout::Classic) == Action::None);
 }
 
 TEST_CASE("the builder turns held keys into axes and buttons")
@@ -55,7 +58,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
     b.SetKey(kDikLeftAlt, true);
     s = b.Build(9, true, true);
     CHECK(s.moveY == 0.0f);
-    CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonJump | Protocol::kButtonCrouch | Protocol::kButtonWalk));
+    CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonJump | Protocol::kButtonCrouch | Protocol::kButtonWalk | Protocol::kButtonHandbrake));
 
     b.SetKey(kDikW, false);
     b.SetKey(kDikD, false);
@@ -169,7 +172,7 @@ TEST_CASE("in a vehicle the keys take San Andreas's vehicle layout")
     Protocol::InputState in{};
     in.moveX = -1.0f;
     in.moveY = 1.0f;
-    in.buttons = Protocol::kButtonJump | Protocol::kButtonHorn | Protocol::kButtonCrouch | Protocol::kButtonSprint;
+    in.buttons = Protocol::kButtonHandbrake | Protocol::kButtonHorn | Protocol::kButtonCrouch | Protocol::kButtonSprint;
     auto pad = ToPad(in, true);
     CHECK(pad.leftStickX == -128);  // steer
     CHECK(pad.leftStickY == 0);
@@ -226,4 +229,90 @@ TEST_CASE("each wheel step counts a radio retune, also while a menu has the inpu
     s = b.Build(2, true, false);  // the counts carry over; San Andreas decides what a change means
     CHECK(s.radioNext == 2);
     CHECK(s.radioPrev == 1);
+}
+
+TEST_CASE("the ini picks the classic layout by name, anything else is modern")
+{
+    CHECK(ParseKeyLayout("Classic") == KeyLayout::Classic);
+    CHECK(ParseKeyLayout("CLASSIC") == KeyLayout::Classic);
+    CHECK(ParseKeyLayout("classic") == KeyLayout::Classic);
+    CHECK(ParseKeyLayout("Modern") == KeyLayout::Modern);
+    CHECK(ParseKeyLayout("") == KeyLayout::Modern);
+    CHECK(ParseKeyLayout("classical") == KeyLayout::Modern);
+    CHECK(std::string(NameOf(KeyLayout::Classic)) == "Classic");
+    CHECK(Builder().Layout() == KeyLayout::Modern);
+}
+
+TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
+{
+    constexpr auto classic = KeyLayout::Classic;
+    CHECK(ActionFromScanCode(kDikSpace, classic) == Action::Sprint);
+    CHECK(ActionFromScanCode(kDikLeftShift, classic) == Action::Jump);
+    CHECK(ActionFromScanCode(kDikRightCtrl, classic) == Action::Jump);
+    CHECK(ActionFromScanCode(kDikCapsLock, classic) == Action::Horn);
+    CHECK(ActionFromScanCode(kDikH, classic) == Action::Horn);
+    // Everything else as in the modern layout.
+    CHECK(ActionFromScanCode(kDikW, classic) == Action::Forward);
+    CHECK(ActionFromScanCode(kDikC, classic) == Action::Crouch);
+    CHECK(ActionFromScanCode(kDikLeftAlt, classic) == Action::Walk);
+    CHECK(ActionFromScanCode(kDikF, classic) == Action::EnterExit);
+    CHECK(ActionFromScanCode(kDikReturn, classic) == Action::EnterExit);
+    CHECK(ActionFromScanCode(kDikUp, classic) == Action::LeanForward);
+    // The modern layout leaves Right Ctrl and Caps Lock to Skyrim.
+    CHECK(ActionFromScanCode(kDikRightCtrl) == Action::None);
+    CHECK(ActionFromScanCode(kDikCapsLock) == Action::None);
+
+    Builder b;
+    b.SetLayout(classic);
+    b.SetKey(kDikSpace, true);
+    b.SetKey(kDikW, true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.buttons == (Protocol::kButtonSprint | Protocol::kButtonHandbrake));
+    auto pad = ToPad(in, false);
+    CHECK(pad.buttonCross == 255);   // sprints
+    CHECK(pad.buttonSquare == 0);    // doesn't jump
+    pad = ToPad(in, true);
+    CHECK(pad.rightShoulder1 == 255);  // the handbrake in a vehicle
+    CHECK(pad.buttonCross == 255);     // W accelerates
+
+    b.SetKey(kDikSpace, false);
+    b.SetKey(kDikLeftShift, true);
+    in = b.Build(2, true, true);
+    CHECK(in.buttons == Protocol::kButtonJump);
+    CHECK(ToPad(in, false).buttonSquare == 255);  // jumps
+    CHECK(ToPad(in, true).rightShoulder1 == 0);   // Shift does nothing in a vehicle
+
+    b.SetKey(kDikLeftShift, false);
+    b.SetKey(kDikRightCtrl, true);
+    in = b.Build(3, true, true);
+    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake));  // San Andreas's second jump and handbrake key
+
+    b.SetKey(kDikRightCtrl, false);
+    b.SetKey(kDikCapsLock, true);
+    in = b.Build(4, true, true);
+    CHECK(ToPad(in, true).shockButtonL == 255);  // the horn
+}
+
+TEST_CASE("the modern layout: Shift sprints, Space jumps and is the handbrake")
+{
+    Builder b;
+    b.SetKey(kDikLeftShift, true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.buttons == Protocol::kButtonSprint);
+    CHECK(ToPad(in, false).buttonCross == 255);
+    CHECK(ToPad(in, true).rightShoulder1 == 0);
+
+    // Mashing Shift: every press and release reaches San Andreas, which counts the taps itself.
+    b.SetKey(kDikLeftShift, false);
+    CHECK(ToPad(b.Build(2, true, true), false).buttonCross == 0);
+    b.SetKey(kDikLeftShift, true);
+    CHECK(ToPad(b.Build(3, true, true), false).buttonCross == 255);
+
+    b.SetKey(kDikLeftShift, false);
+    b.SetKey(kDikSpace, true);
+    in = b.Build(4, true, true);
+    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake));
+    CHECK(ToPad(in, false).buttonSquare == 255);  // jumps on foot
+    CHECK(ToPad(in, true).rightShoulder1 == 255);  // the handbrake in a vehicle
+    CHECK(ToPad(in, true).buttonSquare == 0);     // without braking
 }

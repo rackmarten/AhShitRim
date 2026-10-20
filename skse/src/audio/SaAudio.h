@@ -2,7 +2,7 @@
 
 #include "../ahshitrim_protocol.h"
 
-// San Andreas's sound and radio from the Skyrim side (v8):
+// San Andreas's sound and radio from the Skyrim side (v9):
 //  - every frame, Skyrim's master, effects and music sliders go to San Andreas as its volumes
 //    (AudioState), and 0 while Skyrim has the player;
 //  - while a San Andreas station plays in CJ's vehicle, its name shows in San Andreas's style and

@@ -1,15 +1,21 @@
 // Builds the InputState Skyrim sends to San Andreas from Skyrim's raw input events. Header-only and
 // free of game types, so the protocol tests cover it; the SKSE plugin feeds it from its input sink.
 //
-// Keyboard events carry DirectInput scan codes (DIK_*). San Andreas gets actions, not keys, with
-// GTA's own keyboard layout: WASD (or the arrows) move, Left Shift sprints, Space jumps (the
-// handbrake in a vehicle), C crouches, Left Alt walks, F or Enter gets in and out of a vehicle and H
-// sounds the horn. In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a Sandking, a ZR-350 and a Sanchez. Everything else stays with
-// Skyrim (see docs/PROTOCOL.md#input).
+// Keyboard events carry DirectInput scan codes (DIK_*). San Andreas gets actions, not keys, in one of
+// two layouts (AhShitRim.ini, [Input] KeyLayout):
+// - Modern (the default): WASD (or the arrows) move, Left Shift sprints (mashed, San Andreas's faster
+//   sprint), Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle. In a
+//   vehicle Space is the handbrake and H the horn.
+// - Classic, San Andreas's own PC defaults (gta-reversed's InitDefaultControlConfiguration): Space
+//   sprints, Left Shift or Right Ctrl jumps, the rest as above. In a vehicle Space or Right Ctrl is
+//   the handbrake and Caps Lock or H the horn.
+// In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a
+// Sandking, a ZR-350 and a Sanchez. Everything else stays with Skyrim (see docs/PROTOCOL.md#input).
 
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 #include "../ahshitrim_protocol.h"
 
@@ -42,6 +48,34 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikLeftBracket = 0x1A;
     inline constexpr std::uint32_t kDikRightBracket = 0x1B;
     inline constexpr std::uint32_t kDikBackslash = 0x2B;
+    inline constexpr std::uint32_t kDikE = 0x12;  // activates what CJ faces, on Skyrim's side
+    inline constexpr std::uint32_t kDikRightCtrl = 0x9D;
+    inline constexpr std::uint32_t kDikCapsLock = 0x3A;
+
+    enum class KeyLayout : std::uint8_t
+    {
+        Modern,   // Shift sprints, Space jumps
+        Classic,  // San Andreas's PC defaults: Space sprints, Shift jumps
+    };
+
+    // AhShitRim.ini's [Input] KeyLayout: "Classic" (any case) picks San Andreas's layout, anything
+    // else the modern one.
+    constexpr KeyLayout ParseKeyLayout(std::string_view a_text)
+    {
+        constexpr std::string_view classic = "classic";
+        if (a_text.size() != classic.size()) {
+            return KeyLayout::Modern;
+        }
+        for (std::size_t i = 0; i < classic.size(); ++i) {
+            const char c = a_text[i] >= 'A' && a_text[i] <= 'Z' ? static_cast<char>(a_text[i] - 'A' + 'a') : a_text[i];
+            if (c != classic[i]) {
+                return KeyLayout::Modern;
+            }
+        }
+        return KeyLayout::Classic;
+    }
+
+    constexpr const char* NameOf(KeyLayout a_layout) { return a_layout == KeyLayout::Classic ? "Classic" : "Modern"; }
 
     // San Andreas vehicle model ids the spawn keys ask for.
     inline constexpr std::uint16_t kModelSandking = 495;  // the test car
@@ -77,8 +111,17 @@ namespace AhShitRim::Input
     };
 
     // DirectInput scan code -> the action it drives in San Andreas, None for keys San Andreas doesn't get.
-    constexpr Action ActionFromScanCode(std::uint32_t a_dik)
+    constexpr Action ActionFromScanCode(std::uint32_t a_dik, KeyLayout a_layout = KeyLayout::Modern)
     {
+        if (a_layout == KeyLayout::Classic) {
+            switch (a_dik) {
+            case kDikSpace: return Action::Sprint;
+            case kDikLeftShift:
+            case kDikRightCtrl: return Action::Jump;
+            case kDikCapsLock: return Action::Horn;
+            default: break;
+            }
+        }
         switch (a_dik) {
         case kDikW: return Action::Forward;
         case kDikUp: return Action::LeanForward;
@@ -95,14 +138,24 @@ namespace AhShitRim::Input
         case kDikF:
         case kDikReturn: return Action::EnterExit;
         case kDikH: return Action::Horn;
-        default: return Action::None;  // Escape, Tab, M, ~, F10 and anything unmapped
+        default: return Action::None;  // Escape, Tab, M, ~, F10, E and anything unmapped
         }
+    }
+
+    // Whether a key is the handbrake in a vehicle: Space, which jumps on foot in the modern layout and
+    // sprints in the classic one, and Right Ctrl in the classic one.
+    constexpr bool IsHandbrakeKey(std::uint32_t a_dik, KeyLayout a_layout = KeyLayout::Modern)
+    {
+        return a_dik == kDikSpace || (a_layout == KeyLayout::Classic && a_dik == kDikRightCtrl);
     }
 
     // Accumulates held keys and mouse movement and produces the InputState to publish.
     class Builder
     {
     public:
+        void      SetLayout(KeyLayout a_layout) { _layout = a_layout; }
+        KeyLayout Layout() const { return _layout; }
+
         // Keyboard event: a_dik is the scan code, a_down whether it is held now. Pressing a spawn key
         // asks for its vehicle (once per press), unless a_canSpawn is false (a menu or the console
         // has the keyboard).
@@ -179,6 +232,12 @@ namespace AhShitRim::Input
             if (Held(Action::Horn)) s.buttons |= Protocol::kButtonHorn;
             if (Held(Action::LeanForward)) s.buttons |= Protocol::kButtonLeanForward;
             if (Held(Action::LeanBack)) s.buttons |= Protocol::kButtonLeanBack;
+            for (std::uint32_t dik = 0; dik < 256; ++dik) {
+                if (IsKeyDown(dik) && IsHandbrakeKey(dik, _layout)) {
+                    s.buttons |= Protocol::kButtonHandbrake;
+                    break;
+                }
+            }
             return s;
         }
 
@@ -186,7 +245,7 @@ namespace AhShitRim::Input
         bool Held(Action a_action) const
         {
             for (std::uint32_t dik = 0; dik < 256; ++dik) {
-                if (IsKeyDown(dik) && ActionFromScanCode(dik) == a_action) {
+                if (IsKeyDown(dik) && ActionFromScanCode(dik, _layout) == a_action) {
                     return true;
                 }
             }
@@ -198,6 +257,7 @@ namespace AhShitRim::Input
             return (Held(a_pos) ? 1.0f : 0.0f) - (Held(a_neg) ? 1.0f : 0.0f);
         }
 
+        KeyLayout     _layout = KeyLayout::Modern;
         std::uint64_t _keys[4]{};
         double        _mouseX = 0.0;
         double        _mouseY = 0.0;
@@ -228,8 +288,9 @@ namespace AhShitRim::Input
     }
 
     // a_inVehicle: CJ drives or rides, so the keys take San Andreas's vehicle layout (W
-    // accelerates, S brakes and reverses, A/D steer, Space is the handbrake, H the horn, the up and
-    // down arrows lean a bike forward and back). On foot the arrows walk like W and S.
+    // accelerates, S brakes and reverses, A/D steer, kButtonHandbrake is the handbrake, kButtonHorn
+    // the horn, the up and down arrows lean a bike forward and back). On foot the arrows walk like W
+    // and S.
     constexpr PadState ToPad(const Protocol::InputState& a_input, bool a_inVehicle = false)
     {
         const auto held = [&](std::uint32_t a_button) -> std::int16_t { return (a_input.buttons & a_button) ? 255 : 0; };
@@ -241,7 +302,7 @@ namespace AhShitRim::Input
             p.leftStickY = Stick(-lean);  // stick forward (negative) leans forward
             p.buttonCross = a_input.moveY > 0.0f ? 255 : 0;
             p.buttonSquare = a_input.moveY < 0.0f ? 255 : 0;
-            p.rightShoulder1 = held(Protocol::kButtonJump);
+            p.rightShoulder1 = held(Protocol::kButtonHandbrake);
             p.shockButtonL = held(Protocol::kButtonHorn);
             return p;
         }

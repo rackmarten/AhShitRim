@@ -1,4 +1,4 @@
-// The radio (v8): Skyrim's audio sliders to San Andreas's volumes, and the two stations Skyrim plays
+// The radio (v9): Skyrim's audio sliders to San Andreas's volumes, and the two stations Skyrim plays
 // after San Andreas's own: Radio Sovngarde, on Skyrim's own music, and Sweetroll FM, on CC0 music that
 // ships with AhShitRim. Header-only and free of game types, so the protocol tests cover it; the SKSE
 // plugin plays what it picks (skse/src/audio/).

@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v8. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the pose's radio station as the dial's, with Sweetroll FM (v8).
+> Status: protocol v9. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, and handovers that re-anchor CJ where a load door or fast travel puts the player (v8), the pose's radio station as the dial's, with Sweetroll FM (v9).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -21,7 +21,7 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/radio.h`](../protocol/cpp/radio.h) | Skyrim's sliders to San Andreas's volumes, the radio's dial and station names, Radio Sovngarde's track picks, Sweetroll FM's tracks and shuffle |
 | [`protocol/cpp/vehicle.h`](../protocol/cpp/vehicle.h) | Where a spawned vehicle goes, a vehicle's paint and lights colours, baking a part's scale or mirror into its vertices, merging a vehicle's meshes |
 | `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging, volumes, the radio dial, Radio Sovngarde and Sweetroll FM's shuffle), run by `scripts/test.ps1` |
-| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it and its radio dials round all 14 stops, the Sanchez rides, and a new handover takes CJ out and removes them (`scripts/fake-skyrim.ps1`) |
+| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it and its radio dials round all 14 stops, the Sanchez rides, and a re-anchor far off and far below (fast travel in a car) takes CJ out, removes them and holds him until the ground there is in (`scripts/fake-skyrim.ps1`) |
 
 ## Section layout
 
@@ -72,9 +72,9 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 4 | `flags` | `kInputOwnsPlayer` (0x1): apply this input to CJ. `kInputPaused` (0x2): a Skyrim menu pauses the game, San Andreas pauses too |
 | 8 | `mouseX`, `mouseY` | doubles, raw mouse counts accumulated since Skyrim started (y positive down); San Andreas applies the change since its last read |
 | 24 | `moveX`, `moveY` | -1..1, right and forwards positive; `moveY` is W and S only, the up and down arrows are `kButtonLean*` |
-| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, `kButtonEnterExit` 0x10, `kButtonHorn` 0x20, `kButtonLeanForward` 0x40 (up arrow), `kButtonLeanBack` 0x80 (down arrow) (v6), held |
-| 36 | `handover` | counts handovers; a new value puts CJ at the handover spot and drops the collision chunks of older handovers |
-| 40 | `heading` | the Skyrim player's heading at that handover (radians, Skyrim's convention); CJ spawns facing it |
+| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, `kButtonEnterExit` 0x10, `kButtonHorn` 0x20, `kButtonLeanForward` 0x40 (up arrow), `kButtonLeanBack` 0x80 (down arrow) (v6), `kButtonHandbrake` 0x100 (v8: Space, and Right Ctrl in the classic layout), held. Actions, not keys: Skyrim maps the keys in the modern or classic layout (`protocol/cpp/input.h`) |
+| 36 | `handover` | counts handovers and re-anchors (v8: the game moved the player through a load door, by fast travel or a script while CJ has it, and the handover goes on); a new value puts CJ at `anchor`, drops the collision chunks of older ones and removes every vehicle |
+| 40 | `heading` | the Skyrim player's heading at that handover or re-anchor (radians, Skyrim's convention); CJ spawns facing it |
 | 44 | `anchor[3]` | the Skyrim player's feet at that handover, Skyrim world units: the floating origin's base (v4) |
 | 56 | `spawnModel` | u16, the San Andreas vehicle model the last spawn request asked for (v6) |
 | 58 | `spawnCount` | u16, counts spawn requests; a new value spawns `spawnModel` (v6) |
@@ -96,7 +96,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | 32 | `heading` | CJ's body |
 | 36 | `viewHeading`, `viewPitch` | where San Andreas's camera looks; Skyrim's first-person camera follows it |
 | 44 | `handover` | the `InputState.handover` this pose belongs to; Skyrim ignores poses from older handovers |
-| 48 | `radioStation` | i8 (v7, v8): the dial's station in CJ's vehicle: 0 emergency, 1..11 San Andreas's stations (its `eRadioID`), 12 Radio Sovngarde, 13 Sweetroll FM, 14 off, -1 (`kRadioNone`) not in a vehicle. Before v8 it was San Andreas's `eRadioID` with 12 as Radio Sovngarde and 13 off. While the wheel retunes it is the station it goes to |
+| 48 | `radioStation` | i8 (v7, v9): the dial's station in CJ's vehicle: 0 emergency, 1..11 San Andreas's stations (its `eRadioID`), 12 Radio Sovngarde, 13 Sweetroll FM, 14 off, -1 (`kRadioNone`) not in a vehicle. Before v9 it was San Andreas's `eRadioID` with 12 as Radio Sovngarde and 13 off. While the wheel retunes it is the station it goes to |
 | 49 | reserved | 7 bytes |
 
 Skyrim adds `offset` to the player's position at the handover.
@@ -201,9 +201,9 @@ Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Di
 
 Log lines on both sides, prefixed `link:`:
 
-- `started (protocol v8)`
+- `started (protocol v9)`
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
-- `link up: <peer> pid N, protocol v8`
+- `link up: <peer> pid N, protocol v9`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
 - `link disabled: ...`
 

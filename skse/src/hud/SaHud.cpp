@@ -1,5 +1,6 @@
 #include "hud/SaHud.h"
 
+#include "Ini.h"
 #include "hud/Overlay.h"
 #include "hud_layout.h"
 #include "txd.h"
@@ -23,8 +24,11 @@ namespace AhShitRim::SaHud
         };
 
         // Skyrim's HUD clips hidden while San Andreas has the player, under
-        // _root.HUDMovieBaseInstance.
-        constexpr const char* kSkyrimHud[] = { "CompassShoutMeterHolder", "Health", "Magica", "Stamina", "Crosshair" };
+        // _root.HUDMovieBaseInstance. The rollover clips are Skyrim's own activate prompt ("E Open /
+        // Skyrim"): its crosshair pick still runs from the player, where CJ is, and San Andreas's help
+        // box says the same (Activation).
+        constexpr const char* kSkyrimHud[] = { "CompassShoutMeterHolder", "Health", "Magica", "Stamina", "Crosshair", "RolloverNameInstance",
+            "RolloverInfoInstance", "RolloverButton_tf", "RolloverGrayBar_mc" };
 
         struct Timed
         {
@@ -71,6 +75,7 @@ namespace AhShitRim::SaHud
             Timed            big;
             const TextStyle* bigStyle = &kBigMessage;
             Timed            help;
+            Timed            prompt{ {}, 0.0f, 0.0f, 0.15f, 0.25f };  // what E activates, in the help box while no help shows
             Timed            subtitle;
             Timed            radio;
             bool             radioRetuning = false;
@@ -89,30 +94,6 @@ namespace AhShitRim::SaHud
         {
             std::ifstream file(a_path, std::ios::binary);
             return file ? std::vector<std::uint8_t>(std::istreambuf_iterator<char>(file), {}) : std::vector<std::uint8_t>{};
-        }
-
-        constexpr const char* kIni = "Data/SKSE/Plugins/AhShitRim.ini";
-
-        // [SanAndreas] Path in AhShitRim.ini next to the plugin (Skyrim runs in its own folder).
-        std::filesystem::path SanAndreasPath()
-        {
-            auto trim = [](const std::string& a_text) {
-                const auto first = a_text.find_first_not_of(" \t\r");
-                const auto last = a_text.find_last_not_of(" \t\r");
-                return first == std::string::npos ? std::string{} : a_text.substr(first, last - first + 1);
-            };
-            std::ifstream file(kIni);
-            std::string   line, section;
-            while (std::getline(file, line)) {
-                line = trim(line);
-                const auto equals = line.find('=');
-                if (line.starts_with('[')) {
-                    section = line;
-                } else if (section == "[SanAndreas]" && equals != std::string::npos && trim(line.substr(0, equals)) == "Path") {
-                    return std::filesystem::path(trim(line.substr(equals + 1)));
-                }
-            }
-            return {};
         }
 
         Overlay::Image ImageOf(const Txd::Texture* a_texture)
@@ -217,6 +198,9 @@ namespace AhShitRim::SaHud
             if (const float alpha = state.help.Alpha(); alpha > 0.0f) {
                 a_frame.Box(HelpBox(state.values, a_frame.screen, state.help.text), WithAlpha(kHelpBox, alpha));
                 a_frame.Text(kHelp, state.help.text, WithAlpha(kHelp.colour, alpha));
+            } else if (const float shown = state.prompt.Alpha(); shown > 0.0f) {
+                a_frame.Box(HelpBox(state.values, a_frame.screen, state.prompt.text), WithAlpha(kHelpBox, shown));
+                a_frame.Text(kHelp, state.prompt.text, WithAlpha(kHelp.colour, shown));
             }
             if (const float alpha = state.subtitle.Alpha(); alpha > 0.0f) {
                 a_frame.Text(kSubtitles, state.subtitle.text, WithAlpha(kSubtitles.colour, alpha));
@@ -291,9 +275,9 @@ namespace AhShitRim::SaHud
             SKSE::log::warn("sa hud: no swap chain to draw on, San Andreas's HUD stays off");
             return;
         }
-        const auto sa = SanAndreasPath();
+        const std::filesystem::path sa = Ini::Value("SanAndreas", "Path");
         if (sa.empty()) {
-            SKSE::log::warn("sa hud: no [SanAndreas] Path in {}, San Andreas's HUD stays off", kIni);
+            SKSE::log::warn("sa hud: no [SanAndreas] Path in {}, San Andreas's HUD stays off", Ini::kPath);
             return;
         }
         const auto dat = ReadFile(sa / "data" / "fonts.dat");
@@ -330,7 +314,7 @@ namespace AhShitRim::SaHud
             return;
         }
         state.frame++;
-        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle, &state.radio }) {
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.prompt, &state.subtitle, &state.radio }) {
             timed->Tick(a_delta);
         }
         state.drawRadio = a_owned && !a_menu;
@@ -367,6 +351,19 @@ namespace AhShitRim::SaHud
 
     void ShowHelp(std::string a_text, float a_seconds) { state.help.Show(std::move(a_text), a_seconds); }
 
+    void ShowPrompt(std::string a_text)
+    {
+        if (a_text.empty()) {
+            return;  // the one up fades out on its own
+        }
+        const bool same = state.prompt.hold > 0.0f && state.prompt.text == a_text;
+        const float age = state.prompt.age;
+        state.prompt.Show(std::move(a_text), 0.1f);
+        if (same) {
+            state.prompt.age = (std::min)(age, state.prompt.fadeIn);  // already up: stays, without fading in again
+        }
+    }
+
     void ShowSubtitle(std::string a_text, float a_seconds) { state.subtitle.Show(std::move(a_text), a_seconds); }
 
     void ShowRadioStation(std::string a_name, bool a_retuning)
@@ -393,7 +390,7 @@ namespace AhShitRim::SaHud
 
     void ClearText()
     {
-        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle, &state.radio }) {
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.prompt, &state.subtitle, &state.radio }) {
             timed->hold = 0.0f;
         }
         FadeTo(0.0f, 0.0f);

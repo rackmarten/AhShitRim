@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 8;
+    inline constexpr std::uint32_t kProtocolVersion = 9;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -104,6 +104,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonHorn = 0x20;       // v6
     inline constexpr std::uint32_t kButtonLeanForward = 0x40;  // v6: up arrow; on foot it walks forwards, on a bike it leans forward
     inline constexpr std::uint32_t kButtonLeanBack = 0x80;     // v6: down arrow; on foot back, on a bike it leans back (wheelies)
+    inline constexpr std::uint32_t kButtonHandbrake = 0x100;   // v8: in a vehicle, the handbrake (Space in both key layouts, also Right Ctrl in the classic one)
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState
@@ -115,7 +116,7 @@ namespace AhShitRim::Protocol
         float         moveX;       // -1..1, positive to the right
         float         moveY;       // -1..1, positive forwards (W and S; the up and down arrows are kButtonLean*)
         std::uint32_t buttons;     // kButton*
-        std::uint32_t handover;    // counts handovers; a new value puts CJ at anchor and drops older collision chunks
+        std::uint32_t handover;    // counts handovers and re-anchors (v8: a cell change, fast travel); a new value puts CJ at anchor and drops older collision chunks and every vehicle
         float         heading;     // the Skyrim player's heading at that handover, Skyrim radians; CJ spawns facing it
         float         anchor[3];   // the Skyrim player's feet at that handover, Skyrim world units (v4)
         std::uint16_t spawnModel;  // v6: San Andreas vehicle model id to spawn in front of CJ
@@ -152,7 +153,7 @@ namespace AhShitRim::Protocol
         float         viewHeading;  // San Andreas's camera, radians; Skyrim's first-person camera follows it
         float         viewPitch;    // radians
         std::uint32_t handover;     // InputState.handover this pose belongs to
-        std::int8_t   radioStation;  // v8: the radio dial's station in CJ's vehicle (Radio::StationName: 1..11 San Andreas's, 12 Radio Sovngarde, 13 Sweetroll FM, 14 off), kRadioNone if none
+        std::int8_t   radioStation;  // v9: the radio dial's station in CJ's vehicle (Radio::StationName: 1..11 San Andreas's, 12 Radio Sovngarde, 13 Sweetroll FM, 14 off), kRadioNone if none
         std::uint8_t  reserved0;
         std::uint16_t reserved1;
         std::uint32_t reserved2;

@@ -5,7 +5,8 @@
 // and that his bones move while he walks. A third handover spawns a Sandking, gets in with F,
 // drives it with W and gets out again, then spawns a Sanchez, rides it a little and spawns a ZR-350,
 // and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
-// CJ in it and turned its wheels.
+// CJ in it and turned its wheels. A re-anchor in the ZR-350 (fast travel, far off and far below)
+// takes CJ out and removes the vehicles, holds him until ground comes there, and he walks on it.
 // Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
 // (launch-sa.ps1).
 //
@@ -285,7 +286,7 @@ int main(int argc, char** argv)
     failed += !gotIn;
     run(2.0, [] { return false; });  // CJ shuts the door before he can drive
 
-    // The radio (v8): the Sandking's own station, then the wheel dials through every station,
+    // The radio (v9): the Sandking's own station, then the wheel dials through every station,
     // Radio Sovngarde, Sweetroll FM and off (14 stops), round to where it started.
     {
         Protocol::PlayerState p{};
@@ -386,11 +387,14 @@ int main(int argc, char** argv)
     const auto zrModel = zrSpawned ? received.Model(zr.model) : std::nullopt;
     failed += !(zrSkinned && std::abs(zrGround) < 0.3f && zrModel && zrModel->name.starts_with("ZR350"));
 
-    // In the ZR-350, a new handover: CJ comes out of it and every vehicle goes.
+    // In the ZR-350, a re-anchor, as Skyrim sends for fast travel or a load door (the handover goes
+    // on with a new anchor), far off and far below, like an interior: CJ comes out of the car, every
+    // vehicle goes, and he waits for the ground there.
     press(Input::kDikF);
     const bool inZr = run(8.0, [&] { return inVehicle(); });
     handoverId = 4;
-    anchor[1] = kAnchor[1] + 300.0f;  // no ground sent: CJ just waits for it
+    anchor[0] = kAnchor[0] + 60000.0f;
+    anchor[2] = kAnchor[2] - 10000.0f;  // no ground sent yet: CJ just waits for it
     publish(true);
     const bool cleared = run(5.0, [&] {
         Protocol::PlayerState p{};
@@ -401,9 +405,13 @@ int main(int argc, char** argv)
         }
         return link.ReadPlayer(p) && p.handover == handoverId && !(p.flags & Protocol::kPlayerInVehicle) && !any;
     });
-    std::printf("vehicles: CJ %s the ZR-350; a new handover %s\n", inZr ? "got into" : "did not get into",
-        cleared ? "took him out and removed the vehicles" : "left him in or left vehicles behind");
-    failed += !(inZr && cleared && link.IsUp());
+    run(1.0, [] { return false; });
+    Protocol::PlayerState held{};
+    link.ReadPlayer(held);
+    const float heldAt = std::hypot(std::hypot(held.offset[0], held.offset[1]), held.offset[2]) * Pose::kMetersPerUnit;
+    std::printf("vehicles: CJ %s the ZR-350; a re-anchor %s, and held him %.2f m from the new anchor while its ground was missing\n",
+        inZr ? "got into" : "did not get into", cleared ? "took him out and removed the vehicles" : "left him in or left vehicles behind", heldAt);
+    failed += !(inZr && cleared && link.IsUp() && held.handover == handoverId && heldAt < 0.5f);
 
     // And CJ still walks after that.
     {
@@ -426,7 +434,7 @@ int main(int argc, char** argv)
     Protocol::PlayerState after{};
     link.ReadPlayer(after);
     const float walked = std::hypot(after.offset[0], after.offset[1]) * Pose::kMetersPerUnit;
-    std::printf("vehicles: after the handover CJ walked %.1f m on foot\n", walked);
+    std::printf("vehicles: after the re-anchor CJ walked %.1f m on foot\n", walked);
     failed += !(after.handover == handoverId && walked > 3.0f);
 
     // Past 1 km in the Sandking: San Andreas moves its floating origin under CJ, and he must stay
@@ -435,6 +443,7 @@ int main(int argc, char** argv)
     handoverId = 5;
     anchor[0] = kAnchor[0] - 40000.0f;
     anchor[1] = kAnchor[1];
+    anchor[2] = kAnchor[2];
     publish(true);
     std::set<std::pair<std::int32_t, std::int32_t>> sent;
     const auto stream = [&] {

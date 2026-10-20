@@ -2,9 +2,9 @@
 .SYNOPSIS
     Copies the built plugins into the local game installs (paths from local.props): the SKSE
     plugin into Skyrim's Data/SKSE/Plugins (with AhShitRim.ini pointing it at SaPath, where it reads
-    San Andreas's fonts and HUD sprites) and Sweetroll FM's tracks (music/sweetrollfm/*.xwm and
-    music/CREDITS.md, once scripts/encode-music.ps1 made them) into Data/Music/AhShitRim/SweetrollFM,
-    the ASI into San Andreas's scripts folder.
+    San Andreas's fonts and HUD sprites, and keeping its [Input] KeyLayout), Sweetroll FM's tracks
+    (music/sweetrollfm/*.xwm and music/CREDITS.md, once scripts/encode-music.ps1 made them) into
+    Data/Music/AhShitRim/SweetrollFM, the ASI into San Andreas's scripts folder.
     Run scripts/build.ps1 first. Close both games before deploying.
 #>
 param(
@@ -34,8 +34,16 @@ if ($Target -in 'all', 'skse') {
     $plugins = Join-Path $skyrim 'Data/SKSE/Plugins'
     Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
     $ini = Join-Path $plugins 'AhShitRim.ini'
-    Set-Content -Path $ini -Encoding ascii -Value @('[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')")
-    Write-Host "Wrote $ini"
+    # The key layout is the player's choice: a KeyLayout already in the ini stays.
+    $layout = 'Modern'
+    if (Test-Path $ini) {
+        $kept = Select-String -Path $ini -Pattern '^\s*KeyLayout\s*=\s*(\S+)' | Select-Object -First 1
+        if ($kept) { $layout = $kept.Matches[0].Groups[1].Value }
+    }
+    Set-Content -Path $ini -Encoding ascii -Value @(
+        '[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')", '',
+        '[Input]', '; Modern (Shift sprints, Space jumps) or Classic (San Andreas''s own PC keys: Space sprints, Shift jumps)', "KeyLayout=$layout")
+    Write-Host "Wrote $ini (KeyLayout=$layout)"
 
     # Sweetroll FM's tracks, the same layout as the release.
     $tracks = @(Get-ChildItem -ErrorAction SilentlyContinue (Join-Path $RepoRoot 'music/sweetrollfm/*.xwm'))
