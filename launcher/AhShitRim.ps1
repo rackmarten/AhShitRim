@@ -5,8 +5,10 @@
     libraries, else asks once), checks Skyrim's version, SKSE, Address Library and AhShitRim's
     SKSE plugin (in Skyrim's Data folder or a Mod Organizer 2 mod), gta_sa.exe being 1.0 US and
     the ASI loader. Then it copies AhShitRim.asi into San Andreas's scripts folder, points the
-    SKSE plugin at San Andreas (Data\SKSE\Plugins\AhShitRim.ini), starts San Andreas hidden and
-    Skyrim through skse64_loader.exe. The checks themselves are in checks.ps1.
+    SKSE plugin at San Andreas (Data\SKSE\Plugins\AhShitRim.ini), starts San Andreas hidden, then
+    Skyrim: through MO2 (a moshortcut:// link to the instance's SKSE executable) when AhShitRim is
+    an enabled MO2 mod, which wins over a loose copy in Data, else through skse64_loader.exe.
+    The checks themselves are in checks.ps1.
 
     -NoStart checks and installs, and starts nothing.
 #>
@@ -74,43 +76,63 @@ $config = Read-Config
 $skyrim = Find-Game 'Skyrim Special Edition' 'Skyrim Special Edition' 'SkyrimSE.exe' $config['SkyrimPath'] ''
 # The downgraded copy lives outside Steam (docs/INSTALL.md), so no Steam lookup for it.
 $sa = Find-Game 'San Andreas' $null 'gta_sa.exe' $config['SaPath'] ', downgraded to 1.0 US'
-if ($skyrim -ne $config['SkyrimPath'] -or $sa -ne $config['SaPath']) {
-    $lines = @('; Game folders for the AhShitRim launcher. Delete this file to pick them again.',
-        "SkyrimPath=$skyrim", "SaPath=$sa")
-    if ($config['Mo2Path']) { $lines += "Mo2Path=$($config['Mo2Path'])" }
+function Save-Config {
+    $lines = @('; Settings for the AhShitRim launcher. Delete this file to pick the folders again.')
+    foreach ($key in 'SkyrimPath', 'SaPath', 'Mo2Path', 'Mo2Exe') { if ($config[$key]) { $lines += "$key=$($config[$key])" } }
     Set-Content -Path $ConfigPath -Encoding utf8 -Value $lines
+}
+if ($skyrim -ne $config['SkyrimPath'] -or $sa -ne $config['SaPath']) {
+    $config['SkyrimPath'] = $skyrim
+    $config['SaPath'] = $sa
+    Save-Config
 }
 Write-Host "Skyrim:      $skyrim"
 Write-Host "San Andreas: $sa"
 
 # --- Skyrim ---------------------------------------------------------------------------------
 
-# Mod Organizer 2 keeps mods in its own folder and shows them to Skyrim only when Skyrim starts
-# from MO2. Its instances live in %LOCALAPPDATA%\ModOrganizer; a portable one is Mo2Path in launcher.ini.
-function Get-Mo2ModsDirs {
-    $instances = @()
-    $local = Join-Path $env:LOCALAPPDATA 'ModOrganizer'
-    if (Test-Path $local) { $instances += Get-ChildItem -Directory $local | ForEach-Object FullName }
-    if ($config['Mo2Path']) { $instances += $config['Mo2Path'] }
-    foreach ($instance in $instances) {
-        $ini = Join-Path $instance 'ModOrganizer.ini'
-        if (-not (Test-Path $ini)) { continue }
-        $mo2 = Read-Mo2Ini (Get-Content -Raw $ini) $instance
-        if ((Test-SamePath $mo2.GamePath $skyrim) -and (Test-Path $mo2.ModsDir)) { $mo2.ModsDir }
-    }
-}
-
 function Get-FileNames($dir) {
     if (Test-Path $dir) { @(Get-ChildItem -File $dir | ForEach-Object Name) } else { @() }
 }
 
+# Mod Organizer 2 keeps mods in its own folder and shows them to Skyrim only when Skyrim starts
+# from MO2. Its global instances live in %LOCALAPPDATA%\ModOrganizer; a portable one is Mo2Path
+# in launcher.ini. Per instance for this Skyrim: whether a mod has AhShitRim.dll, whether one
+# that has it is enabled in the selected profile, the enabled mods' SKSE plugin files and the
+# executable that runs this Skyrim's skse64_loader.exe.
+function Get-Mo2Instances {
+    $dirs = @()
+    $local = Join-Path $env:LOCALAPPDATA 'ModOrganizer'
+    if (Test-Path $local) { $dirs += Get-ChildItem -Directory $local | ForEach-Object FullName }
+    if ($config['Mo2Path']) { $dirs += $config['Mo2Path'] }
+    foreach ($dir in $dirs) {
+        $ini = Join-Path $dir 'ModOrganizer.ini'
+        if (-not (Test-Path $ini)) { continue }
+        $mo2 = Read-Mo2Ini (Get-Content -Raw $ini) $dir
+        if (-not (Test-SamePath $mo2.GamePath $skyrim) -or -not (Test-Path $mo2.ModsDir)) { continue }
+        $modlist = Join-Path $mo2.ProfilesDir "$($mo2.SelectedProfile)\modlist.txt"
+        $enabled = if (Test-Path $modlist) { @(Get-Mo2EnabledMods (Get-Content -Raw $modlist)) } else { @() }
+        $withDll = @(Get-ChildItem -Directory $mo2.ModsDir | Where-Object { Test-Path (Join-Path $_.FullName 'SKSE\Plugins\AhShitRim.dll') } | ForEach-Object Name)
+        $portable = Test-Path (Join-Path $dir 'portable.txt')
+        [pscustomobject] @{
+            Name         = if ($portable) { "portable instance in $dir" } else { Split-Path -Leaf $dir }
+            ShortcutName = if ($portable) { '' } else { Split-Path -Leaf $dir }
+            Dir          = $dir
+            Profile      = $mo2.SelectedProfile
+            HasDll       = $withDll.Count -gt 0
+            Enabled      = @($withDll | Where-Object { $enabled -contains $_ }).Count -gt 0
+            Plugins      = @(foreach ($mod in $enabled) { Get-FileNames (Join-Path $mo2.ModsDir "$mod\SKSE\Plugins") })
+            SkseTitle    = Find-Mo2SkseExecutable $mo2.Executables $skyrim
+        }
+    }
+}
+
 $realPlugins = Join-Path $skyrim 'Data\SKSE\Plugins'
 $pluginFiles = Get-FileNames $realPlugins
-$mo2Plugins = @()
-foreach ($mods in Get-Mo2ModsDirs) {
-    foreach ($mod in Get-ChildItem -Directory $mods) { $mo2Plugins += Get-FileNames (Join-Path $mod.FullName 'SKSE\Plugins') }
-}
-$throughMo2 = $pluginFiles -notcontains 'AhShitRim.dll' -and $mo2Plugins -contains 'AhShitRim.dll'
+$instances = @(Get-Mo2Instances)
+$source = Get-SkyrimPluginSource ($pluginFiles -contains 'AhShitRim.dll') @($instances | Where-Object { $_.HasDll })
+$mo2 = if ($source.Mode -eq 'Mo2') { $instances | Where-Object { $_.Name -eq $source.Instance } | Select-Object -First 1 }
+$mo2Plugins = @($instances | ForEach-Object { $_.Plugins })
 
 $skyrimExe = Join-Path $skyrim 'SkyrimSE.exe'
 $problems = @(Get-SkyrimProblems (Get-Item $skyrimExe).VersionInfo.FileVersion (Get-FileNames $skyrim) ($pluginFiles + $mo2Plugins))
@@ -131,7 +153,7 @@ if (-not (Test-Path $asi) -and -not (Test-Path $asiDest)) {
     $problems += "AhShitRim.asi is missing: it should be in 'San Andreas\scripts' next to this launcher. Extract the whole release zip again."
 }
 
-foreach ($warning in $saCheck.Warnings) { Write-Host $warning -ForegroundColor Yellow }
+foreach ($warning in @($source.Warnings) + @($saCheck.Warnings)) { Write-Host $warning -ForegroundColor Yellow }
 if ($problems) {
     Fail (@('Not ready yet:') + ($problems | ForEach-Object { " - $_" }) + '', "Fix those and run the launcher again. Help: $($Links.Install)")
 }
@@ -195,15 +217,54 @@ if ($saRunning) {
 
 # --- Start Skyrim ---------------------------------------------------------------------------
 
-if ($throughMo2) {
-    Write-Host ''
-    Write-Host "AhShitRim's Skyrim part is a Mod Organizer 2 mod, so start Skyrim from MO2 now: pick SKSE in its executables list and press Run." -ForegroundColor Green
-    Write-Host 'Then load a save and press F10 to hand the player to San Andreas.' -ForegroundColor Green
-    Read-Host 'Press Enter to close this window' | Out-Null
-    return
+# ModOrganizer.exe: Mo2Exe in launcher.ini, a portable instance's own folder, a running MO2, the
+# nxm:// link handler MO2 registers, or else asked for once (and kept as Mo2Exe).
+function Find-Mo2Exe($instance) {
+    $candidates = @($config['Mo2Exe'])
+    if ($instance.ShortcutName -eq '') { $candidates += Join-Path $instance.Dir 'ModOrganizer.exe' }
+    $candidates += @(Get-Process ModOrganizer -ErrorAction SilentlyContinue | ForEach-Object Path)
+    $nxm = (Get-ItemProperty 'HKCU:\Software\Classes\nxm\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
+    if ($nxm) { $candidates += Get-Mo2ExeFromCommand $nxm }
+    foreach ($candidate in $candidates) { if ($candidate -and (Test-Path $candidate)) { return $candidate } }
+    Write-Host 'Pick ModOrganizer.exe, to start Skyrim through Mod Organizer 2.'
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = 'ModOrganizer.exe'
+    $dialog.Filter = 'ModOrganizer.exe|ModOrganizer.exe'
+    if ($dialog.ShowDialog() -ne 'OK') { return $null }
+    $config['Mo2Exe'] = $dialog.FileName
+    Save-Config
+    return $dialog.FileName
 }
-Write-Host 'Starting Skyrim (SKSE)'
-Start-Process -WorkingDirectory $skyrim (Join-Path $skyrim 'skse64_loader.exe')
+
+if ($source.Mode -eq 'Mo2') {
+    # MO2 runs the shortcut's executable itself, or hands it to the MO2 already open (which
+    # refuses, with a message, when that one is open for another instance).
+    $started = $false
+    if (-not $mo2.SkseTitle) {
+        Write-Host "MO2 instance '$($mo2.Name)' has no executable for $(Join-Path $skyrim 'skse64_loader.exe')." -ForegroundColor Yellow
+    } else {
+        $mo2Exe = Find-Mo2Exe $mo2
+        if ($mo2Exe) {
+            $uri = Get-Mo2ShortcutUri $mo2.ShortcutName $mo2.SkseTitle
+            Write-Host "Starting Skyrim through Mod Organizer 2 ('$($mo2.SkseTitle)' in '$($mo2.Name)')"
+            try {
+                Start-Process -FilePath $mo2Exe -WorkingDirectory (Split-Path $mo2Exe) -ArgumentList "`"$uri`""
+                $started = $true
+            } catch { Write-Host "Couldn't start $mo2Exe ($($_.Exception.Message))." -ForegroundColor Yellow }
+        }
+    }
+    if (-not $started) {
+        Write-Host ''
+        Write-Host "AhShitRim's Skyrim part is a Mod Organizer 2 mod, so start Skyrim from MO2 now: pick SKSE in its executables list and press Run." -ForegroundColor Green
+        Write-Host 'Then load a save and press F10 to hand the player to San Andreas.' -ForegroundColor Green
+        Read-Host 'Press Enter to close this window' | Out-Null
+        return
+    }
+} else {
+    Write-Host 'Starting Skyrim (SKSE)'
+    Start-Process -WorkingDirectory $skyrim (Join-Path $skyrim 'skse64_loader.exe')
+}
 Write-Host ''
 Write-Host 'Load a save in Skyrim (or start a new game) and press F10 to hand the player to San Andreas.' -ForegroundColor Green
 Write-Host 'This window closes in 15 seconds.'

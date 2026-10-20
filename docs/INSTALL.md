@@ -50,7 +50,7 @@ Either way, AhShitRim has no `.esp`: there's nothing to add to the load order.
 4. It checks Skyrim's version, SKSE, Address Library and AhShitRim's Skyrim part, then that `gta_sa.exe` is 1.0 US and the ASI loader is there. Anything missing is listed in red with where to get it; fix it and run it again.
 5. It copies `AhShitRim.asi` into San Andreas's `scripts` folder and tells AhShitRim where San Andreas is (`Data\SKSE\Plugins\AhShitRim.ini` in Skyrim's folder, which it writes).
 6. It starts San Andreas, which stays minimized, and waits until it's ready (up to two minutes).
-7. Then it starts Skyrim through SKSE. With **Mod Organizer 2**, it says so and leaves that to you instead: start **SKSE** from MO2's executables list, so Skyrim sees MO2's mods.
+7. Then it starts Skyrim through SKSE. With **Mod Organizer 2**, it starts Skyrim through MO2, so Skyrim sees MO2's mods: it asks MO2 to run the instance's SKSE executable (the one pointing at this Skyrim's `skse64_loader.exe`), whether MO2 is open already or not. The first time, it may ask where `ModOrganizer.exe` is. If the instance has no SKSE executable, it says so and leaves it to you: start **SKSE** from MO2's executables list.
 
 Leave San Andreas minimized while you play. Closing it hands the player back to Skyrim.
 
@@ -74,7 +74,10 @@ The full list is in the [README](../README.md#keys).
 
 - **"Skyrim ... is a Special Edition runtime"**: AhShitRim needs Anniversary Edition (1.6.317 or later). Let Steam update Skyrim, then update SKSE and Address Library to match.
 - **"SKSE64 is for another Skyrim version"** or **"Address Library ... is not installed for Skyrim 1.6.x"**: Skyrim updated. Get the SKSE build and Address Library file for the version named in the message.
-- **"AhShitRim's Skyrim part is not installed"**: install `AhShitRim-Skyrim-<version>.zip` with your mod manager (step 3) and enable it. With Vortex, deploy. The launcher doesn't look at whether a mod is ticked in MO2, so check that too. With a portable MO2 install, add `Mo2Path=<the MO2 folder>` to `launcher.ini` so the launcher can find its mods.
+- **"AhShitRim's Skyrim part is not installed"**: install `AhShitRim-Skyrim-<version>.zip` with your mod manager (step 3) and enable it. With Vortex, deploy. With MO2, the mod has to be ticked in the profile MO2 has selected (the launcher says so when it isn't). With a portable MO2 install, add `Mo2Path=<the MO2 folder>` to `launcher.ini` so the launcher can find its mods.
+- **"A loose AhShitRim.dll is in Skyrim's own Data\SKSE\Plugins as well"** (yellow): an older copy sits in Skyrim's real Data folder, outside any mod manager. The launcher starts Skyrim through MO2 anyway, but that copy loads whenever Skyrim starts without MO2. Delete `AhShitRim.dll` (and `AhShitRim.pdb`) from `<Skyrim>\Data\SKSE\Plugins`; leave `AhShitRim.ini` there, the launcher writes it.
+- **The launcher finds the wrong ModOrganizer.exe, or asks for it every time**: set `Mo2Exe=<path to ModOrganizer.exe>` in `launcher.ini`.
+- **MO2 says the shortcut is for another instance**: MO2 is open with a different instance. Switch it to the one with AhShitRim, or close MO2, and run the launcher again.
 - **"gta_sa.exe is the current Steam version"** (or 1.01, or EU): that's not the 1.0 US exe. Run the downgrader on that folder again (step 2). If Steam updated or verified the copy, the downgrade is undone.
 - **"gta_sa.exe isn't one this launcher knows"** (yellow): the launcher goes on. If San Andreas's `scripts\AhShitRim.log` then says its version isn't supported, downgrade again.
 - **"San Andreas has no ASI loader"**: install the ASI Loader from the downgrader's mod list.

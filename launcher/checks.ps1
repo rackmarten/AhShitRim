@@ -115,19 +115,97 @@ function Get-SaProblems([string] $ExeMd5, [string[]] $GameFiles, [string] $AsiLo
     [pscustomobject] @{ Errors = $errors; Warnings = $warnings }
 }
 
-# Reads a Mod Organizer 2 ModOrganizer.ini: the game folder it manages and its mods folder.
+# Reads a Mod Organizer 2 ModOrganizer.ini (QSettings): the game folder it manages, its mods and
+# profiles folders, the selected profile and its executables (@{ Title; Binary }).
 function Read-Mo2Ini([string] $IniText, [string] $InstanceDir) {
     $values = @{}
+    $section = ''
     foreach ($line in ($IniText -split "`r?`n")) {
-        if ($line -match '^\s*(gamePath|base_directory|mod_directory)\s*=\s*(.*?)\s*$') {
-            $key, $value = $Matches[1], $Matches[2]
+        if ($line -match '^\s*\[(.+)\]\s*$') { $section = $Matches[1]; continue }
+        if ($line -match '^\s*([^=;#]+?)\s*=\s*(.*?)\s*$') {
+            $key, $value = "$section/$($Matches[1])", $Matches[2]
+            if ($value -match '^"(.*)"$') { $value = $Matches[1] }
             if ($value -match '^@ByteArray\((.*)\)$') { $value = $Matches[1] }
-            $values[$key] = ($value -replace '\\\\', '\') -replace '/', '\'
+            $values[$key] = $value -replace '\\\\', '\'
         }
     }
-    $base = if ($values['base_directory']) { $values['base_directory'] } else { $InstanceDir }
-    $mods = if ($values['mod_directory']) { $values['mod_directory'] -replace '%BASE_DIR%', $base } else { "$($base.TrimEnd('\'))\mods" }
-    [pscustomobject] @{ GamePath = $values['gamePath']; ModsDir = $mods }
+    function Path-Of($value) { if ($value) { $value -replace '/', '\' } }
+    $base = if ($values['Settings/base_directory']) { Path-Of $values['Settings/base_directory'] } else { $InstanceDir }
+    $base = $base.TrimEnd('\')
+    function Dir-Of($setting, $default) {
+        $value = $values["Settings/$setting"]
+        if ($value) { (Path-Of $value) -replace '%BASE_DIR%', $base } else { "$base\$default" }
+    }
+    $executables = @()
+    $count = 0
+    [void] [int]::TryParse($values['customExecutables/size'], [ref] $count)
+    for ($i = 1; $i -le $count; $i++) {
+        $title = $values["customExecutables/$i\title"]
+        if ($title) { $executables += [pscustomobject] @{ Title = $title; Binary = Path-Of $values["customExecutables/$i\binary"] } }
+    }
+    $selected = $values['General/selected_profile']
+    [pscustomobject] @{
+        GamePath        = Path-Of $values['General/gamePath']
+        ModsDir         = Dir-Of 'mod_directory' 'mods'
+        ProfilesDir     = Dir-Of 'profiles_directory' 'profiles'
+        SelectedProfile = if ($selected) { $selected } else { 'Default' }
+        Executables     = $executables
+    }
+}
+
+# The mods a profile's modlist.txt enables: "+Name" lines. "-Name" is a disabled mod, "*Name" an
+# unmanaged one (DLC, loose files) with no folder of its own, "#" a comment.
+function Get-Mo2EnabledMods([string] $ModlistText) {
+    @(foreach ($line in ($ModlistText -split "`r?`n")) {
+        if ($line -match '^\+(.+?)\s*$') { $Matches[1] }
+    })
+}
+
+# The title of the instance's executable that runs this Skyrim's skse64_loader.exe ($null if none).
+function Find-Mo2SkseExecutable($Executables, [string] $SkyrimPath) {
+    $loader = "$(($SkyrimPath -replace '/', '\').TrimEnd('\'))\skse64_loader.exe"
+    foreach ($exe in $Executables) {
+        if (Test-SamePath $exe.Binary $loader) { return $exe.Title }
+    }
+    return $null
+}
+
+# MO2's shortcut link: moshortcut://<instance>:<executable title>. An empty instance name means
+# the portable instance (MO2's MOShortcut::isForInstance).
+function Get-Mo2ShortcutUri([string] $Instance, [string] $Title) {
+    return "moshortcut://$($Instance):$Title"
+}
+
+# ModOrganizer.exe from a shell command such as the nxm:// handler's ("C:\MO2\nxmhandler.exe" "%1"):
+# MO2's own nxmhandler.exe sits next to ModOrganizer.exe. $null for any other program.
+function Get-Mo2ExeFromCommand([string] $Command) {
+    if ($Command -notmatch '^\s*(?:"([^"]+)"|(\S+))') { return $null }
+    $program = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+    $leaf = Split-Path -Leaf ($program -replace '/', '\')
+    if ($leaf -notin 'nxmhandler.exe', 'ModOrganizer.exe') { return $null }
+    $dir = $program.Substring(0, $program.Length - $leaf.Length).TrimEnd('\', '/')
+    return "$dir\ModOrganizer.exe"
+}
+
+# Where Skyrim gets AhShitRim.dll from. Loose: the real Data\SKSE\Plugins has it. Instances:
+# @{ Name; Enabled } per MO2 instance for this Skyrim that has a mod with it (Enabled: in the
+# selected profile). An enabled MO2 mod wins over a loose copy, which then gets a warning (it
+# loads whenever Skyrim starts outside MO2); several instances with it enabled: the first.
+function Get-SkyrimPluginSource([bool] $Loose, $Instances) {
+    $enabled = @($Instances | Where-Object { $_.Enabled })
+    $disabled = @($Instances | Where-Object { -not $_.Enabled })
+    $notes = @()
+    if ($enabled.Count -gt 1) {
+        $notes += "AhShitRim is enabled in several MO2 instances ($(($enabled | ForEach-Object { $_.Name }) -join ', ')), using '$($enabled[0].Name)'."
+    }
+    if ($enabled -and $Loose) {
+        $notes += "A loose AhShitRim.dll is in Skyrim's own Data\SKSE\Plugins as well. It loads whenever Skyrim starts outside MO2, so delete it (and AhShitRim.pdb next to it) and keep the MO2 mod."
+    }
+    if (-not $enabled -and $disabled) {
+        $notes += "AhShitRim is installed in MO2 ('$($disabled[0].Name)') but not enabled in its selected profile. Tick it in MO2's left pane$(if ($Loose) { '; until then the loose AhShitRim.dll in Data\SKSE\Plugins loads' })."
+    }
+    $mode = if ($enabled) { 'Mo2' } elseif ($Loose) { 'Loose' } else { 'None' }
+    [pscustomobject] @{ Mode = $mode; Instance = if ($enabled) { $enabled[0].Name }; Warnings = $notes }
 }
 
 # The same folder, whatever the slashes, case or a trailing separator.
