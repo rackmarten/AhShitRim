@@ -23,6 +23,7 @@ out/
 cmake-build-*/
 CMakeUserPresets.json
 vcpkg_installed/
+/.plugin-sa/
 *.obj
 *.pdb
 *.ilk
@@ -49,3 +50,5 @@ local.props
 
 # --- Sweetroll FM: downloaded sources (the encoded music/sweetrollfm/*.xwm are committed) ---
 /music/sources/
+
+launcher/launcher.ini

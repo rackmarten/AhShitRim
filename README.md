@@ -10,7 +10,7 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 **Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. He opens doors, pulls levers, searches chests, picks things up and talks to people with E, and stays the player through load doors, interiors and fast travel. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
-Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
+Installing and playing it: [docs/INSTALL.md](docs/INSTALL.md). Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Keys
 
@@ -82,7 +82,9 @@ San Andreas loads collision as static per-sector files, so Skyrim's ground is bu
 - San Andreas's HUD shows the fist as the weapon, and no armour or wanted level yet (nothing gives CJ those yet).
 - Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
 
-## Requirements (planned)
+## Requirements
+
+Setting them up, step by step: [docs/INSTALL.md](docs/INSTALL.md).
 
 - Windows 10/11 and a PC that can run both games at once (San Andreas is light)
 - [The Elder Scrolls V: Skyrim Anniversary Edition](https://store.steampowered.com/app/489830/) (latest Steam version) with [SKSE64](https://skse.silverlock.org) and [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)

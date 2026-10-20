@@ -48,7 +48,7 @@ Already have Build Tools? Open **Visual Studio Installer** > Build Tools 2022 > 
 
 You don't need to put CMake, Ninja or vcpkg on your PATH. The scripts find the Build Tools install with `vswhere`, enter its developer shell, and use the copies bundled there (that shell also sets `VCPKG_ROOT`; an existing `VCPKG_ROOT` pointing at a standalone vcpkg is respected).
 
-plugin-sdk needs no separate setup: no `PLUGIN_SDK_DIR` variable and no premake step. It's a submodule, and `sa/CMakeLists.txt` compiles its `plugin_sa` library directly.
+plugin-sdk needs no separate setup: no `PLUGIN_SDK_DIR` variable and no premake step. It's a submodule, and `sa/cmake/plugin_sa.cmake` compiles its `plugin_sa` library directly.
 
 ## 3. Clone and configure
 
@@ -79,12 +79,13 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 scripts/build.ps1                  # both halves, Release
 scripts/build.ps1 -Target skse     # SKSE plugin only (-Configuration Debug for a debug build)
 scripts/build.ps1 -Target sa       # San Andreas ASI only
-scripts/test.ps1                   # game-free unit tests: protocol layout, link, rings, input mapping, pose, collision chunks, floating origin, fall rescue, CJ's model, skinning, interpolation, texture decoding (doctest)
+scripts/test.ps1                   # game-free unit tests: protocol layout, link, rings, input mapping, pose, collision chunks, floating origin, fall rescue, CJ's model, skinning, interpolation, texture decoding (doctest), and the launcher's checks (Pester 5)
 scripts/deploy-local.ps1           # copy both plugins into the games (close the games first)
 scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader log
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/restart-games.ps1 -Build   # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim
+scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
 scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones; then spawn a Sandking, drive it, ride a Sanchez, spawn a ZR-350, check a new handover takes CJ out and removes them, and drive 1.3 km through a floating origin move
 ```
 
@@ -118,13 +119,14 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 ## CI
 
-Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-latest` runner (Visual Studio 2026; `scripts/build.ps1` switches the San Andreas build to its generator) with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa`, then `scripts/test.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. A newer push to the same branch cancels the run in progress.
+Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-latest` runner (Visual Studio 2026; `scripts/build.ps1` switches the San Andreas build to its generator) with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa -PluginSaCache .plugin-sa`, `scripts/test.ps1`, then `scripts/package.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. So is plugin-sdk's `plugin_sa.lib`, keyed on the plugin-sdk commit, `sa/cmake/plugin_sa.cmake` and the MSVC toolset: `-PluginSaCache` links the cached one when it's there and keeps a fresh build there otherwise (`PLUGIN_SA_LIB` in CMake, Release only). A newer push to the same branch cancels the run in progress.
 
-Each run uploads an artifact `AhShitRim-<commit>` (the run's page, under Artifacts) with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`.
+Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<commit>` with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`, and `AhShitRim-release-<commit>` with the player release zip.
 
 To try a PR in game, either:
 
 - build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1 -Build`), or
+- install its release zip (the `AhShitRim-release-<commit>` artifact) as a player would, following [INSTALL.md](INSTALL.md), or
 - download its artifact (`gh run download <run-id>`), put the files where a local build would (`AhShitRim.dll`/`.pdb` in `skse/build/release/`, `AhShitRim.asi`/`.map` in `sa/build/Release/`) and run `scripts/deploy-local.ps1`, which also writes `AhShitRim.ini`.
 
 ## How the builds work
@@ -138,7 +140,7 @@ To try a PR in game, either:
 ### San Andreas plugin (`sa/`)
 
 - CMake with the **Visual Studio 2022 generator, `-A Win32`** (preset `x86`): the game is 32-bit, and the VS generator picks the x86 compiler itself, so no second developer shell is needed. Output is `sa/build/<Configuration>/AhShitRim.asi`.
-- **plugin-sdk:** [`DK22Pac/plugin-sdk`](https://github.com/DK22Pac/plugin-sdk) as a submodule at `sa/extern/plugin-sdk` (it has no release tags; the submodule pins a commit). `sa/CMakeLists.txt` builds its `plugin_sa` static library from the sources with the same defines as the SDK's own premake project (`GTASA`, `PLUGIN_SGV_10US`, `RW`, ...), static CRT, `/std:c++latest`.
+- **plugin-sdk:** [`DK22Pac/plugin-sdk`](https://github.com/DK22Pac/plugin-sdk) as a submodule at `sa/extern/plugin-sdk` (it has no release tags; the submodule pins a commit). `sa/cmake/plugin_sa.cmake` builds its `plugin_sa` static library from the sources with the same defines as the SDK's own premake project (`GTASA`, `PLUGIN_SGV_10US`, `RW`, ...), static CRT, `/std:c++latest`.
 - To bump plugin-sdk: `git -C sa/extern/plugin-sdk pull origin master`, rebuild, and check the version detection still logs `1.0 US`.
 - The link code (`protocol/cpp/link.cpp`) compiles into the ASI as 32-bit code. The protocol header's `static_assert`s run there too, so a layout that differs between 32-bit and 64-bit fails the build.
 
