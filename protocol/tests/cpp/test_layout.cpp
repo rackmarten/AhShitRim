@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v9 constants")
+TEST_CASE("protocol v10 constants")
 {
-    CHECK(kProtocolVersion == 9);
+    CHECK(kProtocolVersion == 10);
     CHECK(kInputFace == 0x4);
     CHECK(kInputScripted == 0x8);
     CHECK(kInputSeated == 0x10);

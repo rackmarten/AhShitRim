@@ -1,11 +1,15 @@
-// The radio (v7): Skyrim's audio sliders to San Andreas's volumes, and Radio Sovngarde, the station
-// in San Andreas's User Track Player slot that Skyrim plays its own music on. Header-only and free of
-// game types, so the protocol tests cover it; the SKSE plugin plays what it picks (skse/src/audio/).
+// The radio (v10): Skyrim's audio sliders to San Andreas's volumes, and the two stations Skyrim plays
+// after San Andreas's own: Radio Sovngarde, on Skyrim's own music, and Sweetroll FM, on CC0 music that
+// ships with AhShitRim. Header-only and free of game types, so the protocol tests cover it; the SKSE
+// plugin plays what it picks (skse/src/audio/).
 //
 // Radio Sovngarde follows Skyrim's mood: tuning in starts with the main theme, then combat tracks
 // while the player is in combat and the exploration tracks of the time of day otherwise, with one of
 // the bards' instrumentals after every two exploration tracks. The tracks are read from the player's
 // own Skyrim archives by path; nothing is copied.
+//
+// Sweetroll FM shuffles its tracks (music/CREDITS.md), installed as loose files under Skyrim's
+// Data\Music\AhShitRim\SweetrollFM\: every one once before any repeats, never one twice in a row.
 
 #pragma once
 
@@ -15,6 +19,8 @@
 #include <iterator>
 #include <span>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace AhShitRim::Radio
 {
@@ -37,24 +43,34 @@ namespace AhShitRim::Radio
 
     // ---- Stations ----
 
-    // San Andreas's eRadioID: 0 is the emergency services' (Emergency AA, never in the dial), 1..11
-    // its stations, 12 its User Track Player, which is Radio Sovngarde here, and 13 the radio off.
+    // The dial's stations (the pose's radioStation): 0 is the emergency services' (Emergency AA, never
+    // in the dial), 1..11 San Andreas's stations (its eRadioID), 12 Radio Sovngarde, 13 Sweetroll FM
+    // and 14 the radio off. San Andreas's own radio is off (its eRadioID 13) on 12 to 14.
     inline constexpr std::int8_t kEmergency = 0;
     inline constexpr std::int8_t kSovngarde = 12;
-    inline constexpr std::int8_t kRadioOff = 13;
+    inline constexpr std::int8_t kSweetroll = 13;
+    inline constexpr std::int8_t kRadioOff = 14;
+    inline constexpr std::int8_t kSaUserTracks = 12;  // San Andreas's eRadioID for its User Track Player
+    inline constexpr std::int8_t kSaRadioOff = 13;    // and for off
 
-    // The names San Andreas's text gives them (FEA_R0..FEA_R10, FEA_NON), empty for none.
+    // The names San Andreas's text gives its own (FEA_R0..FEA_R10, FEA_NON), empty for none.
     constexpr std::string_view StationName(std::int8_t a_station)
     {
         constexpr std::string_view kNames[] = { "", "Playback FM", "K-Rose", "K-DST", "Bounce FM", "SF-UR", "Radio Los Santos", "Radio X",
-            "CSR 103.9", "K-Jah West", "Master Sounds 98.3", "WCTR", "Radio Sovngarde", "Radio Off" };
+            "CSR 103.9", "K-Jah West", "Master Sounds 98.3", "WCTR", "Radio Sovngarde", "Sweetroll FM", "Radio Off" };
         return a_station >= 0 && a_station < static_cast<std::int8_t>(std::size(kNames)) ? kNames[a_station] : std::string_view();
     }
 
     // A station plays (Skyrim's own music goes quiet): any but none and off.
     constexpr bool Plays(std::int8_t a_station) { return a_station >= kEmergency && a_station != kRadioOff; }
 
-    // The mouse wheel's dial: a_steps up (negative down) from a_station through 1..13, round and round.
+    // Skyrim plays the station itself (San Andreas's radio is off).
+    constexpr bool SkyrimPlays(std::int8_t a_station) { return a_station == kSovngarde || a_station == kSweetroll; }
+
+    // The eRadioID San Andreas tunes to for a dial station.
+    constexpr std::int8_t SaStation(std::int8_t a_station) { return SkyrimPlays(a_station) || a_station == kRadioOff ? kSaRadioOff : a_station; }
+
+    // The mouse wheel's dial: a_steps up (negative down) from a_station through 1..14, round and round.
     // From the emergency station (or none) the dial starts at its first station.
     constexpr std::int8_t Dial(std::int8_t a_station, int a_steps)
     {
@@ -197,5 +213,87 @@ namespace AhShitRim::Radio
         bool          _tuned = false;
         int           _sinceBard = 0;
         Track         _current;
+    };
+
+    // ---- Sweetroll FM ----
+
+    // The tracks, by path under Skyrim's Data folder, as named in music/CREDITS.md.
+    inline constexpr std::array<std::string_view, 12> kSweetrollTracks = {
+        "music\\ahshitrim\\sweetrollfm\\01-november-snow.xwm",
+        "music\\ahshitrim\\sweetrollfm\\02-another-august.xwm",
+        "music\\ahshitrim\\sweetrollfm\\03-battle-theme-a.xwm",
+        "music\\ahshitrim\\sweetrollfm\\04-megasong.xwm",
+        "music\\ahshitrim\\sweetrollfm\\05-chill-lofi.xwm",
+        "music\\ahshitrim\\sweetrollfm\\06-the-bards-tale.xwm",
+        "music\\ahshitrim\\sweetrollfm\\07-night-prowler.xwm",
+        "music\\ahshitrim\\sweetrollfm\\08-meadow-thoughts.xwm",
+        "music\\ahshitrim\\sweetrollfm\\09-the-rush.xwm",
+        "music\\ahshitrim\\sweetrollfm\\10-winning-the-race.xwm",
+        "music\\ahshitrim\\sweetrollfm\\11-kings-feast.xwm",
+        "music\\ahshitrim\\sweetrollfm\\12-cyberpunk-moonlight-sonata.xwm",
+    };
+
+    // A playlist shuffled like a deck: every track once, then a new order, whose first track is never
+    // the one that just played. Tune() on tuning in starts a new order (a random track first), Next()
+    // whenever the last track ended. An empty playlist plays nothing (Next() gives an empty path).
+    class Shuffle
+    {
+    public:
+        explicit Shuffle(std::span<const std::string_view> a_tracks = {}, std::uint32_t a_seed = 1) :
+            _tracks(a_tracks.begin(), a_tracks.end()), _rng(a_seed ? a_seed : 1)
+        {}
+
+        void SetTracks(std::span<const std::string_view> a_tracks)
+        {
+            _tracks.assign(a_tracks.begin(), a_tracks.end());
+            _order.clear();
+            _current = {};
+        }
+
+        std::size_t Size() const { return _tracks.size(); }
+
+        void Tune() { _order.clear(); }
+
+        std::string_view Current() const { return _current; }
+
+        std::string_view Next()
+        {
+            if (_tracks.empty()) {
+                return _current = {};
+            }
+            if (_order.empty()) {
+                Deal();
+            }
+            _current = _tracks[_order.back()];
+            _order.pop_back();
+            return _current;
+        }
+
+    private:
+        // A new order, played from the back.
+        void Deal()
+        {
+            _order.resize(_tracks.size());
+            for (std::size_t i = 0; i < _order.size(); ++i) {
+                _order[i] = i;
+            }
+            for (std::size_t i = _order.size() - 1; i > 0; --i) {
+                std::swap(_order[i], _order[Random(i + 1)]);
+            }
+            if (_order.size() > 1 && _tracks[_order.back()] == _current) {
+                std::swap(_order.back(), _order.front());
+            }
+        }
+
+        std::size_t Random(std::size_t a_below)
+        {
+            _rng = _rng * 1664525u + 1013904223u;
+            return (_rng >> 8) % a_below;
+        }
+
+        std::vector<std::string_view> _tracks;
+        std::vector<std::size_t>      _order;
+        std::uint32_t                 _rng;
+        std::string_view              _current;
     };
 }

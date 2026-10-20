@@ -47,7 +47,7 @@ namespace AhShitRim::Audio
             bool          haveWheel = false;
             std::uint16_t radioNext = 0;
             std::uint16_t radioPrev = 0;
-            std::int8_t   dial = Protocol::kRadioNone;  // the station the wheel is on, Radio Sovngarde included
+            std::int8_t   dial = Protocol::kRadioNone;  // the station the wheel is on, Skyrim's stations included
             bool          dialed = false;               // a retune we asked for is still going on
             std::uint64_t dialedMs = 0;
             std::int8_t   actual = Protocol::kRadioNone - 1;  // San Andreas's own station id, last logged
@@ -104,8 +104,8 @@ namespace AhShitRim::Audio
         state.dial = Radio::Dial(state.dial, steps);
         state.dialed = true;
         state.dialedMs = ::GetTickCount64();
-        // Radio Sovngarde is San Andreas's radio off; Skyrim plays on it.
-        AudioEngine.RetuneRadio(state.dial == Radio::kSovngarde ? Radio::kRadioOff : state.dial);
+        // Radio Sovngarde and Sweetroll FM are San Andreas's radio off; Skyrim plays on them.
+        AudioEngine.RetuneRadio(Radio::SaStation(state.dial));
         Log(std::format("audio: the wheel tunes {}", Radio::StationName(state.dial)));
     }
 
@@ -143,14 +143,14 @@ namespace AhShitRim::Audio
         bool        retuning = false;
         if (a_inVehicle) {
             const auto actual = static_cast<std::int8_t>(AudioEngine.GetCurrentRadioStationID());
-            const bool off = actual < Radio::kEmergency || actual >= Radio::kSovngarde;
+            const bool off = actual < Radio::kEmergency || actual >= Radio::kSaUserTracks;
             if (actual != state.actual) {
                 Log(std::format("audio: San Andreas's radio at {} (on {}, retuning {})", actual, AudioEngine.IsRadioOn(), Retuning()));
                 state.actual = actual;
             }
             if (state.dialed) {
                 // A retune the wheel asked for: shown as where it goes until San Andreas gets there.
-                const bool there = state.dial == Radio::kSovngarde || state.dial == Radio::kRadioOff ? off : actual == state.dial;
+                const bool there = Radio::SaStation(state.dial) == Radio::kSaRadioOff ? off : actual == state.dial;
                 const bool late = ::GetTickCount64() - state.dialedMs > kRetuneMs;
                 if (there || late) {
                     if (!there) {
@@ -163,7 +163,7 @@ namespace AhShitRim::Audio
                 station = state.dial;
                 retuning = true;
             } else if (off) {
-                if (state.dial != Radio::kSovngarde) {
+                if (!Radio::SkyrimPlays(state.dial)) {
                     state.dial = Radio::kRadioOff;  // the wheel goes on from off
                 }
                 station = state.dial;

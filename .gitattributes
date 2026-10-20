@@ -5,3 +5,5 @@
 *.vcxproj text eol=crlf
 *.png binary
 *.jpg binary
+*.xwm binary
+*.wav binary

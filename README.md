@@ -35,7 +35,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | ] | ] | Spawn a Sandking | |
 | [ | [ | Spawn a ZR-350 | |
 | `\` | `\` | Spawn a Sanchez dirt bike | |
-| Mouse wheel | Mouse wheel | | Next or previous radio station (San Andreas's stations, Radio Sovngarde, off) |
+| Mouse wheel | Mouse wheel | | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) |
 | `/` | `/` | Dev key: show San Andreas's next text style (mission title, wasted, busted, mission passed, help, subtitles, fade, letterbox, wanted stars, radio station, off) | Same |
 
 A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
@@ -44,7 +44,7 @@ CJ stays the player when the game moves it: through a load door (on foot only), 
 
 While someone talks to the player, CJ stands still facing them. When Skyrim takes the player over itself (a scene that takes the controls away, a chair or bench, a bed), CJ goes where the player goes, sitting with San Andreas's sitting animation where it sits and walking or running otherwise, and you get him back when Skyrim lets go. W, S, A or D (or Skyrim's activate key) stands him up from a seat. Word walls and other triggers work as CJ walks into them.
 
-While CJ has the player, San Andreas plays his, his vehicles' and his speech's sounds itself, from where its camera is, at Skyrim's master and effects volume. In a vehicle its radio plays at Skyrim's master and music volume, starting on the vehicle's own station, and the station's name shows top centre. The User Track Player's slot is **Radio Sovngarde**: San Andreas goes quiet and Skyrim plays its own music from its archives, starting with the main theme, then combat tracks in a fight and the time of day's exploration tracks otherwise, with a bard's lute, flute or drum piece after every two. Skyrim's own music stops while any station plays. A pausing Skyrim menu pauses both. San Andreas's world ambience (city noise, weather, police scanner, distant gunfire) stays off.
+While CJ has the player, San Andreas plays his, his vehicles' and his speech's sounds itself, from where its camera is, at Skyrim's master and effects volume. In a vehicle its radio plays at Skyrim's master and music volume, starting on the vehicle's own station, and the station's name shows top centre. The User Track Player's slot is **Radio Sovngarde**: San Andreas goes quiet and Skyrim plays its own music from its archives, starting with the main theme, then combat tracks in a fight and the time of day's exploration tracks otherwise, with a bard's lute, flute or drum piece after every two. After it comes **Sweetroll FM**, AhShitRim's own station: about half an hour of CC0 (public domain) music, shuffled so every track plays once before any repeats, starting on a random one. Its tracks ship with AhShitRim in `Data\Music\AhShitRim\SweetrollFM\` (`scripts/deploy-local.ps1` copies them there for a dev build, and the release zip carries them in the same place); with none installed it shows its name and stays quiet. Skyrim's own music stops while any station plays. A pausing Skyrim menu pauses both. San Andreas's world ambience (city noise, weather, police scanner, distant gunfire) stays off.
 
 ## How it will work
 
@@ -98,6 +98,8 @@ Setting them up, step by step: [docs/INSTALL.md](docs/INSTALL.md).
 ## Game assets
 
 This repository contains **no assets from San Andreas or Skyrim**, and contributions must not add any. You need your own copies of both games. Models, sounds and textures are read from your installs at play time, never converted into the release or redistributed.
+
+The one exception is our own music: Sweetroll FM's tracks are CC0 (public domain) music by other artists, listed with their sources in [`music/CREDITS.md`](music/CREDITS.md). `scripts/encode-music.ps1` downloads and encodes them to `music/sweetrollfm/*.xwm`, which ship with AhShitRim. Still nothing from either game.
 
 ## License
 
