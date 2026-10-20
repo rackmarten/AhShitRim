@@ -84,6 +84,8 @@ namespace AhShitRim::SaHud
             float            letterbox = 0.0f;  // 0..1, how far the bars are in
             bool             letterboxOn = false;
             int              wanted = 0;
+            float            armor = 0.0f;
+            float            desaturate = 0.0f;
             int              demo = 0;
             std::uint32_t    frame = 0;
             bool             skyrimHudHidden = false;
@@ -165,7 +167,10 @@ namespace AhShitRim::SaHud
             auto* calendar = RE::Calendar::GetSingleton();
             a_frame.Text(kClock, ClockText(calendar ? calendar->GetHour() : 0.0f), kClock.colour);
 
-            // No armour yet: San Andreas hides the bar at 0.
+            // San Andreas hides the armour bar at 0.
+            if (state.armor > 0.0f) {
+                a_frame.Bar(ArmourBar(a_frame.screen), state.armor, kLightGray);
+            }
             const float health = a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const float maxHealth = a_player->GetActorValueMax(RE::ActorValue::kHealth);
             const float fraction = maxHealth > 0.0f ? health / maxHealth : 0.0f;
@@ -186,6 +191,10 @@ namespace AhShitRim::SaHud
 
         void DrawText(Frame& a_frame)
         {
+            // The picture drained of colour, as Wasted does: a grey wash.
+            if (state.desaturate > 0.0f) {
+                a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(Colour{ 128, 128, 128, 255 }, state.desaturate * 0.65f));
+            }
             // The cutscene bars under the text, so subtitles show on the bottom one.
             if (state.letterbox > 0.0f) {
                 auto top = LetterboxTop(a_frame.screen);
@@ -388,12 +397,17 @@ namespace AhShitRim::SaHud
 
     void SetWantedLevel(int a_stars) { state.wanted = std::clamp(a_stars, 0, kStarCount); }
 
+    void SetArmor(float a_fraction) { state.armor = std::clamp(a_fraction, 0.0f, 1.0f); }
+
+    void SetDesaturation(float a_amount) { state.desaturate = std::clamp(a_amount, 0.0f, 1.0f); }
+
     void ClearText()
     {
         for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.prompt, &state.subtitle, &state.radio }) {
             timed->hold = 0.0f;
         }
         FadeTo(0.0f, 0.0f);
+        state.desaturate = 0.0f;
         state.letterboxOn = false;
     }
 

@@ -9,6 +9,7 @@
 #include "model_sender.h"
 #include "pose.h"
 #include "scenes.h"
+#include "vitals.h"
 #include "vehicles.h"
 #include "window.h"
 
@@ -105,6 +106,10 @@ namespace AhShitRim::Runner
             double        mouseY = 0.0;
             bool          haveSpawn = false;  // spawnCount was read once: a change after that is a request
             std::uint16_t spawnCount = 0;
+            bool          carPending = false;  // a loaded save's car waits for the ground
+            Vehicles::Restoration car;
+            int           carReadyFrames = 0;
+            bool          wasted = false;
             Protocol::InputState lastInput{};  // the last one read, for a frame whose read failed
             std::uint32_t frame = 0;
 
@@ -294,6 +299,19 @@ namespace AhShitRim::Runner
             sa.view = { front.x, front.y, front.z };
             sa.grounded = a_ped->bIsStanding || vehicle;
             sa.crouching = a_ped->bIsDucking && !vehicle;
+            sa.damage = Vitals::Damage();
+            if (vehicle) {
+                // Saved with the game: Skyrim puts it back under CJ on load.
+                sa.vehicleModel = static_cast<std::uint16_t>(vehicle->m_nModelIndex);
+                sa.vehicleColours[0] = vehicle->m_nPrimaryColor;
+                sa.vehicleColours[1] = vehicle->m_nSecondaryColor;
+                sa.vehicleColours[2] = vehicle->m_nTertiaryColor;
+                sa.vehicleColours[3] = vehicle->m_nQuaternaryColor;
+                const auto& at = vehicle->GetPosition();
+                sa.vehicleOffset = { at.x - pos.x, at.y - pos.y, at.z - pos.z };
+                const auto& ahead = vehicle->GetForward();
+                sa.vehicleForward = { ahead.x, ahead.y, ahead.z };
+            }
             auto pose = Pose::ToPlayerState(sa, ++state.frame, state.handover);
             if (vehicle) {
                 pose.flags |= Protocol::kPlayerInVehicle;
@@ -318,12 +336,31 @@ namespace AhShitRim::Runner
                 CTimer::m_UserPause = paused;
                 Log(paused ? "runner: a Skyrim menu pauses the game" : "runner: unpaused");
             }
+            const bool wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
+            if (wasted != state.wasted) {
+                state.wasted = wasted;
+                Vitals::SetWasted(wasted);
+            }
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
+                state.carPending = false;
                 Vehicles::Clear(a_ped);
                 ChunkWorld::Begin(a_input.handover, a_input.anchor);
                 PlaceCj(a_ped, a_input.heading);
                 Log(std::format("runner: handover {} (new, or re-anchored by a load door or fast travel), CJ at the anchor facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
+                // A loaded save's car comes with its handover: put back under CJ once the ground is in.
+                if (owned && a_input.carModel) {
+                    state.car = {};
+                    state.car.model = a_input.carModel;
+                    std::copy(std::begin(a_input.carColours), std::end(a_input.carColours), state.car.colours);
+                    for (int i = 0; i < 3; i++) {
+                        state.car.offset[i] = a_input.carOffset[i] * Pose::kMetersPerUnit;
+                    }
+                    state.car.heading = Pose::SanAndreasHeading(a_input.carHeading);
+                    state.carPending = true;
+                    state.carReadyFrames = 0;
+                    Log(std::format("runner: the save's car (model {}) waits for the ground", a_input.carModel));
+                }
             }
             // A spawn key pressed in Skyrim. The first value read only seeds the count, so a San
             // Andreas that started after Skyrim doesn't spawn the last vehicle asked for again.
@@ -398,8 +435,12 @@ namespace AhShitRim::Runner
         void __cdecl IdleHook(void* a_render)
         {
             WaitForFrame();
+            auto* player = state.inGame ? FindPlayerPed(0) : nullptr;
+            // Skyrim's health is the only one: whatever this frame does to CJ is reported, not suffered.
+            Vitals::Begin(player, state.owned && !state.paused && !state.wasted && ChunkWorld::Ready() && !Scenes::Following());
             // Hidden, nothing is drawn: Idle simulates and returns before rendering.
             g_idle(Window::Visible() ? a_render : nullptr);
+            Vitals::End(player);
             if (!state.inGame) {
                 return;
             }
@@ -416,6 +457,10 @@ namespace AhShitRim::Runner
             ChunkWorld::Receive();
             ChunkWorld::Update(ped, state.spawn, Scenes::Following());
             Scenes::Update(ped, state.spawn);
+            if (state.carPending && state.owned && ChunkWorld::Ready() && ++state.carReadyFrames >= 20) {  // the chunks around him too
+                state.carPending = false;
+                Vehicles::Restore(ped, state.spawn, state.car);
+            }
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);

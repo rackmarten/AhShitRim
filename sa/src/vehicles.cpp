@@ -21,6 +21,7 @@
 #include <CPools.h>
 #include <CQuadBike.h>
 #include <CStreaming.h>
+#include <CTaskSimpleCarSetPedInAsDriver.h>
 #include <CTaskSimplePlayerOnFoot.h>
 #include <CVehicleModelInfo.h>
 #include <CWorld.h>
@@ -477,6 +478,66 @@ namespace AhShitRim::Vehicles
         const CVector& at = vehicle->GetPosition();
         Log(std::format("vehicle: {} spawned in slot {} at ({:.1f},{:.1f},{:.1f}), spot {} of {} tried, colours {}/{}", name, index, at.x, at.y, at.z,
             tried, Vehicle::kRings * std::size(Vehicle::kTurns), vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor));
+    }
+
+    bool Restore(CPlayerPed* a_ped, const CVector& a_cj, const Restoration& a_car)
+    {
+        auto* info = InfoOf(a_car.model);
+        if (!info) {
+            Log(std::format("vehicle: {} from the save is not a vehicle model, nothing restored", a_car.model));
+            return true;
+        }
+        const auto name = NameOf(info, a_car.model);
+        if (Driven(a_ped)) {
+            return true;
+        }
+        CStreaming::RequestModel(a_car.model, 0x2 | 0x8);  // game required, keep in memory
+        CStreaming::LoadAllRequestedModels(false);
+        if (CStreaming::ms_aInfoForModel[a_car.model].m_nLoadState != 1 || !info->m_pColModel) {  // LOADSTATE_LOADED
+            Log(std::format("vehicle: the {} from the save did not load, nothing restored", name));
+            return true;
+        }
+        const int index = FreeSlot();
+        CVehicle* vehicle = index >= 0 ? Create(info, a_car.model) : nullptr;
+        if (!vehicle) {
+            Log(std::format("vehicle: no slot or no way to make the {} from the save, nothing restored", name));
+            return true;
+        }
+        const CVector feet = a_cj - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
+        const CVector at = feet + CVector(a_car.offset[0], a_car.offset[1], a_car.offset[2]);
+        float         groundZ = at.z;
+        if (!GroundAt({ at.x, at.y, at.z }, feet.z, groundZ)) {
+            groundZ = at.z;  // the middle of it isn't on the ground: where it was, then put on its wheels
+        }
+        vehicle->SetPosn(CVector(at.x, at.y, groundZ - info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
+        vehicle->SetHeading(a_car.heading);
+        vehicle->m_nPrimaryColor = a_car.colours[0];
+        vehicle->m_nSecondaryColor = a_car.colours[1];
+        vehicle->m_nTertiaryColor = a_car.colours[2];
+        vehicle->m_nQuaternaryColor = a_car.colours[3];
+        vehicle->m_nStatus = STATUS_ABANDONED;
+        vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
+        CWorld::Add(vehicle);
+        if (vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+            static_cast<CBike*>(vehicle)->PlaceOnRoadProperly();
+        } else {
+            static_cast<CAutomobile*>(vehicle)->PlaceOnRoadProperly();
+        }
+        Slot& slot = state.slots[index];
+        slot = Slot{};
+        slot.ref = CPools::GetVehicleRef(vehicle);
+        slot.spawned = ++state.spawns;
+        slot.name = name;
+        // What WARP_CHAR_INTO_CAR does: CJ in the driver's seat at once.
+        auto* task = new CTaskSimpleCarSetPedInAsDriver(vehicle, nullptr);
+        task->m_bWarpingInToCar = true;
+        task->ProcessPed(a_ped);
+        delete task;
+        vehicle->bEngineOn = true;
+        const CVector& now = vehicle->GetPosition();
+        Log(std::format("vehicle: the {} from the save restored in slot {} at ({:.1f},{:.1f},{:.1f}), colours {}/{}/{}/{}, CJ {}", name, index, now.x, now.y, now.z,
+            a_car.colours[0], a_car.colours[1], a_car.colours[2], a_car.colours[3], Driven(a_ped) ? "at the wheel" : "could not be seated"));
+        return true;
     }
 
     void GetOut(CPlayerPed* a_ped)

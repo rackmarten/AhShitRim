@@ -358,4 +358,6 @@ namespace AhShitRim::ChunkWorld
             state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = 0;
         }
     }
+
+    bool Ready() { return state.ready; }
 }

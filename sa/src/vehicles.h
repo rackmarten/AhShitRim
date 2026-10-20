@@ -26,6 +26,19 @@ namespace AhShitRim::Vehicles
     // removed, so fast travel in a car leaves the car behind.
     void Clear(CPlayerPed* a_ped);
 
+    // A vehicle from a loaded save (protocol v11): model and colours as they were, a_offset metres from
+    // a_cj (where this handover put CJ), facing a_heading (San Andreas's), with CJ warped in as its
+    // driver. Call once the ground there is in. Returns whether it is done (also when it can't be done,
+    // which is logged).
+    struct Restoration
+    {
+        int           model = 0;
+        unsigned char colours[4] = {};
+        float         offset[3] = {};
+        float         heading = 0.0f;
+    };
+    bool Restore(CPlayerPed* a_ped, const CVector& a_cj, const Restoration& a_car);
+
     // CJ out of his vehicle at once (a scene takes him), the vehicle left where it is.
     void GetOut(CPlayerPed* a_ped);
 

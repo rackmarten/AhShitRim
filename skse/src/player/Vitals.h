@@ -1,0 +1,41 @@
+#pragma once
+
+namespace AhShitRim::Protocol
+{
+    struct PlayerState;
+}
+
+// CJ's health, armour and Wasted while San Andreas has the player (protocol v11, the rules in
+// protocol/cpp/health.h and wasted.h).
+// - Skyrim's health is the only health. The damage San Andreas works out for CJ (a fall, a crash, an
+//   explosion) comes in the pose as a running total and is taken off Skyrim's player, CJ's armour
+//   (ours, the bar in San Andreas's HUD) first.
+// - The player is made essential for the handover, so at 0 health it bleeds out instead of dying, and
+//   that is Wasted: slow motion, the colour draining, "wasted", a fade to black, then the player is
+//   taken to the temple of the hold it fell in (`coc` to the temple's cell), wakes there at full
+//   health, 100 gold lighter (all of it if short), and the screen fades back in. Weapons are kept.
+// - Not while Unbound (the Helgen intro) runs: the player isn't essential then, dies, and Skyrim
+//   reloads the last save as it does.
+// Main thread only.
+namespace AhShitRim::Vitals
+{
+    // San Andreas took the player (or a loaded save's handover resumed): the essential flag on.
+    void OnTakeOver(RE::PlayerCharacter* a_player);
+
+    // Skyrim has the player back: the flag off again, a Wasted in progress over.
+    void OnRelease(RE::PlayerCharacter* a_player);
+
+    // The game moved the player and CJ was re-anchored there.
+    void OnReanchor();
+
+    // Every frame while San Andreas has the player, after its pose was read (a_pose is null while it
+    // isn't valid). a_cjDrawn: CJ is drawn at the player's place. Returns whether Wasted is running.
+    bool Update(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose, bool a_cjDrawn);
+
+    // Wasted is running: the player can't act, San Andreas gets kInputWasted.
+    bool IsWasted();
+
+    // CJ's armour in San Andreas's points (0..100), part of the save.
+    float Armor();
+    void  SetArmor(float a_armor);
+}

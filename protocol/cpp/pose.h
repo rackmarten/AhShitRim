@@ -62,6 +62,13 @@ namespace AhShitRim::Pose
         Vec3 view;      // the camera's look direction
         bool grounded = false;
         bool crouching = false;
+
+        // The vehicle CJ is in (v11), if any.
+        std::uint16_t vehicleModel = 0;          // San Andreas's model id, 0 = on foot
+        std::uint8_t  vehicleColours[4] = {};
+        Vec3          vehicleOffset;             // its position minus CJ's feet, metres
+        Vec3          vehicleForward{ 0.0f, 1.0f, 0.0f };  // the way it faces
+        float         damage = 0.0f;             // what San Andreas took off CJ so far, its health points
     };
 
     inline Protocol::PlayerState ToPlayerState(const SanAndreasPose& a_pose, std::uint32_t a_frame, std::uint32_t a_handover)
@@ -80,6 +87,17 @@ namespace AhShitRim::Pose
         s.viewHeading = HeadingOf(a_pose.view.x, a_pose.view.y);
         s.viewPitch = PitchOf(a_pose.view);
         s.handover = a_handover;
+        if (a_pose.vehicleModel) {
+            s.vehicleModel = a_pose.vehicleModel;
+            for (int i = 0; i < 4; ++i) {
+                s.vehicleColours[i] = a_pose.vehicleColours[i];
+            }
+            s.vehicleOffset[0] = a_pose.vehicleOffset.x * kUnitsPerMeter;
+            s.vehicleOffset[1] = a_pose.vehicleOffset.y * kUnitsPerMeter;
+            s.vehicleOffset[2] = a_pose.vehicleOffset.z * kUnitsPerMeter;
+            s.vehicleHeading = HeadingOf(a_pose.vehicleForward.x, a_pose.vehicleForward.y);
+        }
+        s.damage = a_pose.damage;
         return s;
     }
 
@@ -90,6 +108,12 @@ namespace AhShitRim::Pose
                 return false;
             }
         }
-        return std::isfinite(a_pose.heading) && std::isfinite(a_pose.viewHeading) && std::isfinite(a_pose.viewPitch);
+        for (int i = 0; i < 3; ++i) {
+            if (!std::isfinite(a_pose.vehicleOffset[i])) {
+                return false;
+            }
+        }
+        return std::isfinite(a_pose.heading) && std::isfinite(a_pose.viewHeading) && std::isfinite(a_pose.viewPitch) &&
+               std::isfinite(a_pose.vehicleHeading) && std::isfinite(a_pose.damage);
     }
 }
