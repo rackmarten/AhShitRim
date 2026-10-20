@@ -38,12 +38,37 @@ jobs:
         shell: pwsh
         run: ./scripts/build.ps1 -Target skse
 
+      # plugin-sdk's plugin_sa is most of the San Andreas build, so its .lib is cached, keyed on the
+      # submodule commit, sa/cmake/plugin_sa.cmake and the MSVC toolset. Caching sa/build instead
+      # wouldn't help: the checkout gives every file a new mtime, so MSBuild would rebuild it all.
+      - name: plugin_sa cache key
+        id: plugin-sa
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $toolset = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt").Trim()
+          $sdk = git -C sa/extern/plugin-sdk rev-parse HEAD
+          "key=plugin-sa-$sdk-msvc$toolset-${{ hashFiles('sa/cmake/plugin_sa.cmake') }}" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/cache/restore@v4
+        id: plugin-sa-cache
+        with:
+          path: .plugin-sa
+          key: ${{ steps.plugin-sa.outputs.key }}
+
       - name: Build San Andreas plugin
         shell: pwsh
-        run: ./scripts/build.ps1 -Target sa
+        run: ./scripts/build.ps1 -Target sa -PluginSaCache .plugin-sa
 
-      # Game-free doctest cases. Without local.props the HUD test against a real San Andreas
-      # install skips itself.
+      # Saved straight away, so a later failing step doesn't cost the next run the plugin_sa build.
+      - uses: actions/cache/save@v4
+        if: steps.plugin-sa-cache.outputs.cache-hit != 'true'
+        with:
+          path: .plugin-sa
+          key: ${{ steps.plugin-sa.outputs.key }}
+
+      # Game-free doctest cases and the launcher's Pester tests. Without local.props the HUD test
+      # against a real San Andreas install skips itself.
       - name: Unit tests
         shell: pwsh
         run: ./scripts/test.ps1
@@ -56,4 +81,15 @@ jobs:
             skse/build/release/AhShitRim.pdb
             sa/build/Release/AhShitRim.asi
             sa/build/Release/AhShitRim.map
+          if-no-files-found: error
+
+      # The player release zip (scripts/package.ps1), as its own artifact to install from a PR.
+      - name: Release package
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AhShitRim-release-${{ github.sha }}
+          path: out/release/*.zip
           if-no-files-found: error
