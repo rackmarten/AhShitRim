@@ -22,7 +22,8 @@ namespace AhShitRim::Vehicles
     // CJ is in a vehicle or when nothing in front of him will do.
     void Spawn(CPlayerPed* a_ped, int a_model);
 
-    // A new handover: CJ out of any vehicle and every vehicle removed.
+    // A new handover or a re-anchor (a load door, fast travel): CJ out of any vehicle and every vehicle
+    // removed, so fast travel in a car leaves the car behind.
     void Clear(CPlayerPed* a_ped);
 
     // The floating origin moved by a_shift (metres): the vehicles move back with everything else.

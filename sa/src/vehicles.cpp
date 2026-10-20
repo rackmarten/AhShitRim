@@ -496,7 +496,7 @@ namespace AhShitRim::Vehicles
             }
         }
         if (removed) {
-            Log(std::format("vehicle: {} vehicles removed for the new handover", removed));
+            Log(std::format("vehicle: {} vehicles removed for the new handover or re-anchor", removed));
         }
     }
 

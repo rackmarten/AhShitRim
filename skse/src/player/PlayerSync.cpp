@@ -1,5 +1,7 @@
 #include "player/PlayerSync.h"
 
+#include "Ini.h"
+#include "anchor.h"
 #include "audio/SaAudio.h"
 #include "body/ModelView.h"
 #include "body.h"
@@ -8,23 +10,23 @@
 #include "hud/SaHud.h"
 #include "input.h"
 #include "link/LinkService.h"
+#include "player/Activation.h"
 #include "pose.h"
 
 namespace AhShitRim::PlayerSync
 {
     namespace
     {
-        // A jump this big between two frames means the game moved the player (fast travel, a
-        // script), which ends the handover.
-        constexpr float kTeleportUnits = 2048.0f;
-
         // Main thread only: the input and menu sinks and the Update hook all run there.
         struct State
         {
             bool           owned = false;
             std::uint32_t  handover = 0;
-            float          heading = 0.0f;   // the player's heading when the handover started
-            RE::NiPoint3   anchor;           // the player's position when the handover started
+            float          heading = 0.0f;   // the player's heading when the handover started, or the last re-anchor
+            RE::NiPoint3   anchor;           // the player's position then
+            bool           reanchoring = false;  // re-anchored, and CJ isn't drawn there yet: the player's 3D stays hidden
+            bool           positioned = false;   // Skyrim positioned the player (PositionPlayerEvent) since the last anchor
+            bool           placing = false;      // Place is moving the player for CJ: not Skyrim positioning it
             RE::NiPoint3   lastPlaced;
             RE::TESObjectCELL* cell = nullptr;
             bool           wasThirdPerson = false;
@@ -242,10 +244,11 @@ namespace AhShitRim::PlayerSync
             Protocol::BodyState pose{};
             if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
                 !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]))) {
-                HidePlayer(a_player, false);
+                HidePlayer(a_player, state.reanchoring && state.playerHidden);  // CJ comes back in a frame or two
                 return;
             }
             HidePlayer(a_player, true);
+            state.reanchoring = false;
             PoseCamera(pose, a_fromHeading, a_fromPitch);
             state.drawn++;
             if (!state.cjLogged) {
@@ -285,7 +288,9 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             state.owned = false;
+            state.reanchoring = false;
             CollisionSampler::Stop();
+            Activation::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -304,6 +309,24 @@ namespace AhShitRim::PlayerSync
             SKSE::log::info("player sync: Skyrim owns the player ({})", a_reason);
         }
 
+        // A new anchor at the player's feet: a handover, or a re-anchor. San Andreas puts CJ there.
+        void AnchorAt(RE::PlayerCharacter* a_player)
+        {
+            state.handover++;
+            state.positioned = false;
+            state.anchor = a_player->GetPosition();
+            state.lastPlaced = state.anchor;
+            state.cell = a_player->GetParentCell();
+            state.heading = a_player->GetAngleZ();
+            state.statTime = 0.0f;
+            state.frames = state.placed = state.newPoses = state.drawn = 0;
+            state.body.Reset();
+            state.cjLogged = false;
+            Publish();  // before the chunks: San Andreas takes this anchor's chunks once it has read it
+            auto* worldspace = a_player->GetWorldspace();
+            CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
+        }
+
         void TakeOver(RE::PlayerCharacter* a_player)
         {
             if (!LinkService::Get().IsUp()) {
@@ -319,42 +342,57 @@ namespace AhShitRim::PlayerSync
                 camera->ForceFirstPerson();
             }
             state.owned = true;
-            state.handover++;
-            state.anchor = a_player->GetPosition();
-            state.lastPlaced = state.anchor;
-            state.cell = a_player->GetParentCell();
-            state.heading = a_player->GetAngleZ();
-            state.statTime = 0.0f;
-            state.frames = state.placed = state.newPoses = state.drawn = 0;
-            state.body.Reset();
-            state.cjLogged = false;
-            Publish();
-            auto* worldspace = a_player->GetWorldspace();
-            CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
+            AnchorAt(a_player);
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
                 state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading);
         }
 
-        const char* MovedByGame(RE::PlayerCharacter* a_player)
+        // The game moved the player (a load door, fast travel, a script) while CJ has it: CJ goes
+        // along. San Andreas drops its ground and every vehicle (a car is left behind), puts CJ at
+        // the new anchor and holds him there until the ground under him is in; the handover goes on.
+        void Reanchor(RE::PlayerCharacter* a_player, Anchor::Move a_move)
         {
+            const auto from = state.anchor;
+            if (auto* camera = RE::PlayerCamera::GetSingleton(); camera && !camera->IsInFirstPerson()) {
+                camera->ForceFirstPerson();  // a load can put Skyrim's camera back in its own state
+            }
+            for (auto& vehicle : state.vehicles) {
+                vehicle.Reset();
+            }
+            Activation::Clear();
+            state.reanchoring = true;
+            AnchorAt(a_player);
             auto* cell = a_player->GetParentCell();
-            if (!cell) {
-                return nullptr;  // loading
+            SKSE::log::info("player sync: the player {}, CJ re-anchored (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f}, {} {:08X}, from ({:.0f},{:.0f},{:.0f}))",
+                Anchor::NameOf(a_move), state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading,
+                cell && cell->IsInteriorCell() ? "interior" : "exterior", cell ? cell->GetFormID() : 0, from.x, from.y, from.z);
+        }
+
+        // Whether the game moved the player since CJ put it there last frame.
+        Anchor::Move MovedByGame(RE::PlayerCharacter* a_player)
+        {
+            auto*         cell = a_player->GetParentCell();
+            Anchor::Frame frame;
+            frame.hasCell = cell != nullptr;
+            frame.cellChanged = cell != state.cell;
+            frame.interior = cell && cell->IsInteriorCell();
+            frame.wasInterior = state.cell && state.cell->IsInteriorCell();
+            frame.worldspaceChanged = cell && state.cell && cell->GetRuntimeData().worldSpace != state.cell->GetRuntimeData().worldSpace;
+            frame.jump = a_player->GetPosition().GetDistance(state.lastPlaced);
+            frame.positioned = state.positioned;
+            const auto move = Anchor::Classify(frame);
+            if (move == Anchor::Move::None) {
+                state.cell = cell;  // walked into the next exterior cell
             }
-            if (cell != state.cell && (cell->IsInteriorCell() || state.cell->IsInteriorCell())) {
-                return "went through a load door";
-            }
-            if (a_player->GetPosition().GetDistance(state.lastPlaced) > kTeleportUnits) {
-                return "moved by the game";
-            }
-            state.cell = cell;  // walked into the next exterior cell
-            return nullptr;
+            return move;
         }
 
         void Place(RE::PlayerCharacter* a_player, const Protocol::PlayerState& a_pose)
         {
             state.lastPlaced = state.anchor + RE::NiPoint3(a_pose.offset[0], a_pose.offset[1], a_pose.offset[2]);
+            state.placing = true;
             a_player->SetPosition(state.lastPlaced, true);
+            state.placing = false;
             a_player->SetHeading(a_pose.viewHeading);  // first person: the body turns with the view
             a_player->data.angle.x = a_pose.viewPitch;
             if (auto* controller = a_player->GetCharController()) {
@@ -395,9 +433,8 @@ namespace AhShitRim::PlayerSync
                 Release("the player died");
                 return;
             }
-            if (const char* reason = MovedByGame(a_player)) {
-                Release(reason);
-                return;
+            if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
+                Reanchor(a_player, move);
             }
             ReleaseStuckKeys();
             Publish();
@@ -417,6 +454,7 @@ namespace AhShitRim::PlayerSync
                 }
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
+            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput());
             DrawCj(a_player, fromHeading, fromPitch);
             DrawVehicles();
             ModelView::EndFrame();
@@ -535,6 +573,14 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
+                    if (code == Input::kDikE && state.owned) {
+                        if (button->IsDown() && !MenuHasInput()) {
+                            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                                Activation::Activate(player);  // what CJ faces, through Skyrim's own activation
+                            }
+                        }
+                        continue;
+                    }
                     if (code == Input::kDikSlash && state.owned) {
                         if (button->IsDown() && !MenuHasInput()) {
                             SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
@@ -559,6 +605,21 @@ namespace AhShitRim::PlayerSync
                 } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                     TakeOver(player);
                 }
+            }
+        };
+
+        // Skyrim positioning the player: a load door (a city's gate too), fast travel, coc, a script's
+        // MoveTo. Drive re-anchors CJ once the player has a cell there.
+        class PositionSink : public RE::BSTEventSink<RE::PositionPlayerEvent>
+        {
+        public:
+            RE::BSEventNotifyControl ProcessEvent(const RE::PositionPlayerEvent* a_event, RE::BSTEventSource<RE::PositionPlayerEvent>*) override
+            {
+                if (state.owned && !state.placing && a_event && a_event->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)) {
+                    state.positioned = true;
+                    SKSE::log::info("player sync: Skyrim positioned the player");
+                }
+                return RE::BSEventNotifyControl::kContinue;
             }
         };
 
@@ -614,11 +675,19 @@ namespace AhShitRim::PlayerSync
     {
         static InputSink inputSink;
         static MenuSink  menuSink;
+        const auto layout = Ini::Value("Input", "KeyLayout");
+        state.input.SetLayout(Input::ParseKeyLayout(layout));
+        SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
+            Ini::kPath);
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
+        }
+        static PositionSink positionSink;
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            player->AsPositionPlayerEventSource()->AddEventSink(&positionSink);
         }
     }
 

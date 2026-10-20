@@ -8,34 +8,38 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 ## Status
 
-**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
+**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. He opens doors, pulls levers, searches chests, picks things up and talks to people with E, and stays the player through load doors, interiors and fast travel. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
 Installing and playing it: [docs/INSTALL.md](docs/INSTALL.md). Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Keys
 
-While San Andreas has the player (F10), the keys follow San Andreas's own keyboard layout:
+While San Andreas has the player (F10), the keys follow San Andreas's keyboard layout, modern by default. `KeyLayout=Classic` under `[Input]` in `Data/SKSE/Plugins/AhShitRim.ini` switches to San Andreas's own PC defaults (the keys in bold differ):
 
-| Key | On foot | In a vehicle |
-|---|---|---|
-| F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
-| W / S | Walk forwards / back | Accelerate / brake, then reverse |
-| Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps) |
-| A / D, arrows left / right | Walk left / right | Steer |
-| Mouse | Look around | Look around |
-| Left Shift | Sprint | |
-| Space | Jump | Handbrake |
-| C | Crouch (Skyrim sneaks) | |
-| Left Alt | Walk | |
-| F or Enter | Get into the nearest vehicle | Get out |
-| H | | Horn |
-| ] | Spawn a Sandking | |
-| [ | Spawn a ZR-350 | |
-| `\` | Spawn a Sanchez dirt bike | |
-| Mouse wheel | | Next or previous radio station (San Andreas's stations, Radio Sovngarde, off) |
-| `/` | Dev key: show San Andreas's next text style (mission title, wasted, busted, mission passed, help, subtitles, fade, letterbox, wanted stars, radio station, off) | Same |
+| Key (modern) | Key (classic) | On foot | In a vehicle |
+|---|---|---|---|
+| F10 | F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
+| W / S | W / S | Walk forwards / back | Accelerate / brake, then reverse |
+| Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps) |
+| A / D, arrows left / right | A / D, arrows left / right | Walk left / right | Steer |
+| Mouse | Mouse | Look around | Look around |
+| Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
+| Space | **Left Shift or Right Ctrl** | Jump | |
+| Space | **Space or Right Ctrl** | | Handbrake |
+| C | C | Crouch (Skyrim sneaks) | |
+| Left Alt | Left Alt | Walk | |
+| F or Enter | F or Enter | Get into the nearest vehicle | Get out |
+| H | **Caps Lock or H** | | Horn |
+| E | E | Activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk); the help box top left says what ("E: Open Breezehome") | |
+| ] | ] | Spawn a Sandking | |
+| [ | [ | Spawn a ZR-350 | |
+| `\` | `\` | Spawn a Sanchez dirt bike | |
+| Mouse wheel | Mouse wheel | | Next or previous radio station (San Andreas's stations, Radio Sovngarde, off) |
+| `/` | `/` | Dev key: show San Andreas's next text style (mission title, wasted, busted, mission passed, help, subtitles, fade, letterbox, wanted stars, radio station, off) | Same |
 
 A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
+
+CJ stays the player when the game moves it: through a load door (on foot only), into an interior and back out, by fast travel or a script. San Andreas rebuilds his ground where the player arrives and holds him there until it's in. Fast travelling in a vehicle leaves the vehicle behind.
 
 While CJ has the player, San Andreas plays his, his vehicles' and his speech's sounds itself, from where its camera is, at Skyrim's master and effects volume. In a vehicle its radio plays at Skyrim's master and music volume, starting on the vehicle's own station, and the station's name shows top centre. The User Track Player's slot is **Radio Sovngarde**: San Andreas goes quiet and Skyrim plays its own music from its archives, starting with the main theme, then combat tracks in a fight and the time of day's exploration tracks otherwise, with a bard's lute, flute or drum piece after every two. Skyrim's own music stops while any station plays. A pausing Skyrim menu pauses both. San Andreas's world ambience (city noise, weather, police scanner, distant gunfire) stays off.
 
@@ -72,7 +76,8 @@ San Andreas loads collision as static per-sector files, so Skyrim's ground is bu
 - CJ and the vehicles cast no shadow in Skyrim yet, and CJ always wears his starting clothes (vest, jeans, sneakers).
 - Vehicles: damage isn't shown (dents, broken windows and lost doors stay as they were), and lights and exhaust smoke aren't drawn.
 - Radio Sovngarde plays the bards' instrumentals, not their sung songs: those are voice lines split by verse, which Skyrim can't play from a file.
-- Vehicles live only while San Andreas has the player: they're hidden when Skyrim takes it back, and the next F10 removes them.
+- Vehicles live only while San Andreas has the player: they're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them.
+- Furniture (chairs, beds, workbenches) can't be used as CJ: E skips it. F10 back to Skyrim's body to sit, sleep or craft.
 - Every surface counts as tarmac for San Andreas: roads, grass and dirt all grip the same. A low sports car like the ZR-350 scrapes on Skyrim's rocks and rough ground (its ground clearance, not a collision bug).
 - San Andreas's HUD shows the fist as the weapon, and no armour or wanted level yet (nothing gives CJ those yet).
 - Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
