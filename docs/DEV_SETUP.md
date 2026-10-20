@@ -116,6 +116,17 @@ On any San Andreas exe other than 1.0 US, its log says which version it found an
 
 Milestone 1's ground check: from the stables outside Whiterun, walk up the road to the gate, over the rough tundra beside it, and (F10 again inside the city) up the steps to Dragonsreach. CJ should never fall through or hover, and San Andreas's log should show no `below the ground` line on normal ground.
 
+## CI
+
+Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-latest` runner (Visual Studio 2026; `scripts/build.ps1` switches the San Andreas build to its generator) with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa`, then `scripts/test.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. A newer push to the same branch cancels the run in progress.
+
+Each run uploads an artifact `AhShitRim-<commit>` (the run's page, under Artifacts) with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`.
+
+To try a PR in game, either:
+
+- build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1 -Build`), or
+- download its artifact (`gh run download <run-id>`), put the files where a local build would (`AhShitRim.dll`/`.pdb` in `skse/build/release/`, `AhShitRim.asi`/`.map` in `sa/build/Release/`) and run `scripts/deploy-local.ps1`, which also writes `AhShitRim.ini`.
+
 ## How the builds work
 
 ### SKSE plugin (`skse/`)

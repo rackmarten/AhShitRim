@@ -41,7 +41,9 @@ if ($Target -in 'all', 'sa') {
     Initialize-Submodule 'sa/extern/plugin-sdk' 'plugin_sa/plugin_sa.h'
     Push-Location (Join-Path $RepoRoot 'sa')
     try {
-        Invoke-Checked cmake @('--preset', 'x86')
+        # The preset names VS 2022's generator; under VS 2026 (GitHub's windows-latest) use its own.
+        $generator = if ($env:VisualStudioVersion -eq '18.0') { @('-G', 'Visual Studio 18 2026') } else { @() }
+        Invoke-Checked cmake (@('--preset', 'x86') + $generator)
         Invoke-Checked cmake @('--build', '--preset', $preset, '--', '/m', '/nologo', '/v:minimal')
     } finally { Pop-Location }
     Write-Host "San Andreas plugin: sa/build/$Configuration/AhShitRim.asi"
