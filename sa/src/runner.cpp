@@ -322,7 +322,7 @@ namespace AhShitRim::Runner
                 Vehicles::Clear(a_ped);
                 ChunkWorld::Begin(a_input.handover, a_input.anchor);
                 PlaceCj(a_ped, a_input.heading);
-                Log(std::format("runner: handover {}, CJ at the handover spot facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
+                Log(std::format("runner: handover {} (new, or re-anchored by a load door or fast travel), CJ at the anchor facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
             }
             // A spawn key pressed in Skyrim. The first value read only seeds the count, so a San
             // Andreas that started after Skyrim doesn't spawn the last vehicle asked for again.

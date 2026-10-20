@@ -27,6 +27,7 @@ namespace AhShitRim::SaHud
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);
     void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left
+    void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
     void FadeTo(float a_black, float a_seconds);  // 0 = clear, 1 = black over everything
     void SetLetterbox(bool a_on);                 // cutscene bars, sliding in and out
