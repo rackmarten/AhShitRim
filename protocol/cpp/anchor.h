@@ -21,8 +21,9 @@ namespace AhShitRim::Anchor
 
     enum class Move
     {
-        None,      // CJ walked or drove on in the same cell, or into the next exterior one
-        Loading,   // no cell yet (a loading screen): wait
+        None,        // CJ walked or drove on in the same cell, or into the next exterior one
+        Loading,     // no cell yet (a loading screen): wait
+        Positioned,  // Skyrim positioned the player (its PositionPlayerEvent: a load door, fast travel, coc, a script)
         LoadDoor,  // into or out of an interior, or into another worldspace (a city's gate)
         Teleport,  // fast travel, a script, a load door within a cell: far from where CJ was put last frame
     };
@@ -35,12 +36,18 @@ namespace AhShitRim::Anchor
         bool  wasInterior = false;        // the cell before was
         bool  worldspaceChanged = false;  // an exterior in another worldspace than before (Tamriel to Whiterun)
         float jump = 0.0f;                // units from where Skyrim put the player for CJ last frame
+        bool  positioned = false;         // Skyrim said it positioned the player since the last anchor
     };
 
     inline Move Classify(const Frame& a_frame)
     {
         if (!a_frame.hasCell) {
             return Move::Loading;
+        }
+        // Skyrim's own word first: the cells and the jump below miss a city gate whose two sides
+        // stand a few metres apart (Whiterun's: 272 units).
+        if (a_frame.positioned) {
+            return Move::Positioned;
         }
         if (a_frame.cellChanged && (a_frame.interior || a_frame.wasInterior || a_frame.worldspaceChanged)) {
             return Move::LoadDoor;
@@ -51,11 +58,12 @@ namespace AhShitRim::Anchor
         return Move::None;
     }
 
-    inline bool Reanchors(Move a_move) { return a_move == Move::LoadDoor || a_move == Move::Teleport; }
+    inline bool Reanchors(Move a_move) { return a_move == Move::Positioned || a_move == Move::LoadDoor || a_move == Move::Teleport; }
 
     inline const char* NameOf(Move a_move)
     {
         switch (a_move) {
+        case Move::Positioned: return "was positioned by the game";
         case Move::LoadDoor: return "went through a load door";
         case Move::Teleport: return "moved by the game";
         case Move::Loading: return "loading";
