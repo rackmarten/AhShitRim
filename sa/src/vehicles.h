@@ -26,6 +26,9 @@ namespace AhShitRim::Vehicles
     // removed, so fast travel in a car leaves the car behind.
     void Clear(CPlayerPed* a_ped);
 
+    // CJ out of his vehicle at once (a scene takes him), the vehicle left where it is.
+    void GetOut(CPlayerPed* a_ped);
+
     // The floating origin moved by a_shift (metres): the vehicles move back with everything else.
     void Shift(const CVector& a_shift);
 

@@ -37,7 +37,7 @@ namespace AhShitRim::Activation
         }
 
         // What Skyrim's activate key acts on: doors, levers and other activators, containers, people,
-        // and what can be picked up. Furniture stays out: the player sitting down isn't CJ.
+        // furniture (the player sits, and CJ follows it, see PlayerSync), and what can be picked up.
         bool Activatable(RE::TESObjectREFR* a_ref)
         {
             if (a_ref->IsActor()) {
@@ -52,6 +52,7 @@ namespace AhShitRim::Activation
             case RE::FormType::Activator:
             case RE::FormType::TalkingActivator:
             case RE::FormType::Container:
+            case RE::FormType::Furniture:
             case RE::FormType::Flora:
             case RE::FormType::Tree:
             case RE::FormType::Weapon:

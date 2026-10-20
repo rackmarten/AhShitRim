@@ -20,4 +20,7 @@ namespace AhShitRim::CjBody
     // where this handover put CJ (his position, not his feet), a_lift how far above the ground he
     // was put there.
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame);
+
+    // CJ's pelvis joint relative to his position as of the last Update (metres); false before one.
+    bool Pelvis(CVector& a_offset);
 }

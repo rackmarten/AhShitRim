@@ -8,7 +8,7 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 ## Status
 
-**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. He opens doors, pulls levers, searches chests, picks things up and talks to people with E, and stays the player through load doors, interiors and fast travel. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
+**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. He opens doors, pulls levers, searches chests, picks things up, talks to people and sits down with E, shouts with Skyrim's shout key, stays the player through load doors, interiors and fast travel, and follows Skyrim's player through scenes that take it over. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
 Installing and playing it: [docs/INSTALL.md](docs/INSTALL.md). Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -30,7 +30,8 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
 | H | **Caps Lock or H** | | Horn |
-| E | E | Activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk); the help box top left says what ("E: Open Breezehome") | |
+| E | E | Activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome") | |
+| Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air | Skyrim's shout, no gesture |
 | ] | ] | Spawn a Sandking | |
 | [ | [ | Spawn a ZR-350 | |
 | `\` | `\` | Spawn a Sanchez dirt bike | |
@@ -40,6 +41,8 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
 
 CJ stays the player when the game moves it: through a load door (on foot only), into an interior and back out, by fast travel or a script. San Andreas rebuilds his ground where the player arrives and holds him there until it's in. Fast travelling in a vehicle leaves the vehicle behind.
+
+While someone talks to the player, CJ stands still facing them. When Skyrim takes the player over itself (a scene that takes the controls away, a chair or bench, a bed), CJ goes where the player goes, sitting with San Andreas's sitting animation where it sits and walking or running otherwise, and you get him back when Skyrim lets go. W, S, A or D (or Skyrim's activate key) stands him up from a seat. Word walls and other triggers work as CJ walks into them.
 
 While CJ has the player, San Andreas plays his, his vehicles' and his speech's sounds itself, from where its camera is, at Skyrim's master and effects volume. In a vehicle its radio plays at Skyrim's master and music volume, starting on the vehicle's own station, and the station's name shows top centre. The User Track Player's slot is **Radio Sovngarde**: San Andreas goes quiet and Skyrim plays its own music from its archives, starting with the main theme, then combat tracks in a fight and the time of day's exploration tracks otherwise, with a bard's lute, flute or drum piece after every two. Skyrim's own music stops while any station plays. A pausing Skyrim menu pauses both. San Andreas's world ambience (city noise, weather, police scanner, distant gunfire) stays off.
 
@@ -77,7 +80,9 @@ San Andreas loads collision as static per-sector files, so Skyrim's ground is bu
 - Vehicles: damage isn't shown (dents, broken windows and lost doors stay as they were), and lights and exhaust smoke aren't drawn.
 - Radio Sovngarde plays the bards' instrumentals, not their sung songs: those are voice lines split by verse, which Skyrim can't play from a file.
 - Vehicles live only while San Andreas has the player: they're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them.
-- Furniture (chairs, beds, workbenches) can't be used as CJ: E skips it. F10 back to Skyrim's body to sit, sleep or craft.
+- CJ sits on anything Skyrim's player uses as furniture, in the same chair pose: at a forge, an alchemy table, a bed or on a horse too. A scene that leaves the player standing or kneeling (Helgen's execution block) shows CJ standing.
+- The Helgen intro (the cart and the execution) isn't supported as CJ yet: play it as Skyrim's own player and press F10 afterwards.
+- In a carriage CJ sits on the ground beside it, where the player got on: Skyrim's animation carries the player into the cart, and the carriage only says where it gets on. The ride itself (fast travel) works.
 - Every surface counts as tarmac for San Andreas: roads, grass and dirt all grip the same. A low sports car like the ZR-350 scrapes on Skyrim's rocks and rough ground (its ground clearance, not a collision bug).
 - San Andreas's HUD shows the fist as the weapon, and no armour or wanted level yet (nothing gives CJ those yet).
 - Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
