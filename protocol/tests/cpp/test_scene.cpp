@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
+#include "../../cpp/camera.h"
 #include "../../cpp/scene.h"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace AhShitRim;
@@ -107,4 +109,61 @@ TEST_CASE("CJ walks, runs and sits by what the player he follows does")
     at.x += 500.0f;
     CHECK(tracker.Update(false, at, dt) == Motion::Idle);
     CHECK(tracker.Speed() < Scene::MotionTracker::kIdleBelow);
+}
+
+TEST_CASE("a furniture marker lands where the furniture's 3D puts it")
+{
+    // A carriage turned 90 degrees (model +Y to world +X), scale 2, its seat 50 forward and 40 up.
+    const float rotate[3][3] = { { 0.0f, 1.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } };
+    const auto  at = Scene::MarkerInWorld(rotate, { 1000.0f, 2000.0f, 300.0f }, 2.0f, { 0.0f, 50.0f, 40.0f });
+    CHECK(at.x == doctest::Approx(1100.0f));
+    CHECK(at.y == doctest::Approx(2000.0f));
+    CHECK(at.z == doctest::Approx(380.0f));
+}
+
+TEST_CASE("seated, CJ moves so his pelvis is over the seat, and a bad read changes nothing")
+{
+    Scene::SeatMatch seat;
+    seat.Update(false, 0.4f, 0.0f, 1.0f / 30.0f);
+    CHECK(seat.X() == 0.0f);
+    seat.Update(true, -0.45f, 0.1f, 1.0f / 30.0f);  // the first read is taken as it is
+    CHECK(seat.X() == doctest::Approx(-0.45f));
+    CHECK(seat.Y() == doctest::Approx(0.1f));
+    seat.Update(true, 5.0f, 0.0f, 1.0f / 30.0f);  // further than a pelvis can be
+    CHECK(seat.X() == doctest::Approx(-0.45f));
+    for (int i = 0; i < 60; ++i) {  // the idle sways: it settles in between
+        seat.Update(true, i % 2 ? -0.40f : -0.50f, 0.1f, 1.0f / 30.0f);
+    }
+    CHECK(seat.X() == doctest::Approx(-0.45f).epsilon(0.05));
+    seat.Reset();
+    CHECK(seat.X() == 0.0f);
+}
+
+TEST_CASE("in a dialogue Skyrim's turn to the speaker stays out of the camera")
+{
+    // Skyrim's camera node: its own axes (L) on the player's heading and pitch; in a dialogue it also
+    // turns 0.6 rad to the speaker.
+    Camera::Matrix axes, plain, built, turned, held, posed, expected;
+    Camera::Basis(0.0f, 0.0f, 0.3f, axes);
+    Camera::Basis(1.0f, 0.2f, 0.0f, plain);
+    Camera::Multiply(plain, axes, built);
+    Camera::OffsetOf(built, 1.0f, 0.2f, held);  // before the menu
+    Camera::Basis(1.6f, 0.2f, 0.0f, plain);
+    Camera::Multiply(plain, axes, turned);      // in it, still built for heading 1.0
+    Camera::Retarget(turned, 1.0f, 0.2f, 2.0f, -0.1f, 0.0f, posed);
+    Camera::Apply(held, 2.0f, -0.1f, 0.0f, expected);
+    float retargeted = 0.0f;
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            retargeted = (std::max)(retargeted, std::abs(posed[r][c] - expected[r][c]));
+        }
+    }
+    CHECK(retargeted > 0.1f);  // retargeting each frame would carry the turn over
+    Camera::Basis(2.0f, -0.1f, 0.0f, plain);
+    Camera::Multiply(plain, axes, posed);
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            CHECK(expected[r][c] == doctest::Approx(posed[r][c]));
+        }
+    }
 }

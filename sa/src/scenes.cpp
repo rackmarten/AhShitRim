@@ -1,5 +1,6 @@
 #include "scenes.h"
 
+#include "cj_body.h"
 #include "log.h"
 #include "pose.h"
 #include "scene.h"
@@ -43,6 +44,8 @@ namespace AhShitRim::Scenes
             bool                 hadGravity = true;
             Scene::Motion        motion = Scene::Motion::Idle;
             Scene::MotionTracker tracker;
+            Scene::SeatMatch     seat;
+            int                  seatFrames = 0;
             bool                 haveShout = false;  // shoutCount read once: a change after that is a shout
             std::uint16_t        shoutCount = 0;
         } state;
@@ -123,12 +126,27 @@ namespace AhShitRim::Scenes
             const CVector at(a_spawn.x + input.sceneOffset[0] * Pose::kMetersPerUnit, a_spawn.y + input.sceneOffset[1] * Pose::kMetersPerUnit,
                 a_spawn.z + input.sceneOffset[2] * Pose::kMetersPerUnit);
             const float rotation = Pose::SanAndreasHeading(input.sceneHeading);
-            a_ped->SetPosn(at);
+            const bool  seated = (input.flags & Protocol::kInputSeated) != 0;
+            CVector     placed = at;
+            if (seated) {
+                // His pelvis over the seat, not his feet: the sitting animation lowers him backwards.
+                CVector pelvis;
+                const bool have = CjBody::Pelvis(pelvis);
+                state.seat.Update(have, pelvis.x, pelvis.y, Seconds());
+                placed.x -= state.seat.X();
+                placed.y -= state.seat.Y();
+                if (++state.seatFrames == 30) {
+                    Log(std::format("scenes: CJ sits with his pelvis {:.2f} m from where he stands, moved over the seat", std::hypot(state.seat.X(), state.seat.Y())));
+                }
+            } else {
+                state.seat.Reset();
+                state.seatFrames = 0;
+            }
+            a_ped->SetPosn(placed);
             a_ped->SetHeading(rotation);
             a_ped->m_fHeadingCurrent = rotation;
             a_ped->m_fHeadingGoal = rotation;
             a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-            const bool seated = (input.flags & Protocol::kInputSeated) != 0;
             const auto motion = state.tracker.Update(seated, { at.x, at.y, at.z }, Seconds());
             if (motion != state.motion) {
                 state.motion = motion;

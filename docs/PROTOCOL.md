@@ -80,7 +80,7 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 58 | `spawnCount` | u16, counts spawn requests; a new value spawns `spawnModel` (v6) |
 | 60 | `radioNext` | u16, counts mouse wheel steps up (v7); in a vehicle each one tunes the next station |
 | 62 | `radioPrev` | u16, counts wheel steps down, the previous station (v7) |
-| 64 | `sceneOffset[3]` | with `kInputScripted`: the Skyrim player's feet relative to `anchor`, Skyrim units (v9) |
+| 64 | `sceneOffset[3]` | with `kInputScripted`: the Skyrim player's feet relative to `anchor`, Skyrim units; with `kInputSeated` the seat (the furniture marker the player uses), and San Andreas puts CJ's pelvis over it (v9) |
 | 76 | `sceneHeading` | with `kInputScripted`: the player's heading; with `kInputFace`: the heading to the speaker (radians, Skyrim's convention, v9) |
 | 80 | `shoutCount` | u16, counts shouts the player let out (Skyrim's voice cooldown starting, v9); a new value plays CJ's gesture on foot. San Andreas only acts on a change after the first value it read |
 | 82 | reserved | 6 bytes |

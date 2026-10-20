@@ -32,6 +32,7 @@ namespace AhShitRim::PlayerSync
             RE::TESObjectCELL* cell = nullptr;
             Scene::Control control = Scene::Control::Cj;  // who moves the player this frame
             float          voiceRecovery = 0.0f;  // the player's shout cooldown last frame
+            RE::FormID     seatLogged = 0;        // the furniture whose seat was last logged
             std::uint16_t  shoutCount = 0;
             bool           wasThirdPerson = false;
             bool           sneak = false;     // what we last told Skyrim; its own flag can drop on its own
@@ -42,8 +43,11 @@ namespace AhShitRim::PlayerSync
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
             RE::NiAVObject* culledRoot[2] = {};   // third- and first-person roots this culled
+            std::vector<RE::NiPointer<RE::BSGeometry>> culledShapes;  // and their shapes
             float          savedFov = 0.0f;       // Skyrim's field of view before San Andreas's, 0 = not changed
             bool           cameraParentLogged = false;
+            Camera::Matrix cameraOffset{};          // Skyrim's camera node on top of the player's angles, from the last frame without a menu
+            bool           haveCameraOffset = false;
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
 
             // Per-second stats while owned.
@@ -74,6 +78,52 @@ namespace AhShitRim::PlayerSync
             return ui && ui->GameIsPaused();
         }
 
+        // Where the player sits: the marker of the furniture it uses (Skyrim's process says which,
+        // else the nearest), on the furniture's 3D. Its root goes there; its position can stay where
+        // it got on (a carriage).
+        bool SeatOf(RE::PlayerCharacter* a_player, RE::NiPoint3& a_at)
+        {
+            const auto furniture = a_player->GetOccupiedFurniture().get();
+            auto*      root = furniture ? furniture->Get3D() : nullptr;
+            auto*      node = root ? RE::BSFurnitureMarkerNode::FindBSFurnitureMarkerNode(root) : nullptr;
+            if (!node || node->markers.empty()) {
+                return false;
+            }
+            auto*               process = a_player->GetActorRuntimeData().currentProcess;
+            const std::uint32_t id = process && process->middleHigh ? process->middleHigh->currentFurnitureMarkerID : UINT32_MAX;
+            float               rotate[3][3];
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) {
+                    rotate[r][c] = root->world.rotate.entry[r][c];
+                }
+            }
+            const Pose::Vec3 translate{ root->world.translate.x, root->world.translate.y, root->world.translate.z };
+            const auto       feet = a_player->GetPosition();
+            std::uint32_t    best = id;
+            Pose::Vec3       at{};
+            float            nearest = (std::numeric_limits<float>::max)();
+            for (std::uint32_t i = 0; i < node->markers.size(); i++) {
+                const auto& m = node->markers[i].offset;
+                const auto  p = Scene::MarkerInWorld(rotate, translate, root->world.scale, { m.x, m.y, m.z });
+                const float d = std::hypot(p.x - feet.x, p.y - feet.y, p.z - feet.z);
+                if (i == id || (id >= node->markers.size() && d < nearest)) {
+                    at = p;
+                    best = i;
+                    nearest = d;
+                }
+            }
+            if (best >= node->markers.size()) {
+                return false;
+            }
+            a_at = RE::NiPoint3(at.x, at.y, at.z);
+            if (state.seatLogged != furniture->GetFormID()) {
+                state.seatLogged = furniture->GetFormID();
+                SKSE::log::info("player sync: the player sits on {:08X} at marker {} of {} (process says {}), {:.0f} units from its position",
+                    furniture->GetFormID(), best, node->markers.size(), id, a_at.GetDistance(feet));
+            }
+            return true;
+        }
+
         void Publish(bool a_menu = MenuHasInput(), bool a_paused = GamePaused())
         {
             auto& link = LinkService::Get();
@@ -88,8 +138,12 @@ namespace AhShitRim::PlayerSync
             input.anchor[2] = state.anchor.z;
             input.shoutCount = state.shoutCount;
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
-                const auto  feet = player->GetPosition();
-                const float offset[3] = { feet.x - state.anchor.x, feet.y - state.anchor.y, feet.z - state.anchor.z };
+                const auto feet = player->GetPosition();
+                RE::NiPoint3 at = feet;
+                if (state.control == Scene::Control::Seated) {
+                    SeatOf(player, at);
+                }
+                const float offset[3] = { at.x - state.anchor.x, at.y - state.anchor.y, at.z - state.anchor.z };
                 Scene::Follow(input, state.control, offset, player->GetAngleZ());
                 // Talking: CJ turns to the speaker while the dialogue (and a barter or gift over it) is open.
                 auto* topics = RE::MenuTopicManager::GetSingleton();
@@ -124,6 +178,8 @@ namespace AhShitRim::PlayerSync
         // The player's own 3D (third- and first-person) is hidden while CJ is drawn in its place.
         // Only the roots this culled are shown again: Skyrim culls one of them itself depending on
         // the camera, and that stays as it was.
+        // Its shapes are culled one by one too: getting into a carriage, something showed the root
+        // again after this culled it, and the player climbed in next to CJ.
         void HidePlayer(RE::PlayerCharacter* a_player, bool a_hide)
         {
             for (int i = 0; i < 2; i++) {
@@ -139,7 +195,21 @@ namespace AhShitRim::PlayerSync
                 }
                 if (!a_hide) {
                     state.culledRoot[i] = nullptr;
+                } else {
+                    RE::BSVisit::TraverseScenegraphGeometries(root, [](RE::BSGeometry* a_shape) {
+                        if (!a_shape->GetAppCulled()) {
+                            a_shape->SetAppCulled(true);
+                            state.culledShapes.emplace_back(a_shape);
+                        }
+                        return RE::BSVisit::BSVisitControl::kContinue;
+                    });
                 }
+            }
+            if (!a_hide) {
+                for (auto& shape : state.culledShapes) {
+                    shape->SetAppCulled(false);
+                }
+                state.culledShapes.clear();
             }
             state.playerHidden = a_hide;
         }
@@ -198,7 +268,7 @@ namespace AhShitRim::PlayerSync
         // player's hidden arms; Skyrim builds the camera before this hook (from the angles the
         // player had, a_fromHeading and a_fromPitch), so the finished camera node is overridden, as
         // PerkeleRim does for MSC's camera.
-        bool PoseCamera(const Protocol::BodyState& a_body, float a_fromHeading, float a_fromPitch)
+        bool PoseCamera(const Protocol::BodyState& a_body, float a_fromHeading, float a_fromPitch, bool a_menu)
         {
             auto* camera = RE::PlayerCamera::GetSingleton();
             auto* root = camera ? camera->cameraRoot.get() : nullptr;
@@ -211,8 +281,14 @@ namespace AhShitRim::PlayerSync
                     built[r][c] = root->world.rotate.entry[r][c];
                 }
             }
+            // In a dialogue Skyrim turns its camera to the speaker on top of the player's angles;
+            // San Andreas's camera stays where it was, so the offset from before the menu is kept.
+            if (!a_menu || !state.haveCameraOffset) {
+                Camera::OffsetOf(built, a_fromHeading, a_fromPitch, state.cameraOffset);
+                state.haveCameraOffset = true;
+            }
             const Pose::Vec3 forward{ a_body.cameraForward[0], a_body.cameraForward[1], a_body.cameraForward[2] };
-            Camera::Retarget(built, a_fromHeading, a_fromPitch, Pose::HeadingOf(forward.x, forward.y), Pose::PitchOf(forward), 0.0f, posed);
+            Camera::Apply(state.cameraOffset, Pose::HeadingOf(forward.x, forward.y), Pose::PitchOf(forward), 0.0f, posed);
             RE::NiMatrix3 rotate;
             for (int r = 0; r < 3; r++) {
                 for (int c = 0; c < 3; c++) {
@@ -249,7 +325,7 @@ namespace AhShitRim::PlayerSync
         // CJ drawn where San Andreas has him, posed by his skeleton, and Skyrim's camera on San
         // Andreas's, both smoothed between San Andreas's frames. Until his model and skeleton are
         // in, Skyrim's first-person view of its own player as before.
-        void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch)
+        void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu)
         {
             const double        now = NowMs();
             Protocol::BodyState body{};
@@ -265,7 +341,7 @@ namespace AhShitRim::PlayerSync
             }
             HidePlayer(a_player, true);
             state.reanchoring = false;
-            PoseCamera(pose, a_fromHeading, a_fromPitch);
+            PoseCamera(pose, a_fromHeading, a_fromPitch, a_menu);
             state.drawn++;
             if (!state.cjLogged) {
                 state.cjLogged = true;
@@ -360,6 +436,7 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = true;
             state.control = Scene::Control::Cj;
+            state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
@@ -491,6 +568,7 @@ namespace AhShitRim::PlayerSync
             }
             if (const auto control = ControlOf(a_player); control != state.control) {
                 state.control = control;
+                state.seatLogged = 0;
                 Activation::Clear();
             }
             const bool scene = state.control != Scene::Control::Cj;
@@ -517,7 +595,7 @@ namespace AhShitRim::PlayerSync
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
             Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene);
-            DrawCj(a_player, fromHeading, fromPitch);
+            DrawCj(a_player, fromHeading, fromPitch, MenuHasInput());
             DrawVehicles();
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);

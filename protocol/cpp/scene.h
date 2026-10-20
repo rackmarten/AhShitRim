@@ -89,7 +89,51 @@ namespace AhShitRim::Scene
         return a_recoveryBefore <= 0.0f && a_recoveryNow > 0.0f;
     }
 
+    // Where a furniture marker is in the world: its offset in the furniture's model space on the
+    // furniture's 3D (world = rotate * (scale * offset) + translate, rotate as NiMatrix3's
+    // entry[row][column]). Seated, Skyrim's player has its root there; its own position can stay
+    // where it got on (a carriage).
+    inline Pose::Vec3 MarkerInWorld(const float (&a_rotate)[3][3], const Pose::Vec3& a_translate, float a_scale, const Pose::Vec3& a_offset)
+    {
+        const float o[3] = { a_offset.x * a_scale, a_offset.y * a_scale, a_offset.z * a_scale };
+        return { a_translate.x + a_rotate[0][0] * o[0] + a_rotate[0][1] * o[1] + a_rotate[0][2] * o[2],
+            a_translate.y + a_rotate[1][0] * o[0] + a_rotate[1][1] * o[1] + a_rotate[1][2] * o[2],
+            a_translate.z + a_rotate[2][0] * o[0] + a_rotate[2][1] * o[1] + a_rotate[2][2] * o[2] };
+    }
+
     // ---- San Andreas side ----
+
+    // San Andreas's sitting animation lowers CJ backwards from where he stands, onto a chair behind
+    // him. Seated, his position is moved so his pelvis is over the seat instead: by his pelvis's
+    // horizontal offset from his position, smoothed (the idle sways), metres.
+    class SeatMatch
+    {
+    public:
+        static constexpr float kMaxOffset = 1.5f;  // m: further is a bad read, kept out
+
+        void Reset() { *this = {}; }
+
+        void Update(bool a_valid, float a_dx, float a_dy, float a_seconds)
+        {
+            if (!a_valid || !std::isfinite(a_dx) || !std::isfinite(a_dy) || std::hypot(a_dx, a_dy) > kMaxOffset) {
+                return;
+            }
+            const float k = _have ? a_seconds / (a_seconds + kSmoothing) : 1.0f;
+            _x += (a_dx - _x) * k;
+            _y += (a_dy - _y) * k;
+            _have = true;
+        }
+
+        float X() const { return _x; }
+        float Y() const { return _y; }
+
+    private:
+        static constexpr float kSmoothing = 0.15f;  // s
+
+        bool  _have = false;
+        float _x = 0.0f;
+        float _y = 0.0f;
+    };
 
     // San Andreas heading a_current turned toward a_target by at most a_maxStep (radians), the short
     // way round; in (-pi, pi].

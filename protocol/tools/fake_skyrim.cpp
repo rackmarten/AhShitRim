@@ -500,8 +500,30 @@ int main(int argc, char** argv)
     Protocol::BodyState seated{};
     float seatLow = 0.0f, seatHigh = 0.0f;
     const bool seatSkinned = link.ReadBody(seated) && Extent(received, seated, seatLow, seatHigh);
-    std::printf("scenes: seated, CJ %.2f m tall\n", (seatHigh - seatLow) * Pose::kMetersPerUnit);
-    failed += !(seatSkinned && (seatHigh - seatLow) * Pose::kMetersPerUnit < 1.5f);
+    // And over the seat: his body's middle (where his hips are), not half a metre behind it.
+    float seatOff = 1e9f;
+    if (const auto model = seatSkinned ? received.Model(seated.model) : std::nullopt) {
+        std::vector<Body::Matrix34> bones;
+        for (std::uint32_t i = 0; i < seated.boneCount; i++) {
+            bones.push_back(Body::ToMatrix(seated.bones[i]));
+        }
+        double sx = 0.0, sy = 0.0;
+        std::size_t n = 0;
+        for (const auto& mesh : model->meshes) {
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++, n++) {
+                Body::Vec3 p, nrm;
+                Body::Skin(bones.data(), seated.boneCount, mesh.Vertex(i), p, nrm);
+                sx += p.x;
+                sy += p.y;
+            }
+        }
+        if (n) {
+            seatOff = std::hypot(seated.feet[0] + static_cast<float>(sx / n) - scene.sceneOffset[0], seated.feet[1] + static_cast<float>(sy / n) - scene.sceneOffset[1]) *
+                      Pose::kMetersPerUnit;
+        }
+    }
+    std::printf("scenes: seated, CJ %.2f m tall, his middle %.2f m from the seat\n", (seatHigh - seatLow) * Pose::kMetersPerUnit, seatOff);
+    failed += !(seatSkinned && (seatHigh - seatLow) * Pose::kMetersPerUnit < 1.5f && seatOff < 0.25f);
 
     scene.flags = 0;
     Protocol::PlayerState freed{}, walkedOn{};
