@@ -104,28 +104,44 @@ namespace AhShitRim::Scene
     // ---- San Andreas side ----
 
     // San Andreas's sitting animation lowers CJ backwards from where he stands, onto a chair behind
-    // him. Seated, his position is moved so his pelvis is over the seat instead: by his pelvis's
-    // horizontal offset from his position, smoothed (the idle sways), metres.
+    // him. Seated, his position is moved so his pelvis is on the seat (a furniture marker is on the
+    // seat's surface) instead: by his pelvis's offset from his position, smoothed (the idle sways),
+    // metres.
     class SeatMatch
     {
     public:
-        static constexpr float kMaxOffset = 1.5f;  // m: further is a bad read, kept out
+        static constexpr float kMaxOffset = 1.5f;      // m: further is a bad read, kept out
+        static constexpr float kPelvisOverSeat = 0.12f;  // m: CJ's pelvis joint over what he sits on
 
         void Reset() { *this = {}; }
 
-        void Update(bool a_valid, float a_dx, float a_dy, float a_seconds)
+        void Update(bool a_valid, float a_dx, float a_dy, float a_dz, float a_seconds)
         {
-            if (!a_valid || !std::isfinite(a_dx) || !std::isfinite(a_dy) || std::hypot(a_dx, a_dy) > kMaxOffset) {
+            if (!a_valid || !std::isfinite(a_dx) || !std::isfinite(a_dy) || !std::isfinite(a_dz) ||
+                std::hypot(a_dx, a_dy, a_dz) > kMaxOffset) {
                 return;
             }
             const float k = _have ? a_seconds / (a_seconds + kSmoothing) : 1.0f;
             _x += (a_dx - _x) * k;
             _y += (a_dy - _y) * k;
+            _z += (a_dz - _z) * k;
             _have = true;
         }
 
+        bool  Have() const { return _have; }
         float X() const { return _x; }
         float Y() const { return _y; }
+        float Z() const { return _z; }
+
+        // CJ's position that puts his pelvis on a seat at a_seat (metres), once his pelvis is known;
+        // a_seat itself (his feet's height there plus a_feetToPosition) before.
+        Pose::Vec3 Place(const Pose::Vec3& a_seat, float a_feetToPosition) const
+        {
+            if (!_have) {
+                return { a_seat.x, a_seat.y, a_seat.z + a_feetToPosition };
+            }
+            return { a_seat.x - _x, a_seat.y - _y, a_seat.z + kPelvisOverSeat - _z };
+        }
 
     private:
         static constexpr float kSmoothing = 0.15f;  // s
@@ -133,6 +149,7 @@ namespace AhShitRim::Scene
         bool  _have = false;
         float _x = 0.0f;
         float _y = 0.0f;
+        float _z = 0.0f;
     };
 
     // San Andreas heading a_current turned toward a_target by at most a_maxStep (radians), the short

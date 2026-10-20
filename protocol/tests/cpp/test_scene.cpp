@@ -121,18 +121,26 @@ TEST_CASE("a furniture marker lands where the furniture's 3D puts it")
     CHECK(at.z == doctest::Approx(380.0f));
 }
 
-TEST_CASE("seated, CJ moves so his pelvis is over the seat, and a bad read changes nothing")
+TEST_CASE("seated, CJ moves so his pelvis is on the seat, and a bad read changes nothing")
 {
     Scene::SeatMatch seat;
-    seat.Update(false, 0.4f, 0.0f, 1.0f / 30.0f);
-    CHECK(seat.X() == 0.0f);
-    seat.Update(true, -0.45f, 0.1f, 1.0f / 30.0f);  // the first read is taken as it is
+    const Pose::Vec3 chair{ 10.0f, 20.0f, 0.45f };  // the seat's surface
+    seat.Update(false, 0.4f, 0.0f, -0.3f, 1.0f / 30.0f);
+    CHECK_FALSE(seat.Have());
+    CHECK(seat.Place(chair, 1.0f).z == doctest::Approx(1.45f));  // until then, standing on it
+    seat.Update(true, -0.45f, 0.1f, -0.5f, 1.0f / 30.0f);  // the first read is taken as it is
     CHECK(seat.X() == doctest::Approx(-0.45f));
     CHECK(seat.Y() == doctest::Approx(0.1f));
-    seat.Update(true, 5.0f, 0.0f, 1.0f / 30.0f);  // further than a pelvis can be
+    CHECK(seat.Z() == doctest::Approx(-0.5f));
+    // Moved forward by his pelvis's offset, and down so it is on the seat, not his soles.
+    const auto at = seat.Place(chair, 1.0f);
+    CHECK(at.x == doctest::Approx(10.45f));
+    CHECK(at.y == doctest::Approx(19.9f));
+    CHECK(at.z + seat.Z() == doctest::Approx(chair.z + Scene::SeatMatch::kPelvisOverSeat));
+    seat.Update(true, 5.0f, 0.0f, 0.0f, 1.0f / 30.0f);  // further than a pelvis can be
     CHECK(seat.X() == doctest::Approx(-0.45f));
     for (int i = 0; i < 60; ++i) {  // the idle sways: it settles in between
-        seat.Update(true, i % 2 ? -0.40f : -0.50f, 0.1f, 1.0f / 30.0f);
+        seat.Update(true, i % 2 ? -0.40f : -0.50f, 0.1f, -0.5f, 1.0f / 30.0f);
     }
     CHECK(seat.X() == doctest::Approx(-0.45f).epsilon(0.05));
     seat.Reset();

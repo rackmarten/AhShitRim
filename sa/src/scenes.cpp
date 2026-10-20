@@ -129,14 +129,17 @@ namespace AhShitRim::Scenes
             const bool  seated = (input.flags & Protocol::kInputSeated) != 0;
             CVector     placed = at;
             if (seated) {
-                // His pelvis over the seat, not his feet: the sitting animation lowers him backwards.
-                CVector pelvis;
+                // His pelvis on the seat (sceneOffset is its surface), not his feet: the sitting
+                // animation lowers him backwards and down.
+                CVector    pelvis;
                 const bool have = CjBody::Pelvis(pelvis);
-                state.seat.Update(have, pelvis.x, pelvis.y, Seconds());
-                placed.x -= state.seat.X();
-                placed.y -= state.seat.Y();
+                state.seat.Update(have, pelvis.x, pelvis.y, pelvis.z, Seconds());
+                const float feetToPosition = a_ped->GetDistanceFromCentreOfMassToBaseOfModel();
+                const auto  p = state.seat.Place({ at.x, at.y, at.z - feetToPosition }, feetToPosition);
+                placed = CVector(p.x, p.y, p.z);
                 if (++state.seatFrames == 30) {
-                    Log(std::format("scenes: CJ sits with his pelvis {:.2f} m from where he stands, moved over the seat", std::hypot(state.seat.X(), state.seat.Y())));
+                    Log(std::format("scenes: CJ sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from where he stands, put on the seat", state.seat.X(),
+                        state.seat.Y(), state.seat.Z()));
                 }
             } else {
                 state.seat.Reset();

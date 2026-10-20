@@ -496,6 +496,8 @@ int main(int argc, char** argv)
     failed += !(behind < 0.3f && std::abs(led.heading - scene.sceneHeading) < 0.1f);
 
     scene.flags = Protocol::kInputScripted | Protocol::kInputSeated;
+    const float floorZ = scene.sceneOffset[2];
+    scene.sceneOffset[2] = floorZ + 0.45f * Pose::kUnitsPerMeter;  // a chair's seat
     run(2.0, [] { return false; });
     Protocol::BodyState seated{};
     float seatLow = 0.0f, seatHigh = 0.0f;
@@ -522,8 +524,10 @@ int main(int argc, char** argv)
                       Pose::kMetersPerUnit;
         }
     }
-    std::printf("scenes: seated, CJ %.2f m tall, his middle %.2f m from the seat\n", (seatHigh - seatLow) * Pose::kMetersPerUnit, seatOff);
-    failed += !(seatSkinned && (seatHigh - seatLow) * Pose::kMetersPerUnit < 1.5f && seatOff < 0.25f);
+    const float soles = (seated.feet[2] + seatLow - floorZ) * Pose::kMetersPerUnit;
+    std::printf("scenes: seated, CJ %.2f m tall, his middle %.2f m from the seat, his soles %.2f m over the floor\n", (seatHigh - seatLow) * Pose::kMetersPerUnit,
+        seatOff, soles);
+    failed += !(seatSkinned && (seatHigh - seatLow) * Pose::kMetersPerUnit < 1.5f && seatOff < 0.25f && std::abs(soles) < 0.25f);
 
     scene.flags = 0;
     Protocol::PlayerState freed{}, walkedOn{};
