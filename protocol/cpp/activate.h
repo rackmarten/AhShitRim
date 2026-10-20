@@ -165,9 +165,14 @@ namespace AhShitRim::Activate
 
     // The help box prompt from Skyrim's activate text ("Open\nBreezehome", sometimes with font tags
     // around a word, "<font color='#FF0000'>Steal</font>"): tags dropped, lines joined by spaces, the
-    // key in front ("E: Open Breezehome"). a_name stands in when there is no text; empty when neither.
+    // key in front ("E: Open Breezehome"). a_name stands in when there is no text. A reference
+    // without a name gets none, as Skyrim's crosshair shows nothing for one: those are trigger boxes
+    // and helpers ("Activate" alone), often big enough that CJ stands inside them.
     inline std::string Prompt(std::string_view a_activateText, std::string_view a_name, std::string_view a_key = "E")
     {
+        if (a_name.find_first_not_of(" \t\r\n") == std::string_view::npos) {
+            return {};
+        }
         std::string text;
         bool        inTag = false, space = false;
         for (const char c : a_activateText.empty() ? a_name : a_activateText) {

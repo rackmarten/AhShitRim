@@ -25,6 +25,8 @@ namespace AhShitRim::PlayerSync
             float          heading = 0.0f;   // the player's heading when the handover started, or the last re-anchor
             RE::NiPoint3   anchor;           // the player's position then
             bool           reanchoring = false;  // re-anchored, and CJ isn't drawn there yet: the player's 3D stays hidden
+            bool           positioned = false;   // Skyrim positioned the player (PositionPlayerEvent) since the last anchor
+            bool           placing = false;      // Place is moving the player for CJ: not Skyrim positioning it
             RE::NiPoint3   lastPlaced;
             RE::TESObjectCELL* cell = nullptr;
             bool           wasThirdPerson = false;
@@ -311,6 +313,7 @@ namespace AhShitRim::PlayerSync
         void AnchorAt(RE::PlayerCharacter* a_player)
         {
             state.handover++;
+            state.positioned = false;
             state.anchor = a_player->GetPosition();
             state.lastPlaced = state.anchor;
             state.cell = a_player->GetParentCell();
@@ -376,6 +379,7 @@ namespace AhShitRim::PlayerSync
             frame.wasInterior = state.cell && state.cell->IsInteriorCell();
             frame.worldspaceChanged = cell && state.cell && cell->GetRuntimeData().worldSpace != state.cell->GetRuntimeData().worldSpace;
             frame.jump = a_player->GetPosition().GetDistance(state.lastPlaced);
+            frame.positioned = state.positioned;
             const auto move = Anchor::Classify(frame);
             if (move == Anchor::Move::None) {
                 state.cell = cell;  // walked into the next exterior cell
@@ -386,7 +390,9 @@ namespace AhShitRim::PlayerSync
         void Place(RE::PlayerCharacter* a_player, const Protocol::PlayerState& a_pose)
         {
             state.lastPlaced = state.anchor + RE::NiPoint3(a_pose.offset[0], a_pose.offset[1], a_pose.offset[2]);
+            state.placing = true;
             a_player->SetPosition(state.lastPlaced, true);
+            state.placing = false;
             a_player->SetHeading(a_pose.viewHeading);  // first person: the body turns with the view
             a_player->data.angle.x = a_pose.viewPitch;
             if (auto* controller = a_player->GetCharController()) {
@@ -602,6 +608,21 @@ namespace AhShitRim::PlayerSync
             }
         };
 
+        // Skyrim positioning the player: a load door (a city's gate too), fast travel, coc, a script's
+        // MoveTo. Drive re-anchors CJ once the player has a cell there.
+        class PositionSink : public RE::BSTEventSink<RE::PositionPlayerEvent>
+        {
+        public:
+            RE::BSEventNotifyControl ProcessEvent(const RE::PositionPlayerEvent* a_event, RE::BSTEventSource<RE::PositionPlayerEvent>*) override
+            {
+                if (state.owned && !state.placing && a_event && a_event->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)) {
+                    state.positioned = true;
+                    SKSE::log::info("player sync: Skyrim positioned the player");
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+
         // A menu opening pauses the game in the same frame; tell San Andreas right away.
         class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
         {
@@ -663,6 +684,10 @@ namespace AhShitRim::PlayerSync
         }
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
+        }
+        static PositionSink positionSink;
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            player->AsPositionPlayerEventSource()->AddEventSink(&positionSink);
         }
     }
 

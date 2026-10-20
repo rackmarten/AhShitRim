@@ -116,11 +116,19 @@ TEST_CASE("a wall between CJ and the target hides it, clutter and the target its
 
 TEST_CASE("the prompt is Skyrim's activate text on one line, with the key")
 {
-    CHECK(Prompt("Open\nBreezehome", "") == "E: Open Breezehome");
-    CHECK(Prompt("<font color='#FF0000'>Steal</font>\nSweetroll", "") == "E: Steal Sweetroll");
-    CHECK(Prompt("Talk\nLydia\n", "") == "E: Talk Lydia");
-    CHECK(Prompt("  Search \r\n Chest ", "") == "E: Search Chest");
+    CHECK(Prompt("Open\nBreezehome", "Breezehome") == "E: Open Breezehome");
+    CHECK(Prompt("<font color='#FF0000'>Steal</font>\nSweetroll", "Sweetroll") == "E: Steal Sweetroll");
+    CHECK(Prompt("Talk\nLydia\n", "Lydia") == "E: Talk Lydia");
+    CHECK(Prompt("  Search \r\n Chest ", "Chest") == "E: Search Chest");
     CHECK(Prompt("", "Lever") == "E: Lever");
     CHECK(Prompt("", "") == "");
-    CHECK(Prompt("<font></font>", "") == "");
+    CHECK(Prompt("<font></font>", "Chest") == "");
+}
+
+TEST_CASE("a reference without a name gets no prompt, as in Skyrim")
+{
+    // The trigger boxes that showed "E: Activate" whichever way CJ looked, standing inside them.
+    CHECK(Prompt("Activate", "") == "");
+    CHECK(Prompt("Activate", "  ") == "");
+    CHECK(Prompt("Activate\n", "\n") == "");
 }

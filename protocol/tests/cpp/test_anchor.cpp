@@ -28,6 +28,12 @@ TEST_CASE("walking on keeps the anchor, doors and teleports move it, loading wai
     CHECK(Classify({ true, false, false, false, false, Anchor::kTeleportUnits + 1.0f }) == Move::Teleport);  // a script, same cell
     CHECK(Classify({ true, false, false, false, false, Anchor::kTeleportUnits }) == Move::None);
     CHECK(Classify({ true, false, false, false, false, 40.0f }) == Move::None);  // Skyrim easing the player out of a wall
+    // Skyrim's PositionPlayerEvent: Whiterun's gate out to Tamriel, 272 units and a worldspace the
+    // cells didn't show apart in game, re-anchors on Skyrim's word alone.
+    CHECK(Classify({ true, false, false, false, false, 272.0f, true }) == Move::Positioned);
+    CHECK(Classify({ true, true, false, false, false, 0.0f, true }) == Move::Positioned);
+    CHECK(Classify({ false, true, false, false, false, 0.0f, true }) == Move::Loading);  // still loading: wait for a cell
+    CHECK(Anchor::Reanchors(Move::Positioned));
     CHECK(Anchor::Reanchors(Move::LoadDoor));
     CHECK(Anchor::Reanchors(Move::Teleport));
     CHECK_FALSE(Anchor::Reanchors(Move::None));
