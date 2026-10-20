@@ -276,6 +276,18 @@ namespace AhShitRim
         return IsUp() && SeqRead(At<PlayerSlot>(Base(), kOffsetPlayerSlot), a_out);
     }
 
+    void Link::WriteAudio(const AudioState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<AudioSlot>(base, kOffsetAudioSlot), a_value);
+        }
+    }
+
+    bool Link::ReadAudio(AudioState& a_out) const
+    {
+        return IsUp() && SeqRead(At<AudioSlot>(Base(), kOffsetAudioSlot), a_out);
+    }
+
     void Link::WriteBody(const BodyState& a_value)
     {
         if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {

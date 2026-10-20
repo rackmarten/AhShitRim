@@ -49,6 +49,8 @@ namespace AhShitRim
         bool ReadInput(Protocol::InputState& a_out) const;
         void WritePlayer(const Protocol::PlayerState& a_value);
         bool ReadPlayer(Protocol::PlayerState& a_out) const;
+        void WriteAudio(const Protocol::AudioState& a_value);  // v7
+        bool ReadAudio(Protocol::AudioState& a_out) const;
         void WriteBody(const Protocol::BodyState& a_value);
         bool ReadBody(Protocol::BodyState& a_out) const;
         // Vehicle slot a_index (< kVehicleMax, v6); out-of-range indices are ignored.

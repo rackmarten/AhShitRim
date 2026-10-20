@@ -72,6 +72,9 @@ namespace AhShitRim::SaHud
             const TextStyle* bigStyle = &kBigMessage;
             Timed            help;
             Timed            subtitle;
+            Timed            radio;
+            bool             radioRetuning = false;
+            bool             drawRadio = false;  // only while San Andreas has the player and no menu is up
             float            fade = 0.0f, fadeFrom = 0.0f, fadeTarget = 0.0f, fadeTime = 0.0f, fadeSeconds = 0.0f;
             float            letterbox = 0.0f;  // 0..1, how far the bars are in
             bool             letterboxOn = false;
@@ -221,6 +224,9 @@ namespace AhShitRim::SaHud
             if (const float alpha = state.missionTitle.Alpha(); alpha > 0.0f) {
                 a_frame.Text(kMissionTitle, state.missionTitle.text, WithAlpha(kMissionTitle.colour, alpha));
             }
+            if (const float alpha = state.radio.Alpha(); alpha > 0.0f && state.drawRadio) {
+                a_frame.Text(kRadioName, state.radio.text, WithAlpha(state.radioRetuning ? kDarkGray : kRadioName.colour, alpha));
+            }
             if (state.fade > 0.0f) {
                 a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(kBlack, state.fade));
             }
@@ -324,9 +330,10 @@ namespace AhShitRim::SaHud
             return;
         }
         state.frame++;
-        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle }) {
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle, &state.radio }) {
             timed->Tick(a_delta);
         }
+        state.drawRadio = a_owned && !a_menu;
         TickFade(a_delta);
         const float slide = a_delta / 0.5f;
         state.letterbox = std::clamp(state.letterbox + (state.letterboxOn ? slide : -slide), 0.0f, 1.0f);
@@ -362,6 +369,16 @@ namespace AhShitRim::SaHud
 
     void ShowSubtitle(std::string a_text, float a_seconds) { state.subtitle.Show(std::move(a_text), a_seconds); }
 
+    void ShowRadioStation(std::string a_name, bool a_retuning)
+    {
+        const bool same = state.radio.hold > 0.0f && state.radio.text == a_name;
+        state.radio.Show(std::move(a_name), kRadioNameSeconds);
+        if (same) {
+            state.radio.age = state.radio.fadeIn;  // already up: stays at full, only the colour changes
+        }
+        state.radioRetuning = a_retuning;
+    }
+
     void FadeTo(float a_black, float a_seconds)
     {
         state.fadeFrom = state.fade;
@@ -376,7 +393,7 @@ namespace AhShitRim::SaHud
 
     void ClearText()
     {
-        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle }) {
+        for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.subtitle, &state.radio }) {
             timed->hold = 0.0f;
         }
         FadeTo(0.0f, 0.0f);
@@ -386,7 +403,7 @@ namespace AhShitRim::SaHud
     void NextDemo()
     {
         static constexpr const char* kSteps[] = { "mission title", "wasted", "busted", "mission passed", "help box", "subtitles", "fade to black",
-            "letterbox", "wanted stars", "off" };
+            "letterbox", "wanted stars", "radio station", "off" };
         const int step = state.demo;
         state.demo = (state.demo + 1) % static_cast<int>(std::size(kSteps));
         ClearText();
@@ -401,6 +418,7 @@ namespace AhShitRim::SaHud
         case 6: FadeTo(1.0f, 1.0f); break;
         case 7: SetLetterbox(true); ShowSubtitle("Thane of Grove Street.", 6.0f); break;
         case 8: SetWantedLevel(3); break;
+        case 9: ShowRadioStation("Radio Sovngarde", false); break;
         default: break;
         }
         SKSE::log::info("sa hud: demo {} ({})", step + 1, kSteps[step]);

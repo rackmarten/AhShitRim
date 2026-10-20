@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 6;
+    inline constexpr std::uint32_t kProtocolVersion = 7;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -42,6 +42,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
     inline constexpr std::uint32_t kOffsetPlayerSlot = 208;
+    inline constexpr std::uint32_t kOffsetAudioSlot = 272;               // v7
     inline constexpr std::uint32_t kOffsetBodySlot = 320;                // v5
     inline constexpr std::uint32_t kOffsetVehicleSlots = 2240;           // v6: kVehicleMax BodySlots
     inline constexpr std::uint32_t kOffsetRingToSanAndreas = 9920;       // RingHeader, data follows
@@ -119,7 +120,8 @@ namespace AhShitRim::Protocol
         float         anchor[3];   // the Skyrim player's feet at that handover, Skyrim world units (v4)
         std::uint16_t spawnModel;  // v6: San Andreas vehicle model id to spawn in front of CJ
         std::uint16_t spawnCount;  // v6: counts spawn requests; a new value spawns spawnModel
-        std::uint8_t  reserved[4];
+        std::uint16_t radioNext;   // v7: counts mouse wheel steps up; in a vehicle each one tunes the next station
+        std::uint16_t radioPrev;   // v7: counts wheel steps down, the previous station
     };
 
     struct InputSlot
@@ -134,6 +136,9 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kPlayerGrounded = 0x2;   // PlayerState.flags: CJ stands on something
     inline constexpr std::uint32_t kPlayerCrouching = 0x4;  // PlayerState.flags: CJ crouches (v3); Skyrim sneaks
     inline constexpr std::uint32_t kPlayerInVehicle = 0x8;  // PlayerState.flags: CJ drives or rides a vehicle (v6)
+    inline constexpr std::uint32_t kPlayerRadioRetuning = 0x10;  // PlayerState.flags (v7): the radio is between stations
+
+    inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays
 
     // San Andreas -> Skyrim, every San Andreas frame. Skyrim axes and units: game units, Z up,
     // heading 0 = north, clockwise; pitch positive looks down.
@@ -147,6 +152,10 @@ namespace AhShitRim::Protocol
         float         viewHeading;  // San Andreas's camera, radians; Skyrim's first-person camera follows it
         float         viewPitch;    // radians
         std::uint32_t handover;     // InputState.handover this pose belongs to
+        std::int8_t   radioStation;  // v7: San Andreas's radio station playing in CJ's vehicle (eRadioID), kRadioNone if none
+        std::uint8_t  reserved0;
+        std::uint16_t reserved1;
+        std::uint32_t reserved2;
     };
 
     struct PlayerSlot
@@ -154,6 +163,23 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         PlayerState   value;
+    };
+
+    // Skyrim -> San Andreas, every Skyrim frame (v7): how loud San Andreas plays, from Skyrim's audio
+    // sliders. 0 while Skyrim has the player; a pausing menu pauses San Andreas's sounds instead
+    // (kInputPaused).
+    struct AudioState
+    {
+        float         effects;  // 0..1: master x effects, for CJ, his vehicles and weapons
+        float         music;    // 0..1: master x music, for the radio
+        std::uint8_t  reserved[24];
+    };
+
+    struct AudioSlot
+    {
+        std::uint32_t seq;
+        std::uint32_t reserved;
+        AudioState    value;
         std::uint8_t  pad[8];
     };
 
@@ -327,15 +353,20 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, anchor) == 44);
     static_assert(offsetof(InputState, spawnModel) == 56);
     static_assert(offsetof(InputState, spawnCount) == 58);
+    static_assert(offsetof(InputState, radioNext) == 60);
+    static_assert(offsetof(InputState, radioPrev) == 62);
     static_assert(sizeof(InputSlot) == 80);
-    static_assert(sizeof(PlayerState) == 48);
+    static_assert(sizeof(PlayerState) == 56);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);
     static_assert(offsetof(PlayerState, heading) == 32);
     static_assert(offsetof(PlayerState, viewHeading) == 36);
     static_assert(offsetof(PlayerState, viewPitch) == 40);
     static_assert(offsetof(PlayerState, handover) == 44);
+    static_assert(offsetof(PlayerState, radioStation) == 48);
     static_assert(sizeof(PlayerSlot) == 64);
+    static_assert(sizeof(AudioState) == 32);
+    static_assert(sizeof(AudioSlot) == 48);
     static_assert(sizeof(BodyBone) == 28);
     static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28);
     static_assert(offsetof(BodyState, feet) == 24);
@@ -362,7 +393,8 @@ namespace AhShitRim::Protocol
     static_assert(kOffsetInputSlot == kOffsetHeader + sizeof(LinkHeader));
     static_assert(kOffsetPlayerSlot == kOffsetInputSlot + sizeof(InputSlot));
     static_assert((kOffsetInputSlot + offsetof(InputSlot, value) + offsetof(InputState, mouseX)) % 8 == 0);
-    static_assert(kOffsetBodySlot >= kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetAudioSlot == kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetBodySlot == kOffsetAudioSlot + sizeof(AudioSlot));
     static_assert(kOffsetBodySlot % 64 == 0);
     static_assert(kOffsetVehicleSlots == kOffsetBodySlot + sizeof(BodySlot));
     static_assert(kOffsetRingToSanAndreas == kOffsetVehicleSlots + kVehicleMax * sizeof(BodySlot));

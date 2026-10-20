@@ -31,6 +31,7 @@ namespace AhShitRim::SaHud
     void FadeTo(float a_black, float a_seconds);  // 0 = clear, 1 = black over everything
     void SetLetterbox(bool a_on);                 // cutscene bars, sliding in and out
     void SetWantedLevel(int a_stars);             // 0..6; 0 shows none
+    void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
     void ClearText();                             // every text style, the fade and the bars off
 
     // The dev key (/ while San Andreas has the player): shows the next text style in turn.

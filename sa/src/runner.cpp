@@ -1,5 +1,6 @@
 #include "runner.h"
 
+#include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
 #include "ground.h"
@@ -296,6 +297,7 @@ namespace AhShitRim::Runner
             if (vehicle) {
                 pose.flags |= Protocol::kPlayerInVehicle;
             }
+            Audio::Fill(pose, vehicle != nullptr);
             GetLink().WritePlayer(pose);
         }
 
@@ -329,6 +331,7 @@ namespace AhShitRim::Runner
             }
             state.spawnCount = a_input.spawnCount;
             state.haveSpawn = true;
+            Audio::OnInput(a_input, Vehicles::Driven(a_ped) != nullptr);
             if (!owned) {
                 return;
             }
@@ -407,6 +410,7 @@ namespace AhShitRim::Runner
             ChunkWorld::Receive();
             ChunkWorld::Update(ped, state.spawn);
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
+            Audio::Update(state.owned, state.paused);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             ModelSender::Pump();
@@ -467,6 +471,7 @@ namespace AhShitRim::Runner
         ::timeBeginPeriod(1);
         g_scriptsProcess = Hook(kScriptsProcess, &ScriptsProcessHook);
         g_startLoadingTune = Hook(kStartLoadingTune, &StartLoadingTuneHook);
+        Audio::Install();
         for (std::size_t i = 0; i < std::size(kNoOps); ++i) {
             g_noOps[i] = Hook(kNoOps[i], &NoOp);
         }

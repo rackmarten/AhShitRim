@@ -213,3 +213,17 @@ TEST_CASE("the arrows walk on foot and lean a bike in a vehicle")
     CHECK(pad.buttonCross == 255);  // ... under power
     CHECK(ToPad(in, false).leftStickY == 0);  // on foot W and the down arrow cancel
 }
+
+TEST_CASE("each wheel step counts a radio retune, also while a menu has the input")
+{
+    Builder b;
+    b.AddWheel(true);
+    b.AddWheel(true);
+    b.AddWheel(false);
+    auto s = b.Build(1, true, true);
+    CHECK(s.radioNext == 2);
+    CHECK(s.radioPrev == 1);
+    s = b.Build(2, true, false);  // the counts carry over; San Andreas decides what a change means
+    CHECK(s.radioNext == 2);
+    CHECK(s.radioPrev == 1);
+}

@@ -23,6 +23,7 @@
 #include "../cpp/body.h"
 #include "../cpp/collision.h"
 #include "../cpp/input.h"
+#include "../cpp/radio.h"
 #include "../cpp/link.h"
 #include "../cpp/pose.h"
 #include "../cpp/skin_model.h"
@@ -127,6 +128,10 @@ int main(int argc, char** argv)
         s.anchor[1] = anchor[1];
         s.anchor[2] = anchor[2];
         link.WriteInput(s);
+        Protocol::AudioState audio{};  // v7: half volume, as from Skyrim's sliders
+        audio.effects = a_owned ? 0.5f : 0.0f;
+        audio.music = a_owned ? 0.5f : 0.0f;
+        link.WriteAudio(audio);
     };
 
     // Two handovers, the second elsewhere and higher up: San Andreas drops the first one's ground
@@ -279,6 +284,28 @@ int main(int argc, char** argv)
     std::printf("vehicles: CJ %s the Sandking\n", gotIn ? "got into" : "did not get into");
     failed += !gotIn;
     run(2.0, [] { return false; });  // CJ shuts the door before he can drive
+
+    // The radio (v7): the Sandking's own station, then the wheel dials through every station,
+    // Radio Sovngarde and off, round to where it started.
+    {
+        Protocol::PlayerState p{};
+        link.ReadPlayer(p);
+        std::int8_t at = p.radioStation;
+        std::printf("radio: the Sandking plays %s (%d)\n", at == Protocol::kRadioNone ? "nothing" : Radio::StationName(at).data(), at);
+        int dialed = 0;
+        for (int step = 0; step < Radio::kRadioOff && at != Protocol::kRadioNone; ++step) {
+            const std::int8_t want = Radio::Dial(at, 1);
+            input.AddWheel(true);
+            const bool tuned = run(6.0, [&] {
+                Protocol::PlayerState q{};
+                return link.ReadPlayer(q) && q.radioStation == want && !(q.flags & Protocol::kPlayerRadioRetuning);
+            });
+            std::printf("radio: wheel up to %s %s\n", Radio::StationName(want).data(), tuned ? "tuned" : "NOT TUNED");
+            dialed += tuned;
+            at = want;
+        }
+        failed += dialed != Radio::kRadioOff;
+    }
 
     Protocol::BodyState before{}, driving{};
     vehicleIn(0, before);

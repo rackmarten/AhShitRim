@@ -1,5 +1,6 @@
 #include "player/PlayerSync.h"
 
+#include "audio/SaAudio.h"
 #include "body/ModelView.h"
 #include "body.h"
 #include "camera.h"
@@ -449,6 +450,9 @@ namespace AhShitRim::PlayerSync
                     Drive(a_player, a_delta);
                 }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
+                Protocol::PlayerState pose{};
+                const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
+                Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
@@ -513,6 +517,14 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     auto* button = e->AsButtonEvent();
+                    if (button && button->GetDevice() == RE::INPUT_DEVICE::kMouse && button->IsDown() && state.owned && !MenuHasInput()) {
+                        const auto wheel = button->GetIDCode();
+                        if (wheel == RE::BSWin32MouseDevice::Key::kWheelUp || wheel == RE::BSWin32MouseDevice::Key::kWheelDown) {
+                            state.input.AddWheel(wheel == RE::BSWin32MouseDevice::Key::kWheelUp);  // the radio, in a vehicle
+                            changed = true;
+                        }
+                        continue;
+                    }
                     if (!button || button->GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
                         continue;
                     }
@@ -556,14 +568,17 @@ namespace AhShitRim::PlayerSync
         public:
             RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
             {
+                bool pauses = false;
                 if (state.owned && a_event) {
-                    bool pauses = false;
                     if (a_event->opening) {
                         auto* ui = RE::UI::GetSingleton();
                         auto  menu = ui ? ui->GetMenu(a_event->menuName) : nullptr;
                         pauses = menu && menu->PausesGame();
                     }
                     Publish(pauses || MenuHasInput(), pauses || GamePaused());
+                }
+                if (pauses || GamePaused()) {
+                    Audio::SetPaused(true);
                 }
                 return RE::BSEventNotifyControl::kContinue;
             }

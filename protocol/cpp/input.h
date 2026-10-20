@@ -135,6 +135,13 @@ namespace AhShitRim::Input
             _mouseY += a_dy;
         }
 
+        // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before.
+        // San Andreas only acts on the change while CJ is in a vehicle.
+        void AddWheel(bool a_up)
+        {
+            (a_up ? _radioNext : _radioPrev)++;
+        }
+
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
         {
@@ -157,6 +164,8 @@ namespace AhShitRim::Input
             s.mouseY = _mouseY;
             s.spawnModel = _spawnModel;
             s.spawnCount = _spawnCount;
+            s.radioNext = _radioNext;
+            s.radioPrev = _radioPrev;
             if (!a_live) {
                 return s;
             }
@@ -194,6 +203,8 @@ namespace AhShitRim::Input
         double        _mouseY = 0.0;
         std::uint16_t _spawnModel = 0;
         std::uint16_t _spawnCount = 0;
+        std::uint16_t _radioNext = 0;
+        std::uint16_t _radioPrev = 0;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

@@ -28,9 +28,11 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v6 constants")
+TEST_CASE("protocol v7 constants")
 {
-    CHECK(kProtocolVersion == 6);
+    CHECK(kProtocolVersion == 7);
+    CHECK(kPlayerRadioRetuning == 0x10);
+    CHECK(kRadioNone == -1);
     CHECK(kPlayerCrouching == 0x4);
     CHECK(kPlayerInVehicle == 0x8);
     CHECK(kButtonEnterExit == 0x10);
@@ -50,7 +52,7 @@ TEST_CASE("protocol v6 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v6 slot and ring layout")
+TEST_CASE("the v7 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 208);
@@ -58,10 +60,16 @@ TEST_CASE("the v6 slot and ring layout")
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
-    CHECK(sizeof(PlayerState) == 48);
+    CHECK(offsetof(InputState, radioNext) == 60);
+    CHECK(offsetof(InputState, radioPrev) == 62);
+    CHECK(sizeof(PlayerState) == 56);
+    CHECK(offsetof(PlayerState, radioStation) == 48);
     CHECK(offsetof(InputSlot, value) == 8);
     CHECK(offsetof(PlayerSlot, value) == 8);
-    CHECK(kOffsetPlayerSlot + sizeof(PlayerSlot) <= kOffsetBodySlot);
+    CHECK(kOffsetAudioSlot == 272);
+    CHECK(sizeof(AudioSlot) == 48);
+    CHECK(offsetof(AudioSlot, value) == 8);
+    CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
     CHECK(kOffsetBodySlot == 320);
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);

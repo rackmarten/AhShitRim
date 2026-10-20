@@ -9,7 +9,7 @@
 //   planes or wanted level. CJ is created by the ASI and stands on Skyrim's ground, built around him
 //   from the collision chunks Skyrim streams (chunk_world.h).
 // - 30 frames a second (physics breaks above that), and nothing is rendered unless the window is
-//   visible (-ahshitrim-visible). Sounds are muted.
+//   visible (-ahshitrim-visible). Sounds play while Skyrim has handed the player over (audio.h).
 // - While Skyrim owns nothing, CJ stands still; while it hands the player over (InputState), its
 //   input drives CJ's pad, and every frame CJ's pose goes back as a PlayerState.
 namespace AhShitRim::Runner

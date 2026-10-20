@@ -27,6 +27,7 @@ add_executable(protocol_tests
     tests/cpp/test_vehicle.cpp
     tests/cpp/test_txd.cpp
     tests/cpp/test_hud.cpp
+    tests/cpp/test_radio.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

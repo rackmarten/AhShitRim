@@ -86,6 +86,7 @@ namespace AhShitRim::HudLayout
     inline constexpr Colour kGreen{ 54, 104, 44, 255 };
     inline constexpr Colour kLightGray{ 225, 225, 225, 255 };
     inline constexpr Colour kGold{ 144, 98, 16, 255 };
+    inline constexpr Colour kDarkGray{ 150, 150, 150, 255 };  // HUD_COLOUR_DARK_GRAY: the radio while retuning
     inline constexpr Colour kBlack{ 0, 0, 0, 255 };
 
     inline Colour WithAlpha(Colour a_colour, float a_alpha)
@@ -153,6 +154,11 @@ namespace AhShitRim::HudLayout
     inline constexpr TextStyle kHelp{ HudFont::Style::Subtitles, 0.52f, 1.1f, true, 0, HudFont::Align::Left, 36.0f, 24.0f, Edge::Start, Edge::Start, false, 192.0f, kLightGray };
     // CHud::DrawSubtitles: bottom centre, lines going up.
     inline constexpr TextStyle kSubtitles{ HudFont::Style::Subtitles, 0.58f, 1.2f, true, 1, HudFont::Align::Centre, 320.0f, 416.0f, Edge::Middle, Edge::End, true, 500.0f, kLightGray };
+
+    // The radio station's name, top centre (CAERadioTrackManager::DisplayRadioStationName): gold once
+    // tuned, dark grey while retuning (v7).
+    inline constexpr TextStyle kRadioName{ HudFont::Style::Menu, 0.6f, 0.9f, true, 1, HudFont::Align::Centre, 320.0f, 22.0f, Edge::Middle, Edge::Start, false, 0.0f, kGold };
+    inline constexpr float     kRadioNameSeconds = 2.5f;
 
     inline constexpr float kHelpPadding = 4.0f;  // the help box round its text, HUD units
     inline constexpr Colour kHelpBox{ 0, 0, 0, 190 };

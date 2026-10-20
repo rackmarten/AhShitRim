@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v6. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6).
+> Status: protocol v7. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -18,9 +18,10 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/texture_decode.h`](../protocol/cpp/texture_decode.h) | San Andreas's Direct3D 9 texture formats to RGBA |
 | [`protocol/cpp/body.h`](../protocol/cpp/body.h) | San Andreas's skin matrices to bones, skinning a vertex, the interpolation between San Andreas's frames |
 | [`protocol/cpp/camera.h`](../protocol/cpp/camera.h) | Turning Skyrim's camera node to a view (from PerkeleRim) |
+| [`protocol/cpp/radio.h`](../protocol/cpp/radio.h) | Skyrim's sliders to San Andreas's volumes, the radio's dial and station names, Radio Sovngarde's track picks |
 | [`protocol/cpp/vehicle.h`](../protocol/cpp/vehicle.h) | Where a spawned vehicle goes, a vehicle's paint and lights colours, baking a part's scale or mirror into its vertices, merging a vehicle's meshes |
-| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging), run by `scripts/test.ps1` |
-| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it, the Sanchez rides, and a new handover takes CJ out and removes them (`scripts/fake-skyrim.ps1`) |
+| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging, volumes, the radio dial and Radio Sovngarde), run by `scripts/test.ps1` |
+| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it and its radio dials round every station, the Sanchez rides, and a new handover takes CJ out and removes them (`scripts/fake-skyrim.ps1`) |
 
 ## Section layout
 
@@ -31,7 +32,7 @@ One section, `Local\AhShitRim.Link`, 8,398,656 bytes. Whichever game starts firs
 | 0 | 128 | `LinkHeader`: magic, sizes, creator version, one `PeerInfo` per side | creator, then each side its own `PeerInfo` |
 | 128 | 80 | `InputSlot`: the player's input for CJ | Skyrim |
 | 208 | 64 | `PlayerSlot`: CJ's pose | San Andreas |
-| 272 | 48 | unused | |
+| 272 | 48 | `AudioSlot`: San Andreas's volumes (v7) | Skyrim |
 | 320 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
 | 2240 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
 | 9920 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
@@ -77,25 +78,42 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 44 | `anchor[3]` | the Skyrim player's feet at that handover, Skyrim world units: the floating origin's base (v4) |
 | 56 | `spawnModel` | u16, the San Andreas vehicle model the last spawn request asked for (v6) |
 | 58 | `spawnCount` | u16, counts spawn requests; a new value spawns `spawnModel` (v6) |
-| 60 | reserved | 4 bytes |
+| 60 | `radioNext` | u16, counts mouse wheel steps up (v7); in a vehicle each one tunes the next station |
+| 62 | `radioPrev` | u16, counts wheel steps down, the previous station (v7) |
 
 Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrows move (in a vehicle the up and down arrows lean a bike instead), Left Shift sprints, Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle, H sounds the horn. ], [ and `\` ask for a Sandking (495), a ZR-350 (477) and a Sanchez (468): each press sets `spawnModel` and counts `spawnCount` up once. Escape, Tab, M, `~` and F10 stay with Skyrim. While a Skyrim menu has the input (paused, or a cursor menu like dialogue), the axes and buttons are zero but the mouse totals and the spawn requests keep counting. San Andreas writes the actions into pad 0 right after `CPad::UpdatePads` and the mouse change into `CPad::NewMouseControllerState`, vertical flipped (passed through as is, the camera looked the wrong way). On foot: left stick, Cross for sprint, Square for jump, L3 for crouch, the walk flag, Triangle to get into a vehicle. In a vehicle: W holds Cross (accelerate) and S Square (brake, then reverse), the left stick's X steers and its Y leans a bike (up arrow forward, down arrow back), jump holds R1 (handbrake), the horn L3 and Triangle gets out. San Andreas spawns only on a change of `spawnCount` after the first value it read (a San Andreas that starts after Skyrim doesn't spawn the last vehicle again), and only while it has the player and CJ is on foot. A read of the slot that stays torn keeps the last input rather than counting as the link going down.
 
 ### Pose (San Andreas to Skyrim)
 
-`PlayerState`, 48 bytes. Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
+`PlayerState`, 56 bytes (48 before v7). Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
 
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `frame` | San Andreas frame counter |
-| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle |
+| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations |
 | 8 | `offset[3]` | CJ relative to where the current handover spawned him |
 | 20 | `velocity[3]` | units per second; in a vehicle the vehicle's, which Skyrim samples the ground ahead by |
 | 32 | `heading` | CJ's body |
 | 36 | `viewHeading`, `viewPitch` | where San Andreas's camera looks; Skyrim's first-person camera follows it |
 | 44 | `handover` | the `InputState.handover` this pose belongs to; Skyrim ignores poses from older handovers |
+| 48 | `radioStation` | i8 (v7): the radio station in CJ's vehicle, San Andreas's `eRadioID` with 12 as Radio Sovngarde: 0 emergency, 1..11 San Andreas's stations, 12 Radio Sovngarde, 13 off, -1 (`kRadioNone`) not in a vehicle. While the wheel retunes it is the station it goes to |
+| 49 | reserved | 7 bytes |
 
 Skyrim adds `offset` to the player's position at the handover.
+
+### Audio (Skyrim to San Andreas)
+
+`AudioState`, 32 bytes (v7). Written every Skyrim frame.
+
+| Offset | Field | Meaning |
+|---|---|---|
+| 0 | `effects` | 0..1, Skyrim's master x effects sliders: San Andreas's effects master volume (everything but the radio) |
+| 4 | `music` | 0..1, master x music: San Andreas's music master volume (the radio) |
+| 8 | reserved | 24 bytes |
+
+Both are 0 while Skyrim has the player. San Andreas sets them every frame (0..64); a pausing menu pauses its sounds through `kInputPaused` instead. Mouse wheel steps in the input dial San Andreas's radio only while CJ is in a vehicle and nothing pauses (`protocol/cpp/radio.h`: 1..11, Radio Sovngarde, off, round and round); Radio Sovngarde is San Andreas's radio off, and Skyrim plays its own music on it.
+
+Log lines: `audio: sound on (effects N/64, music N/64)` / `audio: muted`, `audio: the wheel tunes NAME`, `audio: radio on NAME` / `audio: no radio`, `audio: San Andreas's radio at ID (on B, retuning B)` in San Andreas's log; `audio: menu sound category ID "NAME" at V (master|music|effects)`, `audio: radio NAME`, `audio: master volume V (fAudioMasterVolume)`, `audio: Skyrim's music paused for the radio|back`, `audio: Radio Sovngarde plays PATH (N s)` in Skyrim's.
 
 ### Body (San Andreas to Skyrim)
 
@@ -183,9 +201,9 @@ Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Di
 
 Log lines on both sides, prefixed `link:`:
 
-- `started (protocol v6)`
+- `started (protocol v7)`
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
-- `link up: <peer> pid N, protocol v6`
+- `link up: <peer> pid N, protocol v7`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
 - `link disabled: ...`
 

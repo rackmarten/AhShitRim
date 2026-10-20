@@ -312,6 +312,16 @@ TEST_CASE("input and pose round-trip through their slots")
     CHECK(back.velocity[1] == -140.0f);
     CHECK(back.viewPitch == 0.25f);
     CHECK(back.handover == 3);
+    CHECK(back.radioStation == 0);
+
+    AudioState audio{};
+    audio.effects = 0.5f;
+    audio.music = 0.25f;
+    p.skyrim->WriteAudio(audio);
+    AudioState heard{};
+    REQUIRE(p.sa->ReadAudio(heard));
+    CHECK(heard.effects == 0.5f);
+    CHECK(heard.music == 0.25f);
 }
 
 TEST_CASE("the ring delivers collision chunks in order, across the wrap point")
