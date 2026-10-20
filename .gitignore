@@ -23,6 +23,7 @@ out/
 cmake-build-*/
 CMakeUserPresets.json
 vcpkg_installed/
+/.plugin-sa/
 *.obj
 *.pdb
 *.ilk
@@ -46,3 +47,4 @@ Desktop.ini
 
 # --- Local machine config ---
 local.props
+launcher/launcher.ini

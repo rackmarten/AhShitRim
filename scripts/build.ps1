@@ -5,11 +5,15 @@
 .EXAMPLE
     scripts/build.ps1                       # both, Release
     scripts/build.ps1 -Target sa -Configuration Debug
+    scripts/build.ps1 -Target sa -PluginSaCache .plugin-sa  # CI: link (or else keep) a prebuilt plugin_sa.lib
     powershell.exe -File scripts/build.ps1  # from WSL
 #>
 param(
     [ValidateSet('all', 'skse', 'sa')] [string] $Target = 'all',
-    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release'
+    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release',
+    # A folder for plugin-sdk's plugin_sa.lib (Release only): linked when it's there, put there
+    # after building it when it isn't. CI caches the folder (.github/workflows/build.yml).
+    [string] $PluginSaCache
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -43,8 +47,16 @@ if ($Target -in 'all', 'sa') {
     try {
         # The preset names VS 2022's generator; under VS 2026 (GitHub's windows-latest) use its own.
         $generator = if ($env:VisualStudioVersion -eq '18.0') { @('-G', 'Visual Studio 18 2026') } else { @() }
-        Invoke-Checked cmake (@('--preset', 'x86') + $generator)
+        $cacheDir = if ([IO.Path]::IsPathRooted($PluginSaCache)) { $PluginSaCache } elseif ($PluginSaCache) { Join-Path $RepoRoot $PluginSaCache }
+        $cachedLib = if ($cacheDir -and $Configuration -eq 'Release') { Join-Path $cacheDir 'plugin_sa.lib' }
+        $prebuilt = if ($cachedLib -and (Test-Path $cachedLib)) { $cachedLib } else { '' }
+        Invoke-Checked cmake (@('--preset', 'x86', "-DPLUGIN_SA_LIB=$prebuilt") + $generator)
         Invoke-Checked cmake @('--build', '--preset', $preset, '--', '/m', '/nologo', '/v:minimal')
+        if ($cachedLib -and -not $prebuilt) {
+            New-Item -ItemType Directory -Force (Split-Path $cachedLib) | Out-Null
+            Copy-Item -Force (Join-Path $RepoRoot 'sa/build/Release/plugin_sa.lib') $cachedLib
+            Write-Host "plugin_sa: kept $cachedLib for the next build"
+        }
     } finally { Pop-Location }
     Write-Host "San Andreas plugin: sa/build/$Configuration/AhShitRim.asi"
 }
