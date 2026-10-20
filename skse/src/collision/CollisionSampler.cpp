@@ -14,14 +14,18 @@ namespace AhShitRim::CollisionSampler
         constexpr std::uint32_t kCells = 32;          // 64 units (about 0.9 m) between samples
         constexpr std::uint32_t kSamples = (kCells + 1) * (kCells + 1);
         constexpr int           kRadius = 2;          // chunks around the player's chunk: 5 x 5, about 70 m each way
-        constexpr int           kForgetRadius = kRadius + 1;  // from both centers; San Andreas keeps chunks within 6 of CJ (Ground::kKeepRadius), so a chunk it dropped was forgotten here and is resent
+        constexpr int           kForgetRadius = kRadius + 1;  // from both centers; San Andreas keeps chunks within 7 of CJ (Ground::kKeepRadius), so a chunk it dropped was forgotten here and is resent
         constexpr float         kLookAhead = 2.0f;            // seconds of travel the second center sits ahead of the player
-        constexpr float         kMaxAhead = 2.0f * Protocol::kCollisionChunkUnits;  // ... but at most 2 chunks
+        constexpr float         kMaxAhead = 3.0f * Protocol::kCollisionChunkUnits;  // ... but at most 3 chunks (a car at 50 m/s)
         constexpr float         kRayAbove = 10000.0f;  // rays run from this far above the player...
         constexpr float         kRayBelow = 10000.0f;  // ...to this far below
         constexpr int           kMaxPassThrough = 32;  // other surfaces a ray may pass through on its way to the terrain (roofs, floors, bridges)
         constexpr auto          kBudget = 2ms;         // sampling time per frame
+        constexpr auto          kFastBudget = 4ms;     // ... while the player moves faster than kFast: a car needs a new row of chunks every half second
+        constexpr float         kFast = 700.0f;        // units per second, 10 m/s
         constexpr auto          kRetryAfter = 2s;      // before sampling an unfinished chunk again
+        constexpr auto          kFastRetryAfter = 400ms;  // ... while the player moves faster than kFast: ahead of a fast car Skyrim is often still
+                                                          // loading the land (a chunk came with 33 of 1089 land samples at 40 m/s), and 2 s later it was driven over
         constexpr int           kMaxTries = 5;
         constexpr auto          kDoorSwing = 1500ms;   // a door's collision is where it stops after this
         constexpr float         kDoorReach = 256.0f;   // chunks this close to a door that moved are read again
@@ -50,6 +54,7 @@ namespace AhShitRim::CollisionSampler
         struct State
         {
             bool          active = false;
+            bool          fast = false;  // the player moves faster than kFast
             std::uint32_t generation = 0;
             std::uint32_t worldspace = 0;
             std::map<Key, Known> known;
@@ -185,7 +190,7 @@ namespace AhShitRim::CollisionSampler
             const Key   key{ f.chunkX, f.chunkY };
             auto&       known = state.known[key];
             known.tries++;
-            known.retryAt = Clock::now() + kRetryAfter;
+            known.retryAt = Clock::now() + (state.fast ? kFastRetryAfter : kRetryAfter);
 
             const auto start = Clock::now();
             const auto statics = StaticMeshes::Collect(key.first, key.second);
@@ -331,6 +336,7 @@ namespace AhShitRim::CollisionSampler
         }
         auto*      cell = a_player->GetParentCell();
         const auto pos = a_player->GetPosition();
+        state.fast = std::hypot(a_velocity.x, a_velocity.y) > kFast;
         const Key  center{ Collision::ChunkIndex(pos.x), Collision::ChunkIndex(pos.y) };
         RE::NiPoint3 ahead(a_velocity.x * kLookAhead, a_velocity.y * kLookAhead, 0.0f);
         if (const float length = ahead.Length(); length > kMaxAhead) {
@@ -361,6 +367,7 @@ namespace AhShitRim::CollisionSampler
         }
 
         const auto start = Clock::now();
+        const auto budget = state.fast ? kFastBudget : kBudget;
         {
             RE::BSReadLockGuard lock(bhk->worldLock);
             auto&               f = state.field;
@@ -383,7 +390,7 @@ namespace AhShitRim::CollisionSampler
                     f.heights[k] = z;
                     f.hit[k] = 1;
                 }
-                if ((state.next & 15) == 0 && Clock::now() - start >= kBudget) {
+                if ((state.next & 15) == 0 && Clock::now() - start >= budget) {
                     break;
                 }
             }

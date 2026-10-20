@@ -219,10 +219,10 @@ namespace AhShitRim::Ground
 
     // ---- Which chunks San Andreas keeps ----
 
-    // Skyrim forgets chunks more than 3 from the player and from a point up to 2 chunks ahead of
-    // it, and sends them again when they come back into range. San Andreas drops them only past
-    // kKeepRadius from CJ, so a chunk it dropped is always one Skyrim forgot and will resend.
-    inline constexpr int kKeepRadius = 6;
+    // Skyrim forgets chunks more than 3 from the player and from a point up to 3 chunks ahead of
+    // it (a fast car's), and sends them again when they come back into range. San Andreas drops them
+    // only past kKeepRadius from CJ, so a chunk it dropped is always one Skyrim forgot and will resend.
+    inline constexpr int kKeepRadius = 7;
 
     // The chunks San Andreas has built for the current handover, each in one of a fixed number of
     // slots (San Andreas model ids, sa/src/ground.cpp).

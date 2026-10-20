@@ -1,11 +1,13 @@
-#include "body/CjView.h"
+#include "body/ModelView.h"
 
 #include <DirectXPackedVector.h>
+
+#include <map>
 
 #include "body.h"
 #include "skin_model.h"
 
-namespace AhShitRim::CjView
+namespace AhShitRim::ModelView
 {
     namespace
     {
@@ -23,9 +25,11 @@ namespace AhShitRim::CjView
         constexpr std::uint32_t kNormalOffset = 20;
         constexpr std::uint32_t kTangentOffset = 24;
 
-        // CJ fits in this sphere around his feet whatever he does (a jump, a roll).
-        const RE::NiPoint3   kBoundCenter{ 0.0f, 0.0f, 70.0f };
-        constexpr float      kBoundRadius = 160.0f;
+        // CJ fits in this sphere around his feet whatever he does (a jump, a roll); a vehicle's parts
+        // in the other around its position (a Sandking is about 6 m long).
+        const RE::NiPoint3     kBodyBoundCenter{ 0.0f, 0.0f, 70.0f };
+        constexpr float        kBodyBoundRadius = 160.0f;
+        constexpr float        kVehicleBoundRadius = 600.0f;
         constexpr std::uint8_t kCutoutThreshold = 128;
 
         struct Shape
@@ -37,7 +41,7 @@ namespace AhShitRim::CjView
         };
 
         // A received model, built once: never destroyed (the game's destructors expect geometry it
-        // built itself), only detached when a newer one replaces it.
+        // built itself), only hidden while it isn't shown.
         struct Built
         {
             std::uint32_t                    id = 0;
@@ -45,6 +49,9 @@ namespace AhShitRim::CjView
             SkinModel::Model                 model;
             RE::NiPointer<RE::NiNode>        node;
             std::vector<Shape>               shapes;
+            bool                             shown = false;
+            std::uint64_t                    shownFrame = 0;  // State::frame of the last Show
+            std::vector<Protocol::BodyBone>  posed;           // the bones its buffers hold: a parked vehicle isn't skinned again
         };
 
         struct State
@@ -54,17 +61,22 @@ namespace AhShitRim::CjView
             RE::NiPointer<RE::NiNode>                    templateModel;
             RE::BSTriShape*                              templateShape = nullptr;
             bool                                         templateFailed = false;
-            std::vector<std::unique_ptr<Built>>          models;  // every one built; the last is current
+            std::map<std::uint32_t, std::unique_ptr<Built>> models;  // every one built, by id
             std::vector<RE::NiPointer<RE::NiSourceTexture>> textures;  // never destroyed, as in PerkeleRim
             RE::NiSourceTexture*                         flatNormal = nullptr;
             RE::NiPointer<RE::NiAlphaProperty>           cutout;
+            RE::NiPointer<RE::NiAlphaProperty>           blend;
             W32::ID3D11DeviceContext*                    context = nullptr;
-            bool                                         shown = false;
             bool                                         mapFailLogged = false;
+            std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
         } state;
 
-        Built* Current() { return state.models.empty() ? nullptr : state.models.back().get(); }
+        Built* Find(std::uint32_t a_id)
+        {
+            const auto found = state.models.find(a_id);
+            return found != state.models.end() && !found->second->shapes.empty() ? found->second.get() : nullptr;
+        }
 
         std::uint8_t Byte(float a_unit) { return static_cast<std::uint8_t>(std::clamp(std::lround((a_unit + 1.0f) * 127.5f), 0L, 255L)); }
 
@@ -75,7 +87,7 @@ namespace AhShitRim::CjView
             }
             state.templateFailed = true;
             if (RE::BSModelDB::Demand(kTemplateModel, state.templateModel, {}) != RE::BSResource::ErrorCode::kNone || !state.templateModel) {
-                SKSE::log::warn("cj view: template {} did not load", kTemplateModel);
+                SKSE::log::warn("model view: template {} did not load", kTemplateModel);
                 return false;
             }
             RE::BSVisit::TraverseScenegraphGeometries(state.templateModel.get(), [](RE::BSGeometry* a_geometry) {
@@ -87,7 +99,7 @@ namespace AhShitRim::CjView
                 return RE::BSVisit::BSVisitControl::kContinue;
             });
             if (!state.templateShape) {
-                SKSE::log::warn("cj view: no plain BSTriShape in {}", kTemplateModel);
+                SKSE::log::warn("model view: no plain BSTriShape in {}", kTemplateModel);
                 return false;
             }
             state.templateFailed = false;
@@ -169,13 +181,13 @@ namespace AhShitRim::CjView
             }
             W32::ID3D11Texture2D* texture = nullptr;
             if (!W32::SUCCESS(device->CreateTexture2D(&desc, init.data(), &texture)) || !texture) {
-                SKSE::log::warn("cj view: CreateTexture2D {}x{} failed", a_width, a_height);
+                SKSE::log::warn("model view: CreateTexture2D {}x{} failed", a_width, a_height);
                 return nullptr;
             }
             W32::ID3D11ShaderResourceView* view = nullptr;
             if (!W32::SUCCESS(device->CreateShaderResourceView(texture, nullptr, &view)) || !view) {
                 texture->Release();
-                SKSE::log::warn("cj view: CreateShaderResourceView failed");
+                SKSE::log::warn("model view: CreateShaderResourceView failed");
                 return nullptr;
             }
             auto* source = Wrap(texture, view, a_width, a_height, static_cast<std::uint32_t>(levels.size()), a_name);
@@ -198,20 +210,34 @@ namespace AhShitRim::CjView
             return state.flatNormal;
         }
 
-        // Alpha testing "greater than threshold" without blending (0x12EC, as vanilla NIFs), put
-        // together by hand like the textures.
+        // An alpha property, put together by hand like the textures.
+        RE::NiAlphaProperty* MakeAlpha(std::uint16_t a_flags)
+        {
+            static REL::Relocation<std::uintptr_t> vtable{ RE::NiAlphaProperty::VTABLE[0] };
+            auto* alpha = static_cast<RE::NiAlphaProperty*>(RE::malloc(sizeof(RE::NiAlphaProperty)));
+            std::memset(alpha, 0, sizeof(*alpha));
+            *reinterpret_cast<std::uintptr_t*>(alpha) = vtable.address();
+            alpha->alphaFlags = a_flags;
+            alpha->alphaThreshold = kCutoutThreshold;
+            return alpha;
+        }
+
+        // Alpha testing "greater than threshold" without blending (0x12EC, as vanilla NIFs).
         RE::NiAlphaProperty* Cutout()
         {
             if (!state.cutout) {
-                static REL::Relocation<std::uintptr_t> vtable{ RE::NiAlphaProperty::VTABLE[0] };
-                auto* alpha = static_cast<RE::NiAlphaProperty*>(RE::malloc(sizeof(RE::NiAlphaProperty)));
-                std::memset(alpha, 0, sizeof(*alpha));
-                *reinterpret_cast<std::uintptr_t*>(alpha) = vtable.address();
-                alpha->alphaFlags = 0x12EC;
-                alpha->alphaThreshold = kCutoutThreshold;
-                state.cutout.reset(alpha);
+                state.cutout.reset(MakeAlpha(0x12EC));
             }
             return state.cutout.get();
+        }
+
+        // Source alpha blended over what's behind (0x00ED, as vanilla glass): a vehicle's windows.
+        RE::NiAlphaProperty* Blend()
+        {
+            if (!state.blend) {
+                state.blend.reset(MakeAlpha(0x00ED));
+            }
+            return state.blend.get();
         }
 
         RE::BSGraphics::VertexDesc VertexDesc()
@@ -247,7 +273,7 @@ namespace AhShitRim::CjView
             std::memcpy(a_out + kTangentOffset, tangent, sizeof(tangent));
         }
 
-        RE::BSLightingShaderProperty* MakeShader(RE::NiSourceTexture* a_diffuse)
+        RE::BSLightingShaderProperty* MakeShader(RE::NiSourceTexture* a_diffuse, bool a_blend, float a_alpha)
         {
             auto& shaderState = *RE::BSGraphics::State::GetSingleton();
             auto* material = RE::BSLightingShaderMaterialBase::CreateMaterial<RE::BSLightingShaderMaterial>();
@@ -259,14 +285,19 @@ namespace AhShitRim::CjView
             auto* own = static_cast<RE::BSLightingShaderMaterialBase*>(shader->material);
             own->diffuseTexture = material->diffuseTexture;
             own->normalTexture = material->normalTexture;
-            own->materialAlpha = 1.0f;
+            own->materialAlpha = a_alpha;
             own->specularColorScale = 0.0f;
             using F = RE::BSShaderProperty::EShaderPropertyFlag;
             // Both sides drawn: CJ is a closed mesh, so the far side is behind the near one anyway, and
-            // a winding San Andreas and Skyrim read differently can't turn him inside out.
+            // a winding San Andreas and Skyrim read differently can't turn him inside out. A blended
+            // mesh (glass) doesn't write depth, so what's behind it still shows.
             shader->flags.set(F::kReceiveShadows);
             shader->flags.set(F::kZBufferTest);
-            shader->flags.set(F::kZBufferWrite);
+            if (a_blend) {
+                shader->flags.reset(F::kZBufferWrite);
+            } else {
+                shader->flags.set(F::kZBufferWrite);
+            }
             shader->flags.set(F::kTwoSided);
             return shader;
         }
@@ -310,7 +341,7 @@ namespace AhShitRim::CjView
                 }
                 RE::free(rawVertices);
                 RE::free(rawIndices);
-                SKSE::log::warn("cj view: CreateBuffer failed for mesh {}", a_mesh);
+                SKSE::log::warn("model view: CreateBuffer failed for mesh {}", a_mesh);
                 return false;
             }
             auto* data = static_cast<RE::BSGraphics::TriShape*>(RE::malloc(sizeof(RE::BSGraphics::TriShape)));
@@ -323,20 +354,22 @@ namespace AhShitRim::CjView
             data->rawIndexData = rawIndices;
 
             RE::NiPointer<RE::BSTriShape> shape(static_cast<RE::BSTriShape*>(state.templateShape->Clone()));
-            shape->name = "AhShitRimCJ";
+            const bool vehicle = a_built.model.kind == Protocol::kSkinModelVehicle;
+            shape->name = vehicle ? "AhShitRimVehicle" : "AhShitRimCJ";
             shape->local = RE::NiTransform();
             auto& geometry = shape->GetGeometryRuntimeData();
             geometry.rendererData = data;
             geometry.vertexDesc = data->vertexDesc;
             geometry.skinInstance.reset();
-            geometry.alphaProperty.reset((mesh.flags & (Protocol::kSkinMeshCutout | Protocol::kSkinMeshBlend)) != 0 ? Cutout() : nullptr);
+            const bool blend = (mesh.flags & Protocol::kSkinMeshBlend) != 0;
+            geometry.alphaProperty.reset(blend ? Blend() : (mesh.flags & Protocol::kSkinMeshCutout) != 0 ? Cutout() : nullptr);
             auto& counts = shape->GetTrishapeRuntimeData();
             counts.vertexCount = static_cast<std::uint16_t>(mesh.vertexCount);
             counts.triangleCount = static_cast<std::uint16_t>(mesh.indexCount / 3);
             auto& bound = shape->GetModelData().modelBound;
-            bound.center = kBoundCenter;
-            bound.radius = kBoundRadius;
-            auto* shader = MakeShader(a_diffuse);
+            bound.center = vehicle ? RE::NiPoint3() : kBodyBoundCenter;
+            bound.radius = vehicle ? kVehicleBoundRadius : kBodyBoundRadius;
+            auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f);
             geometry.shaderProperty.reset(shader);
             shader->SetupGeometry(shape.get());
             shader->FinishSetupGeometry(shape.get());
@@ -356,7 +389,7 @@ namespace AhShitRim::CjView
             built->blob = a_blob;
             auto model = SkinModel::Parse(built->blob.data(), built->blob.size());
             if (!model) {
-                SKSE::log::warn("cj view: model {:08X} is malformed ({} bytes)", a_id, a_blob.size());
+                SKSE::log::warn("model view: model {:08X} is malformed ({} bytes)", a_id, a_blob.size());
                 return;
             }
             built->model = std::move(*model);
@@ -365,14 +398,36 @@ namespace AhShitRim::CjView
                 const auto& t = built->model.textures[i];
                 textures.push_back(MakeTexture(t.width, t.height, t.rgba, std::format("AhShitRim\\{:08X}\\{}", a_id, i)));
             }
+            // San Andreas multiplies a material's texture by its colour (a vehicle's paint is a grey
+            // texture in the vehicle's colour); Skyrim's shader has no such tint, so each texture and
+            // colour pair gets a tinted copy.
+            std::map<std::pair<std::int32_t, std::uint32_t>, RE::NiSourceTexture*> tinted;
+            const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4]) -> RE::NiSourceTexture* {
+                const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
+                if (rgb == 0xFFFFFF || !textures[a_texture]) {
+                    return textures[a_texture];
+                }
+                auto& out = tinted[{ a_texture, rgb }];
+                if (!out) {
+                    const auto&               t = built->model.textures[a_texture];
+                    std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                    for (std::size_t p = 0; p < pixels.size(); p += 4) {
+                        for (int c = 0; c < 3; c++) {
+                            pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
+                        }
+                    }
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}", a_id, a_texture, rgb));
+                }
+                return out;
+            };
             built->node.reset(RE::NiNode::Create(static_cast<std::uint16_t>(built->model.meshes.size())));
-            built->node->name = "AhShitRimCJ";
+            built->node->name = built->model.kind == Protocol::kSkinModelVehicle ? "AhShitRimVehicle" : "AhShitRimCJ";
             std::uint32_t vertices = 0, triangles = 0;
             for (std::uint32_t m = 0; m < built->model.meshes.size(); m++) {
                 const auto& mesh = built->model.meshes[m];
                 RE::NiSourceTexture* diffuse = nullptr;
                 if (mesh.texture >= 0) {
-                    diffuse = textures[mesh.texture];
+                    diffuse = tint(mesh.texture, mesh.color);
                 } else if (mesh.color[0] != 255 || mesh.color[1] != 255 || mesh.color[2] != 255) {
                     const std::uint8_t pixel[4] = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
                     diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
@@ -387,14 +442,10 @@ namespace AhShitRim::CjView
                 built->shapes.push_back(std::move(shape));
             }
             built->node->SetAppCulled(true);
-            if (auto* old = Current(); old && old->node && old->node->parent) {
-                old->node->parent->DetachChild(old->node.get());
-            }
-            state.shown = false;
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            SKSE::log::info("cj view: model {:08X} {} built in {:.1f} ms: {} shapes, {} vertices, {} triangles, {} textures, {} bones ({} bytes)", a_id,
-                built->model.name, ms, built->shapes.size(), vertices, triangles, textures.size(), built->model.boneIds.size(), a_blob.size());
-            state.models.push_back(std::move(built));
+            SKSE::log::info("model view: model {:08X} {} built in {:.1f} ms: {} shapes, {} vertices, {} triangles, {} textures ({} tinted), {} bones ({} bytes)", a_id,
+                built->model.name, ms, built->shapes.size(), vertices, triangles, textures.size(), tinted.size(), built->model.boneIds.size(), a_blob.size());
+            state.models[a_id] = std::move(built);
         }
 
         // The node the player's own 3D hangs in (the loaded cells' actor node, at world origin), so
@@ -429,32 +480,30 @@ namespace AhShitRim::CjView
         case SkinModel::Assembler::Result::Dropped:
             if (!state.dropLogged) {
                 state.dropLogged = true;
-                SKSE::log::warn("cj view: model chunk out of order or malformed ({} bytes), model dropped", a_size);
+                SKSE::log::warn("model view: model chunk out of order or malformed ({} bytes), model dropped", a_size);
             }
             return;
         case SkinModel::Assembler::Result::Complete:
             break;
         }
-        if (auto* current = Current(); current && current->id == state.assembler.Id()) {
-            SKSE::log::info("cj view: model {:08X} received again, already built", current->id);
+        if (state.models.contains(state.assembler.Id())) {
+            SKSE::log::info("model view: model {:08X} received again, already built", state.assembler.Id());
             return;
         }
         Build(state.assembler.Id(), state.assembler.Blob());
     }
 
-    std::uint32_t Model()
+    bool Has(std::uint32_t a_model)
     {
-        const auto* current = Current();
-        return current && !current->shapes.empty() ? current->id : 0;
+        return Find(a_model) != nullptr;
     }
 
-    void Show(const Protocol::BodyState& a_body, const RE::NiPoint3& a_feet)
+    bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin)
     {
-        auto* built = Current();
+        auto* built = Find(a_pose.model);
         auto* context = Context();
-        if (!built || built->id != a_body.model || a_body.boneCount != built->model.boneIds.size() || !context) {
-            Hide();
-            return;
+        if (!built || a_pose.boneCount != built->model.boneIds.size() || !context) {
+            return false;
         }
         auto* scene = Scene();
         if (scene && built->node->parent != scene) {
@@ -462,50 +511,66 @@ namespace AhShitRim::CjView
                 built->node->parent->DetachChild(built->node.get());
             }
             scene->AttachChild(built->node.get(), true);
-            SKSE::log::info("cj view: CJ attached under {}", scene->name.c_str());
+            SKSE::log::info("model view: {} {:08X} attached under {}", built->model.name, built->id, scene->name.c_str());
         }
 
-        state.bones.resize(a_body.boneCount);
-        for (std::uint32_t i = 0; i < a_body.boneCount; i++) {
-            state.bones[i] = Body::ToMatrix(a_body.bones[i]);
-        }
-        for (auto& shape : built->shapes) {
-            const auto& mesh = built->model.meshes[shape.mesh];
-            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
-                Body::Vec3 position, normal;
-                Body::Skin(state.bones.data(), a_body.boneCount, mesh.Vertex(i), position, normal);
-                Pack(shape.vertices.data() + static_cast<std::size_t>(i) * kStride, position, normal);
+        // Skinned again only when the bones moved: a parked vehicle costs nothing.
+        const std::size_t boneBytes = a_pose.boneCount * sizeof(Protocol::BodyBone);
+        if (built->posed.size() != a_pose.boneCount || std::memcmp(built->posed.data(), a_pose.bones, boneBytes) != 0) {
+            built->posed.assign(a_pose.bones, a_pose.bones + a_pose.boneCount);
+            state.bones.resize(a_pose.boneCount);
+            for (std::uint32_t i = 0; i < a_pose.boneCount; i++) {
+                state.bones[i] = Body::ToMatrix(a_pose.bones[i]);
             }
-            W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (!W32::SUCCESS(context->Map(shape.buffer, 0, W32::D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.data) {
-                if (!state.mapFailLogged) {
-                    state.mapFailLogged = true;
-                    SKSE::log::warn("cj view: could not map CJ's vertex buffer");
+            for (auto& shape : built->shapes) {
+                const auto& mesh = built->model.meshes[shape.mesh];
+                for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                    Body::Vec3 position, normal;
+                    Body::Skin(state.bones.data(), a_pose.boneCount, mesh.Vertex(i), position, normal);
+                    Pack(shape.vertices.data() + static_cast<std::size_t>(i) * kStride, position, normal);
                 }
-                continue;
+                W32::D3D11_MAPPED_SUBRESOURCE mapped{};
+                if (!W32::SUCCESS(context->Map(shape.buffer, 0, W32::D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.data) {
+                    if (!state.mapFailLogged) {
+                        state.mapFailLogged = true;
+                        SKSE::log::warn("model view: could not map a vertex buffer of {}", built->model.name);
+                    }
+                    built->posed.clear();  // try again next frame
+                    continue;
+                }
+                std::memcpy(mapped.data, shape.vertices.data(), shape.vertices.size());
+                context->Unmap(shape.buffer, 0);
             }
-            std::memcpy(mapped.data, shape.vertices.data(), shape.vertices.size());
-            context->Unmap(shape.buffer, 0);
         }
 
-        built->node->local.translate = a_feet;
+        built->node->local.translate = a_origin;
         built->node->local.rotate = RE::NiMatrix3();
         RE::NiUpdateData update{};
         built->node->Update(update);
-        if (!state.shown) {
-            state.shown = true;
+        built->shownFrame = state.frame;
+        if (!built->shown) {
+            built->shown = true;
             built->node->SetAppCulled(false);
-            SKSE::log::info("cj view: CJ shown");
+            SKSE::log::info("model view: {} {:08X} shown", built->model.name, built->id);
         }
+        return true;
     }
 
-    void Hide()
+    void EndFrame()
     {
-        auto* built = Current();
-        if (state.shown && built && built->node) {
-            built->node->SetAppCulled(true);
-            SKSE::log::info("cj view: CJ hidden");
+        for (auto& [id, built] : state.models) {
+            if (built->shown && built->shownFrame != state.frame) {
+                built->shown = false;
+                built->node->SetAppCulled(true);
+                SKSE::log::info("model view: {} {:08X} hidden", built->model.name, id);
+            }
         }
-        state.shown = false;
+        state.frame++;
+    }
+
+    void HideAll()
+    {
+        state.frame++;  // nothing was shown this frame
+        EndFrame();
     }
 }

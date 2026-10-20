@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
     Drives a running San Andreas without Skyrim: builds and runs protocol/tools/fake_skyrim, which
-    links up as the Skyrim side, hands the player over, holds W and prints CJ's poses. Exits non-zero
-    if CJ didn't walk. Start San Andreas first (scripts/launch-sa.ps1), and keep Skyrim closed.
+    links up as the Skyrim side, hands the player over, holds W and prints CJ's poses, then spawns,
+    drives and rides vehicles. Exits non-zero if CJ didn't walk or a vehicle check failed. Start San
+    Andreas first (scripts/launch-sa.ps1), and keep Skyrim closed.
 .EXAMPLE
     scripts/fake-skyrim.ps1
     scripts/fake-skyrim.ps1 -WalkSeconds 5

@@ -11,8 +11,8 @@ TEST_CASE("GTA's keyboard layout maps to CJ's actions")
     CHECK(ActionFromScanCode(kDikS) == Action::Back);
     CHECK(ActionFromScanCode(kDikA) == Action::Left);
     CHECK(ActionFromScanCode(kDikD) == Action::Right);
-    CHECK(ActionFromScanCode(kDikUp) == Action::Forward);
-    CHECK(ActionFromScanCode(kDikDown) == Action::Back);
+    CHECK(ActionFromScanCode(kDikUp) == Action::LeanForward);
+    CHECK(ActionFromScanCode(kDikDown) == Action::LeanBack);
     CHECK(ActionFromScanCode(kDikLeft) == Action::Left);
     CHECK(ActionFromScanCode(kDikRight) == Action::Right);
     CHECK(ActionFromScanCode(kDikLeftShift) == Action::Sprint);
@@ -49,7 +49,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
     CHECK(s.moveX == 1.0f);
     CHECK(s.buttons == Protocol::kButtonSprint);
 
-    b.SetKey(kDikDown, true);  // forwards and back cancel
+    b.SetKey(kDikS, true);  // forwards and back cancel
     b.SetKey(kDikSpace, true);
     b.SetKey(kDikC, true);
     b.SetKey(kDikLeftAlt, true);
@@ -124,4 +124,92 @@ TEST_CASE("input becomes San Andreas pad values")
     CHECK(pad.buttonCross == 0);
     CHECK(pad.buttonSquare == 255);
     CHECK(pad.pedWalk == 255);
+}
+
+TEST_CASE("F, Enter and H drive the vehicle actions")
+{
+    CHECK(ActionFromScanCode(kDikF) == Action::EnterExit);
+    CHECK(ActionFromScanCode(kDikReturn) == Action::EnterExit);
+    CHECK(ActionFromScanCode(kDikH) == Action::Horn);
+    Builder b;
+    b.SetKey(kDikF, true);
+    b.SetKey(kDikH, true);
+    CHECK(b.Build(1, true, true).buttons == (Protocol::kButtonEnterExit | Protocol::kButtonHorn));
+}
+
+TEST_CASE("each press of a spawn key asks for its vehicle once")
+{
+    CHECK(SpawnModelFromScanCode(kDikRightBracket) == 495);
+    CHECK(SpawnModelFromScanCode(kDikLeftBracket) == 477);
+    CHECK(SpawnModelFromScanCode(kDikBackslash) == 468);
+    CHECK(SpawnModelFromScanCode(kDikW) == 0);
+    CHECK(ActionFromScanCode(kDikRightBracket) == Action::None);
+
+    Builder b;
+    CHECK(b.Build(1, true, true).spawnCount == 0);
+    b.SetKey(kDikRightBracket, true);
+    b.SetKey(kDikRightBracket, true);  // key repeat: still one press
+    auto s = b.Build(2, true, true);
+    CHECK(s.spawnModel == kModelSandking);
+    CHECK(s.spawnCount == 1);
+    b.SetKey(kDikRightBracket, false);
+    b.SetKey(kDikBackslash, true);
+    s = b.Build(3, true, false);  // still in the input while a menu has it afterwards
+    CHECK(s.spawnModel == kModelSanchez);
+    CHECK(s.spawnCount == 2);
+
+    b.SetKey(kDikBackslash, false);
+    b.SetKey(kDikLeftBracket, true, false);  // typed into the console
+    CHECK(b.Build(4, true, true).spawnCount == 2);
+    CHECK(b.IsKeyDown(kDikLeftBracket));
+}
+
+TEST_CASE("in a vehicle the keys take San Andreas's vehicle layout")
+{
+    Protocol::InputState in{};
+    in.moveX = -1.0f;
+    in.moveY = 1.0f;
+    in.buttons = Protocol::kButtonJump | Protocol::kButtonHorn | Protocol::kButtonCrouch | Protocol::kButtonSprint;
+    auto pad = ToPad(in, true);
+    CHECK(pad.leftStickX == -128);  // steer
+    CHECK(pad.leftStickY == 0);
+    CHECK(pad.buttonCross == 255);  // accelerate
+    CHECK(pad.buttonSquare == 0);
+    CHECK(pad.rightShoulder1 == 255);  // handbrake
+    CHECK(pad.shockButtonL == 255);    // horn, not crouch
+    CHECK(pad.pedWalk == 0);
+
+    in.moveY = -1.0f;
+    in.buttons = Protocol::kButtonCrouch | Protocol::kButtonEnterExit;
+    pad = ToPad(in, true);
+    CHECK(pad.buttonCross == 0);
+    CHECK(pad.buttonSquare == 255);  // brake, then reverse
+    CHECK(pad.shockButtonL == 0);    // crouch does nothing in a vehicle
+    CHECK(pad.buttonTriangle == 255);
+
+    pad = ToPad(in, false);  // on foot the same key gets in
+    CHECK(pad.buttonTriangle == 255);
+    CHECK(pad.rightShoulder1 == 0);
+}
+
+TEST_CASE("the arrows walk on foot and lean a bike in a vehicle")
+{
+    Builder b;
+    b.SetKey(kDikUp, true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.moveY == 0.0f);  // W and S only
+    CHECK(in.buttons == Protocol::kButtonLeanForward);
+    CHECK(ToPad(in, false).leftStickY == -128);  // walks forwards on foot
+    auto pad = ToPad(in, true);
+    CHECK(pad.leftStickY == -128);  // leans forward on a bike
+    CHECK(pad.buttonCross == 0);    // without accelerating
+
+    b.SetKey(kDikUp, false);
+    b.SetKey(kDikDown, true);
+    b.SetKey(kDikW, true);
+    in = b.Build(2, true, true);
+    pad = ToPad(in, true);
+    CHECK(pad.leftStickY == 128);  // leans back: a wheelie...
+    CHECK(pad.buttonCross == 255);  // ... under power
+    CHECK(ToPad(in, false).leftStickY == 0);  // on foot W and the down arrow cancel
 }

@@ -1,6 +1,6 @@
 #include "player/PlayerSync.h"
 
-#include "body/CjView.h"
+#include "body/ModelView.h"
 #include "body.h"
 #include "camera.h"
 #include "collision/CollisionSampler.h"
@@ -31,6 +31,7 @@ namespace AhShitRim::PlayerSync
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
+            Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
             RE::NiAVObject* culledRoot[2] = {};   // third- and first-person roots this culled
             float          savedFov = 0.0f;       // Skyrim's field of view before San Andreas's, 0 = not changed
@@ -149,10 +150,11 @@ namespace AhShitRim::PlayerSync
             });
         }
 
-        // Back to Skyrim drawing its own player: CJ hidden, the player's 3D and field of view back.
+        // Back to Skyrim drawing its own player: CJ and the vehicles hidden, the player's 3D and field
+        // of view back.
         void DrawSkyrimPlayer()
         {
-            CjView::Hide();
+            ModelView::HideAll();
             HideSneakEye(false);
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (player && state.playerHidden) {
@@ -165,6 +167,9 @@ namespace AhShitRim::PlayerSync
                 state.savedFov = 0.0f;
             }
             state.body.Reset();
+            for (auto& vehicle : state.vehicles) {
+                vehicle.Reset();
+            }
         }
 
         // Puts Skyrim's camera where San Andreas's is (BodyState camera, relative to the handover
@@ -233,20 +238,42 @@ namespace AhShitRim::PlayerSync
                 state.body.Push(body, now);
             }
             Protocol::BodyState pose{};
-            const std::uint32_t model = CjView::Model();
-            if (model == 0 || !state.body.Sample(now, pose) || pose.handover != state.handover || pose.model != model) {
-                CjView::Hide();
+            if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
+                !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]))) {
                 HidePlayer(a_player, false);
                 return;
             }
-            CjView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
             HidePlayer(a_player, true);
             PoseCamera(pose, a_fromHeading, a_fromPitch);
             state.drawn++;
             if (!state.cjLogged) {
                 state.cjLogged = true;
-                SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", model,
+                SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", pose.model,
                     pose.cameraFov);
+            }
+        }
+
+        // San Andreas's vehicles where it has them, their parts posed, smoothed like CJ. A slot whose
+        // vehicle is gone reads with no flags and draws nothing.
+        void DrawVehicles()
+        {
+            const double now = NowMs();
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                // A read that stayed torn keeps drawing from what came before.
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle)) {
+                    if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
+                        state.vehicles[i].Reset();
+                        continue;
+                    }
+                    if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
+                        state.vehicles[i].Push(vehicle, now);
+                    }
+                }
+                Protocol::BodyState pose{};
+                if (state.vehicles[i].Sample(now, pose)) {
+                    ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+                }
             }
         }
 
@@ -388,6 +415,8 @@ namespace AhShitRim::PlayerSync
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
             DrawCj(a_player, fromHeading, fromPitch);
+            DrawVehicles();
+            ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
             state.frames++;
@@ -397,7 +426,7 @@ namespace AhShitRim::PlayerSync
                     "player sync: frames={} placed={} new poses={} cj drawn={} offset=({:.0f},{:.0f},{:.0f}) speed={:.1f} m/s heading={:.2f} view=({:.2f},{:.2f}){}",
                     state.frames, state.placed, state.newPoses, state.drawn, pose.offset[0], pose.offset[1], pose.offset[2],
                     std::hypot(pose.velocity[0], pose.velocity[1]) * Pose::kMetersPerUnit, pose.heading, pose.viewHeading,
-                    pose.viewPitch, (pose.flags & Protocol::kPlayerGrounded) ? "" : " in the air");
+                    pose.viewPitch, (pose.flags & Protocol::kPlayerInVehicle) ? " in a vehicle" : (pose.flags & Protocol::kPlayerGrounded) ? "" : " in the air");
                 state.statTime = 0.0f;
                 state.frames = state.placed = state.newPoses = state.drawn = 0;
             }
@@ -411,7 +440,7 @@ namespace AhShitRim::PlayerSync
                 // CJ's model comes whenever the link comes up, also while Skyrim has the player.
                 LinkService::Get().Receive([](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
                     if (a_type == Protocol::MessageType::ModelChunk) {
-                        CjView::OnChunk(a_data, a_size);
+                        ModelView::OnChunk(a_data, a_size);
                     }
                 });
                 if (state.owned && a_delta > 0.0f) {
@@ -491,7 +520,8 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
-                    state.input.SetKey(code, button->IsPressed());
+                    // A spawn key typed into the console or a menu spawns nothing.
+                    state.input.SetKey(code, button->IsPressed(), !MenuHasInput());
                     changed = true;
                 }
                 if (changed && state.owned) {

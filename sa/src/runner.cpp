@@ -5,7 +5,9 @@
 #include "ground.h"
 #include "input.h"
 #include "log.h"
+#include "model_sender.h"
 #include "pose.h"
+#include "vehicles.h"
 #include "window.h"
 
 #include <plugin.h>
@@ -25,6 +27,7 @@
 #include <CTaskSimplePlayerOnFoot.h>
 #include <CTimer.h>
 #include <CStats.h>
+#include <CVehicle.h>
 #include <CWanted.h>
 #include <CWorld.h>
 #include <common.h>
@@ -98,6 +101,9 @@ namespace AhShitRim::Runner
             bool          haveMouse = false;
             double        mouseX = 0.0;
             double        mouseY = 0.0;
+            bool          haveSpawn = false;  // spawnCount was read once: a change after that is a request
+            std::uint16_t spawnCount = 0;
+            Protocol::InputState lastInput{};  // the last one read, for a frame whose read failed
             std::uint32_t frame = 0;
 
             LARGE_INTEGER frequency{};
@@ -275,15 +281,22 @@ namespace AhShitRim::Runner
             const auto&          pos = a_ped->GetPosition();
             sa.position = { pos.x, pos.y, pos.z };
             sa.spawn = { state.spawn.x, state.spawn.y, state.spawn.z };
-            // m_vecMoveSpeed is per 1/50 s step.
-            sa.velocity = { a_ped->m_vecMoveSpeed.x * 50.0f, a_ped->m_vecMoveSpeed.y * 50.0f, a_ped->m_vecMoveSpeed.z * 50.0f };
+            // m_vecMoveSpeed is per 1/50 s step. In a vehicle CJ's own is zero; Skyrim samples the
+            // ground ahead by the vehicle's.
+            const CVehicle* vehicle = Vehicles::Driven(a_ped);
+            const CVector&  speed = vehicle ? vehicle->m_vecMoveSpeed : a_ped->m_vecMoveSpeed;
+            sa.velocity = { speed.x * 50.0f, speed.y * 50.0f, speed.z * 50.0f };
             const auto& forward = a_ped->GetForward();
             sa.forward = { forward.x, forward.y, forward.z };
             const auto& front = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecFront;
             sa.view = { front.x, front.y, front.z };
-            sa.grounded = a_ped->bIsStanding;
-            sa.crouching = a_ped->bIsDucking;
-            GetLink().WritePlayer(Pose::ToPlayerState(sa, ++state.frame, state.handover));
+            sa.grounded = a_ped->bIsStanding || vehicle;
+            sa.crouching = a_ped->bIsDucking && !vehicle;
+            auto pose = Pose::ToPlayerState(sa, ++state.frame, state.handover);
+            if (vehicle) {
+                pose.flags |= Protocol::kPlayerInVehicle;
+            }
+            GetLink().WritePlayer(pose);
         }
 
         void ApplyInput(const Protocol::InputState& a_input, CPlayerPed* a_ped)
@@ -304,21 +317,31 @@ namespace AhShitRim::Runner
             }
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
+                Vehicles::Clear(a_ped);
                 ChunkWorld::Begin(a_input.handover, a_input.anchor);
                 PlaceCj(a_ped, a_input.heading);
                 Log(std::format("runner: handover {}, CJ at the handover spot facing {:.2f} rad (Skyrim)", a_input.handover, a_input.heading));
             }
+            // A spawn key pressed in Skyrim. The first value read only seeds the count, so a San
+            // Andreas that started after Skyrim doesn't spawn the last vehicle asked for again.
+            if (state.haveSpawn && a_input.spawnCount != state.spawnCount && owned && a_input.spawnModel) {
+                Vehicles::Spawn(a_ped, a_input.spawnModel);
+            }
+            state.spawnCount = a_input.spawnCount;
+            state.haveSpawn = true;
             if (!owned) {
                 return;
             }
 
-            const auto pad = Input::ToPad(a_input);
+            const auto pad = Input::ToPad(a_input, Vehicles::Driven(a_ped) != nullptr);
             auto&      s = CPad::GetPad(0)->NewState;
             s = {};
             s.LeftStickX = pad.leftStickX;
             s.LeftStickY = pad.leftStickY;
             s.ButtonCross = pad.buttonCross;
             s.ButtonSquare = pad.buttonSquare;
+            s.ButtonTriangle = pad.buttonTriangle;
+            s.RightShoulder1 = pad.rightShoulder1;
             s.ShockButtonL = pad.shockButtonL;
             s.m_bPedWalk = pad.pedWalk;
 
@@ -345,17 +368,22 @@ namespace AhShitRim::Runner
             g_updatePads();
             auto* ped = state.inGame ? FindPlayerPed(0) : nullptr;
             Protocol::InputState input{};
-            if (!ped || !GetLink().ReadInput(input)) {
-                if (state.owned || state.paused) {
-                    input = {};  // link down: Skyrim has the player back, nothing is paused
-                    input.handover = state.handover;
-                    if (ped) {
-                        ApplyInput(input, ped);
-                    }
+            if (ped && GetLink().ReadInput(input)) {
+                state.lastInput = input;
+                ApplyInput(input, ped);
+            } else if (ped && GetLink().IsUp() && state.haveSpawn) {
+                // The slot was being written and stayed torn: the input stands as it was. (Taken as
+                // the link going down, it handed the player back for a frame, and the spawn count
+                // starting over spawned the last vehicle again.)
+                ApplyInput(state.lastInput, ped);
+            } else if (state.owned || state.paused) {
+                input = {};  // link down: Skyrim has the player back, nothing is paused
+                input.handover = state.handover;
+                input.spawnCount = state.spawnCount;
+                if (ped) {
+                    ApplyInput(input, ped);
                 }
-                return;
             }
-            ApplyInput(input, ped);
         }
 
         void __cdecl IdleHook(void* a_render)
@@ -378,8 +406,10 @@ namespace AhShitRim::Runner
             }
             ChunkWorld::Receive();
             ChunkWorld::Update(ped, state.spawn);
+            Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.
             const std::uint64_t now = ::GetTickCount64();
@@ -390,9 +420,11 @@ namespace AhShitRim::Runner
             if ((state.owned || !state.settledLogged) && now - state.statStartMs >= 5000) {
                 state.settledLogged = true;
                 const auto& p = ped->GetPosition();
+                const CVehicle* vehicle = Vehicles::Driven(ped);
+                const CVector&  speed = vehicle ? vehicle->m_vecMoveSpeed : ped->m_vecMoveSpeed;
                 Log(std::format("runner: {} frames, {} inputs in {:.1f} s; CJ at ({:.1f},{:.1f},{:.1f}) speed {:.1f} m/s{}",
                     state.frames, state.inputs, (now - state.statStartMs) / 1000.0,
-                    p.x, p.y, p.z, std::hypot(ped->m_vecMoveSpeed.x, ped->m_vecMoveSpeed.y) * 50.0f, ped->bIsStanding ? ", standing" : ", in the air"));
+                    p.x, p.y, p.z, std::hypot(speed.x, speed.y) * 50.0f, vehicle ? ", in a vehicle" : ped->bIsStanding ? ", standing" : ", in the air"));
             }
             if (now - state.statStartMs >= 5000) {
                 state.statStartMs = now;

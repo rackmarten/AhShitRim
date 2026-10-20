@@ -232,16 +232,16 @@ TEST_CASE("far chunks are dropped and their slots reused")
     book.Begin(1);
     bool replaced = false;
     book.Place({ 0, 0 }, replaced);
-    book.Place({ 6, 0 }, replaced);
-    book.Place({ 7, 0 }, replaced);
-    book.Place({ -3, -7 }, replaced);
+    book.Place({ kKeepRadius, 0 }, replaced);
+    book.Place({ kKeepRadius + 1, 0 }, replaced);
+    book.Place({ -3, -kKeepRadius - 1 }, replaced);
 
     auto dropped = book.DropFar({ 0, 0 });
     std::ranges::sort(dropped);
     CHECK(dropped == std::vector<int>{ 2, 3 });
     CHECK(book.Has({ 0, 0 }));
-    CHECK(book.Has({ 6, 0 }));
-    CHECK_FALSE(book.Has({ 7, 0 }));
+    CHECK(book.Has({ kKeepRadius, 0 }));
+    CHECK_FALSE(book.Has({ kKeepRadius + 1, 0 }));
     CHECK(book.Place({ 1, 1 }, replaced) == 2);
 }
 
@@ -262,9 +262,9 @@ TEST_CASE("a new handover frees every slot")
 
 TEST_CASE("San Andreas keeps every chunk Skyrim still remembers")
 {
-    // Skyrim forgets chunks more than 3 from the player and from a point at most 2 chunks ahead.
+    // Skyrim forgets chunks more than 3 from the player and from a point at most 3 chunks ahead.
     // Anything San Andreas drops (past kKeepRadius from CJ, who is where the player is) must be
     // forgotten by Skyrim, or it would never be sent again.
-    constexpr int kSkyrimForget = 3, kSkyrimMaxAhead = 2;
+    constexpr int kSkyrimForget = 3, kSkyrimMaxAhead = 3;
     CHECK(kKeepRadius > kSkyrimForget + kSkyrimMaxAhead);
 }

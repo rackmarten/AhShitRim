@@ -85,7 +85,7 @@ scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/restart-games.ps1 -Build   # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim
-scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones
+scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones; then spawn a Sandking, drive it, ride a Sanchez, spawn a ZR-350, check a new handover takes CJ out and removes them, and drive 1.3 km through a floating origin move
 ```
 
 From WSL, call the same scripts through Windows PowerShell, e.g. `powershell.exe -File scripts/build.ps1`.

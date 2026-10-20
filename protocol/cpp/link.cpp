@@ -288,6 +288,18 @@ namespace AhShitRim
         return IsUp() && SeqRead(At<BodySlot>(Base(), kOffsetBodySlot), a_out);
     }
 
+    void Link::WriteVehicle(std::uint32_t a_index, const BodyState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && a_index < kVehicleMax && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<BodySlot>(base, kOffsetVehicleSlots + a_index * sizeof(BodySlot)), a_value);
+        }
+    }
+
+    bool Link::ReadVehicle(std::uint32_t a_index, BodyState& a_out) const
+    {
+        return IsUp() && a_index < kVehicleMax && SeqRead(At<BodySlot>(Base(), kOffsetVehicleSlots + a_index * sizeof(BodySlot)), a_out);
+    }
+
     bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
     {
         if (!IsUp()) {

@@ -24,6 +24,7 @@ add_executable(protocol_tests
     tests/cpp/test_skin_build.cpp
     tests/cpp/test_body.cpp
     tests/cpp/test_texture_decode.cpp
+    tests/cpp/test_vehicle.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

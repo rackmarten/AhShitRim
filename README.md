@@ -8,9 +8,32 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 ## Status
 
-**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's WASD and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
+**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
 Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Keys
+
+While San Andreas has the player (F10), the keys follow San Andreas's own keyboard layout:
+
+| Key | On foot | In a vehicle |
+|---|---|---|
+| F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
+| W / S | Walk forwards / back | Accelerate / brake, then reverse |
+| Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps) |
+| A / D, arrows left / right | Walk left / right | Steer |
+| Mouse | Look around | Look around |
+| Left Shift | Sprint | |
+| Space | Jump | Handbrake |
+| C | Crouch (Skyrim sneaks) | |
+| Left Alt | Walk | |
+| F or Enter | Get into the nearest vehicle | Get out |
+| H | | Horn |
+| ] | Spawn a Sandking | |
+| [ | Spawn a ZR-350 | |
+| `\` | Spawn a Sanchez dirt bike | |
+
+A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
 
 ## How it will work
 
@@ -33,16 +56,20 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 
 San Andreas walking and driving on Skyrim's ground is the hardest part, so it comes first:
 
-- CJ on foot, on Skyrim terrain, drawn by Skyrim.
-- One car, driven on Skyrim terrain, drawn by Skyrim.
+- CJ on foot, on Skyrim terrain, drawn by Skyrim (done).
+- Vehicles driven on Skyrim terrain, drawn by Skyrim: a Sandking, a ZR-350 and a Sanchez dirt bike (done).
 - No guns, NPCs, quests or wanted level yet.
 
-San Andreas loads collision as static per-sector files, so Skyrim's ground is built there at runtime: collision objects spawned around CJ from the chunks Skyrim streams, under a floating origin (see [docs/DESIGN.md](docs/DESIGN.md#ground-skyrims-collision-in-san-andreas)). Once CJ and the car stand on Skyrim's ground, everything after it is known work.
+San Andreas loads collision as static per-sector files, so Skyrim's ground is built there at runtime: collision objects spawned around CJ from the chunks Skyrim streams, under a floating origin (see [docs/DESIGN.md](docs/DESIGN.md#ground-skyrims-collision-in-san-andreas)). Once CJ and his vehicles stand on Skyrim's ground, everything after it is known work.
 
 ## Known issues
 
 - While San Andreas has the player, the view is San Andreas's third-person camera only. First person isn't supported yet.
-- CJ casts no shadow in Skyrim yet, and always wears his starting clothes (vest, jeans, sneakers).
+- CJ and the vehicles cast no shadow in Skyrim yet, and CJ always wears his starting clothes (vest, jeans, sneakers).
+- Vehicles: damage isn't shown (dents, broken windows and lost doors stay as they were), lights and exhaust smoke aren't drawn, and there is no sound yet (San Andreas is muted).
+- Vehicles live only while San Andreas has the player: they're hidden when Skyrim takes it back, and the next F10 removes them.
+- Every surface counts as tarmac for San Andreas: roads, grass and dirt all grip the same. A low sports car like the ZR-350 scrapes on Skyrim's rocks and rough ground (its ground clearance, not a collision bug).
+- Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
 
 ## Requirements (planned)
 

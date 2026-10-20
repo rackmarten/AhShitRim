@@ -2,8 +2,12 @@
 // Skyrim side, hands the player over twice, sends flat ground (7 x 7 collision chunks) around the
 // handover spot, holds W for a few seconds and prints CJ's poses. Also receives CJ's model, skins
 // it with the skeleton San Andreas sends and checks he stands about as tall as a man, on his feet,
-// and that his bones move while he walks. Built with the protocol tests;
-// run it through scripts/fake-skyrim.ps1 while San Andreas runs (launch-sa.ps1).
+// and that his bones move while he walks. A third handover spawns a Sandking, gets in with F,
+// drives it with W and gets out again, then spawns a Sanchez, rides it a little and spawns a ZR-350,
+// and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
+// CJ in it and turned its wheels.
+// Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
+// (launch-sa.ps1).
 //
 // Usage: fake_skyrim [seconds of W, default 3]
 
@@ -23,18 +27,26 @@
 #include "../cpp/pose.h"
 #include "../cpp/skin_model.h"
 
+#include <map>
+#include <set>
+
 using namespace AhShitRim;
 using namespace std::chrono;
 
 // Somewhere in Skyrim's Tamriel, away from the chunk grid's lines.
 constexpr float kAnchor[3] = { 10000.0f, -20000.0f, 3000.0f };
 
+// Every model San Andreas sent, by id (CJ's and the vehicles').
 struct Received
 {
-    SkinModel::Assembler      assembler;
-    std::vector<std::uint8_t> blob;
-    std::uint32_t             id = 0;
-    std::optional<SkinModel::Model> model;
+    SkinModel::Assembler                                assembler;
+    std::map<std::uint32_t, std::vector<std::uint8_t>> blobs;
+
+    std::optional<SkinModel::Model> Model(std::uint32_t a_id) const
+    {
+        const auto found = blobs.find(a_id);
+        return found != blobs.end() ? SkinModel::Parse(found->second.data(), found->second.size()) : std::nullopt;
+    }
 };
 
 void Drain(Link& a_link, Received& a_received)
@@ -43,28 +55,30 @@ void Drain(Link& a_link, Received& a_received)
         if (a_type != Protocol::MessageType::ModelChunk || a_received.assembler.Add(a_data, a_size) != SkinModel::Assembler::Result::Complete) {
             return;
         }
-        a_received.blob = a_received.assembler.Blob();
-        a_received.id = a_received.assembler.Id();
-        a_received.model = SkinModel::Parse(a_received.blob.data(), a_received.blob.size());
-        if (!a_received.model) {
-            std::printf("model %08X: malformed (%zu bytes)\n", a_received.id, a_received.blob.size());
+        const auto id = a_received.assembler.Id();
+        const auto& blob = a_received.blobs[id] = a_received.assembler.Blob();
+        const auto model = SkinModel::Parse(blob.data(), blob.size());
+        if (!model) {
+            std::printf("model %08X: malformed (%zu bytes)\n", id, blob.size());
             return;
         }
         std::uint32_t vertices = 0, triangles = 0;
-        for (const auto& mesh : a_received.model->meshes) {
+        for (const auto& mesh : model->meshes) {
             vertices += mesh.vertexCount;
             triangles += mesh.indexCount / 3;
         }
-        std::printf("model %08X %s: %zu meshes, %u vertices, %u triangles, %zu textures, %zu bones (%zu bytes)\n", a_received.id,
-            a_received.model->name.c_str(), a_received.model->meshes.size(), vertices, triangles, a_received.model->textures.size(),
-            a_received.model->boneIds.size(), a_received.blob.size());
+        std::printf("model %08X %s (%s): %zu meshes, %u vertices, %u triangles, %zu textures, %zu bones (%zu bytes)\n", id, model->name.c_str(),
+            model->kind == Protocol::kSkinModelVehicle ? "vehicle" : "body", model->meshes.size(), vertices, triangles, model->textures.size(),
+            model->boneIds.size(), blob.size());
     });
 }
 
-// CJ's skinned extent relative to his feet, units: lowest and highest vertex.
+// A model's skinned extent relative to its origin (CJ's feet, a vehicle's position), units: lowest
+// and highest vertex.
 bool Extent(const Received& a_received, const Protocol::BodyState& a_body, float& a_low, float& a_high)
 {
-    if (!a_received.model || a_body.model != a_received.id || a_body.boneCount != a_received.model->boneIds.size()) {
+    const auto model = a_received.Model(a_body.model);
+    if (!model || a_body.boneCount != model->boneIds.size()) {
         return false;
     }
     std::vector<Body::Matrix34> bones;
@@ -73,7 +87,7 @@ bool Extent(const Received& a_received, const Protocol::BodyState& a_body, float
     }
     a_low = 1e9f;
     a_high = -1e9f;
-    for (const auto& mesh : a_received.model->meshes) {
+    for (const auto& mesh : model->meshes) {
         for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
             Body::Vec3 p, n;
             Body::Skin(bones.data(), a_body.boneCount, mesh.Vertex(i), p, n);
@@ -199,5 +213,258 @@ int main(int argc, char** argv)
             body.cameraFov);
         failed += !(skinned && tall > 1.4f && tall < 2.2f && std::abs(low * Pose::kMetersPerUnit) < 0.3f && boneMoved * Pose::kMetersPerUnit > 0.05f);
     }
+
+    // Vehicles: a third handover; spawn a Sandking, get in, drive, get out; then spawn a Sanchez.
+    handoverId = 3;
+    anchor[0] = kAnchor[0] + 8000.0f;
+    anchor[1] = kAnchor[1];
+    anchor[2] = kAnchor[2];
+    publish(true);
+    {
+        const auto cx = Collision::ChunkIndex(anchor[0]), cy = Collision::ChunkIndex(anchor[1]);
+        for (int dy = -3; dy <= 3; ++dy) {
+            for (int dx = -3; dx <= 3; ++dx) {
+                Collision::Heightfield f;
+                f.Reset(cx + dx, cy + dy, 32);
+                std::fill(f.heights.begin(), f.heights.end(), anchor[2]);
+                std::fill(f.hit.begin(), f.hit.end(), std::uint8_t{ 1 });
+                const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId);
+                link.Send(Protocol::MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size()));
+            }
+        }
+    }
+    const auto run = [&](double a_seconds, const auto& a_each) {
+        const std::uint64_t until = ms() + static_cast<std::uint64_t>(a_seconds * 1000);
+        while (ms() < until) {
+            publish(true);
+            link.Tick(ms());
+            Drain(link, received);
+            if (a_each()) {
+                return true;
+            }
+            std::this_thread::sleep_for(16ms);
+        }
+        return false;
+    };
+    const auto press = [&](std::uint32_t a_dik) {
+        input.SetKey(a_dik, true);
+        run(0.3, [] { return false; });
+        input.SetKey(a_dik, false);
+    };
+    const auto vehicleIn = [&](std::uint32_t a_slot, Protocol::BodyState& a_out) {
+        return link.ReadVehicle(a_slot, a_out) && (a_out.flags & Protocol::kBodyValid) && a_out.handover == handoverId && received.Model(a_out.model);
+    };
+    const auto inVehicle = [&] {
+        Protocol::PlayerState p{};
+        return link.ReadPlayer(p) && p.handover == handoverId && (p.flags & Protocol::kPlayerInVehicle);
+    };
+
+    run(1.5, [] { return false; });  // the ground comes in
+    press(Input::kDikRightBracket);
+    Protocol::BodyState car{}, parked{};
+    const bool spawned = run(10.0, [&] { return vehicleIn(0, car); });
+    float carLow = 0.0f, carHigh = 0.0f;
+    const bool carSkinned = spawned && Extent(received, car, carLow, carHigh);
+    // The lowest vertex (a tyre) on the ground: the vehicle's position plus its lowest vertex at the
+    // handover spot's height.
+    const float carGround = (car.feet[2] + carLow) * Pose::kMetersPerUnit;
+    std::printf("vehicles: Sandking %s, %u parts, %.1f m from the handover spot, lowest vertex %.2f m above the ground, %.2f m tall\n",
+        spawned ? "spawned" : "missing", car.boneCount, std::hypot(car.feet[0], car.feet[1]) * Pose::kMetersPerUnit, carGround,
+        (carHigh - carLow) * Pose::kMetersPerUnit);
+    failed += !(carSkinned && std::abs(carGround) < 0.3f && car.boneCount >= 5);
+    run(1.0, [&] { return !vehicleIn(0, parked); });  // settled
+
+    press(Input::kDikF);
+    const bool gotIn = run(6.0, [&] { return inVehicle(); });
+    std::printf("vehicles: CJ %s the Sandking\n", gotIn ? "got into" : "did not get into");
+    failed += !gotIn;
+    run(2.0, [] { return false; });  // CJ shuts the door before he can drive
+
+    Protocol::BodyState before{}, driving{};
+    vehicleIn(0, before);
+    float wheelTurn = 0.0f;  // the most any part turned while driving, quaternion distance
+    input.SetKey(Input::kDikW, true);
+    run(3.0, [&] {  // the flat ground ends about 85 m out; a Sandking does 30 m/s after 4 s
+        if (vehicleIn(0, driving) && driving.boneCount == before.boneCount) {
+            for (std::uint32_t i = 0; i < driving.boneCount; i++) {
+                float dot = 0.0f;
+                for (int k = 0; k < 4; k++) {
+                    dot += driving.bones[i].rotation[k] * before.bones[i].rotation[k];
+                }
+                wheelTurn = (std::max)(wheelTurn, 1.0f - std::abs(dot));
+            }
+        }
+        return false;
+    });
+    input.SetKey(Input::kDikW, false);
+    const float driven = std::hypot(driving.feet[0] - before.feet[0], driving.feet[1] - before.feet[1]) * Pose::kMetersPerUnit;
+    Protocol::PlayerState cj{};
+    link.ReadPlayer(cj);
+    const float cjToCar = std::hypot(cj.offset[0] - driving.feet[0], cj.offset[1] - driving.feet[1]) * Pose::kMetersPerUnit;
+    std::printf("vehicles: drove %.1f m in 3 s (%s), a part turned by %.3f, CJ %.1f m from the car's middle, speed %.1f m/s\n", driven,
+        (driving.flags & Protocol::kBodyDriven) ? "driven" : "not driven", wheelTurn, cjToCar,
+        std::hypot(cj.velocity[0], cj.velocity[1]) * Pose::kMetersPerUnit);
+    failed += !(driven > 10.0f && (driving.flags & Protocol::kBodyDriven) && wheelTurn > 0.1f && cjToCar < 2.0f);
+
+    input.SetKey(Input::kDikSpace, true);  // handbrake
+    run(3.0, [] { return false; });
+    input.SetKey(Input::kDikSpace, false);
+    press(Input::kDikF);
+    const bool gotOut = run(6.0, [&] { return !inVehicle(); });
+    std::printf("vehicles: CJ %s the Sandking\n", gotOut ? "got out of" : "did not get out of");
+    failed += !gotOut;
+
+    run(1.5, [] { return false; });
+    press(Input::kDikBackslash);
+    Protocol::BodyState bike{};
+    const bool bikeSpawned = run(10.0, [&] { return vehicleIn(1, bike); });
+    float bikeLow = 0.0f, bikeHigh = 0.0f;
+    const bool  bikeSkinned = bikeSpawned && Extent(received, bike, bikeLow, bikeHigh);
+    const float bikeGround = (bike.feet[2] + bikeLow) * Pose::kMetersPerUnit;
+    std::printf("vehicles: Sanchez %s, %u parts, lowest vertex %.2f m above the ground, %.2f m tall\n", bikeSpawned ? "spawned" : "missing",
+        bike.boneCount, bikeGround, (bikeHigh - bikeLow) * Pose::kMetersPerUnit);
+    const auto bikeModel = bikeSpawned ? received.Model(bike.model) : std::nullopt;
+    failed += !(bikeSkinned && std::abs(bikeGround) < 0.4f && bikeModel && bikeModel->name.starts_with("SANCHEZ"));
+
+    // On the Sanchez (San Andreas streams the bike animations in), a short ride turning right, off.
+    press(Input::kDikF);
+    const bool onBike = run(8.0, [&] { return inVehicle(); });
+    run(2.0, [] { return false; });
+    Protocol::BodyState bikeBefore{}, riding{};
+    vehicleIn(1, bikeBefore);
+    input.SetKey(Input::kDikW, true);
+    input.SetKey(Input::kDikD, true);
+    run(2.0, [&] { return vehicleIn(1, riding) && false; });
+    input.SetKey(Input::kDikD, false);
+    input.SetKey(Input::kDikW, false);
+    const float rode = std::hypot(riding.feet[0] - bikeBefore.feet[0], riding.feet[1] - bikeBefore.feet[1]) * Pose::kMetersPerUnit;
+    input.SetKey(Input::kDikS, true);  // San Andreas ignores the exit key on a fast bike
+    run(3.0, [] { return false; });
+    input.SetKey(Input::kDikS, false);
+    press(Input::kDikF);
+    const bool offBike = run(6.0, [&] { return !inVehicle(); });
+    std::printf("vehicles: CJ %s the Sanchez, rode %.1f m in 2 s (%s), %s\n", onBike ? "got on" : "did not get on", rode,
+        (riding.flags & Protocol::kBodyDriven) ? "ridden" : "not ridden", offBike ? "got off" : "did not get off");
+    failed += !(onBike && rode > 5.0f && offBike);
+
+    run(1.5, [] { return false; });
+    press(Input::kDikLeftBracket);
+    Protocol::BodyState zr{};
+    const bool zrSpawned = run(10.0, [&] { return vehicleIn(2, zr); });
+    float zrLow = 0.0f, zrHigh = 0.0f;
+    const bool  zrSkinned = zrSpawned && Extent(received, zr, zrLow, zrHigh);
+    const float zrGround = (zr.feet[2] + zrLow) * Pose::kMetersPerUnit;
+    std::printf("vehicles: ZR-350 %s, %u parts, lowest vertex %.2f m above the ground, %.2f m tall\n", zrSpawned ? "spawned" : "missing", zr.boneCount,
+        zrGround, (zrHigh - zrLow) * Pose::kMetersPerUnit);
+    const auto zrModel = zrSpawned ? received.Model(zr.model) : std::nullopt;
+    failed += !(zrSkinned && std::abs(zrGround) < 0.3f && zrModel && zrModel->name.starts_with("ZR350"));
+
+    // In the ZR-350, a new handover: CJ comes out of it and every vehicle goes.
+    press(Input::kDikF);
+    const bool inZr = run(8.0, [&] { return inVehicle(); });
+    handoverId = 4;
+    anchor[1] = kAnchor[1] + 300.0f;  // no ground sent: CJ just waits for it
+    publish(true);
+    const bool cleared = run(5.0, [&] {
+        Protocol::PlayerState p{};
+        Protocol::BodyState   v{};
+        bool                  any = false;
+        for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+            any |= link.ReadVehicle(i, v) && (v.flags & Protocol::kBodyValid) != 0;
+        }
+        return link.ReadPlayer(p) && p.handover == handoverId && !(p.flags & Protocol::kPlayerInVehicle) && !any;
+    });
+    std::printf("vehicles: CJ %s the ZR-350; a new handover %s\n", inZr ? "got into" : "did not get into",
+        cleared ? "took him out and removed the vehicles" : "left him in or left vehicles behind");
+    failed += !(inZr && cleared && link.IsUp());
+
+    // And CJ still walks after that.
+    {
+        const auto cx = Collision::ChunkIndex(anchor[0]), cy = Collision::ChunkIndex(anchor[1]);
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -2; dx <= 2; ++dx) {
+                Collision::Heightfield f;
+                f.Reset(cx + dx, cy + dy, 32);
+                std::fill(f.heights.begin(), f.heights.end(), anchor[2]);
+                std::fill(f.hit.begin(), f.hit.end(), std::uint8_t{ 1 });
+                const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId);
+                link.Send(Protocol::MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size()));
+            }
+        }
+    }
+    run(1.5, [] { return false; });
+    input.SetKey(Input::kDikW, true);
+    run(2.0, [] { return false; });
+    input.SetKey(Input::kDikW, false);
+    Protocol::PlayerState after{};
+    link.ReadPlayer(after);
+    const float walked = std::hypot(after.offset[0], after.offset[1]) * Pose::kMetersPerUnit;
+    std::printf("vehicles: after the handover CJ walked %.1f m on foot\n", walked);
+    failed += !(after.handover == handoverId && walked > 3.0f);
+
+    // Past 1 km in the Sandking: San Andreas moves its floating origin under CJ, and he must stay
+    // in the car, on the ground, without a jump in where Skyrim puts him. Flat ground is streamed
+    // around him as he goes, as Skyrim's sampler does.
+    handoverId = 5;
+    anchor[0] = kAnchor[0] - 40000.0f;
+    anchor[1] = kAnchor[1];
+    publish(true);
+    std::set<std::pair<std::int32_t, std::int32_t>> sent;
+    const auto stream = [&] {
+        Protocol::PlayerState p{};
+        const bool  have = link.ReadPlayer(p) && p.handover == handoverId;
+        const float x = anchor[0] + (have ? p.offset[0] : 0.0f), y = anchor[1] + (have ? p.offset[1] : 0.0f);
+        const auto  cx = Collision::ChunkIndex(x), cy = Collision::ChunkIndex(y);
+        for (int dy = -3; dy <= 3; ++dy) {
+            for (int dx = -3; dx <= 3; ++dx) {
+                if (sent.contains({ cx + dx, cy + dy })) {
+                    continue;
+                }
+                Collision::Heightfield f;
+                f.Reset(cx + dx, cy + dy, 32);
+                std::fill(f.heights.begin(), f.heights.end(), anchor[2]);
+                std::fill(f.hit.begin(), f.hit.end(), std::uint8_t{ 1 });
+                const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId);
+                if (link.Send(Protocol::MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size()))) {
+                    sent.insert({ cx + dx, cy + dy });
+                }
+            }
+        }
+    };
+    run(1.5, [&] { stream(); return false; });
+    press(Input::kDikRightBracket);
+    Protocol::BodyState far{};
+    const bool farSpawned = run(10.0, [&] { stream(); return vehicleIn(0, far); });
+    run(1.0, [&] { stream(); return false; });
+    press(Input::kDikF);
+    const bool farIn = farSpawned && run(8.0, [&] { stream(); return inVehicle(); });
+    run(2.0, [&] { stream(); return false; });
+    Protocol::PlayerState last{};
+    float                 biggestJump = 0.0f, lowest = 0.0f, highest = 0.0f, reached = 0.0f;
+    bool                  leftCar = false;
+    input.SetKey(Input::kDikW, true);
+    run(90.0, [&] {
+        stream();
+        Protocol::PlayerState p{};
+        if (!link.ReadPlayer(p) || p.handover != handoverId || p.frame == last.frame) {
+            return false;
+        }
+        if (last.frame) {
+            biggestJump = (std::max)(biggestJump, std::hypot(p.offset[0] - last.offset[0], p.offset[1] - last.offset[1], p.offset[2] - last.offset[2]));
+        }
+        last = p;
+        lowest = (std::min)(lowest, p.offset[2]);
+        highest = (std::max)(highest, p.offset[2]);
+        leftCar |= !(p.flags & Protocol::kPlayerInVehicle);
+        reached = std::hypot(p.offset[0], p.offset[1]) * Pose::kMetersPerUnit;
+        return reached > 1300.0f || leftCar;
+    });
+    input.SetKey(Input::kDikW, false);
+    std::printf("vehicles: drove %.0f m from the handover spot (the origin moves at 1 km), %s, height %.1f..%.1f m, biggest step %.1f m\n", reached,
+        leftCar ? "CJ LEFT THE CAR" : "CJ stayed in", lowest * Pose::kMetersPerUnit, highest * Pose::kMetersPerUnit, biggestJump * Pose::kMetersPerUnit);
+    failed += !(farIn && reached > 1300.0f && !leftCar && lowest * Pose::kMetersPerUnit > -3.0f && biggestJump * Pose::kMetersPerUnit < 5.0f);
+
+    publish(false);
+    link.Tick(ms());
     return failed ? 2 : 0;
 }

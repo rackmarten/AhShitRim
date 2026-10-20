@@ -6,9 +6,12 @@ It runs San Andreas hidden as a simulator of CJ (see "Running San Andreas hidden
 
 - `src/main.cpp` entry point, log, link thread, crash logging
 - `src/window.cpp` windowed and minimized, never paused for losing the focus
-- `src/runner.cpp` straight into a game, empty world, CJ, frame cap, input and pose
+- `src/runner.cpp` straight into a game, empty world, CJ, frame cap, input (spawn requests too) and pose
 - `src/chunk_world.cpp` Skyrim's collision chunks as collision objects around CJ, the floating origin, holding CJ until the ground is in, fall rescue
 - `src/cj_body.cpp` CJ's model (geometry, skin, textures) sent to Skyrim, his animations run in full while hidden and his bones posed every frame, with San Andreas's camera
+- `src/vehicles.cpp` vehicles spawned in front of CJ, their models (every drawn part a bone) sent to Skyrim, and their parts posed every frame (PreRender, a bike's lean)
+- `src/model_sender.cpp` CJ's and the vehicles' models over the ring to Skyrim, one whole model after another
+- `src/rw_texture.cpp` a RenderWare texture read back as RGBA from its Direct3D 9 texture
 
 Only 1.0 US is supported (one exe, one set of addresses). On any other exe the plugin logs why and does nothing else.
 

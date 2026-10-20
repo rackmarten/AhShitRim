@@ -1,5 +1,6 @@
-// CJ's model as San Andreas sends it (ModelChunk messages, protocol v5): one blob with his
-// textures, meshes, skin weights and bone ids, cut into chunks. Header-only and free of game types:
+// CJ's model as San Andreas sends it (ModelChunk messages, protocol v5), and each vehicle's (v6,
+// its parts as bones; protocol/cpp/vehicle.h): one blob with the textures, meshes, skin weights and
+// bone ids, cut into chunks. Header-only and free of game types:
 // the ASI builds a blob with Serialize and cuts it with Chunks, Skyrim puts it back together with
 // the Assembler and reads it with Parse. Modelled on PerkeleRim's protocol/cpp/model.h.
 
@@ -38,6 +39,7 @@ namespace AhShitRim::SkinModel
     struct ModelIn
     {
         std::string                name;
+        std::uint32_t              kind = Protocol::kSkinModelBody;
         std::vector<std::uint32_t> boneIds;
         std::vector<TextureIn>     textures;
         std::vector<MeshIn>        meshes;
@@ -67,6 +69,7 @@ namespace AhShitRim::SkinModel
         header.textureCount = static_cast<std::uint32_t>(a_model.textures.size());
         header.meshCount = static_cast<std::uint32_t>(a_model.meshes.size());
         header.boneCount = static_cast<std::uint32_t>(a_model.boneIds.size());
+        header.kind = a_model.kind;
         Detail::Put(out, header);
         Detail::PutBytes(out, a_model.boneIds.data(), a_model.boneIds.size() * sizeof(std::uint32_t));
         for (const auto& texture : a_model.textures) {
@@ -140,6 +143,7 @@ namespace AhShitRim::SkinModel
     struct Model
     {
         std::string                name;
+        std::uint32_t              kind = Protocol::kSkinModelBody;
         std::vector<std::uint32_t> boneIds;
         std::vector<Texture>       textures;
         std::vector<Mesh>          meshes;
@@ -160,11 +164,13 @@ namespace AhShitRim::SkinModel
         };
 
         Protocol::SkinModelHeader header{};
-        if (!a_blob || !take(&header, sizeof(header)) || header.boneCount == 0 || header.boneCount > Protocol::kBodyBoneMax) {
+        if (!a_blob || !take(&header, sizeof(header)) || header.boneCount == 0 || header.boneCount > Protocol::kBodyBoneMax ||
+            header.kind > Protocol::kSkinModelVehicle) {
             return std::nullopt;
         }
         Model model;
         model.name.assign(header.name, strnlen(header.name, sizeof(header.name)));
+        model.kind = header.kind;
         model.boneIds.resize(header.boneCount);
         if (!take(model.boneIds.data(), header.boneCount * sizeof(std::uint32_t))) {
             return std::nullopt;
@@ -185,6 +191,7 @@ namespace AhShitRim::SkinModel
         for (std::uint32_t i = 0; i < header.meshCount; i++) {
             Protocol::SkinMesh mesh{};
             if (!take(&mesh, sizeof(mesh)) || mesh.vertexCount > Protocol::kModelMeshVertexMax || mesh.indexCount % 3 != 0 ||
+                mesh.indexCount / 3 > Protocol::kModelMeshVertexMax ||
                 mesh.texture < -1 || mesh.texture >= static_cast<std::int32_t>(header.textureCount)) {
                 return std::nullopt;
             }

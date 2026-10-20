@@ -28,11 +28,17 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v5 constants")
+TEST_CASE("protocol v6 constants")
 {
-    CHECK(kProtocolVersion == 5);
+    CHECK(kProtocolVersion == 6);
     CHECK(kPlayerCrouching == 0x4);
-    CHECK(kMappingSize == 8390976);
+    CHECK(kPlayerInVehicle == 0x8);
+    CHECK(kButtonEnterExit == 0x10);
+    CHECK(kButtonHorn == 0x20);
+    CHECK(kBodyDriven == 0x2);
+    CHECK(kVehicleMax == 4);
+    CHECK(kSkinModelVehicle == 1);
+    CHECK(kMappingSize == 8398656);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -44,12 +50,14 @@ TEST_CASE("protocol v5 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v5 slot and ring layout")
+TEST_CASE("the v6 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 208);
     CHECK(sizeof(InputState) == 64);
     CHECK(offsetof(InputState, anchor) == 44);
+    CHECK(offsetof(InputState, spawnModel) == 56);
+    CHECK(offsetof(InputState, spawnCount) == 58);
     CHECK(sizeof(PlayerState) == 48);
     CHECK(offsetof(InputSlot, value) == 8);
     CHECK(offsetof(PlayerSlot, value) == 8);
@@ -58,9 +66,11 @@ TEST_CASE("the v5 slot and ring layout")
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);
     CHECK(sizeof(BodyState) == 1856);
-    CHECK(kOffsetRingToSanAndreas == 2240);
+    CHECK(kOffsetVehicleSlots == 2240);
+    CHECK(kOffsetVehicleSlots % 64 == 0);
+    CHECK(kOffsetRingToSanAndreas == 2240 + 4 * 1920);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4196608);
+    CHECK(kOffsetRingToSkyrim == 4204288);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);

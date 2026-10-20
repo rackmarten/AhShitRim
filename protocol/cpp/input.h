@@ -2,8 +2,10 @@
 // free of game types, so the protocol tests cover it; the SKSE plugin feeds it from its input sink.
 //
 // Keyboard events carry DirectInput scan codes (DIK_*). San Andreas gets actions, not keys, with
-// GTA's own keyboard layout: WASD (or the arrows) move, Left Shift sprints, Space jumps, C crouches
-// and Left Alt walks. Everything else stays with Skyrim (see docs/PROTOCOL.md#input).
+// GTA's own keyboard layout: WASD (or the arrows) move, Left Shift sprints, Space jumps (the
+// handbrake in a vehicle), C crouches, Left Alt walks, F or Enter gets in and out of a vehicle and H
+// sounds the horn. In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a Sandking, a ZR-350 and a Sanchez. Everything else stays with
+// Skyrim (see docs/PROTOCOL.md#input).
 
 #pragma once
 
@@ -33,6 +35,28 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikLeft = 0xCB;
     inline constexpr std::uint32_t kDikRight = 0xCD;
     inline constexpr std::uint32_t kDikDown = 0xD0;
+    inline constexpr std::uint32_t kDikF = 0x21;
+    inline constexpr std::uint32_t kDikReturn = 0x1C;
+    inline constexpr std::uint32_t kDikH = 0x23;
+    inline constexpr std::uint32_t kDikLeftBracket = 0x1A;
+    inline constexpr std::uint32_t kDikRightBracket = 0x1B;
+    inline constexpr std::uint32_t kDikBackslash = 0x2B;
+
+    // San Andreas vehicle model ids the spawn keys ask for.
+    inline constexpr std::uint16_t kModelSandking = 495;  // the test car
+    inline constexpr std::uint16_t kModelZr350 = 477;     // the fun car
+    inline constexpr std::uint16_t kModelSanchez = 468;   // the dirt bike
+
+    // DirectInput scan code -> the vehicle model its key spawns, 0 for any other key.
+    constexpr std::uint16_t SpawnModelFromScanCode(std::uint32_t a_dik)
+    {
+        switch (a_dik) {
+        case kDikRightBracket: return kModelSandking;
+        case kDikLeftBracket: return kModelZr350;
+        case kDikBackslash: return kModelSanchez;
+        default: return 0;
+        }
+    }
 
     enum class Action : std::uint8_t
     {
@@ -45,16 +69,20 @@ namespace AhShitRim::Input
         Jump,
         Crouch,
         Walk,
+        EnterExit,
+        Horn,
+        LeanForward,  // the up arrow: forwards on foot
+        LeanBack,     // the down arrow: back on foot
     };
 
     // DirectInput scan code -> the action it drives in San Andreas, None for keys San Andreas doesn't get.
     constexpr Action ActionFromScanCode(std::uint32_t a_dik)
     {
         switch (a_dik) {
-        case kDikW:
-        case kDikUp: return Action::Forward;
-        case kDikS:
-        case kDikDown: return Action::Back;
+        case kDikW: return Action::Forward;
+        case kDikUp: return Action::LeanForward;
+        case kDikS: return Action::Back;
+        case kDikDown: return Action::LeanBack;
         case kDikA:
         case kDikLeft: return Action::Left;
         case kDikD:
@@ -63,6 +91,9 @@ namespace AhShitRim::Input
         case kDikSpace: return Action::Jump;
         case kDikC: return Action::Crouch;
         case kDikLeftAlt: return Action::Walk;
+        case kDikF:
+        case kDikReturn: return Action::EnterExit;
+        case kDikH: return Action::Horn;
         default: return Action::None;  // Escape, Tab, M, ~, F10 and anything unmapped
         }
     }
@@ -71,11 +102,17 @@ namespace AhShitRim::Input
     class Builder
     {
     public:
-        // Keyboard event: a_dik is the scan code, a_down whether it is held now.
-        void SetKey(std::uint32_t a_dik, bool a_down)
+        // Keyboard event: a_dik is the scan code, a_down whether it is held now. Pressing a spawn key
+        // asks for its vehicle (once per press), unless a_canSpawn is false (a menu or the console
+        // has the keyboard).
+        void SetKey(std::uint32_t a_dik, bool a_down, bool a_canSpawn = true)
         {
             if (a_dik >= 256) {
                 return;
+            }
+            if (const auto model = SpawnModelFromScanCode(a_dik); model && a_down && a_canSpawn && !IsKeyDown(a_dik)) {
+                _spawnModel = model;
+                _spawnCount++;
             }
             const std::uint64_t bit = 1ull << (a_dik & 63);
             if (a_down) {
@@ -117,6 +154,8 @@ namespace AhShitRim::Input
             }
             s.mouseX = _mouseX;
             s.mouseY = _mouseY;
+            s.spawnModel = _spawnModel;
+            s.spawnCount = _spawnCount;
             if (!a_live) {
                 return s;
             }
@@ -126,6 +165,10 @@ namespace AhShitRim::Input
             if (Held(Action::Jump)) s.buttons |= Protocol::kButtonJump;
             if (Held(Action::Crouch)) s.buttons |= Protocol::kButtonCrouch;
             if (Held(Action::Walk)) s.buttons |= Protocol::kButtonWalk;
+            if (Held(Action::EnterExit)) s.buttons |= Protocol::kButtonEnterExit;
+            if (Held(Action::Horn)) s.buttons |= Protocol::kButtonHorn;
+            if (Held(Action::LeanForward)) s.buttons |= Protocol::kButtonLeanForward;
+            if (Held(Action::LeanBack)) s.buttons |= Protocol::kButtonLeanBack;
             return s;
         }
 
@@ -148,18 +191,22 @@ namespace AhShitRim::Input
         std::uint64_t _keys[4]{};
         double        _mouseX = 0.0;
         double        _mouseY = 0.0;
+        std::uint16_t _spawnModel = 0;
+        std::uint16_t _spawnCount = 0;
     };
 
-    // The San Andreas side: an InputState as CControllerState values for CJ on foot (pad mode 0).
-    // Sticks run -128..128 with forward negative; buttons are 255 held, 0 released.
+    // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or
+    // in a vehicle. Sticks run -128..128 with forward negative; buttons are 255 held, 0 released.
     struct PadState
     {
-        std::int16_t leftStickX = 0;
-        std::int16_t leftStickY = 0;
-        std::int16_t buttonCross = 0;   // sprint
-        std::int16_t buttonSquare = 0;  // jump
-        std::int16_t shockButtonL = 0;  // crouch
-        std::int16_t pedWalk = 0;       // walk
+        std::int16_t leftStickX = 0;      // on foot: move; in a vehicle: steer
+        std::int16_t leftStickY = 0;      // on foot: move
+        std::int16_t buttonCross = 0;     // on foot: sprint; in a vehicle: accelerate
+        std::int16_t buttonSquare = 0;    // on foot: jump; in a vehicle: brake and reverse
+        std::int16_t buttonTriangle = 0;  // get in or out of a vehicle
+        std::int16_t rightShoulder1 = 0;  // in a vehicle: handbrake
+        std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn
+        std::int16_t pedWalk = 0;         // on foot: walk
     };
 
     constexpr std::int16_t Stick(float a_value)
@@ -168,15 +215,29 @@ namespace AhShitRim::Input
         return static_cast<std::int16_t>(v * 128.0f);
     }
 
-    constexpr PadState ToPad(const Protocol::InputState& a_input)
+    // a_inVehicle: CJ drives or rides, so the keys take San Andreas's vehicle layout (W
+    // accelerates, S brakes and reverses, A/D steer, Space is the handbrake, H the horn, the up and
+    // down arrows lean a bike forward and back). On foot the arrows walk like W and S.
+    constexpr PadState ToPad(const Protocol::InputState& a_input, bool a_inVehicle = false)
     {
-        PadState p;
+        const auto held = [&](std::uint32_t a_button) -> std::int16_t { return (a_input.buttons & a_button) ? 255 : 0; };
+        PadState   p;
         p.leftStickX = Stick(a_input.moveX);
-        p.leftStickY = Stick(-a_input.moveY);
-        p.buttonCross = (a_input.buttons & Protocol::kButtonSprint) ? 255 : 0;
-        p.buttonSquare = (a_input.buttons & Protocol::kButtonJump) ? 255 : 0;
-        p.shockButtonL = (a_input.buttons & Protocol::kButtonCrouch) ? 255 : 0;
-        p.pedWalk = (a_input.buttons & Protocol::kButtonWalk) ? 255 : 0;
+        p.buttonTriangle = held(Protocol::kButtonEnterExit);
+        const float lean = ((a_input.buttons & Protocol::kButtonLeanForward) ? 1.0f : 0.0f) - ((a_input.buttons & Protocol::kButtonLeanBack) ? 1.0f : 0.0f);
+        if (a_inVehicle) {
+            p.leftStickY = Stick(-lean);  // stick forward (negative) leans forward
+            p.buttonCross = a_input.moveY > 0.0f ? 255 : 0;
+            p.buttonSquare = a_input.moveY < 0.0f ? 255 : 0;
+            p.rightShoulder1 = held(Protocol::kButtonJump);
+            p.shockButtonL = held(Protocol::kButtonHorn);
+            return p;
+        }
+        p.leftStickY = Stick(-(a_input.moveY + lean));  // clamped: W and the up arrow together are still full
+        p.buttonCross = held(Protocol::kButtonSprint);
+        p.buttonSquare = held(Protocol::kButtonJump);
+        p.shockButtonL = held(Protocol::kButtonCrouch);
+        p.pedWalk = held(Protocol::kButtonWalk);
         return p;
     }
 }

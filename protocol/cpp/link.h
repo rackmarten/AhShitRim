@@ -51,6 +51,9 @@ namespace AhShitRim
         bool ReadPlayer(Protocol::PlayerState& a_out) const;
         void WriteBody(const Protocol::BodyState& a_value);
         bool ReadBody(Protocol::BodyState& a_out) const;
+        // Vehicle slot a_index (< kVehicleMax, v6); out-of-range indices are ignored.
+        void WriteVehicle(std::uint32_t a_index, const Protocol::BodyState& a_value);
+        bool ReadVehicle(std::uint32_t a_index, Protocol::BodyState& a_out) const;
 
         // The rings: Send puts a message in the ring to the other side, and returns false when the
         // link is down, the ring is full or the message can never fit. Receive drains the ring to

@@ -418,6 +418,29 @@ TEST_CASE("the body slot carries CJ's bones and camera from San Andreas to Skyri
     CHECK(back.bones[31].translation[2] == 120.0f);
 }
 
+TEST_CASE("each vehicle slot carries its own vehicle's parts, apart from CJ's body")
+{
+    Pair p;
+    p.Tick(3);
+    BodyState car{};
+    car.frame = 5;
+    car.flags = kBodyValid | kBodyDriven;
+    car.boneCount = 9;
+    car.model = 77;
+    car.bones[8].translation[0] = -80.0f;
+    p.sa->WriteVehicle(2, car);
+    p.sa->WriteVehicle(kVehicleMax, car);  // ignored
+
+    BodyState back{};
+    REQUIRE(p.skyrim->ReadVehicle(2, back));
+    CHECK(back.model == 77);
+    CHECK(back.flags == (kBodyValid | kBodyDriven));
+    CHECK(back.bones[8].translation[0] == -80.0f);
+    CHECK_FALSE(p.skyrim->ReadVehicle(1, back));  // never written
+    CHECK_FALSE(p.skyrim->ReadVehicle(kVehicleMax, back));
+    CHECK_FALSE(p.skyrim->ReadBody(back));
+}
+
 TEST_CASE("nothing is sent while the link is down, and a restarted San Andreas drops stale chunks")
 {
     Pair p;

@@ -3,9 +3,12 @@
 #include "fall_rescue.h"
 #include "ground.h"
 #include "log.h"
+#include "vehicles.h"
 
 #include <plugin.h>
 
+#include <CAutomobile.h>
+#include <CBike.h>
 #include <CBuilding.h>
 #include <CCamera.h>
 #include <CColModel.h>
@@ -17,6 +20,7 @@
 
 #include <Windows.h>
 
+#include <cmath>
 #include <deque>
 #include <format>
 #include <vector>
@@ -38,6 +42,10 @@ namespace AhShitRim::ChunkWorld
 
         constexpr std::size_t kMaxWaiting = 64;  // chunks of a handover San Andreas hasn't read yet
 
+        // Every chunk triangle's surface: collision chunks carry no material yet, and on tarmac cars
+        // and bikes grip like on a road everywhere (the bumps still come from the ground's shape).
+        constexpr unsigned char kSurface = 1;  // SURFACE_TARMAC
+
         struct Slot
         {
             int        model = -1;
@@ -57,6 +65,7 @@ namespace AhShitRim::ChunkWorld
             bool                  ready = false;  // the chunk under the handover spot is in
             std::uint64_t         beganMs = 0;
             FallRescue::Watch     fall;
+            CVehicle*             falling = nullptr;  // what fall watches: CJ's vehicle, or CJ himself (nullptr)
 
             // Stats, logged every 5 s while chunks come in.
             int           built = 0, replaced = 0, triangles = 0, dropped = 0, stale = 0, distant = 0;
@@ -106,7 +115,7 @@ namespace AhShitRim::ChunkWorld
                 tri.m_nVertA = a_mesh.triangles[t * 3];
                 tri.m_nVertB = a_mesh.triangles[t * 3 + 1];
                 tri.m_nVertC = a_mesh.triangles[t * 3 + 2];
-                tri.m_nMaterial = 0;  // SURFACE_DEFAULT
+                tri.m_nMaterial = kSurface;
                 tri.m_nLight = 0;
             }
             const CVector min(a_mesh.min.x, a_mesh.min.y, a_mesh.min.z);
@@ -207,6 +216,7 @@ namespace AhShitRim::ChunkWorld
             }
             TheCamera.m_vecGameCamPos -= shift;
             TheCamera.GetPosition() -= shift;
+            Vehicles::Shift(shift);
             state.fall.Shift(a_shift);
             Log(std::format("ground: origin moved by ({:.0f},{:.0f},{:.0f}) m with CJ", a_shift.x, a_shift.y, a_shift.z));
         }
@@ -228,15 +238,30 @@ namespace AhShitRim::ChunkWorld
             return true;
         }
 
+        int WheelsOnGround(CVehicle* a_vehicle)
+        {
+            return a_vehicle->m_nVehicleClass == VEHICLE_BIKE ? static_cast<CBike*>(a_vehicle)->m_nNumContactWheels :
+                                                               static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels;
+        }
+
+        // CJ, or the vehicle he is in, below the ground: put back (FallRescue). A vehicle is watched by
+        // its middle (the bottom of its collision box hangs below its tyres, under the road), and it
+        // stands while a wheel touches.
         void Catch(CPlayerPed* a_ped)
         {
-            const float     lift = a_ped->GetDistanceFromCentreOfMassToBaseOfModel();
-            const CVector&  pos = a_ped->GetPosition();
-            const CVector   feet(pos.x, pos.y, pos.z - lift);
+            CVehicle* vehicle = Vehicles::Driven(a_ped);
+            if (vehicle != state.falling) {
+                state.falling = vehicle;
+                state.fall.Reset();  // the spot it remembered was the other one's
+            }
+            auto*           col = vehicle ? CModelInfo::GetModelInfo(vehicle->m_nModelIndex)->m_pColModel : nullptr;
+            const float     lift = col ? -col->m_boundBox.m_vecMin.z : a_ped->GetDistanceFromCentreOfMassToBaseOfModel();
+            const CVector&  pos = vehicle ? vehicle->GetPosition() : a_ped->GetPosition();
+            const CVector   feet(pos.x, pos.y, vehicle ? pos.z : pos.z - lift);
             const CVector   from(feet.x, feet.y, feet.z + 0.1f);
             FallRescue::Around around;
             around.feet = ToVec(feet);
-            around.standing = a_ped->bIsStanding;
+            around.standing = vehicle ? WheelsOnGround(vehicle) > 0 : a_ped->bIsStanding;
             float below = 0.0f;
             around.surfaceBelow = Line(from, from.z - FallRescue::kBelowReach, below);
             around.surfaceAbove = Line(from, from.z + FallRescue::kAboveReach, around.aboveZ);
@@ -244,10 +269,16 @@ namespace AhShitRim::ChunkWorld
             if (!to) {
                 return;
             }
-            a_ped->SetPosn(CVector(to->x, to->y, to->z + lift + 0.05f));
-            a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-            Log(std::format("ground: CJ was below the ground at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})",
-                feet.x, feet.y, feet.z, to->x, to->y, to->z));
+            if (vehicle) {
+                // Back where its middle was, or onto the surface over it, its wheels on it.
+                const bool onto = around.surfaceAbove && std::abs(to->z - around.aboveZ) < 0.001f;
+                vehicle->Teleport(CVector(to->x, to->y, to->z + (onto ? lift : 0.0f) + 0.05f), false);  // also stops it and resets its suspension
+            } else {
+                a_ped->SetPosn(CVector(to->x, to->y, to->z + lift + 0.05f));
+                a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+            }
+            Log(std::format("ground: {} was below the ground at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})",
+                vehicle ? "CJ's vehicle" : "CJ", feet.x, feet.y, feet.z, to->x, to->y, to->z));
         }
     }
 

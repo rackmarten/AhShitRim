@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v5. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5).
+> Status: protocol v6. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -8,7 +8,7 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 |---|---|
 | [`protocol/ahshitrim_protocol.h`](../protocol/ahshitrim_protocol.h) | Source of truth: every struct, offset and constant, with `static_assert`s |
 | [`protocol/cpp/link.h`](../protocol/cpp/link.h), `link.cpp` | The link, compiled into both plugins and the tests |
-| [`protocol/cpp/input.h`](../protocol/cpp/input.h) | Skyrim's keys to CJ's actions (`Input::Builder`) and those to San Andreas's pad (`Input::ToPad`) |
+| [`protocol/cpp/input.h`](../protocol/cpp/input.h) | Skyrim's keys to CJ's actions and spawn requests (`Input::Builder`), and those to San Andreas's pad on foot or in a vehicle (`Input::ToPad`) |
 | [`protocol/cpp/pose.h`](../protocol/cpp/pose.h) | CJ's San Andreas pose to the `PlayerState` Skyrim reads |
 | [`protocol/cpp/collision.h`](../protocol/cpp/collision.h) | Skyrim side of collision chunks: the chunk grid, the heightfield, building a payload (from PerkeleRim) |
 | [`protocol/cpp/ground.h`](../protocol/cpp/ground.h) | San Andreas side: the floating origin, a payload to San Andreas's collision format, which chunks it keeps |
@@ -18,12 +18,13 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/texture_decode.h`](../protocol/cpp/texture_decode.h) | San Andreas's Direct3D 9 texture formats to RGBA |
 | [`protocol/cpp/body.h`](../protocol/cpp/body.h) | San Andreas's skin matrices to bones, skinning a vertex, the interpolation between San Andreas's frames |
 | [`protocol/cpp/camera.h`](../protocol/cpp/camera.h) | Turning Skyrim's camera node to a view (from PerkeleRim) |
-| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation), run by `scripts/test.ps1` |
-| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive (`scripts/fake-skyrim.ps1`) |
+| [`protocol/cpp/vehicle.h`](../protocol/cpp/vehicle.h) | Where a spawned vehicle goes, a vehicle's paint and lights colours, baking a part's scale or mirror into its vertices, merging a vehicle's meshes |
+| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging), run by `scripts/test.ps1` |
+| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it, the Sanchez rides, and a new handover takes CJ out and removes them (`scripts/fake-skyrim.ps1`) |
 
 ## Section layout
 
-One section, `Local\AhShitRim.Link`, 8,390,976 bytes. Whichever game starts first creates it; it disappears when both have closed.
+One section, `Local\AhShitRim.Link`, 8,398,656 bytes. Whichever game starts first creates it; it disappears when both have closed.
 
 | Offset | Size | Part | Written by |
 |---|---|---|---|
@@ -32,8 +33,9 @@ One section, `Local\AhShitRim.Link`, 8,390,976 bytes. Whichever game starts firs
 | 208 | 64 | `PlayerSlot`: CJ's pose | San Andreas |
 | 272 | 48 | unused | |
 | 320 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
-| 2240 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
-| 4196608 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's model, v5) | San Andreas produces, Skyrim consumes |
+| 2240 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
+| 9920 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
+| 4204288 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's and the vehicles' models, v5) | San Andreas produces, Skyrim consumes |
 
 `LinkHeader` (frozen across versions):
 
@@ -68,14 +70,16 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 0 | `frame` | Skyrim's input counter |
 | 4 | `flags` | `kInputOwnsPlayer` (0x1): apply this input to CJ. `kInputPaused` (0x2): a Skyrim menu pauses the game, San Andreas pauses too |
 | 8 | `mouseX`, `mouseY` | doubles, raw mouse counts accumulated since Skyrim started (y positive down); San Andreas applies the change since its last read |
-| 24 | `moveX`, `moveY` | -1..1, right and forwards positive |
-| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, held |
+| 24 | `moveX`, `moveY` | -1..1, right and forwards positive; `moveY` is W and S only, the up and down arrows are `kButtonLean*` |
+| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, `kButtonEnterExit` 0x10, `kButtonHorn` 0x20, `kButtonLeanForward` 0x40 (up arrow), `kButtonLeanBack` 0x80 (down arrow) (v6), held |
 | 36 | `handover` | counts handovers; a new value puts CJ at the handover spot and drops the collision chunks of older handovers |
 | 40 | `heading` | the Skyrim player's heading at that handover (radians, Skyrim's convention); CJ spawns facing it |
 | 44 | `anchor[3]` | the Skyrim player's feet at that handover, Skyrim world units: the floating origin's base (v4) |
-| 56 | reserved | 8 bytes |
+| 56 | `spawnModel` | u16, the San Andreas vehicle model the last spawn request asked for (v6) |
+| 58 | `spawnCount` | u16, counts spawn requests; a new value spawns `spawnModel` (v6) |
+| 60 | reserved | 4 bytes |
 
-Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrows move, Left Shift sprints, Space jumps, C crouches, Left Alt walks. Escape, Tab, M, `~` and F10 stay with Skyrim. While a Skyrim menu has the input (paused, or a cursor menu like dialogue), the axes and buttons are zero but the mouse totals keep counting. San Andreas writes the actions into pad 0 right after `CPad::UpdatePads` (left stick, Cross for sprint, Square for jump, L3 for crouch, the walk flag) and the mouse change into `CPad::NewMouseControllerState`, vertical flipped (passed through as is, the camera looked the wrong way).
+Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrows move (in a vehicle the up and down arrows lean a bike instead), Left Shift sprints, Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle, H sounds the horn. ], [ and `\` ask for a Sandking (495), a ZR-350 (477) and a Sanchez (468): each press sets `spawnModel` and counts `spawnCount` up once. Escape, Tab, M, `~` and F10 stay with Skyrim. While a Skyrim menu has the input (paused, or a cursor menu like dialogue), the axes and buttons are zero but the mouse totals and the spawn requests keep counting. San Andreas writes the actions into pad 0 right after `CPad::UpdatePads` and the mouse change into `CPad::NewMouseControllerState`, vertical flipped (passed through as is, the camera looked the wrong way). On foot: left stick, Cross for sprint, Square for jump, L3 for crouch, the walk flag, Triangle to get into a vehicle. In a vehicle: W holds Cross (accelerate) and S Square (brake, then reverse), the left stick's X steers and its Y leans a bike (up arrow forward, down arrow back), jump holds R1 (handbrake), the horn L3 and Triangle gets out. San Andreas spawns only on a change of `spawnCount` after the first value it read (a San Andreas that starts after Skyrim doesn't spawn the last vehicle again), and only while it has the player and CJ is on foot. A read of the slot that stays torn keeps the last input rather than counting as the link going down.
 
 ### Pose (San Andreas to Skyrim)
 
@@ -84,9 +88,9 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `frame` | San Andreas frame counter |
-| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something, `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks |
+| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle |
 | 8 | `offset[3]` | CJ relative to where the current handover spawned him |
-| 20 | `velocity[3]` | units per second |
+| 20 | `velocity[3]` | units per second; in a vehicle the vehicle's, which Skyrim samples the ground ahead by |
 | 32 | `heading` | CJ's body |
 | 36 | `viewHeading`, `viewPitch` | where San Andreas's camera looks; Skyrim's first-person camera follows it |
 | 44 | `handover` | the `InputState.handover` this pose belongs to; Skyrim ignores poses from older handovers |
@@ -113,6 +117,21 @@ Skyrim adds `offset` to the player's position at the handover.
 
 A posed vertex is the weighted sum of where its (up to four) bones take it, its normal turned the same way. Skyrim draws the frame 50 ms behind the newest, blended between the two around it (`Body::Interpolator`). San Andreas walks CJ on Skyrim's own collision there (see below), so the offset follows Skyrim's terrain and statics; the floating origin moving in San Andreas doesn't change it.
 
+### Vehicles (San Andreas to Skyrim)
+
+Four vehicle slots (v6), one per vehicle San Andreas keeps (`kVehicleMax`), each a `BodySlot` holding a `BodyState`, written every San Andreas frame once that vehicle's model is built:
+
+| Field | For a vehicle |
+|---|---|
+| `flags` | `kBodyValid` (0x1); `kBodyDriven` (0x2) while CJ is in it. 0 once the vehicle is gone: Skyrim draws nothing for the slot |
+| `model` | the vehicle's `ModelChunkHeader.model` |
+| `boneCount` | its parts (one per drawn atomic: chassis, wheels, doors, bonnet, a bike's forks and handlebars) |
+| `feet[3]` | the vehicle's position, relative to where the handover put CJ's feet |
+| `bones` | each part's frame relative to `feet`: its world matrix after `PreRender` (wheels turned, steered and on their suspension, forks and handlebars, and a bike's lean, which `PreRender` puts into the parts under the upright root) |
+| camera | unused (zero, forward a unit vector) |
+
+Skyrim draws each vehicle like CJ, 50 ms behind with its own `Body::Interpolator`, and only while it has handed the player over. The chase camera needs nothing of its own: San Andreas's active camera in the body slot follows the vehicle while CJ drives it.
+
 ## Rings
 
 Messages that must all arrive, one after another: two single-producer, single-consumer byte rings of 4 MiB, one each way (Skyrim to San Andreas since v4, San Andreas to Skyrim since v5). `head` (producer) and `tail` (consumer) are monotonic byte counts on separate 32-byte halves of the 64-byte `RingHeader`; a record is an 8-byte `MessageHeader` (`type` u16, reserved u16, `size` u32) plus its payload, and may wrap around the end. `Send` puts a message in the ring to the other side and refuses while the link is down, when the ring is full or when the message can never fit; each side drains its own ring every frame. A side empties its ring when it attaches, so messages sent to an earlier instance never arrive.
@@ -120,13 +139,19 @@ Messages that must all arrive, one after another: two single-producer, single-co
 | Type | Message | Direction | Payload |
 |---|---|---|---|
 | 1 | `CollisionChunk` | Skyrim → San Andreas | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
-| 2 | `ModelChunk` | San Andreas → Skyrim (v5) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
+| 2 | `ModelChunk` | San Andreas → Skyrim (v5; vehicles since v6) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
 
 ### CJ's model
 
-San Andreas sends CJ's model whenever the link comes up (a Skyrim that just started has none of it) and whenever his geometry changes, as one blob cut into `ModelChunk`s of at most 256 KiB (`protocol/cpp/skin_model.h`). Chunks of a model come in order from offset 0; Skyrim builds the model once the last one is in, and drops one that comes out of order. Every model gets a new id; `BodyState.model` names the one its bones belong to.
+San Andreas sends CJ's model whenever the link comes up (a Skyrim that just started has none of it) and whenever his geometry changes, as one blob cut into `ModelChunk`s of at most 256 KiB (`protocol/cpp/skin_model.h`). Chunks of a model come in order from offset 0; Skyrim builds the model once the last one is in, and drops one that comes out of order. Every model gets a new id; `BodyState.model` names the one its bones belong to. CJ's model and the vehicles' go one whole model after another (`sa/src/model_sender.cpp`), CJ's first, all of them again whenever the link comes up.
 
-The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts), `boneCount` u32 bone ids (San Andreas's node ids, for the logs), then per texture a `SkinTexture` (width, height, format 1 = RGBA8) and its pixels, top row first, then per mesh a `SkinMesh` (texture index or -1, vertex and index counts, flags `kSkinMeshCutout` 0x1 / `kSkinMeshBlend` 0x2, RGBA colour) with `vertexCount` `SkinVertex` (52 bytes: position, normal, UV, four bone indices, four weights; bind pose, Skyrim units) and `indexCount` u16 triangle indices. CJ comes as 5 meshes, about 1,750 vertices and 2,370 triangles, 4 textures and 32 bones, about 580 KB.
+The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts, `kind`: `kSkinModelBody` 0 or `kSkinModelVehicle` 1 (v6)), `boneCount` u32 bone ids (San Andreas's node ids, for the logs), then per texture a `SkinTexture` (width, height, format 1 = RGBA8) and its pixels, top row first, then per mesh a `SkinMesh` (texture index or -1, vertex and index counts, flags `kSkinMeshCutout` 0x1 / `kSkinMeshBlend` 0x2, RGBA colour) with `vertexCount` `SkinVertex` (52 bytes: position, normal, UV, four bone indices, four weights; bind pose, Skyrim units) and `indexCount` u16 triangle indices. CJ comes as 5 meshes, about 1,750 vertices and 2,370 triangles, 4 textures and 32 bones, about 580 KB.
+
+### A vehicle's model
+
+Sent once per spawned vehicle, after its first `PreRender` (`sa/src/vehicles.cpp`, the game-free half in `protocol/cpp/vehicle.h`). Every drawn atomic of the vehicle's clump is a part, and a bone: hidden atomics (the damaged versions of parts) and the low-detail ones (`_vlo`) are left out. Each part's vertices are in its own frame's space and hang on its bone alone (weight 1). A part's frame can carry a scale or a mirror besides its rotation (wheels are scaled to the wheel size), which a bone can't, so it is baked into the part's vertices once (the frame is the bone's rotation times a constant matrix; a mirror turns the triangles round). Materials take the vehicle's own colours as San Andreas does right before drawing (the four paint placeholders from the colour table, the lights texture's materials white); one with alpha in its colour (glass) is `kSkinMeshBlend`. Parts' meshes that look the same are merged, so a vehicle comes as a few dozen meshes: the Sandking as 17 parts, 21 meshes, about 3,800 vertices and 13 textures (1.1 MB), the Sanchez as 7 parts and 8 meshes (870 KB).
+
+Skyrim multiplies a textured mesh's texture by its colour (a vehicle's paint is a grey texture in the vehicle's colour) into a copy of the texture, since its shader has no tint. A blended mesh is drawn with alpha blending, its colour's alpha as the material's, without writing depth.
 
 ### Collision chunks
 
@@ -137,11 +162,13 @@ Skyrim side (`skse/src/collision/CollisionSampler.cpp`, `StaticMeshes.cpp`, port
 - **Land**: a heightfield of 33 x 33 samples (64 units apart) from top-down Havok raycasts that keep only the landscape (the terrain or ground layer where it belongs to no reference) and pass through everything else. A ray that misses is tried again 8 units to each side; a sample still missed with at least three hit neighbours takes their mean height, three passes over, so only wide misses leave a hole. Interiors have no land and skip this.
 - **Statics**: the real collision of every loaded reference with static collision (layers static, animated static, terrain, ground, trees, stair helpers and transparent, plus clutter on bodies that don't move), read from its Havok shapes: triangle meshes as they are, boxes and convex hulls as their faces, capsules as 8-sided prisms. Spheres and transform wrappers that don't read as a rotation are skipped and counted in the log. A triangle belongs to the chunk its center is in. When a door opens or closes, or a gate or trapdoor moves and settles, the chunks around it are read and sent again.
 
-The 5 x 5 chunks around the player are sampled nearest first, then the 5 x 5 around a point 2 s of travel ahead (at most 2 chunks ahead), about 2 ms of raycasts per frame. A chunk is done once at least 99% of its land samples hit and no static in it is still waiting for its 3D; otherwise it is sampled again every 2 s (up to 5 tries) and resent when it improves. Skyrim forgets chunks more than 3 away from both centers; San Andreas drops them more than 6 away from CJ, so a chunk San Andreas dropped is always one Skyrim resends.
+The 5 x 5 chunks around the player are sampled nearest first, then the 5 x 5 around a point 2 s of travel ahead (at most 3 chunks ahead, a car at 50 m/s), about 2 ms of raycasts per frame, 4 ms while the player moves faster than 10 m/s (a chunk takes about 6 frames, and a fast car needs a new row of 5 every half second). A chunk is done once at least 99% of its land samples hit and no static in it is still waiting for its 3D; otherwise it is sampled again every 2 s, every 0.4 s above 10 m/s (up to 5 tries), and resent when it improves. Ahead of a fast car Skyrim is often still loading the land (a chunk came with 33 of 1089 land samples at 40 m/s). Skyrim forgets chunks more than 3 away from both centers; San Andreas drops them more than 7 away from CJ, so a chunk San Andreas dropped is always one Skyrim resends.
 
-San Andreas side (`sa/src/chunk_world.cpp`, the game-free half in `protocol/cpp/ground.h`): one invisible `CBuilding` per chunk, its model's `CColModel` holding the chunk's triangles, under the floating origin described in [DESIGN.md](DESIGN.md#ground-skyrims-collision-in-san-andreas).
+San Andreas side (`sa/src/chunk_world.cpp`, the game-free half in `protocol/cpp/ground.h`): one invisible `CBuilding` per chunk, its model's `CColModel` holding the chunk's triangles, all of them tarmac (`SURFACE_TARMAC`: chunks carry no material yet), under the floating origin described in [DESIGN.md](DESIGN.md#ground-skyrims-collision-in-san-andreas).
 
-Log lines for CJ: `body: CJ's model ID read in N ms: N meshes, N vertices, N triangles (...), N bones (world|local space), N textures: ...`, `body: CJ's model ID sent to Skyrim in N chunks`, `body: texture NAME of CJ left white: why` in San Andreas's log; `cj view: model ID CJ built in N ms: ...`, `cj view: CJ attached under NODE`, `cj view: CJ shown|hidden`, `player sync: CJ drawn from San Andreas's model ID, Skyrim's camera on San Andreas's (fov N)` in Skyrim's.
+Log lines for CJ: `body: CJ's model ID read in N ms: N meshes, N vertices, N triangles (...), N bones (world|local space), N textures: ...`, `body: CJ's model ID sent to Skyrim in N chunks`, `body: texture NAME of CJ left white: why` in San Andreas's log; `model view: model ID CJ built in N ms: ...`, `model view: CJ ID attached under NODE`, `model view: CJ ID shown|hidden`, `player sync: CJ drawn from San Andreas's model ID, Skyrim's camera on San Andreas's (fov N)` in Skyrim's.
+
+Log lines for vehicles, in San Andreas's log: `vehicle: NAME (MODEL) spawned in slot N at (x,y,z), spot N of 15 tried, colours N/N`, or why nothing was (`CJ is in a vehicle`, `no flat, clear spot for the NAME in front of CJ`, ...); `vehicle: the NAME's model ID read in N ms: N parts (N with a scale or mirror baked in; ...), N meshes, ...`, `vehicle: the NAME's model ID sent to Skyrim in N chunks`; `vehicle: driving at N m/s, N wheels on the ground, gas N, brake N, gear N, engine on|off, status N` every 5 s while CJ drives; `vehicle: the NAME in slot N removed|is gone`, `vehicle: CJ taken out of his vehicle` at a new handover; `ground: CJ's vehicle was below the ground at (...), put back at (...)`. In Skyrim's: `model view: NAME ID built|shown|hidden`.
 
 Log lines: `collision: chunk (x,y) gen N try T: terrain hits/1089 (...), statics N triangles from N refs (...), ms over N frames + ms statics, sent|nothing new` in Skyrim's log; `ground: handover N at Skyrim (x,y,z), waiting for the ground under CJ`, `ground: the ground under CJ is in after S s, letting him go`, `ground: N chunks built (N resent, N triangles, N left out), N far ones dropped, N stale; N chunks around CJ` (every 5 s while anything happens), `ground: origin moved by (x,y,z) m with CJ`, `ground: CJ was below the ground at (...), put back at (...)` in San Andreas's.
 
@@ -156,9 +183,9 @@ Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Di
 
 Log lines on both sides, prefixed `link:`:
 
-- `started (protocol v5)`
+- `started (protocol v6)`
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
-- `link up: <peer> pid N, protocol v5`
+- `link up: <peer> pid N, protocol v6`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
 - `link disabled: ...`
 

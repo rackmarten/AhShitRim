@@ -1,6 +1,8 @@
 #include "cj_body.h"
 
 #include "log.h"
+#include "model_sender.h"
+#include "rw_texture.h"
 #include "skin_build.h"
 #include "skin_model.h"
 #include "texture_decode.h"
@@ -13,8 +15,6 @@
 #include <common.h>
 
 #include <safetyhook.hpp>
-
-#include <d3d9.h>
 
 #include <Windows.h>
 
@@ -30,15 +30,11 @@ namespace AhShitRim::CjBody
     {
         // ---- San Andreas 1.0 US addresses (gta-reversed names) ----
 
-        constexpr std::uintptr_t kUpdateAnim = 0x535F00;        // CEntity::UpdateAnim (thiscall)
-        constexpr std::uintptr_t kRasterExtOffset = 0xB4E9E0;  // _RwD3D9RasterExtOffset: where a raster's Direct3D part starts
-
-        // The start of RenderWare's _rwD3D9RasterExt (gta-reversed's WindowedMode.cpp).
-        struct RasterExt
-        {
-            IDirect3DTexture9* texture;
-            PALETTEENTRY*      palette;  // 256 entries, alpha in peFlags
-        };
+        constexpr std::uintptr_t kUpdateAnim = 0x535F00;  // CEntity::UpdateAnim (thiscall)
+        // CPed::ShoulderBoneRotation: a static cdecl function (gta-reversed), which plugin-sdk calls as a
+        // thiscall member: the argument was never popped and a register CjBody's caller kept came back
+        // wrong (San Andreas crashed in the runner's stats).
+        const auto ShoulderBoneRotation = reinterpret_cast<void(__cdecl*)(RpClump*)>(0x5DF560);
 
         SafetyHookInline g_updateAnim;
 
@@ -49,11 +45,6 @@ namespace AhShitRim::CjBody
             bool          failed = false;      // the last build failed; tried again when the geometry changes
             std::uint32_t model = 0;
             std::uint32_t boneCount = 0;
-            std::vector<std::vector<std::uint8_t>> chunks;  // the model's ModelChunk payloads
-            std::size_t   next = 0;      // the next chunk to send
-            bool          sending = false;
-            bool          wasUp = false;
-            std::uint64_t sendStartMs = 0;
             bool          poseLogged = false;
         } state;
 
@@ -117,43 +108,6 @@ namespace AhShitRim::CjBody
 
         RwFrame* FrameOf(RpAtomic* a_atomic) { return static_cast<RwFrame*>(a_atomic->object.object.parent); }
 
-        // The top level of a texture as RGBA; empty (and a_why set) when it can't be read.
-        SkinModel::TextureIn ReadTexture(RwTexture* a_texture, std::string& a_why)
-        {
-            RwRaster* raster = a_texture ? a_texture->raster : nullptr;
-            if (!raster) {
-                a_why = "no raster";
-                return {};
-            }
-            const auto* ext = reinterpret_cast<const RasterExt*>(reinterpret_cast<std::uint8_t*>(raster) + *reinterpret_cast<std::int32_t*>(kRasterExtOffset));
-            IDirect3DTexture9* texture = ext->texture;
-            D3DSURFACE_DESC    desc{};
-            if (!texture || FAILED(texture->GetLevelDesc(0, &desc))) {
-                a_why = "no Direct3D texture";
-                return {};
-            }
-            if (!TextureDecode::Supported(desc.Format) || desc.Width > Protocol::kModelTextureSizeMax || desc.Height > Protocol::kModelTextureSizeMax) {
-                a_why = std::format("format {} {}x{} not supported", static_cast<std::uint32_t>(desc.Format), desc.Width, desc.Height);
-                return {};
-            }
-            D3DLOCKED_RECT locked{};
-            if (FAILED(texture->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
-                a_why = std::format("could not lock it (pool {})", static_cast<int>(desc.Pool));
-                return {};
-            }
-            SkinModel::TextureIn out;
-            out.width = desc.Width;
-            out.height = desc.Height;
-            out.rgba = TextureDecode::ToRgba(desc.Format, desc.Width, desc.Height, static_cast<const std::uint8_t*>(locked.pBits),
-                static_cast<std::uint32_t>(locked.Pitch), reinterpret_cast<const std::uint8_t*>(ext->palette));
-            texture->UnlockRect(0);
-            if (out.rgba.empty()) {
-                a_why = std::format("format {} did not decode", static_cast<std::uint32_t>(desc.Format));
-                return {};
-            }
-            return out;
-        }
-
         // Reads CJ's model from his clump; false (logged) when it can't.
         bool Build(CPlayerPed* a_ped)
         {
@@ -205,7 +159,7 @@ namespace AhShitRim::CjBody
                         out.texture = found->second;
                     } else {
                         std::string why;
-                        auto        read = ReadTexture(texture, why);
+                        auto        read = RwTextures::Read(texture, why);
                         if (read.rgba.empty()) {
                             Log(std::format("body: texture {} of CJ left white: {}", static_cast<const char*>(texture->name), why));
                             out.texture = -1;
@@ -248,44 +202,17 @@ namespace AhShitRim::CjBody
             }
             state.model = static_cast<std::uint32_t>(::GetTickCount64()) | 1;  // new for every build, also across restarts
             state.boneCount = bones;
-            state.chunks = SkinModel::Chunks(state.model, blob);
-            state.next = 0;
-            state.sending = false;
+            auto       chunks = SkinModel::Chunks(state.model, blob);
+            const auto chunkCount = chunks.size();
+            ModelSender::Set(ModelSender::kBodyKey, state.model, std::move(chunks), "body: CJ's model");
             state.failed = false;
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
             Log(std::format("body: CJ's model {:08X} read in {:.1f} ms: {} meshes, {} vertices, {} triangles ({} turned round, {} dropped, "
                             "{} vertices without weight, {} weights on bones past the skeleton), {} bones ({} space), {} textures:{}; {} bytes in {} chunks",
                 state.model, ms, model.meshes.size(), vertices, triangles, stats.flipped, stats.dropped, stats.unweighted, stats.foreignBones, bones,
                 (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) ? "local" : "world", model.textures.size(),
-                textureLog.empty() ? " none" : textureLog, blob.size(), state.chunks.size()));
+                textureLog.empty() ? " none" : textureLog, blob.size(), chunkCount));
             return true;
-        }
-
-        // Sends the model's chunks as the ring has room, from the start every time the link comes up
-        // (a Skyrim that just started has none of it).
-        void Pump()
-        {
-            auto&      link = GetLink();
-            const bool up = link.IsUp();
-            if (up && !state.wasUp && !state.chunks.empty()) {
-                state.next = 0;
-                state.sending = true;
-                state.sendStartMs = ::GetTickCount64();
-            }
-            state.wasUp = up;
-            if (!up || !state.sending) {
-                return;
-            }
-            while (state.next < state.chunks.size()) {
-                const auto& chunk = state.chunks[state.next];
-                if (!link.Send(Protocol::MessageType::ModelChunk, chunk.data(), static_cast<std::uint32_t>(chunk.size()))) {
-                    return;  // the ring is full: the rest next frame
-                }
-                state.next++;
-            }
-            state.sending = false;
-            Log(std::format("body: CJ's model {:08X} sent to Skyrim in {} chunks ({} ms)", state.model, state.chunks.size(),
-                ::GetTickCount64() - state.sendStartMs));
         }
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -316,11 +243,8 @@ namespace AhShitRim::CjBody
         auto* clump = a_ped->m_pRwClump;
         auto* atomic = clump ? SkinnedAtomic(clump) : nullptr;
         if (atomic && (atomic->geometry != state.geometry || Signature(atomic->geometry) != state.signature)) {
-            if (Build(a_ped)) {
-                state.wasUp = false;  // send it now if the link is up
-            }
+            Build(a_ped);  // ModelSender sends it
         }
-        Pump();
         if (!atomic || state.failed) {
             return;
         }
@@ -338,7 +262,7 @@ namespace AhShitRim::CjBody
         // CPed::PreRender then sets the breast bones (between clavicle and upper arm) from the posed
         // upper arms; hidden it never runs, and the shoulders stretched back to wherever those bones
         // were left.
-        a_ped->ShoulderBoneRotation(clump);
+        ShoulderBoneRotation(clump);
         const RwMatrix* matrices = RpHAnimHierarchyGetMatrixArray(hierarchy);
         const RwMatrix* skinToBone = RpSkinGetSkinToBoneMatrices(skin);
         const bool      local = (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) != 0;
