@@ -15,9 +15,20 @@
 // the older anchor's collision. When the game moves the player (a load door, fast travel, a script)
 // the handover goes on, re-anchored where the game put the player (protocol/cpp/anchor.h).
 // Ownership ends on F10 again, when the link goes down, the player dies, or a game loads.
+namespace AhShitRim::Cosave
+{
+    struct Record;
+}
+
 namespace AhShitRim::PlayerSync
 {
     void Install();       // hooks; call at SKSE load
     void OnDataLoaded();  // input and menu sinks, the key layout; call on kDataLoaded
     void OnGameLoad();    // Skyrim takes the player back; call on kPreLoadGame and kNewGame
+
+    // The co-save (SaveState): what to write, what a loaded save held (the handover resumes by itself
+    // once the game is up), and a new game or a load starting over.
+    void Snapshot(Cosave::Record& a_out);
+    void Restore(const Cosave::Record& a_record);
+    void Revert();
 }

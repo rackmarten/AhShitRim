@@ -23,4 +23,7 @@ namespace AhShitRim::ChunkWorld
     // under it is in, and catches him when he falls through, unless a_following (a scene puts him
     // where Skyrim's player is, collision or not).
     void Update(CPlayerPed* a_ped, CVector& a_spawn, bool a_following = false);
+
+    // Whether the ground under the handover spot is in and CJ has been let go.
+    bool Ready();
 }

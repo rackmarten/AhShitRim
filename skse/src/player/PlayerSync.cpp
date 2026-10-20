@@ -7,10 +7,12 @@
 #include "body.h"
 #include "camera.h"
 #include "collision/CollisionSampler.h"
+#include "cosave.h"
 #include "hud/SaHud.h"
 #include "input.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
+#include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
 
@@ -35,6 +37,11 @@ namespace AhShitRim::PlayerSync
             RE::FormID     seatLogged = 0;        // the furniture whose seat was last logged
             std::uint16_t  shoutCount = 0;
             bool           wasThirdPerson = false;
+            Cosave::Record resume;               // what a loaded save held
+            bool           resumePending = false;  // it had San Andreas on the player: take it again once the game is up
+            Cosave::Car    carRequest;           // the saved car, sent along with the handover that resumes
+            bool           carForNext = false;
+            std::uint32_t  carHandover = 0;      // the handover the car request belongs to
             bool           sneak = false;     // what we last told Skyrim; its own flag can drop on its own
             int            sneakResend = 0;   // frames until a sneak event the graph ignored is sent again
             std::uint32_t  inputFrame = 0;
@@ -130,7 +137,17 @@ namespace AhShitRim::PlayerSync
             if (!link.IsUp()) {
                 return;
             }
-            auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu, a_paused);
+            const bool wasted = state.owned && Vitals::IsWasted();  // the player is dying: CJ stands still
+            auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted, a_paused);
+            if (wasted) {
+                input.flags |= Protocol::kInputWasted;
+            }
+            if (state.owned && state.carHandover == state.handover && state.carRequest.model) {
+                input.carModel = state.carRequest.model;
+                std::copy(std::begin(state.carRequest.colours), std::end(state.carRequest.colours), input.carColours);
+                std::copy(std::begin(state.carRequest.offset), std::end(state.carRequest.offset), input.carOffset);
+                input.carHeading = state.carRequest.heading;
+            }
             input.handover = state.handover;
             input.heading = state.heading;
             input.anchor[0] = state.anchor.x;
@@ -382,6 +399,7 @@ namespace AhShitRim::PlayerSync
             state.owned = false;
             state.reanchoring = false;
             state.control = Scene::Control::Cj;
+            Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
             CollisionSampler::Stop();
             Activation::Clear();
             DrawSkyrimPlayer();
@@ -406,6 +424,8 @@ namespace AhShitRim::PlayerSync
         void AnchorAt(RE::PlayerCharacter* a_player)
         {
             state.handover++;
+            state.carHandover = state.carForNext ? state.handover : 0;
+            state.carForNext = false;
             state.positioned = false;
             state.anchor = a_player->GetPosition();
             state.lastPlaced = state.anchor;
@@ -436,6 +456,7 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = true;
             state.control = Scene::Control::Cj;
+            Vitals::OnTakeOver(a_player);
             state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);
@@ -457,6 +478,7 @@ namespace AhShitRim::PlayerSync
             }
             Activation::Clear();
             state.reanchoring = true;
+            Vitals::OnReanchor();
             AnchorAt(a_player);
             auto* cell = a_player->GetParentCell();
             SKSE::log::info("player sync: the player {}, CJ re-anchored (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f}, {} {:08X}, from ({:.0f},{:.0f},{:.0f}))",
@@ -566,7 +588,8 @@ namespace AhShitRim::PlayerSync
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
-            if (const auto control = ControlOf(a_player); control != state.control) {
+            // Dying, the player is nobody's to move: CJ stands where he is.
+            if (const auto control = Vitals::IsWasted() ? Scene::Control::Cj : ControlOf(a_player); control != state.control) {
                 state.control = control;
                 state.seatLogged = 0;
                 Activation::Clear();
@@ -593,6 +616,13 @@ namespace AhShitRim::PlayerSync
                     state.lastPoseFrame = pose.frame;
                 }
             }
+            Vitals::Update(a_player, valid ? &pose : nullptr, !state.reanchoring);
+            if (Vitals::IsWasted()) {
+                // Bleeding out, Skyrim may take its camera elsewhere; San Andreas's drives the view.
+                if (auto* camera = RE::PlayerCamera::GetSingleton(); camera && !camera->IsInFirstPerson()) {
+                    camera->ForceFirstPerson();
+                }
+            }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
             Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene);
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput());
@@ -613,6 +643,23 @@ namespace AhShitRim::PlayerSync
             }
         }
 
+        // A save that had San Andreas on the player: once the game is up and the link too, the handover
+        // resumes, and the car it was in goes back under CJ.
+        void TryResume(RE::PlayerCharacter* a_player)
+        {
+            auto* ui = RE::UI::GetSingleton();
+            if (!LinkService::Get().IsUp() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell()) {
+                return;
+            }
+            state.resumePending = false;
+            state.carRequest = state.resume.car;
+            state.carForNext = state.carRequest.model != 0;
+            SKSE::log::info("player sync: the loaded save had San Andreas on the player, resuming{}",
+                state.carForNext ? std::format(" in a vehicle of model {}", state.carRequest.model) : std::string());
+            TakeOver(a_player);
+            state.carForNext = false;
+        }
+
         struct UpdateHook
         {
             static void thunk(RE::PlayerCharacter* a_player, float a_delta)
@@ -626,6 +673,8 @@ namespace AhShitRim::PlayerSync
                 });
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
+                } else if (state.resumePending && !state.owned) {
+                    TryResume(a_player);
                 }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Protocol::PlayerState pose{};
@@ -839,6 +888,36 @@ namespace AhShitRim::PlayerSync
     void OnGameLoad()
     {
         state.wasThirdPerson = false;  // the loaded save has its own camera
+        state.resumePending = false;
         Release("game loading");
+    }
+
+    void Snapshot(Cosave::Record& a_out)
+    {
+        a_out = {};
+        a_out.handover = state.owned;
+        a_out.armor = Vitals::Armor();
+        Protocol::PlayerState pose{};
+        if (state.owned && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 && pose.handover == state.handover &&
+            (pose.flags & Protocol::kPlayerInVehicle) != 0 && pose.vehicleModel && Pose::Finite(pose)) {
+            a_out.car.model = pose.vehicleModel;
+            std::copy(std::begin(pose.vehicleColours), std::end(pose.vehicleColours), a_out.car.colours);
+            std::copy(std::begin(pose.vehicleOffset), std::end(pose.vehicleOffset), a_out.car.offset);
+            a_out.car.heading = pose.vehicleHeading;
+        }
+    }
+
+    void Restore(const Cosave::Record& a_record)
+    {
+        state.resume = a_record;
+        state.resumePending = a_record.handover;
+        Vitals::SetArmor(a_record.armor);
+    }
+
+    void Revert()
+    {
+        state.resume = {};
+        state.resumePending = false;
+        Vitals::SetArmor(0.0f);
     }
 }

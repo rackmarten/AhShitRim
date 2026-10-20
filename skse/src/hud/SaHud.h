@@ -32,6 +32,8 @@ namespace AhShitRim::SaHud
     void FadeTo(float a_black, float a_seconds);  // 0 = clear, 1 = black over everything
     void SetLetterbox(bool a_on);                 // cutscene bars, sliding in and out
     void SetWantedLevel(int a_stars);             // 0..6; 0 shows none
+    void SetArmor(float a_fraction);              // 0..1 of the armour bar; 0 hides it
+    void SetDesaturation(float a_amount);         // 0..1, a grey wash over the picture (Wasted)
     void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
     void ClearText();                             // every text style, the fade and the bars off
 

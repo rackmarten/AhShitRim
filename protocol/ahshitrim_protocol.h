@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 10;
+    inline constexpr std::uint32_t kProtocolVersion = 11;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -42,14 +42,14 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
     inline constexpr std::uint32_t kOffsetPlayerSlot = 272;              // v9: after the larger input slot
-    inline constexpr std::uint32_t kOffsetAudioSlot = 336;               // v7
-    inline constexpr std::uint32_t kOffsetBodySlot = 384;                // v5
-    inline constexpr std::uint32_t kOffsetVehicleSlots = 2304;           // v6: kVehicleMax BodySlots
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 9984;       // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetAudioSlot = 384;               // v7; v11: after the larger player slot
+    inline constexpr std::uint32_t kOffsetBodySlot = 448;                // v5
+    inline constexpr std::uint32_t kOffsetVehicleSlots = 2368;           // v6: kVehicleMax BodySlots
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 10048;      // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4204352;        // v5
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4204416;        // v5
     inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's and the vehicles' models
-    inline constexpr std::uint32_t kMappingSize = 8398720;               // 4204352 + 64 + 4 MiB
+    inline constexpr std::uint32_t kMappingSize = 8398784;               // 4204416 + 64 + 4 MiB
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -98,6 +98,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kInputFace = 0x4;        // InputState.flags (v9): CJ stands still and turns to sceneHeading (the one he talks to)
     inline constexpr std::uint32_t kInputScripted = 0x8;    // InputState.flags (v9): Skyrim moves the player in a scene; CJ follows sceneOffset and sceneHeading
     inline constexpr std::uint32_t kInputSeated = 0x10;     // InputState.flags (v9), with kInputScripted: the player sits
+    inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas runs in slow motion and ignores damage
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;
@@ -129,7 +130,12 @@ namespace AhShitRim::Protocol
         float         sceneOffset[3];  // v9, kInputScripted: the Skyrim player's feet relative to anchor
         float         sceneHeading;    // v9, kInputScripted: the player's heading; kInputFace: the heading CJ turns to (Skyrim radians)
         std::uint16_t shoutCount;      // v9: counts shouts the player let out; a new value plays CJ's gesture
+        std::uint16_t carModel;        // v11: San Andreas vehicle model id to put CJ in once the ground is in (a loaded save's car), 0 = none; only read with a new handover
+        std::uint16_t reserved2;
+        std::uint8_t  carColours[4];   // v11: the car's four colour table indices
         std::uint16_t reserved0;
+        float         carOffset[3];    // v11: the car relative to the anchor, Skyrim units
+        float         carHeading;      // v11: the car's heading, Skyrim radians
         std::uint32_t reserved1;
     };
 
@@ -138,7 +144,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[48];  // v9: keeps the body slot on a 64-byte boundary
+        std::uint8_t  pad[24];  // v9: keeps the later slots on a 64-byte boundary
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -163,8 +169,12 @@ namespace AhShitRim::Protocol
         std::uint32_t handover;     // InputState.handover this pose belongs to
         std::int8_t   radioStation;  // v10: the radio dial's station in CJ's vehicle (Radio::StationName: 1..11 San Andreas's, 12 Radio Sovngarde, 13 Sweetroll FM, 14 off), kRadioNone if none
         std::uint8_t  reserved0;
-        std::uint16_t reserved1;
-        std::uint32_t reserved2;
+        std::uint16_t vehicleModel;  // v11: San Andreas model id of the vehicle CJ is in, 0 on foot
+        std::uint8_t  vehicleColours[4];  // v11: its colour table indices
+        float         vehicleOffset[3];   // v11: the vehicle relative to CJ's feet, Skyrim units
+        float         vehicleHeading;     // v11: its heading, Skyrim radians
+        float         damage;             // v11: damage San Andreas has worked out for CJ since it started, in its health points (100 = a full health bar); only counted while Skyrim has the player
+        std::uint32_t reserved1;
     };
 
     struct PlayerSlot
@@ -172,6 +182,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         PlayerState   value;
+        std::uint8_t  pad[24];  // v11: the audio slot follows on a 64-byte boundary
     };
 
     // Skyrim -> San Andreas, every Skyrim frame (v7): how loud San Andreas plays, from Skyrim's audio
@@ -189,7 +200,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         AudioState    value;
-        std::uint8_t  pad[8];
+        std::uint8_t  pad[24];  // v11: keeps the body slot on a 64-byte boundary
     };
 
     inline constexpr std::uint32_t kBodyValid = 0x1;    // BodyState.flags: the bones and camera are set
@@ -352,7 +363,7 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 88);
+    static_assert(sizeof(InputState) == 112);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
@@ -367,8 +378,12 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, sceneOffset) == 64);
     static_assert(offsetof(InputState, sceneHeading) == 76);
     static_assert(offsetof(InputState, shoutCount) == 80);
+    static_assert(offsetof(InputState, carModel) == 82);
+    static_assert(offsetof(InputState, carColours) == 86);
+    static_assert(offsetof(InputState, carOffset) == 92);
+    static_assert(offsetof(InputState, carHeading) == 104);
     static_assert(sizeof(InputSlot) == 144);
-    static_assert(sizeof(PlayerState) == 56);
+    static_assert(sizeof(PlayerState) == 80);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);
     static_assert(offsetof(PlayerState, heading) == 32);
@@ -376,9 +391,14 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(PlayerState, viewPitch) == 40);
     static_assert(offsetof(PlayerState, handover) == 44);
     static_assert(offsetof(PlayerState, radioStation) == 48);
-    static_assert(sizeof(PlayerSlot) == 64);
+    static_assert(offsetof(PlayerState, vehicleModel) == 50);
+    static_assert(offsetof(PlayerState, vehicleColours) == 52);
+    static_assert(offsetof(PlayerState, vehicleOffset) == 56);
+    static_assert(offsetof(PlayerState, vehicleHeading) == 68);
+    static_assert(offsetof(PlayerState, damage) == 72);
+    static_assert(sizeof(PlayerSlot) == 112);
     static_assert(sizeof(AudioState) == 32);
-    static_assert(sizeof(AudioSlot) == 48);
+    static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
     static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28);
     static_assert(offsetof(BodyState, feet) == 24);

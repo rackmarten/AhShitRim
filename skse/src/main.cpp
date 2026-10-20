@@ -6,6 +6,7 @@
 #include "collision/CollisionSampler.h"
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
+#include "player/SaveState.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
@@ -18,6 +19,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
     AhShitRim::LinkService::Start();
     AhShitRim::PlayerSync::Install();
+    AhShitRim::SaveState::Install();
 
     SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
         switch (a_msg->type) {

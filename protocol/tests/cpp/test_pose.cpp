@@ -73,3 +73,31 @@ TEST_CASE("a pose with NaN in it is not finite")
     s.velocity[2] = std::nanf("");
     CHECK_FALSE(Finite(s));
 }
+
+TEST_CASE("the vehicle CJ is in and the damage San Andreas worked out reach Skyrim in its units")
+{
+    SanAndreasPose sa;
+    sa.forward = { 0.0f, 1.0f, 0.0f };
+    sa.view = { 0.0f, 1.0f, 0.0f };
+    CHECK(ToPlayerState(sa, 1, 1).vehicleModel == 0);
+
+    sa.vehicleModel = 495;
+    sa.vehicleColours[0] = 3;
+    sa.vehicleColours[3] = 9;
+    sa.vehicleOffset = { 1.0f, 0.0f, -0.5f };
+    sa.vehicleForward = { 1.0f, 0.0f, 0.0f };  // east
+    sa.damage = 12.5f;
+    const auto s = ToPlayerState(sa, 1, 1);
+    CHECK(s.vehicleModel == 495);
+    CHECK(s.vehicleColours[0] == 3);
+    CHECK(s.vehicleColours[3] == 9);
+    CHECK(s.vehicleOffset[0] == doctest::Approx(kUnitsPerMeter));
+    CHECK(s.vehicleOffset[2] == doctest::Approx(-0.5f * kUnitsPerMeter));
+    CHECK(s.vehicleHeading == doctest::Approx(kPi / 2));
+    CHECK(s.damage == doctest::Approx(12.5f));
+    CHECK(Finite(s));
+
+    Protocol::PlayerState bad = s;
+    bad.damage = std::nanf("");
+    CHECK_FALSE(Finite(bad));
+}
