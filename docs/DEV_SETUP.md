@@ -79,13 +79,13 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 scripts/build.ps1                  # both halves, Release
 scripts/build.ps1 -Target skse     # SKSE plugin only (-Configuration Debug for a debug build)
 scripts/build.ps1 -Target sa       # San Andreas ASI only
-scripts/test.ps1                   # game-free unit tests: protocol layout, link, ring, input mapping, pose, collision chunks, floating origin, fall rescue (doctest)
+scripts/test.ps1                   # game-free unit tests: protocol layout, link, rings, input mapping, pose, collision chunks, floating origin, fall rescue, CJ's model, skinning, interpolation, texture decoding (doctest)
 scripts/deploy-local.ps1           # copy both plugins into the games (close the games first)
 scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader log
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/restart-games.ps1 -Build   # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim
-scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it
+scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones
 ```
 
 From WSL, call the same scripts through Windows PowerShell, e.g. `powershell.exe -File scripts/build.ps1`.

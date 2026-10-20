@@ -1,5 +1,8 @@
 #include "player/PlayerSync.h"
 
+#include "body/CjView.h"
+#include "body.h"
+#include "camera.h"
 #include "collision/CollisionSampler.h"
 #include "input.h"
 #include "link/LinkService.h"
@@ -27,14 +30,26 @@ namespace AhShitRim::PlayerSync
             int            sneakResend = 0;   // frames until a sneak event the graph ignored is sent again
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
+            Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
+            bool           playerHidden = false;  // we culled the player's own 3D for CJ's
+            RE::NiAVObject* culledRoot[2] = {};   // third- and first-person roots this culled
+            float          savedFov = 0.0f;       // Skyrim's field of view before San Andreas's, 0 = not changed
+            bool           cameraParentLogged = false;
+            bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
             int           frames = 0;
             int           placed = 0;
             int           newPoses = 0;
+            int           drawn = 0;
             std::uint32_t lastPoseFrame = 0;
         } state;
+
+        double NowMs()
+        {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
 
         // A Skyrim menu has the input: the game is paused, or it shows its cursor (dialogue, which
         // doesn't pause). CJ then stands still and the mouse doesn't turn San Andreas's camera.
@@ -83,6 +98,158 @@ namespace AhShitRim::PlayerSync
             }
         }
 
+        // ---- CJ in Skyrim ----
+
+        // The player's own 3D (third- and first-person) is hidden while CJ is drawn in its place.
+        // Only the roots this culled are shown again: Skyrim culls one of them itself depending on
+        // the camera, and that stays as it was.
+        void HidePlayer(RE::PlayerCharacter* a_player, bool a_hide)
+        {
+            for (int i = 0; i < 2; i++) {
+                auto* root = a_player->Get3D(i == 1);
+                if (!root) {
+                    continue;
+                }
+                if (a_hide && !root->GetAppCulled()) {
+                    root->SetAppCulled(true);
+                    state.culledRoot[i] = root;
+                } else if (!a_hide && state.culledRoot[i] == root) {
+                    root->SetAppCulled(false);
+                }
+                if (!a_hide) {
+                    state.culledRoot[i] = nullptr;
+                }
+            }
+            state.playerHidden = a_hide;
+        }
+
+        // Skyrim's sneak indicator (the eye, a clip of the HUD movie) stays up after CJ stands up from a
+        // crouch, as it did after Kumpo stood up in PerkeleRim, so it is hidden every frame CJ doesn't
+        // crouch, and shown again once.
+        void HideSneakEye(bool a_hide)
+        {
+            static bool hidden = false;
+            if (!a_hide && !hidden) {
+                return;
+            }
+            hidden = a_hide;
+            SKSE::GetTaskInterface()->AddUITask([a_hide]() {
+                auto* ui = RE::UI::GetSingleton();
+                auto  menu = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
+                auto* movie = menu ? menu->uiMovie.get() : nullptr;
+                RE::GFxValue eye;
+                if (!movie || !movie->GetVariable(&eye, "_root.HUDMovieBaseInstance.StealthMeterInstance") || !eye.IsDisplayObject()) {
+                    static bool logged = false;
+                    if (movie && !std::exchange(logged, true)) {
+                        SKSE::log::warn("player sync: the sneak eye clip (_root.HUDMovieBaseInstance.StealthMeterInstance) was not found");
+                    }
+                    return;
+                }
+                eye.SetMember("_visible", RE::GFxValue(!a_hide));
+            });
+        }
+
+        // Back to Skyrim drawing its own player: CJ hidden, the player's 3D and field of view back.
+        void DrawSkyrimPlayer()
+        {
+            CjView::Hide();
+            HideSneakEye(false);
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (player && state.playerHidden) {
+                HidePlayer(player, false);
+            }
+            if (state.savedFov > 0.0f) {
+                if (auto* camera = RE::PlayerCamera::GetSingleton()) {
+                    camera->GetRuntimeData2().worldFOV = state.savedFov;
+                }
+                state.savedFov = 0.0f;
+            }
+            state.body.Reset();
+        }
+
+        // Puts Skyrim's camera where San Andreas's is (BodyState camera, relative to the handover
+        // spot), looking where it looks, with its field of view, so the view behind CJ is San
+        // Andreas's own. Skyrim's camera stays in its first-person state, which only draws the
+        // player's hidden arms; Skyrim builds the camera before this hook (from the angles the
+        // player had, a_fromHeading and a_fromPitch), so the finished camera node is overridden, as
+        // PerkeleRim does for MSC's camera.
+        bool PoseCamera(const Protocol::BodyState& a_body, float a_fromHeading, float a_fromPitch)
+        {
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            auto* root = camera ? camera->cameraRoot.get() : nullptr;
+            if (!root || !camera->IsInFirstPerson()) {
+                return false;
+            }
+            Camera::Matrix built, posed;
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) {
+                    built[r][c] = root->world.rotate.entry[r][c];
+                }
+            }
+            const Pose::Vec3 forward{ a_body.cameraForward[0], a_body.cameraForward[1], a_body.cameraForward[2] };
+            Camera::Retarget(built, a_fromHeading, a_fromPitch, Pose::HeadingOf(forward.x, forward.y), Pose::PitchOf(forward), 0.0f, posed);
+            RE::NiMatrix3 rotate;
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) {
+                    rotate.entry[r][c] = posed[r][c];
+                }
+            }
+            const auto at = state.anchor + RE::NiPoint3(a_body.cameraPosition[0], a_body.cameraPosition[1], a_body.cameraPosition[2]);
+            // Update keeps the node's local transform, so give it the wanted world one in its parent's
+            // frame (scale 1).
+            if (auto* parent = root->parent) {
+                const auto toParent = parent->world.rotate.Transpose();
+                root->local.rotate = toParent * rotate;
+                root->local.translate = toParent * (at - parent->world.translate);
+                if (!state.cameraParentLogged) {
+                    state.cameraParentLogged = true;
+                    SKSE::log::info("player sync: camera root hangs under {}", parent->name.c_str());
+                }
+            } else {
+                root->local.rotate = rotate;
+                root->local.translate = at;
+            }
+            RE::NiUpdateData update{};
+            root->Update(update);
+            if (a_body.cameraFov > 1.0f && a_body.cameraFov < 170.0f) {
+                auto& data = camera->GetRuntimeData2();
+                if (state.savedFov <= 0.0f) {
+                    state.savedFov = data.worldFOV;
+                }
+                data.worldFOV = a_body.cameraFov;
+            }
+            return true;
+        }
+
+        // CJ drawn where San Andreas has him, posed by his skeleton, and Skyrim's camera on San
+        // Andreas's, both smoothed between San Andreas's frames. Until his model and skeleton are
+        // in, Skyrim's first-person view of its own player as before.
+        void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch)
+        {
+            const double        now = NowMs();
+            Protocol::BodyState body{};
+            if (LinkService::Get().ReadBody(body) && (body.flags & Protocol::kBodyValid) != 0 && body.handover == state.handover &&
+                body.boneCount <= Protocol::kBodyBoneMax && Body::Finite(body)) {
+                state.body.Push(body, now);
+            }
+            Protocol::BodyState pose{};
+            const std::uint32_t model = CjView::Model();
+            if (model == 0 || !state.body.Sample(now, pose) || pose.handover != state.handover || pose.model != model) {
+                CjView::Hide();
+                HidePlayer(a_player, false);
+                return;
+            }
+            CjView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+            HidePlayer(a_player, true);
+            PoseCamera(pose, a_fromHeading, a_fromPitch);
+            state.drawn++;
+            if (!state.cjLogged) {
+                state.cjLogged = true;
+                SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", model,
+                    pose.cameraFov);
+            }
+        }
+
         void Release(const char* a_reason)
         {
             if (!state.owned) {
@@ -90,6 +257,7 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = false;
             CollisionSampler::Stop();
+            DrawSkyrimPlayer();
             state.input.ReleaseAll();
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && (state.sneak || player->IsSneaking())) {
                 player->AsActorState()->actorState1.sneaking = false;
@@ -127,7 +295,9 @@ namespace AhShitRim::PlayerSync
             state.cell = a_player->GetParentCell();
             state.heading = a_player->GetAngleZ();
             state.statTime = 0.0f;
-            state.frames = state.placed = state.newPoses = 0;
+            state.frames = state.placed = state.newPoses = state.drawn = 0;
+            state.body.Reset();
+            state.cjLogged = false;
             Publish();
             auto* worldspace = a_player->GetWorldspace();
             CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
@@ -205,6 +375,9 @@ namespace AhShitRim::PlayerSync
             Protocol::PlayerState pose{};
             const bool valid = link.ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 &&
                                pose.handover == state.handover && Pose::Finite(pose);
+            // The angles Skyrim built this frame's camera for, before Place changes them.
+            const float fromHeading = a_player->GetAngleZ();
+            const float fromPitch = a_player->data.angle.x;
             if (valid) {
                 Place(a_player, pose);
                 state.placed++;
@@ -214,17 +387,19 @@ namespace AhShitRim::PlayerSync
                 }
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
+            DrawCj(a_player, fromHeading, fromPitch);
+            HideSneakEye(!state.sneak);
 
             state.frames++;
             state.statTime += a_delta;
             if (state.statTime >= 1.0f) {
                 SKSE::log::info(
-                    "player sync: frames={} placed={} new poses={} offset=({:.0f},{:.0f},{:.0f}) speed={:.1f} m/s heading={:.2f} view=({:.2f},{:.2f}){}",
-                    state.frames, state.placed, state.newPoses, pose.offset[0], pose.offset[1], pose.offset[2],
+                    "player sync: frames={} placed={} new poses={} cj drawn={} offset=({:.0f},{:.0f},{:.0f}) speed={:.1f} m/s heading={:.2f} view=({:.2f},{:.2f}){}",
+                    state.frames, state.placed, state.newPoses, state.drawn, pose.offset[0], pose.offset[1], pose.offset[2],
                     std::hypot(pose.velocity[0], pose.velocity[1]) * Pose::kMetersPerUnit, pose.heading, pose.viewHeading,
                     pose.viewPitch, (pose.flags & Protocol::kPlayerGrounded) ? "" : " in the air");
                 state.statTime = 0.0f;
-                state.frames = state.placed = state.newPoses = 0;
+                state.frames = state.placed = state.newPoses = state.drawn = 0;
             }
         }
 
@@ -233,6 +408,12 @@ namespace AhShitRim::PlayerSync
             static void thunk(RE::PlayerCharacter* a_player, float a_delta)
             {
                 original(a_player, a_delta);
+                // CJ's model comes whenever the link comes up, also while Skyrim has the player.
+                LinkService::Get().Receive([](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+                    if (a_type == Protocol::MessageType::ModelChunk) {
+                        CjView::OnChunk(a_data, a_size);
+                    }
+                });
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 }

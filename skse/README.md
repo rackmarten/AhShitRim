@@ -1,8 +1,8 @@
 # skse
 
-SKSE plugin (C++, CommonLibSSE-NG) that runs inside Skyrim. It samples Skyrim's collision for San Andreas; later increments draw CJ and his car; see [docs/DESIGN.md](../docs/DESIGN.md).
+SKSE plugin (C++, CommonLibSSE-NG) that runs inside Skyrim. It samples Skyrim's collision for San Andreas and draws CJ from San Andreas's own model; a later increment draws his car; see [docs/DESIGN.md](../docs/DESIGN.md).
 
-It logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`) and, in `src/player/PlayerSync.cpp`, hands the player to San Andreas and back with F10: Skyrim's input goes to CJ, and CJ's pose moves the Skyrim player. Meanwhile `src/collision/` (ported from PerkeleRim) streams the terrain and statics around the player to San Andreas. Lines are prefixed `link:`, `player sync:` and `collision:`.
+It logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, starts the link to the San Andreas plugin (`src/link`, built on `protocol/cpp`) and, in `src/player/PlayerSync.cpp`, hands the player to San Andreas and back with F10: Skyrim's input goes to CJ, and CJ's pose moves the Skyrim player. Meanwhile `src/collision/` (ported from PerkeleRim) streams the terrain and statics around the player to San Andreas, and `src/body/CjView.cpp` builds CJ's model when San Andreas sends it and draws him posed by his skeleton, while PlayerSync puts Skyrim's camera on San Andreas's. Lines are prefixed `link:`, `player sync:`, `collision:` and `cj view:`.
 
 - `src/` plugin source
 - `extern/CommonLibSSE-NG` git submodule ([alandtse/CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG), pinned to release tag `v10.1.0`)

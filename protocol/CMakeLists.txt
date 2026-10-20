@@ -1,5 +1,5 @@
-# Unit tests for the link (header layout, version check, handshake, heartbeat, slots), the input
-# mapping and the pose conversion.
+# Unit tests for the link (header layout, version check, handshake, heartbeat, slots, rings), the input
+# mapping, the pose conversion, the ground, and CJ's model and skeleton.
 # Standalone (no CommonLibSSE-NG, no plugin-sdk), so it builds in seconds. Run with scripts/test.ps1.
 cmake_minimum_required(VERSION 3.21)
 
@@ -20,6 +20,10 @@ add_executable(protocol_tests
     tests/cpp/test_collision.cpp
     tests/cpp/test_ground.cpp
     tests/cpp/test_fall_rescue.cpp
+    tests/cpp/test_skin_model.cpp
+    tests/cpp/test_skin_build.cpp
+    tests/cpp/test_body.cpp
+    tests/cpp/test_texture_decode.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

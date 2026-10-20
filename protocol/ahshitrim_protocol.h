@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 4;
+    inline constexpr std::uint32_t kProtocolVersion = 5;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -30,14 +30,27 @@ namespace AhShitRim::Protocol
     // Skyrim's world (0, 0): chunk (x, y) starts at (x * size, y * size).
     inline constexpr std::uint32_t kCollisionChunkUnits = 2048;
 
+    // CJ's skeleton has 32 bones; room for any San Andreas ped's.
+    inline constexpr std::uint32_t kBodyBoneMax = 64;
+
     // Section layout (byte offsets from the start of the mapping): the header, the latest-value
-    // slots, then the ring from Skyrim to San Andreas.
+    // slots, the ring from Skyrim to San Andreas, then the ring back (v5).
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
     inline constexpr std::uint32_t kOffsetPlayerSlot = 208;
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 320;        // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetBodySlot = 320;                // v5
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 2240;       // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kMappingSize = 4194688;               // 320 + 64 + 4 MiB
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4196608;        // v5
+    inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's model
+    inline constexpr std::uint32_t kMappingSize = 8390976;               // 4196608 + 64 + 4 MiB
+
+    // A model goes over in ModelChunk messages of at most this many bytes, and is at most
+    // kModelSizeMax whole (protocol/cpp/skin_model.h).
+    inline constexpr std::uint32_t kModelChunkMax = 262144;
+    inline constexpr std::uint32_t kModelSizeMax = 16777216;
+    inline constexpr std::uint32_t kModelTextureSizeMax = 2048;
+    inline constexpr std::uint32_t kModelMeshVertexMax = 65535;
 
     enum class Side : std::uint32_t
     {
@@ -132,12 +145,50 @@ namespace AhShitRim::Protocol
         std::uint8_t  pad[8];
     };
 
-    // ---- Ring (single producer, single consumer) ----
+    inline constexpr std::uint32_t kBodyValid = 0x1;  // BodyState.flags: the bones and camera are set
+
+    // One bone's skinning transform (v5): takes a vertex of the model (bind pose, Skyrim units) to
+    // its place relative to CJ's feet (BodyState.feet), Skyrim axes and units:
+    // v' = rotate(rotation, v) + translation.
+    struct BodyBone
+    {
+        float rotation[4];  // unit quaternion x, y, z, w
+        float translation[3];
+    };
+
+    // San Andreas -> Skyrim, every San Andreas frame (v5): CJ's skeleton and San Andreas's camera,
+    // for drawing CJ and putting Skyrim's camera where San Andreas's is. feet and the camera are
+    // relative to where the handover put CJ's feet (InputState.anchor in Skyrim), the bones to
+    // feet; Skyrim axes and units.
+    struct BodyState
+    {
+        std::uint32_t frame;             // San Andreas frame counter, as PlayerState.frame
+        std::uint32_t flags;             // kBody*
+        std::uint32_t handover;          // InputState.handover this belongs to
+        std::uint32_t model;             // ModelChunkHeader.model the bones belong to
+        std::uint32_t boneCount;         // bones in use, the model's SkinModelHeader.boneCount
+        std::uint32_t timeMs;            // San Andreas's real-time clock, for Skyrim's interpolation
+        float         feet[3];           // CJ's feet
+        float         cameraPosition[3];
+        float         cameraForward[3];  // unit vector
+        float         cameraFov;         // degrees, horizontal for a 4:3 screen: Skyrim's own fov convention
+        BodyBone      bones[kBodyBoneMax];
+    };
+
+    struct BodySlot
+    {
+        std::uint32_t seq;
+        std::uint32_t reserved;
+        BodyState     value;
+        std::uint8_t  pad[56];
+    };
+
+    // ---- Rings (single producer, single consumer) ----
     //
-    // Skyrim produces, San Andreas consumes. head and tail are monotonic byte counts; position =
-    // count % capacity. A record is a MessageHeader plus payload and may wrap around the end. San
-    // Andreas drops whatever is left in the ring when it attaches, so stale messages from an earlier
-    // session never arrive.
+    // One each way: Skyrim to San Andreas (collision chunks), San Andreas to Skyrim (CJ's model,
+    // v5). head and tail are monotonic byte counts; position = count % capacity. A record is a
+    // MessageHeader plus payload and may wrap around the end. The consumer drops whatever is left in
+    // its ring when it attaches, so stale messages from an earlier session never arrive.
 
     struct RingHeader
     {
@@ -152,6 +203,7 @@ namespace AhShitRim::Protocol
     enum class MessageType : std::uint16_t
     {
         CollisionChunk = 1,  // Skyrim -> San Andreas
+        ModelChunk = 2,      // San Andreas -> Skyrim (v5)
     };
 
     struct MessageHeader
@@ -175,6 +227,61 @@ namespace AhShitRim::Protocol
         std::uint32_t vertexCount;
         std::uint32_t indexCount;
         std::uint32_t reserved;
+    };
+
+    // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
+    // arrive in order; offset 0 starts a model.
+    struct ModelChunkHeader
+    {
+        std::uint32_t model;      // id, new for every model San Andreas sends
+        std::uint32_t totalSize;  // the whole blob
+        std::uint32_t offset;
+        std::uint32_t size;
+    };
+
+    // The model blob (v5, protocol/cpp/skin_model.h): SkinModelHeader, boneCount uint32 bone ids
+    // (San Andreas's node ids, for the logs), the textures (SkinTexture + width * height RGBA8
+    // bytes, top row first), then the meshes (SkinMesh + vertexCount SkinVertex + indexCount uint16
+    // triangle indices).
+    inline constexpr std::uint32_t kSkinTextureRgba8 = 1;
+    inline constexpr std::uint32_t kSkinMeshCutout = 0x1;  // alpha tested
+    inline constexpr std::uint32_t kSkinMeshBlend = 0x2;   // alpha blended
+
+    struct SkinModelHeader
+    {
+        char          name[32];
+        std::uint32_t textureCount;
+        std::uint32_t meshCount;
+        std::uint32_t boneCount;
+        std::uint32_t reserved;
+    };
+
+    struct SkinTexture
+    {
+        std::uint32_t width;
+        std::uint32_t height;
+        std::uint32_t format;  // kSkinTextureRgba8
+        std::uint32_t reserved;
+    };
+
+    struct SkinMesh
+    {
+        std::int32_t  texture;  // index into the textures, -1 = none
+        std::uint32_t vertexCount;
+        std::uint32_t indexCount;
+        std::uint32_t flags;     // kSkinMesh*
+        std::uint8_t  color[4];  // RGBA, multiplies the texture
+        std::uint32_t reserved;
+    };
+
+    // Bind pose, Skyrim axes and units; triangles wind counterclockwise seen from outside.
+    struct SkinVertex
+    {
+        float        position[3];
+        float        normal[3];
+        float        uv[2];
+        std::uint8_t bones[4];  // BodyState.bones indices
+        float        weights[4];
     };
 
 #pragma pack(pop)
@@ -210,6 +317,12 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(PlayerState, viewPitch) == 40);
     static_assert(offsetof(PlayerState, handover) == 44);
     static_assert(sizeof(PlayerSlot) == 64);
+    static_assert(sizeof(BodyBone) == 28);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28);
+    static_assert(offsetof(BodyState, feet) == 24);
+    static_assert(offsetof(BodyState, cameraFov) == 60);
+    static_assert(offsetof(BodyState, bones) == 64);
+    static_assert(sizeof(BodySlot) == 1920);
     static_assert(sizeof(RingHeader) == 64);
     static_assert(offsetof(RingHeader, head) == 8);
     static_assert(offsetof(RingHeader, tail) == 32);
@@ -219,13 +332,23 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(CollisionChunkHeader, origin) == 16);
     static_assert(offsetof(CollisionChunkHeader, vertexCount) == 28);
     static_assert(offsetof(CollisionChunkHeader, indexCount) == 32);
+    static_assert(sizeof(ModelChunkHeader) == 16);
+    static_assert(sizeof(SkinModelHeader) == 48);
+    static_assert(sizeof(SkinTexture) == 16);
+    static_assert(sizeof(SkinMesh) == 24);
+    static_assert(sizeof(SkinVertex) == 52);
+    static_assert(offsetof(SkinVertex, bones) == 32);
 
     // Section layout follows from the struct sizes.
     static_assert(kOffsetInputSlot == kOffsetHeader + sizeof(LinkHeader));
     static_assert(kOffsetPlayerSlot == kOffsetInputSlot + sizeof(InputSlot));
     static_assert((kOffsetInputSlot + offsetof(InputSlot, value) + offsetof(InputState, mouseX)) % 8 == 0);
-    static_assert(kOffsetRingToSanAndreas >= kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetBodySlot >= kOffsetPlayerSlot + sizeof(PlayerSlot));
+    static_assert(kOffsetBodySlot % 64 == 0);
+    static_assert(kOffsetRingToSanAndreas == kOffsetBodySlot + sizeof(BodySlot));
     static_assert(kOffsetRingToSanAndreas % 64 == 0);
-    static_assert(kMappingSize == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
+    static_assert(kOffsetRingToSkyrim == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
+    static_assert(kMappingSize == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);
     static_assert((kRingToSanAndreasCapacity & (kRingToSanAndreasCapacity - 1)) == 0);
+    static_assert((kRingToSkyrimCapacity & (kRingToSkyrimCapacity - 1)) == 0);
 }

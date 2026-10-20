@@ -8,7 +8,7 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 ## Status
 
-**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's WASD and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and his movement moves the Skyrim player. Nothing from San Andreas is drawn in Skyrim yet. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
+**Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's WASD and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)).
 
 Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -38,6 +38,11 @@ San Andreas walking and driving on Skyrim's ground is the hardest part, so it co
 - No guns, NPCs, quests or wanted level yet.
 
 San Andreas loads collision as static per-sector files, so Skyrim's ground is built there at runtime: collision objects spawned around CJ from the chunks Skyrim streams, under a floating origin (see [docs/DESIGN.md](docs/DESIGN.md#ground-skyrims-collision-in-san-andreas)). Once CJ and the car stand on Skyrim's ground, everything after it is known work.
+
+## Known issues
+
+- While San Andreas has the player, the view is San Andreas's third-person camera only. First person isn't supported yet.
+- CJ casts no shadow in Skyrim yet, and always wears his starting clothes (vest, jeans, sneakers).
 
 ## Requirements (planned)
 

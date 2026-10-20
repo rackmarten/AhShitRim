@@ -49,10 +49,12 @@ namespace AhShitRim
         bool ReadInput(Protocol::InputState& a_out) const;
         void WritePlayer(const Protocol::PlayerState& a_value);
         bool ReadPlayer(Protocol::PlayerState& a_out) const;
+        void WriteBody(const Protocol::BodyState& a_value);
+        bool ReadBody(Protocol::BodyState& a_out) const;
 
-        // The ring from Skyrim to San Andreas. Send (Skyrim side only) returns false when the link is
-        // down, the ring is full or the message can never fit. Receive (San Andreas side only) drains
-        // it, calling a_handler(type, payload, size) per message, and returns the message count.
+        // The rings: Send puts a message in the ring to the other side, and returns false when the
+        // link is down, the ring is full or the message can never fit. Receive drains the ring to
+        // our side, calling a_handler(type, payload, size) per message, and returns the message count.
         bool        Send(Protocol::MessageType a_type, const void* a_payload, std::uint32_t a_size);
         std::size_t Receive(const std::function<void(Protocol::MessageType, const std::uint8_t*, std::uint32_t)>& a_handler);
 

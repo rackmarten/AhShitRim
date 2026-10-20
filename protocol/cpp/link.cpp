@@ -36,9 +36,10 @@ namespace AhShitRim
             return a_side == Side::Skyrim ? Side::SanAndreas : Side::Skyrim;
         }
 
-        RingHeader* Ring(std::uint8_t* a_base)
+        // The ring a_side reads: Skyrim reads the one from San Andreas and the other way round.
+        RingHeader* Inbound(std::uint8_t* a_base, Side a_side)
         {
-            return At<RingHeader>(a_base, kOffsetRingToSanAndreas);
+            return At<RingHeader>(a_base, a_side == Side::SanAndreas ? kOffsetRingToSanAndreas : kOffsetRingToSkyrim);
         }
 
         std::uint8_t* RingData(RingHeader* a_ring)
@@ -139,7 +140,8 @@ namespace AhShitRim
             header->headerSize = sizeof(LinkHeader);
             header->mappingSize = kMappingSize;
             header->creatorVersion = kProtocolVersion;
-            Ring(base)->capacity = kRingToSanAndreasCapacity;
+            Inbound(base, Side::SanAndreas)->capacity = kRingToSanAndreasCapacity;
+            Inbound(base, Side::Skyrim)->capacity = kRingToSkyrimCapacity;
             Atomic(header->magic).store(kMagic, std::memory_order_release);
         }
 
@@ -185,11 +187,9 @@ namespace AhShitRim
                     header->creatorVersion, SideName(_side), kProtocolVersion));
                 return;
             }
-            if (_side == Side::SanAndreas) {
-                // Anything still in the ring was sent to an earlier San Andreas.
-                RingHeader* ring = Ring(Base());
-                Atomic(ring->tail).store(Atomic(ring->head).load(std::memory_order_acquire), std::memory_order_release);
-            }
+            // Anything still in our ring was sent to an earlier instance of us.
+            RingHeader* ring = Inbound(Base(), _side);
+            Atomic(ring->tail).store(Atomic(ring->head).load(std::memory_order_acquire), std::memory_order_release);
             _attached.store(true, std::memory_order_release);
         }
 
@@ -276,12 +276,24 @@ namespace AhShitRim
         return IsUp() && SeqRead(At<PlayerSlot>(Base(), kOffsetPlayerSlot), a_out);
     }
 
+    void Link::WriteBody(const BodyState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<BodySlot>(base, kOffsetBodySlot), a_value);
+        }
+    }
+
+    bool Link::ReadBody(BodyState& a_out) const
+    {
+        return IsUp() && SeqRead(At<BodySlot>(Base(), kOffsetBodySlot), a_out);
+    }
+
     bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
     {
-        if (_side != Side::Skyrim || !IsUp()) {
+        if (!IsUp()) {
             return false;
         }
-        RingHeader*         ring = Ring(Base());
+        RingHeader*         ring = Inbound(Base(), Other(_side));
         const std::uint64_t total = sizeof(MessageHeader) + static_cast<std::uint64_t>(a_size);
         const std::uint64_t head = Atomic(ring->head).load(std::memory_order_relaxed);
         const std::uint64_t tail = Atomic(ring->tail).load(std::memory_order_acquire);
@@ -297,10 +309,10 @@ namespace AhShitRim
 
     std::size_t Link::Receive(const std::function<void(MessageType, const std::uint8_t*, std::uint32_t)>& a_handler)
     {
-        if (_side != Side::SanAndreas || !_attached.load(std::memory_order_acquire) || GetState() == State::Disabled) {
+        if (!_attached.load(std::memory_order_acquire) || GetState() == State::Disabled) {
             return 0;
         }
-        RingHeader*         ring = Ring(Base());
+        RingHeader*         ring = Inbound(Base(), _side);
         const std::uint64_t head = Atomic(ring->head).load(std::memory_order_acquire);
         std::uint64_t       tail = Atomic(ring->tail).load(std::memory_order_relaxed);
         std::size_t         count = 0;

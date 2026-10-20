@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v4. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4). A ring the other way arrives with the increment that needs it.
+> Status: protocol v5. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -13,12 +13,17 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/collision.h`](../protocol/cpp/collision.h) | Skyrim side of collision chunks: the chunk grid, the heightfield, building a payload (from PerkeleRim) |
 | [`protocol/cpp/ground.h`](../protocol/cpp/ground.h) | San Andreas side: the floating origin, a payload to San Andreas's collision format, which chunks it keeps |
 | [`protocol/cpp/fall_rescue.h`](../protocol/cpp/fall_rescue.h) | Where CJ goes when he ends up below the ground |
-| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, ring, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue), run by `scripts/test.ps1` |
-| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas (`scripts/fake-skyrim.ps1`) |
+| [`protocol/cpp/skin_model.h`](../protocol/cpp/skin_model.h) | CJ's model blob: building it, cutting it into chunks, putting it back together, reading it |
+| [`protocol/cpp/skin_build.h`](../protocol/cpp/skin_build.h) | San Andreas's skinned geometry to the model's meshes |
+| [`protocol/cpp/texture_decode.h`](../protocol/cpp/texture_decode.h) | San Andreas's Direct3D 9 texture formats to RGBA |
+| [`protocol/cpp/body.h`](../protocol/cpp/body.h) | San Andreas's skin matrices to bones, skinning a vertex, the interpolation between San Andreas's frames |
+| [`protocol/cpp/camera.h`](../protocol/cpp/camera.h) | Turning Skyrim's camera node to a view (from PerkeleRim) |
+| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation), run by `scripts/test.ps1` |
+| `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive (`scripts/fake-skyrim.ps1`) |
 
 ## Section layout
 
-One section, `Local\AhShitRim.Link`, 4,194,688 bytes. Whichever game starts first creates it; it disappears when both have closed.
+One section, `Local\AhShitRim.Link`, 8,390,976 bytes. Whichever game starts first creates it; it disappears when both have closed.
 
 | Offset | Size | Part | Written by |
 |---|---|---|---|
@@ -26,7 +31,9 @@ One section, `Local\AhShitRim.Link`, 4,194,688 bytes. Whichever game starts firs
 | 128 | 80 | `InputSlot`: the player's input for CJ | Skyrim |
 | 208 | 64 | `PlayerSlot`: CJ's pose | San Andreas |
 | 272 | 48 | unused | |
-| 320 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
+| 320 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
+| 2240 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
+| 4196608 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's model, v5) | San Andreas produces, Skyrim consumes |
 
 `LinkHeader` (frozen across versions):
 
@@ -84,15 +91,42 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | 36 | `viewHeading`, `viewPitch` | where San Andreas's camera looks; Skyrim's first-person camera follows it |
 | 44 | `handover` | the `InputState.handover` this pose belongs to; Skyrim ignores poses from older handovers |
 
-Skyrim adds `offset` to the player's position at the handover. San Andreas walks CJ on Skyrim's own collision there (see below), so the offset follows Skyrim's terrain and statics; the floating origin moving in San Andreas doesn't change it.
+Skyrim adds `offset` to the player's position at the handover.
 
-## Ring
+### Body (San Andreas to Skyrim)
 
-Messages that must all arrive, one after another: a single-producer, single-consumer byte ring from Skyrim to San Andreas, 4 MiB. `head` (Skyrim) and `tail` (San Andreas) are monotonic byte counts on separate 32-byte halves of the 64-byte `RingHeader`; a record is an 8-byte `MessageHeader` (`type` u16, reserved u16, `size` u32) plus its payload, and may wrap around the end. `Send` refuses while the link is down, when the ring is full or when the message can never fit; San Andreas drains it every frame. San Andreas empties the ring when it attaches, so chunks sent to an earlier San Andreas never arrive.
+`BodyState`, 1,856 bytes (v5). Written every San Andreas frame once CJ's model is built. Skyrim axes and units; `feet` and the camera are relative to where the handover put CJ's feet (`InputState.anchor` in Skyrim), the bones to `feet`.
 
-| Type | Message | Payload |
+| Offset | Field | Meaning |
 |---|---|---|
-| 1 | `CollisionChunk` | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
+| 0 | `frame` | San Andreas frame counter, as `PlayerState.frame` |
+| 4 | `flags` | `kBodyValid` (0x1) |
+| 8 | `handover` | the `InputState.handover` this belongs to |
+| 12 | `model` | the `ModelChunkHeader.model` the bones belong to |
+| 16 | `boneCount` | bones in use (CJ has 32), the model's bone count |
+| 20 | `timeMs` | San Andreas's high-resolution clock in ms, for Skyrim's interpolation |
+| 24 | `feet[3]` | CJ's feet |
+| 36 | `cameraPosition[3]` | San Andreas's active camera |
+| 48 | `cameraForward[3]` | where it looks, a unit vector |
+| 60 | `cameraFov` | its field of view in degrees, horizontal for a 4:3 screen like Skyrim's own setting |
+| 64 | `bones[64]` | `BodyBone`: `rotation` (quaternion x, y, z, w) and `translation[3]`; takes a model vertex (bind pose) to its place relative to `feet` |
+
+A posed vertex is the weighted sum of where its (up to four) bones take it, its normal turned the same way. Skyrim draws the frame 50 ms behind the newest, blended between the two around it (`Body::Interpolator`). San Andreas walks CJ on Skyrim's own collision there (see below), so the offset follows Skyrim's terrain and statics; the floating origin moving in San Andreas doesn't change it.
+
+## Rings
+
+Messages that must all arrive, one after another: two single-producer, single-consumer byte rings of 4 MiB, one each way (Skyrim to San Andreas since v4, San Andreas to Skyrim since v5). `head` (producer) and `tail` (consumer) are monotonic byte counts on separate 32-byte halves of the 64-byte `RingHeader`; a record is an 8-byte `MessageHeader` (`type` u16, reserved u16, `size` u32) plus its payload, and may wrap around the end. `Send` puts a message in the ring to the other side and refuses while the link is down, when the ring is full or when the message can never fit; each side drains its own ring every frame. A side empties its ring when it attaches, so messages sent to an earlier instance never arrive.
+
+| Type | Message | Direction | Payload |
+|---|---|---|---|
+| 1 | `CollisionChunk` | Skyrim → San Andreas | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
+| 2 | `ModelChunk` | San Andreas → Skyrim (v5) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
+
+### CJ's model
+
+San Andreas sends CJ's model whenever the link comes up (a Skyrim that just started has none of it) and whenever his geometry changes, as one blob cut into `ModelChunk`s of at most 256 KiB (`protocol/cpp/skin_model.h`). Chunks of a model come in order from offset 0; Skyrim builds the model once the last one is in, and drops one that comes out of order. Every model gets a new id; `BodyState.model` names the one its bones belong to.
+
+The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts), `boneCount` u32 bone ids (San Andreas's node ids, for the logs), then per texture a `SkinTexture` (width, height, format 1 = RGBA8) and its pixels, top row first, then per mesh a `SkinMesh` (texture index or -1, vertex and index counts, flags `kSkinMeshCutout` 0x1 / `kSkinMeshBlend` 0x2, RGBA colour) with `vertexCount` `SkinVertex` (52 bytes: position, normal, UV, four bone indices, four weights; bind pose, Skyrim units) and `indexCount` u16 triangle indices. CJ comes as 5 meshes, about 1,750 vertices and 2,370 triangles, 4 textures and 32 bones, about 580 KB.
 
 ### Collision chunks
 
@@ -107,6 +141,8 @@ The 5 x 5 chunks around the player are sampled nearest first, then the 5 x 5 aro
 
 San Andreas side (`sa/src/chunk_world.cpp`, the game-free half in `protocol/cpp/ground.h`): one invisible `CBuilding` per chunk, its model's `CColModel` holding the chunk's triangles, under the floating origin described in [DESIGN.md](DESIGN.md#ground-skyrims-collision-in-san-andreas).
 
+Log lines for CJ: `body: CJ's model ID read in N ms: N meshes, N vertices, N triangles (...), N bones (world|local space), N textures: ...`, `body: CJ's model ID sent to Skyrim in N chunks`, `body: texture NAME of CJ left white: why` in San Andreas's log; `cj view: model ID CJ built in N ms: ...`, `cj view: CJ attached under NODE`, `cj view: CJ shown|hidden`, `player sync: CJ drawn from San Andreas's model ID, Skyrim's camera on San Andreas's (fov N)` in Skyrim's.
+
 Log lines: `collision: chunk (x,y) gen N try T: terrain hits/1089 (...), statics N triangles from N refs (...), ms over N frames + ms statics, sent|nothing new` in Skyrim's log; `ground: handover N at Skyrim (x,y,z), waiting for the ground under CJ`, `ground: the ground under CJ is in after S s, letting him go`, `ground: N chunks built (N resent, N triangles, N left out), N far ones dropped, N stale; N chunks around CJ` (every 5 s while anything happens), `ground: origin moved by (x,y,z) m with CJ`, `ground: CJ was below the ground at (...), put back at (...)` in San Andreas's.
 
 ## Handshake and liveness
@@ -120,9 +156,9 @@ Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Di
 
 Log lines on both sides, prefixed `link:`:
 
-- `started (protocol v4)`
+- `started (protocol v5)`
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
-- `link up: <peer> pid N, protocol v4`
+- `link up: <peer> pid N, protocol v5`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
 - `link disabled: ...`
 

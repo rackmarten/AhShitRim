@@ -1,6 +1,6 @@
 # AhShitRim: design
 
-> Status: milestone 1 in progress. San Andreas runs hidden as a simulator of CJ, driven from Skyrim with F10, on Skyrim's own terrain and statics, built around him as collision objects (protocol v4). CJ's movement moves the Skyrim player. Nothing from San Andreas is drawn in Skyrim yet.
+> Status: milestone 1 in progress. San Andreas runs hidden as a simulator of CJ, driven from Skyrim with F10, on Skyrim's own terrain and statics, built around him as collision objects (protocol v4). Skyrim draws CJ from San Andreas's own model, animated by San Andreas, through San Andreas's camera (protocol v5). No car yet.
 
 AhShitRim runs **GTA: San Andreas** and **Skyrim Anniversary Edition** at the same time. Skyrim owns the world and draws everything; San Andreas runs hidden and simulates CJ, his cars, his guns and his cheat codes.
 
@@ -69,12 +69,22 @@ How it works:
 San Andreas runs windowed and minimized, started by `scripts/launch-sa.ps1` and driven from Skyrim. AhShitRim does this in its own ASI rather than with a windowed-mode mod, to keep San Andreas as close to headless as it gets:
 
 - **Window** (`sa/src/window.cpp`): RenderWare opens its windowed video mode, and every Direct3D device is created windowed and without vsync. The window is minimized and never activated (`launch-sa.ps1 -Visible` shows it in a small 800x600 window instead, still without taking the focus, to watch CJ). Losing the focus never reaches San Andreas, which would otherwise pause its loop and sounds and open its menu, and it can't move the cursor.
-- **Straight into a game** (`sa/src/runner.cpp`): the splashes, movies and main menu are skipped and a new game loads (about a second, with no map). The mission script never runs; CJ is created where it would have created him.
+- **Straight into a game** (`sa/src/runner.cpp`): the splashes, movies and main menu are skipped and a new game loads (about a second, with no map). The mission script never runs; CJ is created where it would have created him, and dressed as its intro dresses him (vest, jeans, sneakers).
 - **Empty world**: map collision and IPLs are never streamed in, and every building, dummy and object loaded at start is taken out of the world. No peds, traffic, parked cars, trains, planes or wanted level. CJ stands on Skyrim's ground, built around him (see Ground).
 - **Frame rate**: physics stays capped at 30 fps, since higher frame rates break it. While hidden nothing is rendered (San Andreas's `Idle` runs the simulation and returns before drawing), so the only cost is the simulation. Peds' bones are only posed while rendering; CJ's model in Skyrim, which needs his skeleton, will have to pose them itself. Sounds are muted.
 - **Hooks**: functions that only need to be disabled are hooked at their start; the per-frame ones (`Idle`, `FrontendIdle`, `CPad::UpdatePads`) are hooked at their call sites once the window shows, after every other plugin has patched the game, because SilentPatch patches a call inside `Idle`'s first bytes.
 
-F10 in Skyrim hands the player to San Andreas, as in PerkeleRim: Skyrim forwards WASD, mouse look, sprint, jump, crouch and walk (see [PROTOCOL.md](PROTOCOL.md#latest-value-slots)), forces its first-person camera and moves its player by CJ's offset from the handover spot every frame, looking where San Andreas's camera looks. Escape, Tab, M and the console stay Skyrim's; a pausing menu pauses San Andreas too. The handover ends on F10, when the link goes down, the player dies or the game moves the player (load door, fast travel), or when a game loads.
+F10 in Skyrim hands the player to San Andreas, as in PerkeleRim: Skyrim forwards WASD, mouse look, sprint, jump, crouch and walk (see [PROTOCOL.md](PROTOCOL.md#latest-value-slots)), forces its first-person camera state and moves its player by CJ's offset from the handover spot every frame, looking where San Andreas's camera looks. Once CJ's model is in, Skyrim draws him instead of its player and views him through San Andreas's camera (see CJ in Skyrim). Escape, Tab, M and the console stay Skyrim's; a pausing menu pauses San Andreas too. Skyrim's sneak eye is hidden every frame CJ doesn't crouch, since Skyrim kept it up after a crouch (as in PerkeleRim). The handover ends on F10, when the link goes down, the player dies or the game moves the player (load door, fast travel), or when a game loads.
+
+### CJ in Skyrim
+
+CJ's model and animation come from the running San Andreas, like PerkeleRim's models from MSC: nothing is converted, shipped or written to disk.
+
+- **The model** (`sa/src/cj_body.cpp`): CJ's clump, as `CClothes::RebuildPlayer` built it, is one skinned atomic. Its geometry (vertices, normals, UVs, triangles per material), its skin (four bone indices and weights per vertex) and its textures go to Skyrim as one blob in `ModelChunk` messages over the ring back ([PROTOCOL.md](PROTOCOL.md#cjs-model)), whenever the link comes up and whenever the geometry changes. Textures are read from their Direct3D 9 textures (the raster's Direct3D part) and decoded to RGBA (`protocol/cpp/texture_decode.h`: DXT1/3/5 and the plain formats). Meshes are split per material and put in Skyrim units (`protocol/cpp/skin_build.h`); a triangle facing against its vertices' normals is turned round.
+- **The skeleton**: San Andreas only updates a ped's bones in full when it is on screen, and while hidden nothing is. A `CEntity::UpdateAnim` hook runs CJ's animations as if he were on screen, and after each frame the ASI poses his hierarchy (`UpdateRpHAnim`, then `ShoulderBoneRotation`, which sets the breast bones between clavicle and upper arm and otherwise only runs while drawing; without it the shoulders stretched back) and turns each bone into the transform RenderWare's skin pipeline would use (skin-to-bone, then the bone, then the atomic's frame for a local-space hierarchy; `protocol/cpp/body.h`), relative to his feet, in Skyrim units. With San Andreas's active camera (position, direction, field of view) it goes into the body slot every frame.
+- **Drawing** (`skse/src/body/CjView.cpp`): the model is built as PerkeleRim's ModelView builds MSC's (BSTriShapes cloned from a vanilla shape, hand-made textures and shaders), but each shape's vertex buffer is dynamic: every Skyrim frame each vertex is skinned on the CPU by its bones (about 1,700 vertices) and written into it. Skyrim's own skinning (`NiSkinInstance`, `NiSkinPartition`) isn't used; it would have to be put together by hand and is far more likely to crash than a rigid shape whose buffer changes. CJ is drawn two-sided (a closed mesh, so it costs nothing visible and the winding can't turn him inside out), lit and taking shadows but casting none yet. He hangs in the node the player's own 3D hangs in, at the handover spot plus his feet; the player's own 3D is hidden meanwhile.
+- **Camera**: Skyrim's camera stays in its first-person state (which only draws the player's hidden arms) and its camera node is put where San Andreas's camera is, looking where it looks, with San Andreas's field of view (both are horizontal for a 4:3 screen), as PerkeleRim does for MSC's chase camera. First person isn't supported yet.
+- **Smoothing** (`Body::Interpolator`): San Andreas runs at 30 frames a second and Skyrim faster, so Skyrim plays CJ's frames back 50 ms behind, blending bones (normalized quaternion lerp), feet and camera between the two frames around that time. Frames carry San Andreas's high-resolution clock; the gap to Skyrim's clock is the smallest seen, allowed to grow slowly. A new handover starts over.
 
 ## 4. Milestone 1: on the ground
 
@@ -82,8 +92,8 @@ F10 in Skyrim hands the player to San Andreas, as in PerkeleRim: Skyrim forwards
 |---|---|
 | Scaffold (done) | Both plugins build and load; shared memory handshake, protocol v1 |
 | Hidden runner (done) | San Andreas started hidden, driven from Skyrim with F10, CJ on a test plane (protocol v3) |
-| Ground (built, in-game check pending) | Skyrim's collision built in San Andreas around CJ as spawned collision objects, floating origin, fall rescue (protocol v4) |
-| CJ | CJ drawn in Skyrim from San Andreas's own model |
+| Ground (done) | Skyrim's collision built in San Andreas around CJ as spawned collision objects, floating origin, fall rescue (protocol v4) |
+| CJ (built, in-game check pending) | CJ drawn in Skyrim from San Andreas's own model, animated, through San Andreas's camera (protocol v5) |
 | Car | The Greenwood driven on Skyrim's roads |
 
 ## 5. Repo layout

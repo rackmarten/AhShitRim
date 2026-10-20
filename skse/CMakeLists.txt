@@ -20,7 +20,7 @@ add_commonlibsse_plugin(
     ${PROJECT_NAME}
     NAME "AhShitRim"
     AUTHOR "Marek Uncik"
-    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp ../protocol/cpp/link.cpp
+    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/CjView.cpp ../protocol/cpp/link.cpp
 )
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)

@@ -340,7 +340,7 @@ TEST_CASE("the ring delivers collision chunks in order, across the wrap point")
     CHECK(received == sent);
 }
 
-TEST_CASE("the ring refuses messages when full or too large, and only runs from Skyrim to San Andreas")
+TEST_CASE("the rings refuse messages when full or too large, and each side reads only its own")
 {
     Pair p;
     p.Tick(3);
@@ -350,10 +350,72 @@ TEST_CASE("the ring refuses messages when full or too large, and only runs from 
     CHECK(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));
     CHECK_FALSE(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));  // 4 MiB
     CHECK_FALSE(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), kRingToSanAndreasCapacity));
-    CHECK_FALSE(p.sa->Send(MessageType::CollisionChunk, payload.data(), 1));
-    CHECK(p.skyrim->Receive(ignore) == 0);
+    // The ring back is its own: San Andreas's model still fits.
+    CHECK(p.sa->Send(MessageType::ModelChunk, payload.data(), 1));
+    std::vector<MessageType> atSkyrim;
+    CHECK(p.skyrim->Receive([&](MessageType a_type, const std::uint8_t*, std::uint32_t) { atSkyrim.push_back(a_type); }) == 1);
+    CHECK(atSkyrim == std::vector<MessageType>{ MessageType::ModelChunk });
     CHECK(p.sa->Receive(ignore) == 2);
     CHECK(p.skyrim->Send(MessageType::CollisionChunk, payload.data(), 1500000));
+}
+
+TEST_CASE("the ring back carries a model across the wrap point")
+{
+    Pair p;
+    p.Tick(3);
+    std::vector<std::uint8_t> payload(262160);
+    std::uint32_t             sent = 0, received = 0;
+    for (int round = 0; round < 40; ++round) {
+        payload[0] = static_cast<std::uint8_t>(sent);
+        payload.back() = static_cast<std::uint8_t>(sent * 3);
+        REQUIRE(p.sa->Send(MessageType::ModelChunk, payload.data(), static_cast<std::uint32_t>(payload.size())));
+        ++sent;
+        p.skyrim->Receive([&](MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+            CHECK(a_type == MessageType::ModelChunk);
+            REQUIRE(a_size == 262160);
+            CHECK(a_data[0] == static_cast<std::uint8_t>(received));
+            CHECK(a_data[a_size - 1] == static_cast<std::uint8_t>(received * 3));
+            ++received;
+        });
+    }
+    CHECK(received == sent);
+}
+
+TEST_CASE("a restarted Skyrim drops the model chunks sent to the one before")
+{
+    Pair p;
+    p.Tick(3);
+    const auto   ignore = [](MessageType, const std::uint8_t*, std::uint32_t) {};
+    std::uint8_t byte = 7;
+    REQUIRE(p.sa->Send(MessageType::ModelChunk, &byte, 1));
+    p.skyrim.reset();
+    p.Tick(1);
+    p.skyrim = std::make_unique<Link>(Side::Skyrim, p.skyrimLog.Fn(), p.name);
+    p.Tick(3);
+    REQUIRE(p.skyrim->IsUp());
+    CHECK(p.skyrim->Receive(ignore) == 0);
+}
+
+TEST_CASE("the body slot carries CJ's bones and camera from San Andreas to Skyrim")
+{
+    Pair p;
+    p.Tick(3);
+    BodyState body{};
+    body.frame = 9;
+    body.flags = kBodyValid;
+    body.boneCount = 32;
+    body.model = 4;
+    body.cameraFov = 70.0f;
+    body.bones[31].translation[2] = 120.0f;
+    p.sa->WriteBody(body);
+
+    BodyState back{};
+    REQUIRE(p.skyrim->ReadBody(back));
+    CHECK(back.frame == 9);
+    CHECK(back.boneCount == 32);
+    CHECK(back.model == 4);
+    CHECK(back.cameraFov == 70.0f);
+    CHECK(back.bones[31].translation[2] == 120.0f);
 }
 
 TEST_CASE("nothing is sent while the link is down, and a restarted San Andreas drops stale chunks")

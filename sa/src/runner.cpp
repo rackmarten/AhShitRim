@@ -1,6 +1,7 @@
 #include "runner.h"
 
 #include "chunk_world.h"
+#include "cj_body.h"
 #include "ground.h"
 #include "input.h"
 #include "log.h"
@@ -15,6 +16,8 @@
 #include <CClothes.h>
 #include <CMenuManager.h>
 #include <CPad.h>
+#include <CPedClothesDesc.h>
+#include <CPlayerData.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
 #include <CPopulation.h>
@@ -69,6 +72,9 @@ namespace AhShitRim::Runner
             0x6F7900,  // CTrain::DoTrainGenerationAndRemoval
         };
         constexpr std::uintptr_t kHasCollisionLoaded = 0x410CE0;  // CColStore::HasCollisionLoaded: always yes
+
+        // CJ is put this far above the handover spot, so he never starts inside the ground.
+        constexpr float kSpawnLift = 0.05f;
 
         // Physics breaks above 30 frames a second.
         constexpr double kFrameSeconds = 1.0 / 30.0;
@@ -165,7 +171,7 @@ namespace AhShitRim::Runner
         void PlaceCj(CPlayerPed* a_ped, float a_skyrimHeading)
         {
             const float rotation = Pose::SanAndreasHeading(a_skyrimHeading);
-            CVector     at(0.0f, 0.0f, Ground::kHeight + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + 0.05f);
+            CVector     at(0.0f, 0.0f, Ground::kHeight + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + kSpawnLift);
             a_ped->SetPosn(at);
             a_ped->SetHeading(rotation);
             a_ped->m_fHeadingCurrent = rotation;
@@ -192,6 +198,14 @@ namespace AhShitRim::Runner
             PlaceCj(ped, 0.0f);
             CPlayerPed::ReactivatePlayerPed(0);
             ped->m_pIntelligence->m_TaskMgr.SetTask(new CTaskSimplePlayerOnFoot(), 4, false);  // TASK_PRIMARY_DEFAULT
+            // The clothes the intro script gives him (GIVE_PLAYER_CLOTHING_OUTSIDE_SHOP, then
+            // BUILD_PLAYER_MODEL); without them he is built in his underwear.
+            if (ped->m_pPlayerData && ped->m_pPlayerData->m_pPedClothesDesc) {
+                auto* clothes = ped->m_pPlayerData->m_pPedClothesDesc;
+                clothes->SetTextureAndModel("vest", "vest", 0);                // CLOTHES_TEXTURE_TORSO
+                clothes->SetTextureAndModel("jeansdenim", "jeans", 2);         // CLOTHES_TEXTURE_LEGS
+                clothes->SetTextureAndModel("sneakerbincblk", "sneaker", 3);   // CLOTHES_TEXTURE_SHOES
+            }
             CClothes::RebuildPlayer(ped, false);
             return ped;
         }
@@ -365,6 +379,7 @@ namespace AhShitRim::Runner
             ChunkWorld::Receive();
             ChunkWorld::Update(ped, state.spawn);
             PublishPose(ped);
+            CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.
             const std::uint64_t now = ::GetTickCount64();
@@ -424,6 +439,7 @@ namespace AhShitRim::Runner
             g_noOps[i] = Hook(kNoOps[i], &NoOp);
         }
         g_hasCollisionLoaded = Hook(kHasCollisionLoaded, &Yes);
+        CjBody::Install();
 
         // WinMain shows the window once RenderWare is up, right before its game loop starts: skip the
         // splashes and movies there. (plugin-sdk's initRwEvent is a void() event on a bool function
