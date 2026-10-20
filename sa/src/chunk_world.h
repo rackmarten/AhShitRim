@@ -20,6 +20,7 @@ namespace AhShitRim::ChunkWorld
 
     // Once a frame after the simulation: moves the origin under CJ when he is far out (a_spawn,
     // the handover spot, moves with it), drops far chunks, holds CJ at a_spawn until the ground
-    // under it is in, and catches him when he falls through.
-    void Update(CPlayerPed* a_ped, CVector& a_spawn);
+    // under it is in, and catches him when he falls through, unless a_following (a scene puts him
+    // where Skyrim's player is, collision or not).
+    void Update(CPlayerPed* a_ped, CVector& a_spawn, bool a_following = false);
 }

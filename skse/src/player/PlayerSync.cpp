@@ -12,6 +12,7 @@
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "pose.h"
+#include "scene.h"
 
 namespace AhShitRim::PlayerSync
 {
@@ -29,6 +30,9 @@ namespace AhShitRim::PlayerSync
             bool           placing = false;      // Place is moving the player for CJ: not Skyrim positioning it
             RE::NiPoint3   lastPlaced;
             RE::TESObjectCELL* cell = nullptr;
+            Scene::Control control = Scene::Control::Cj;  // who moves the player this frame
+            float          voiceRecovery = 0.0f;  // the player's shout cooldown last frame
+            std::uint16_t  shoutCount = 0;
             bool           wasThirdPerson = false;
             bool           sneak = false;     // what we last told Skyrim; its own flag can drop on its own
             int            sneakResend = 0;   // frames until a sneak event the graph ignored is sent again
@@ -82,6 +86,18 @@ namespace AhShitRim::PlayerSync
             input.anchor[0] = state.anchor.x;
             input.anchor[1] = state.anchor.y;
             input.anchor[2] = state.anchor.z;
+            input.shoutCount = state.shoutCount;
+            if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
+                const auto  feet = player->GetPosition();
+                const float offset[3] = { feet.x - state.anchor.x, feet.y - state.anchor.y, feet.z - state.anchor.z };
+                Scene::Follow(input, state.control, offset, player->GetAngleZ());
+                // Talking: CJ turns to the speaker while the dialogue (and a barter or gift over it) is open.
+                auto* topics = RE::MenuTopicManager::GetSingleton();
+                if (auto speaker = topics && topics->menuOpen && a_menu ? topics->speaker.get() : nullptr) {
+                    const auto at = speaker->GetPosition();
+                    Scene::Face(input, feet.x, feet.y, at.x, at.y);
+                }
+            }
             link.WriteInput(input);
         }
 
@@ -289,6 +305,7 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = false;
             state.reanchoring = false;
+            state.control = Scene::Control::Cj;
             CollisionSampler::Stop();
             Activation::Clear();
             DrawSkyrimPlayer();
@@ -342,6 +359,8 @@ namespace AhShitRim::PlayerSync
                 camera->ForceFirstPerson();
             }
             state.owned = true;
+            state.control = Scene::Control::Cj;
+            state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
                 state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading);
@@ -422,6 +441,40 @@ namespace AhShitRim::PlayerSync
             }
         }
 
+        // Who moves the player this frame: CJ, or Skyrim in a scene (controls taken away, a package
+        // walking the player, a bed) or a seat, where CJ follows the player instead.
+        Scene::Control ControlOf(RE::PlayerCharacter* a_player)
+        {
+            Scene::PlayerFrame frame;
+            if (auto* actorState = a_player->AsActorState()) {
+                frame.sitSleepState = static_cast<std::uint8_t>(actorState->GetSitSleepState());
+            }
+            auto* controls = RE::ControlMap::GetSingleton();
+            frame.movementEnabled = !controls || controls->IsMovementControlsEnabled();
+            const auto& movement = a_player->GetActorRuntimeData().movementController;
+            frame.aiDriven = movement && movement->GetAIDriven();
+            const auto control = Scene::Classify(frame);
+            if (control != state.control) {
+                SKSE::log::info("player sync: {} moves the player (sit state {}, movement controls {}, AI driven {})",
+                    control == Scene::Control::Cj ? "CJ" : std::string("Skyrim, ") + Scene::NameOf(control), frame.sitSleepState,
+                    frame.movementEnabled ? "on" : "off", frame.aiDriven);
+            }
+            return control;
+        }
+
+        // Skyrim's own Shout key fires the shout from the player, which stands where CJ does and
+        // looks where San Andreas's camera looks; San Andreas plays CJ's gesture when it goes off.
+        void WatchShout(RE::PlayerCharacter* a_player)
+        {
+            const float recovery = a_player->GetVoiceRecoveryTime();
+            if (Scene::ShoutReleased(state.voiceRecovery, recovery)) {
+                state.shoutCount++;
+                const auto* power = a_player->GetActorRuntimeData().selectedPower;
+                SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures", power ? power->GetName() : "?", recovery);
+            }
+            state.voiceRecovery = recovery;
+        }
+
         void Drive(RE::PlayerCharacter* a_player, float a_delta)
         {
             auto& link = LinkService::Get();
@@ -436,6 +489,15 @@ namespace AhShitRim::PlayerSync
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
+            if (const auto control = ControlOf(a_player); control != state.control) {
+                state.control = control;
+                Activation::Clear();
+            }
+            const bool scene = state.control != Scene::Control::Cj;
+            if (scene) {
+                state.lastPlaced = a_player->GetPosition();  // Skyrim moving the player in a scene isn't a jump
+            }
+            WatchShout(a_player);
             ReleaseStuckKeys();
             Publish();
 
@@ -445,7 +507,7 @@ namespace AhShitRim::PlayerSync
             // The angles Skyrim built this frame's camera for, before Place changes them.
             const float fromHeading = a_player->GetAngleZ();
             const float fromPitch = a_player->data.angle.x;
-            if (valid) {
+            if (valid && !scene) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -454,7 +516,7 @@ namespace AhShitRim::PlayerSync
                 }
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
-            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput());
+            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene);
             DrawCj(a_player, fromHeading, fromPitch);
             DrawVehicles();
             ModelView::EndFrame();
@@ -495,13 +557,18 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Skyrim's own handlers refuse while San Andreas has the player.
+        constexpr int kMovementHook = 0;
+        constexpr int kActivateHook = 11;
+
+        // Skyrim's own handlers refuse while San Andreas has the player, but for its movement and
+        // activate keys while the player sits: those stand it up again. Its Shout key isn't blocked.
         template <int N>
         struct BlockHook
         {
             static bool thunk(RE::PlayerInputHandler* a_handler, RE::InputEvent* a_event)
             {
-                return !state.owned && original(a_handler, a_event);
+                const bool standUp = (N == kMovementHook || N == kActivateHook) && state.control == Scene::Control::Seated;
+                return (!state.owned || standUp) && original(a_handler, a_event);
             }
             static inline REL::Relocation<decltype(thunk)> original;
 
@@ -654,7 +721,7 @@ namespace AhShitRim::PlayerSync
         FavoritesHook::original = favorites.write_vfunc(0x1, FavoritesHook::thunk);
         REL::Relocation<std::uintptr_t> menuOpen{ RE::VTABLE_MenuOpenHandler[0] };
         MenuOpenHook::original = menuOpen.write_vfunc(0x1, MenuOpenHook::thunk);
-        BlockHook<0>::Install(RE::VTABLE_MovementHandler[0]);
+        BlockHook<kMovementHook>::Install(RE::VTABLE_MovementHandler[0]);
         BlockHook<1>::Install(RE::VTABLE_LookHandler[0]);
         BlockHook<2>::Install(RE::VTABLE_SprintHandler[0]);
         BlockHook<3>::Install(RE::VTABLE_AutoMoveHandler[0]);
@@ -665,7 +732,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<8>::Install(RE::VTABLE_TogglePOVHandler[0]);
         BlockHook<9>::Install(RE::VTABLE_AttackBlockHandler[0]);
         BlockHook<10>::Install(RE::VTABLE_ReadyWeaponHandler[0]);
-        BlockHook<11>::Install(RE::VTABLE_ActivateHandler[0]);
+        BlockHook<kActivateHook>::Install(RE::VTABLE_ActivateHandler[0]);
         BlockHook<13>::Install(RE::VTABLE_FirstPersonState[1]);  // its zoom and POV keys
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");

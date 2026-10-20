@@ -479,15 +479,20 @@ namespace AhShitRim::Vehicles
             tried, Vehicle::kRings * std::size(Vehicle::kTurns), vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor));
     }
 
-    void Clear(CPlayerPed* a_ped)
+    void GetOut(CPlayerPed* a_ped)
     {
         if (Driven(a_ped) || a_ped->m_pVehicle) {
-            // What WARP_CHAR_FROM_CAR_TO_COORD does (also while he gets in or out); the handover puts
-            // CJ where he goes.
+            // What WARP_CHAR_FROM_CAR_TO_COORD does (also while he gets in or out); the caller puts CJ
+            // where he goes.
             a_ped->m_pIntelligence->FlushImmediately(true);
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(new CTaskSimplePlayerOnFoot(), 4, false);  // TASK_PRIMARY_DEFAULT, as at his creation
             Log(Driven(a_ped) ? "vehicle: could not get CJ out of his vehicle" : "vehicle: CJ taken out of his vehicle");
         }
+    }
+
+    void Clear(CPlayerPed* a_ped)
+    {
+        GetOut(a_ped);
         int removed = 0;
         for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
             if (Live(i) && Live(i) != Driven(a_ped)) {

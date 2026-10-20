@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 8;
+    inline constexpr std::uint32_t kProtocolVersion = 9;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -41,15 +41,15 @@ namespace AhShitRim::Protocol
     // slots, the ring from Skyrim to San Andreas, then the ring back.
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
-    inline constexpr std::uint32_t kOffsetPlayerSlot = 208;
-    inline constexpr std::uint32_t kOffsetAudioSlot = 272;               // v7
-    inline constexpr std::uint32_t kOffsetBodySlot = 320;                // v5
-    inline constexpr std::uint32_t kOffsetVehicleSlots = 2240;           // v6: kVehicleMax BodySlots
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 9920;       // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetPlayerSlot = 272;              // v9: after the larger input slot
+    inline constexpr std::uint32_t kOffsetAudioSlot = 336;               // v7
+    inline constexpr std::uint32_t kOffsetBodySlot = 384;                // v5
+    inline constexpr std::uint32_t kOffsetVehicleSlots = 2304;           // v6: kVehicleMax BodySlots
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 9984;       // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4204288;        // v5
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4204352;        // v5
     inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's and the vehicles' models
-    inline constexpr std::uint32_t kMappingSize = 8398656;               // 4204288 + 64 + 4 MiB
+    inline constexpr std::uint32_t kMappingSize = 8398720;               // 4204352 + 64 + 4 MiB
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -95,6 +95,9 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::uint32_t kInputOwnsPlayer = 0x1;  // InputState.flags: San Andreas should apply this input
     inline constexpr std::uint32_t kInputPaused = 0x2;      // InputState.flags: a Skyrim menu pauses the game, San Andreas freezes its time
+    inline constexpr std::uint32_t kInputFace = 0x4;        // InputState.flags (v9): CJ stands still and turns to sceneHeading (the one he talks to)
+    inline constexpr std::uint32_t kInputScripted = 0x8;    // InputState.flags (v9): Skyrim moves the player in a scene; CJ follows sceneOffset and sceneHeading
+    inline constexpr std::uint32_t kInputSeated = 0x10;     // InputState.flags (v9), with kInputScripted: the player sits
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;
@@ -123,6 +126,11 @@ namespace AhShitRim::Protocol
         std::uint16_t spawnCount;  // v6: counts spawn requests; a new value spawns spawnModel
         std::uint16_t radioNext;   // v7: counts mouse wheel steps up; in a vehicle each one tunes the next station
         std::uint16_t radioPrev;   // v7: counts wheel steps down, the previous station
+        float         sceneOffset[3];  // v9, kInputScripted: the Skyrim player's feet relative to anchor
+        float         sceneHeading;    // v9, kInputScripted: the player's heading; kInputFace: the heading CJ turns to (Skyrim radians)
+        std::uint16_t shoutCount;      // v9: counts shouts the player let out; a new value plays CJ's gesture
+        std::uint16_t reserved0;
+        std::uint32_t reserved1;
     };
 
     struct InputSlot
@@ -130,7 +138,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[8];
+        std::uint8_t  pad[48];  // v9: keeps the body slot on a 64-byte boundary
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -344,7 +352,7 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 64);
+    static_assert(sizeof(InputState) == 88);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
@@ -356,7 +364,10 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, spawnCount) == 58);
     static_assert(offsetof(InputState, radioNext) == 60);
     static_assert(offsetof(InputState, radioPrev) == 62);
-    static_assert(sizeof(InputSlot) == 80);
+    static_assert(offsetof(InputState, sceneOffset) == 64);
+    static_assert(offsetof(InputState, sceneHeading) == 76);
+    static_assert(offsetof(InputState, shoutCount) == 80);
+    static_assert(sizeof(InputSlot) == 144);
     static_assert(sizeof(PlayerState) == 56);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);

@@ -28,9 +28,12 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v8 constants")
+TEST_CASE("protocol v9 constants")
 {
-    CHECK(kProtocolVersion == 8);
+    CHECK(kProtocolVersion == 9);
+    CHECK(kInputFace == 0x4);
+    CHECK(kInputScripted == 0x8);
+    CHECK(kInputSeated == 0x10);
     CHECK(kButtonHandbrake == 0x100);
     CHECK(kPlayerRadioRetuning == 0x10);
     CHECK(kRadioNone == -1);
@@ -41,7 +44,7 @@ TEST_CASE("protocol v8 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8398656);
+    CHECK(kMappingSize == 8398720);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -53,33 +56,37 @@ TEST_CASE("protocol v8 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v7 slot and ring layout")
+TEST_CASE("the v9 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
-    CHECK(kOffsetPlayerSlot == 208);
-    CHECK(sizeof(InputState) == 64);
+    CHECK(kOffsetPlayerSlot == 272);
+    CHECK(sizeof(InputState) == 88);
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
     CHECK(offsetof(InputState, radioNext) == 60);
     CHECK(offsetof(InputState, radioPrev) == 62);
+    CHECK(offsetof(InputState, sceneOffset) == 64);
+    CHECK(offsetof(InputState, sceneHeading) == 76);
+    CHECK(offsetof(InputState, shoutCount) == 80);
+    CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 56);
     CHECK(offsetof(PlayerState, radioStation) == 48);
     CHECK(offsetof(InputSlot, value) == 8);
     CHECK(offsetof(PlayerSlot, value) == 8);
-    CHECK(kOffsetAudioSlot == 272);
+    CHECK(kOffsetAudioSlot == 336);
     CHECK(sizeof(AudioSlot) == 48);
     CHECK(offsetof(AudioSlot, value) == 8);
     CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
-    CHECK(kOffsetBodySlot == 320);
+    CHECK(kOffsetBodySlot == 384);
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);
     CHECK(sizeof(BodyState) == 1856);
-    CHECK(kOffsetVehicleSlots == 2240);
+    CHECK(kOffsetVehicleSlots == 2304);
     CHECK(kOffsetVehicleSlots % 64 == 0);
-    CHECK(kOffsetRingToSanAndreas == 2240 + 4 * 1920);
+    CHECK(kOffsetRingToSanAndreas == 2304 + 4 * 1920);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4204288);
+    CHECK(kOffsetRingToSkyrim == 4204352);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);
