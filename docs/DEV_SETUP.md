@@ -118,7 +118,7 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 ## CI
 
-Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-latest` runner with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa`, then `scripts/test.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. A newer push to the same branch cancels the run in progress.
+Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-2022` runner (VS 2022, as installed above) with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa`, then `scripts/test.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. A newer push to the same branch cancels the run in progress.
 
 Each run uploads an artifact `AhShitRim-<commit>` (the run's page, under Artifacts) with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`.
 

@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # windows-latest has moved to VS 2026; sa/'s preset uses the Visual Studio 17 2022 generator,
+    # the toolset docs/DEV_SETUP.md installs.
+    runs-on: windows-2022
     env:
       # vcpkg's binary archives in a known place, so actions/cache can carry them between runs.
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-archives
