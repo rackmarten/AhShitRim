@@ -24,8 +24,11 @@ namespace AhShitRim::SaHud
         };
 
         // Skyrim's HUD clips hidden while San Andreas has the player, under
-        // _root.HUDMovieBaseInstance.
-        constexpr const char* kSkyrimHud[] = { "CompassShoutMeterHolder", "Health", "Magica", "Stamina", "Crosshair" };
+        // _root.HUDMovieBaseInstance. The rollover clips are Skyrim's own activate prompt ("E Open /
+        // Skyrim"): its crosshair pick still runs from the player, where CJ is, and San Andreas's help
+        // box says the same (Activation).
+        constexpr const char* kSkyrimHud[] = { "CompassShoutMeterHolder", "Health", "Magica", "Stamina", "Crosshair", "RolloverNameInstance",
+            "RolloverInfoInstance", "RolloverButton_tf", "RolloverGrayBar_mc" };
 
         struct Timed
         {
