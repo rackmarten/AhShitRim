@@ -1,0 +1,59 @@
+name: build
+
+# Windows minutes bill double on a private repo, so only PRs, main and manual runs.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      # vcpkg's binary archives in a known place, so actions/cache can carry them between runs.
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-archives
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create the vcpkg archive folder
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\.vcpkg-archives
+          key: vcpkg-${{ hashFiles('skse/vcpkg.json', 'skse/vcpkg-configuration.json', 'protocol/vcpkg.json', 'protocol/vcpkg-configuration.json') }}
+          restore-keys: vcpkg-
+
+      # CommonLibSSE-NG detects GITHUB_ACTIONS and links its prebuilt release bundle when the
+      # submodule sits on a release tag and the MSVC toolset matches; otherwise it builds from source.
+      - name: Build SKSE plugin
+        shell: pwsh
+        run: ./scripts/build.ps1 -Target skse
+
+      - name: Build San Andreas plugin
+        shell: pwsh
+        run: ./scripts/build.ps1 -Target sa
+
+      # Game-free doctest cases. Without local.props the HUD test against a real San Andreas
+      # install skips itself.
+      - name: Unit tests
+        shell: pwsh
+        run: ./scripts/test.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AhShitRim-${{ github.sha }}
+          path: |
+            skse/build/release/AhShitRim.dll
+            skse/build/release/AhShitRim.pdb
+            sa/build/Release/AhShitRim.asi
+            sa/build/Release/AhShitRim.map
+          if-no-files-found: error
