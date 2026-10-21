@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_weapons.h"
 #include "ground.h"
 #include "input.h"
 #include "log.h"
@@ -312,6 +313,7 @@ namespace AhShitRim::Runner
                 const auto& ahead = vehicle->GetForward();
                 sa.vehicleForward = { ahead.x, ahead.y, ahead.z };
             }
+            CjWeapons::Fill(a_ped, sa);
             auto pose = Pose::ToPlayerState(sa, ++state.frame, state.handover);
             if (vehicle) {
                 pose.flags |= Protocol::kPlayerInVehicle;
@@ -371,6 +373,8 @@ namespace AhShitRim::Runner
             state.haveSpawn = true;
             Audio::OnInput(a_input, Vehicles::Driven(a_ped) != nullptr);
             const bool following = Scenes::OnInput(a_ped, a_input, owned);
+            // The wheel switches weapons on foot and tunes the radio in a vehicle; either way its steps are followed.
+            const auto presses = CjWeapons::Wheel(a_input, owned && !following && Vehicles::Driven(a_ped) == nullptr);
             if (!owned) {
                 return;
             }
@@ -389,6 +393,9 @@ namespace AhShitRim::Runner
                 s.RightShoulder1 = pad.rightShoulder1;
                 s.ShockButtonL = pad.shockButtonL;
                 s.m_bPedWalk = pad.pedWalk;
+                s.ButtonCircle = pad.buttonCircle;  // fire (a melee weapon attacks); the right shoulder aims
+                s.RightShoulder2 = presses.next ? 255 : 0;  // the wheel: next weapon
+                s.LeftShoulder2 = presses.prev ? 255 : 0;   // the previous one
             }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
@@ -426,6 +433,8 @@ namespace AhShitRim::Runner
                 input = {};  // link down: Skyrim has the player back, nothing is paused
                 input.handover = state.handover;
                 input.spawnCount = state.spawnCount;
+                input.radioNext = state.lastInput.radioNext;  // the wheel's counts stand, so a link coming back isn't a flood of steps
+                input.radioPrev = state.lastInput.radioPrev;
                 if (ped) {
                     ApplyInput(input, ped);
                 }
@@ -465,6 +474,7 @@ namespace AhShitRim::Runner
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.

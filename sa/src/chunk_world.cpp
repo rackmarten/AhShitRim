@@ -1,5 +1,7 @@
 #include "chunk_world.h"
 
+#include "cj_weapons.h"
+
 #include "fall_rescue.h"
 #include "ground.h"
 #include "log.h"
@@ -314,6 +316,8 @@ namespace AhShitRim::ChunkWorld
         GetLink().Receive([](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
             if (a_type == Protocol::MessageType::CollisionChunk) {
                 Handle(a_data, a_size);
+            } else if (a_type == Protocol::MessageType::WeaponCommand) {
+                CjWeapons::Queue(a_data, a_size);
             }
         });
     }

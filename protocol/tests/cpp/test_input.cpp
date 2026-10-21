@@ -316,3 +316,49 @@ TEST_CASE("the modern layout: Shift sprints, Space jumps and is the handbrake")
     CHECK(ToPad(in, true).rightShoulder1 == 255);  // the handbrake in a vehicle
     CHECK(ToPad(in, true).buttonSquare == 0);     // without braking
 }
+
+TEST_CASE("the mouse buttons fire and aim on foot, and let go with everything else")
+{
+    Builder b;
+    b.SetFire(true);
+    auto s = b.Build(1, true, true);
+    CHECK((s.buttons & Protocol::kButtonFire) != 0);
+    CHECK((s.buttons & Protocol::kButtonAim) == 0);
+    b.SetAim(true);
+    s = b.Build(2, true, true);
+    CHECK((s.buttons & Protocol::kButtonFire) != 0);
+    CHECK((s.buttons & Protocol::kButtonAim) != 0);
+
+    s = b.Build(3, true, false);  // a menu has the input: nobody fires into it
+    CHECK(s.buttons == 0);
+
+    b.SetFire(false);
+    s = b.Build(4, true, true);
+    CHECK((s.buttons & Protocol::kButtonFire) == 0);
+    CHECK((s.buttons & Protocol::kButtonAim) != 0);
+    b.ReleaseAll();
+    CHECK(b.Build(5, true, true).buttons == 0);
+}
+
+TEST_CASE("fire and aim reach San Andreas's circle and right shoulder on foot, and only on foot")
+{
+    Protocol::InputState in{};
+    in.buttons = Protocol::kButtonFire | Protocol::kButtonAim;
+    auto pad = ToPad(in);
+    CHECK(pad.buttonCircle == 255);
+    CHECK(pad.rightShoulder1 == 255);
+
+    pad = ToPad(in, true);  // in a vehicle the right shoulder is the handbrake, which is its own button
+    CHECK(pad.buttonCircle == 0);
+    CHECK(pad.rightShoulder1 == 0);
+    in.buttons = Protocol::kButtonHandbrake;
+    CHECK(ToPad(in, true).rightShoulder1 == 255);
+    CHECK(ToPad(in, false).rightShoulder1 == 0);
+}
+
+TEST_CASE("the debug key is = and nothing else maps to it")
+{
+    CHECK(kDikEquals == 0x0D);
+    CHECK(ActionFromScanCode(kDikEquals) == Action::None);
+    CHECK(SpawnModelFromScanCode(kDikEquals) == 0);
+}

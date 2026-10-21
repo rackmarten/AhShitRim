@@ -101,3 +101,52 @@ TEST_CASE("the vehicle CJ is in and the damage San Andreas worked out reach Skyr
     bad.damage = std::nanf("");
     CHECK_FALSE(Finite(bad));
 }
+
+TEST_CASE("CJ's weapons reach Skyrim in its units: the loadout, the shots and where they leave")
+{
+    SanAndreasPose sa;
+    sa.forward = { 0.0f, 1.0f, 0.0f };
+    sa.view = { 0.0f, 1.0f, 0.0f };
+    auto s = ToPlayerState(sa, 1, 1);
+    CHECK(s.weaponType == 0);
+    CHECK(s.weaponFlags == 0);
+    CHECK(s.crosshair[0] == doctest::Approx(0.5f));
+    CHECK(s.crosshair[1] == doctest::Approx(0.4f));
+    CHECK(s.loadout[0].type == 0);
+
+    sa.weaponType = 22;
+    sa.weaponSlot = 2;
+    sa.weaponFlags = Protocol::kWeaponInHand | Protocol::kWeaponAiming | Protocol::kWeaponTwin;
+    sa.shots = 65535;
+    sa.cameraMode = 0x35;
+    sa.ammoStyle = Protocol::kAmmoClip;
+    sa.muzzle[0] = { 0.5f, 1.0f, 0.25f };
+    sa.muzzle[1] = { -0.5f, 1.0f, 0.25f };
+    sa.crosshair[0] = 0.53f;
+    sa.crosshair[1] = 0.45f;
+    sa.loadout[2] = { 22, 0, 17, 117 };
+    sa.loadout[12] = { 40, 0, 1, 1 };
+    s = ToPlayerState(sa, 1, 1);
+    CHECK(s.weaponType == 22);
+    CHECK(s.weaponSlot == 2);
+    CHECK(s.weaponFlags == (Protocol::kWeaponInHand | Protocol::kWeaponAiming | Protocol::kWeaponTwin));
+    CHECK(s.shots == 65535);
+    CHECK(s.cameraMode == 0x35);
+    CHECK(s.ammoStyle == Protocol::kAmmoClip);
+    CHECK(s.muzzle[0][0] == doctest::Approx(0.5f * kUnitsPerMeter));
+    CHECK(s.muzzle[0][1] == doctest::Approx(kUnitsPerMeter));
+    CHECK(s.muzzle[1][0] == doctest::Approx(-0.5f * kUnitsPerMeter));
+    CHECK(s.muzzle[1][2] == doctest::Approx(0.25f * kUnitsPerMeter));
+    CHECK(s.crosshair[0] == doctest::Approx(0.53f));
+    CHECK(s.loadout[2].clip == 17);
+    CHECK(s.loadout[2].ammo == 117);
+    CHECK(s.loadout[12].type == 40);
+    CHECK(Finite(s));
+
+    Protocol::PlayerState bad = s;
+    bad.muzzle[1][2] = std::nanf("");
+    CHECK_FALSE(Finite(bad));
+    bad = s;
+    bad.crosshair[1] = std::nanf("");
+    CHECK_FALSE(Finite(bad));
+}

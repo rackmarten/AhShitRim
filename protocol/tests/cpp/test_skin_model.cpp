@@ -145,3 +145,17 @@ TEST_CASE("parse refuses NaN weights and positions")
     bytes = SkinModel::Serialize(model);
     CHECK_FALSE(SkinModel::Parse(bytes.data(), bytes.size()));
 }
+
+TEST_CASE("a weapon model keeps its kind, and a kind past the weapon's is refused")
+{
+    auto in = TwoMeshes();
+    in.kind = kSkinModelWeapon;
+    const auto blob = SkinModel::Serialize(in);
+    const auto model = SkinModel::Parse(blob.data(), blob.size());
+    REQUIRE(model);
+    CHECK(model->kind == kSkinModelWeapon);
+
+    in.kind = kSkinModelWeapon + 1;
+    const auto bad = SkinModel::Serialize(in);
+    CHECK_FALSE(SkinModel::Parse(bad.data(), bad.size()));
+}

@@ -69,6 +69,17 @@ namespace AhShitRim::Pose
         Vec3          vehicleOffset;             // its position minus CJ's feet, metres
         Vec3          vehicleForward{ 0.0f, 1.0f, 0.0f };  // the way it faces
         float         damage = 0.0f;             // what San Andreas took off CJ so far, its health points
+
+        // CJ's weapons (v12).
+        std::uint8_t  weaponType = 0;            // the one in his hands, San Andreas's eWeaponType
+        std::uint8_t  weaponSlot = 0;
+        std::uint16_t weaponFlags = 0;           // kWeapon*
+        std::uint16_t shots = 0;                 // the shot counter
+        std::uint8_t  cameraMode = 0;            // San Andreas's eCamMode
+        std::uint8_t  ammoStyle = 0;             // Protocol::kAmmo*
+        Vec3          muzzle[2];                 // where the shots leave, relative to his feet, metres
+        float         crosshair[2] = { 0.5f, 0.4f };  // where San Andreas puts its crosshair, fractions of the screen
+        Protocol::WeaponEntry loadout[Protocol::kWeaponSlotCount] = {};
     };
 
     inline Protocol::PlayerState ToPlayerState(const SanAndreasPose& a_pose, std::uint32_t a_frame, std::uint32_t a_handover)
@@ -98,6 +109,22 @@ namespace AhShitRim::Pose
             s.vehicleHeading = HeadingOf(a_pose.vehicleForward.x, a_pose.vehicleForward.y);
         }
         s.damage = a_pose.damage;
+        s.weaponType = a_pose.weaponType;
+        s.weaponSlot = a_pose.weaponSlot;
+        s.weaponFlags = a_pose.weaponFlags;
+        s.shots = a_pose.shots;
+        s.cameraMode = a_pose.cameraMode;
+        s.ammoStyle = a_pose.ammoStyle;
+        for (int hand = 0; hand < 2; ++hand) {
+            s.muzzle[hand][0] = a_pose.muzzle[hand].x * kUnitsPerMeter;
+            s.muzzle[hand][1] = a_pose.muzzle[hand].y * kUnitsPerMeter;
+            s.muzzle[hand][2] = a_pose.muzzle[hand].z * kUnitsPerMeter;
+        }
+        s.crosshair[0] = a_pose.crosshair[0];
+        s.crosshair[1] = a_pose.crosshair[1];
+        for (std::uint32_t i = 0; i < Protocol::kWeaponSlotCount; ++i) {
+            s.loadout[i] = a_pose.loadout[i];
+        }
         return s;
     }
 
@@ -113,7 +140,15 @@ namespace AhShitRim::Pose
                 return false;
             }
         }
+        for (int hand = 0; hand < 2; ++hand) {
+            for (int i = 0; i < 3; ++i) {
+                if (!std::isfinite(a_pose.muzzle[hand][i])) {
+                    return false;
+                }
+            }
+        }
         return std::isfinite(a_pose.heading) && std::isfinite(a_pose.viewHeading) && std::isfinite(a_pose.viewPitch) &&
-               std::isfinite(a_pose.vehicleHeading) && std::isfinite(a_pose.damage);
+               std::isfinite(a_pose.vehicleHeading) && std::isfinite(a_pose.damage) && std::isfinite(a_pose.crosshair[0]) &&
+               std::isfinite(a_pose.crosshair[1]);
     }
 }

@@ -13,6 +13,7 @@ namespace AhShitRim::ModelSender
 {
     inline constexpr int kBodyKey = 0;     // CJ
     inline constexpr int kVehicleKey = 1;  // + the vehicle's slot
+    inline constexpr int kWeaponKey = 5;   // + the hand (after the vehicles' four keys)
 
     // a_chunks: the model's ModelChunk payloads (SkinModel::Chunks). Replaces what a_key had; one
     // half sent is dropped (its successor starts at offset 0, which drops it in Skyrim too).

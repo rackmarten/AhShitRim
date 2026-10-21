@@ -1,0 +1,188 @@
+#include "player/Arms.h"
+
+#include "Ini.h"
+#include "body.h"
+#include "body/ModelView.h"
+#include "body/MuzzleFlash.h"
+#include "cosave.h"
+#include "link/LinkService.h"
+#include "pose.h"
+#include "weapons.h"
+
+namespace AhShitRim::Arms
+{
+    namespace
+    {
+        constexpr auto kSettle = std::chrono::milliseconds(1500);  // how long San Andreas gets to apply a loadout before the pose is believed again
+
+        struct State
+        {
+            bool               debugKey = true;
+            std::size_t        debugStep = 0;
+            Body::Interpolator hands[Protocol::kWeaponHandMax];
+            Cosave::Arms       known;  // CJ's weapons as far as the save is concerned
+            bool               pending = false;  // known has to be sent to San Andreas
+            bool               settling = false;  // it was sent, San Andreas hasn't shown it yet
+            std::chrono::steady_clock::time_point settleUntil;
+            bool               wasUp = false;
+            std::uint16_t      lastShots = 0;
+            bool               haveShots = false;
+            unsigned           nextHand = 0;
+        } state;
+
+        Protocol::WeaponCommand SetCommand(const Cosave::Arms& a_arms)
+        {
+            Protocol::WeaponCommand command{};
+            command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::SetLoadout);
+            command.argument = a_arms.slot;
+            std::copy(std::begin(a_arms.entries), std::end(a_arms.entries), command.entries);
+            return command;
+        }
+
+        bool Send(const Protocol::WeaponCommand& a_command)
+        {
+            return LinkService::Get().Send(Protocol::MessageType::WeaponCommand, &a_command, sizeof(a_command));
+        }
+
+        // Whether San Andreas's weapons are the ones in a_arms, rounds and all.
+        bool Same(const Protocol::PlayerState& a_pose, const Cosave::Arms& a_arms)
+        {
+            for (std::uint32_t i = 0; i < Protocol::kWeaponSlotCount; ++i) {
+                if (a_pose.loadout[i].type != a_arms.entries[i].type || a_pose.loadout[i].ammo != a_arms.entries[i].ammo) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        std::string Describe(const Cosave::Arms& a_arms)
+        {
+            std::string text;
+            for (std::uint32_t i = 0; i < Protocol::kWeaponSlotCount; ++i) {
+                if (a_arms.entries[i].type) {
+                    text += std::format(" {}:{}", a_arms.entries[i].type, a_arms.entries[i].ammo);
+                }
+            }
+            return text.empty() ? " none" : text;
+        }
+    }
+
+    void OnDataLoaded()
+    {
+        const auto key = Ini::Value("Debug", "WeaponKey");
+        state.debugKey = key.empty() || key != "0";
+        MuzzleFlash::Configure(Ini::Value("Weapons", "MuzzleLight") != "0");
+        SKSE::log::info("arms: the debug weapon key (=) is {} ([Debug] WeaponKey={} in {})", state.debugKey ? "on" : "off", key.empty() ? "unset" : key, Ini::kPath);
+    }
+
+    void Update()
+    {
+        auto&      link = LinkService::Get();
+        const bool up = link.IsUp();
+        if (up && !state.wasUp && !Weapons::Empty(state.known.entries)) {
+            state.pending = true;  // a San Andreas that started after Skyrim, or again, has none of them
+        }
+        state.wasUp = up;
+
+        Protocol::PlayerState pose{};
+        const bool posed = up && link.ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 && Pose::Finite(pose);
+        if (state.pending && up) {
+            const auto command = SetCommand(state.known);
+            if (Send(command)) {
+                state.pending = false;
+                state.settling = true;
+                state.settleUntil = std::chrono::steady_clock::now() + kSettle;
+                SKSE::log::info("arms: CJ's weapons sent to San Andreas, holding slot {}:{}", state.known.slot, Describe(state.known));
+            }
+        }
+        if (state.settling && posed && Same(pose, state.known)) {
+            state.settling = false;
+        } else if (state.settling && std::chrono::steady_clock::now() > state.settleUntil) {
+            state.settling = false;
+            SKSE::log::warn("arms: San Andreas still doesn't show the weapons it was sent after {} ms, believing what it shows", kSettle.count());
+        }
+        if (posed && !state.pending && !state.settling) {
+            std::copy(std::begin(pose.loadout), std::end(pose.loadout), state.known.entries);
+            Weapons::Sanitise(state.known.entries);
+            state.known.slot = (std::min)(pose.weaponSlot, static_cast<std::uint8_t>(Protocol::kWeaponSlotCount - 1));
+        }
+    }
+
+    bool DebugKeyEnabled() { return state.debugKey; }
+
+    void DebugKey()
+    {
+        const auto& step = Weapons::kDebugSteps[state.debugStep % Weapons::kDebugStepCount];
+        if (Send(Weapons::DebugCommand(state.debugStep))) {
+            SKSE::log::info("arms: debug key {}: {}", state.debugStep % Weapons::kDebugStepCount + 1, step.what);
+            state.debugStep++;
+        } else {
+            SKSE::log::warn("arms: debug key: the link is down, nothing given");
+        }
+    }
+
+    void Draw(const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState& a_pose, double a_nowMs, float a_delta, bool a_hide)
+    {
+        auto& link = LinkService::Get();
+        if (!state.haveShots) {
+            state.haveShots = true;
+            state.lastShots = a_pose.shots;
+        }
+        const auto fired = static_cast<std::uint16_t>(a_pose.shots - state.lastShots);
+        state.lastShots = a_pose.shots;
+        if (fired > 0 && fired < 64 && Weapons::Flashes(a_pose.weaponType) && (a_pose.weaponFlags & Protocol::kWeaponInHand) != 0) {
+            const bool twin = (a_pose.weaponFlags & Protocol::kWeaponTwin) != 0;
+            MuzzleFlash::Fire(twin ? state.nextHand : 0);
+            state.nextHand = twin ? (state.nextHand + 1) % Protocol::kWeaponHandMax : 0;
+        }
+
+        for (std::uint32_t hand = 0; hand < Protocol::kWeaponHandMax; ++hand) {
+            Protocol::BodyState weapon{};
+            if (link.ReadWeapon(hand, weapon)) {
+                if ((weapon.flags & Protocol::kBodyValid) == 0 || weapon.handover != a_handover) {
+                    state.hands[hand].Reset();
+                } else if (weapon.boneCount <= Protocol::kBodyBoneMax && Body::Finite(weapon)) {
+                    state.hands[hand].Push(weapon, a_nowMs);
+                }
+            }
+            Protocol::BodyState pose{};
+            if (a_hide || !state.hands[hand].Sample(a_nowMs, pose) || pose.boneCount == 0) {
+                continue;
+            }
+            const RE::NiPoint3 feet = a_anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+            if (ModelView::Show(pose, feet)) {
+                MuzzleFlash::Show(hand, feet, a_pose.muzzle[hand], pose.bones[0].rotation, a_delta);
+            }
+        }
+        MuzzleFlash::EndFrame();
+    }
+
+    void Hide()
+    {
+        for (auto& hand : state.hands) {
+            hand.Reset();
+        }
+        MuzzleFlash::Reset();
+        state.haveShots = false;
+    }
+
+    void Snapshot(Cosave::Arms& a_out)
+    {
+        a_out = state.known;
+    }
+
+    void Restore(const Cosave::Arms& a_arms)
+    {
+        state.known = a_arms;
+        state.pending = true;
+        state.settling = false;
+        SKSE::log::info("arms: the loaded save holds slot {}:{}", a_arms.slot, Describe(a_arms));
+    }
+
+    void Revert()
+    {
+        state.known = {};
+        state.pending = true;  // a new game or a save without weapons: San Andreas starts over too
+        state.settling = false;
+    }
+}

@@ -223,7 +223,7 @@ namespace AhShitRim::CjBody
 
         // Milliseconds since the first frame on the high-resolution clock (GetTickCount ticks in 16 ms steps, too coarse to
         // interpolate 30 frames a second by).
-        std::uint32_t NowMs()
+        std::uint32_t Clock()
         {
             static LARGE_INTEGER frequency{}, start{};
             if (!frequency.QuadPart) {
@@ -234,6 +234,34 @@ namespace AhShitRim::CjBody
             ::QueryPerformanceCounter(&now);
             return static_cast<std::uint32_t>((now.QuadPart - start.QuadPart) * 1000 / frequency.QuadPart);
         }
+    }
+
+    std::uint32_t NowMs() { return Clock(); }
+
+    bool BoneWorld(CPlayerPed* a_ped, int a_boneId, RwMatrixTag& a_out)
+    {
+        auto*             clump = a_ped->m_pRwClump;
+        auto*             atomic = clump ? SkinnedAtomic(clump) : nullptr;
+        RpHAnimHierarchy* hierarchy = clump ? GetAnimHierarchyFromSkinClump(clump) : nullptr;
+        if (!atomic || !hierarchy) {
+            return false;
+        }
+        const int index = RpHAnimIDGetIndex(hierarchy, a_boneId);
+        const RwMatrix* matrices = RpHAnimHierarchyGetMatrixArray(hierarchy);
+        if (index < 0 || !matrices) {
+            return false;
+        }
+        a_out = matrices[index];
+        if (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) {
+            const RwMatrix* atomicLtm = RwFrameGetLTM(FrameOf(atomic));
+            if (!atomicLtm) {
+                return false;
+            }
+            RwMatrix world;
+            RwMatrixMultiply(&world, &a_out, atomicLtm);
+            a_out = world;
+        }
+        return true;
     }
 
     bool Pelvis(CVector& a_offset)
@@ -295,7 +323,7 @@ namespace AhShitRim::CjBody
         body.handover = a_handover;
         body.model = state.model;
         body.boneCount = state.boneCount;
-        body.timeMs = NowMs();
+        body.timeMs = Clock();
         for (std::uint32_t i = 0; i < state.boneCount; i++) {
             const auto world = Body::SkinToWorld(ToFrame(skinToBone[i]), ToFrame(matrices[i]), atomicFrame, local);
             body.bones[i] = Body::ToBone(world, Vec(feet));

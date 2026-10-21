@@ -12,9 +12,11 @@
 #include "input.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
+#include "player/Arms.h"
 #include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
+#include "weapons.h"
 
 namespace AhShitRim::PlayerSync
 {
@@ -262,6 +264,7 @@ namespace AhShitRim::PlayerSync
         void DrawSkyrimPlayer()
         {
             ModelView::HideAll();
+            Arms::Hide();
             HideSneakEye(false);
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (player && state.playerHidden) {
@@ -342,7 +345,7 @@ namespace AhShitRim::PlayerSync
         // CJ drawn where San Andreas has him, posed by his skeleton, and Skyrim's camera on San
         // Andreas's, both smoothed between San Andreas's frames. Until his model and skeleton are
         // in, Skyrim's first-person view of its own player as before.
-        void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu)
+        void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu, bool a_hideBody)
         {
             const double        now = NowMs();
             Protocol::BodyState body{};
@@ -351,8 +354,9 @@ namespace AhShitRim::PlayerSync
                 state.body.Push(body, now);
             }
             Protocol::BodyState pose{};
+            // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
             if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
-                !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]))) {
+                (!a_hideBody && !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2])))) {
                 HidePlayer(a_player, state.reanchoring && state.playerHidden);  // CJ comes back in a frame or two
                 return;
             }
@@ -625,8 +629,13 @@ namespace AhShitRim::PlayerSync
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
             Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene);
-            DrawCj(a_player, fromHeading, fromPitch, MenuHasInput());
+            const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
+            const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
+            DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles();
+            if (valid) {
+                Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
+            }
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -676,9 +685,11 @@ namespace AhShitRim::PlayerSync
                 } else if (state.resumePending && !state.owned) {
                     TryResume(a_player);
                 }
-                SaHud::Update(a_delta, state.owned, MenuHasInput());
+                Arms::Update();
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
+                SaHud::SetWeapon(posed ? &pose : nullptr);
+                SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
             }
             static inline REL::Relocation<decltype(thunk)> original;
@@ -749,10 +760,20 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     auto* button = e->AsButtonEvent();
-                    if (button && button->GetDevice() == RE::INPUT_DEVICE::kMouse && button->IsDown() && state.owned && !MenuHasInput()) {
-                        const auto wheel = button->GetIDCode();
-                        if (wheel == RE::BSWin32MouseDevice::Key::kWheelUp || wheel == RE::BSWin32MouseDevice::Key::kWheelDown) {
-                            state.input.AddWheel(wheel == RE::BSWin32MouseDevice::Key::kWheelUp);  // the radio, in a vehicle
+                    if (button && button->GetDevice() == RE::INPUT_DEVICE::kMouse) {
+                        if (!state.owned) {
+                            continue;
+                        }
+                        const auto id = button->GetIDCode();
+                        if (id == RE::BSWin32MouseDevice::Key::kLeftButton) {
+                            state.input.SetFire(button->IsPressed() && !MenuHasInput());  // fires the weapon on foot
+                            changed = true;
+                        } else if (id == RE::BSWin32MouseDevice::Key::kRightButton) {
+                            state.input.SetAim(button->IsPressed() && !MenuHasInput());
+                            changed = true;
+                        } else if (button->IsDown() && !MenuHasInput() &&
+                                   (id == RE::BSWin32MouseDevice::Key::kWheelUp || id == RE::BSWin32MouseDevice::Key::kWheelDown)) {
+                            state.input.AddWheel(id == RE::BSWin32MouseDevice::Key::kWheelUp);  // the radio in a vehicle, the weapons on foot
                             changed = true;
                         }
                         continue;
@@ -772,6 +793,12 @@ namespace AhShitRim::PlayerSync
                             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                                 Activation::Activate(player);  // what CJ faces, through Skyrim's own activation
                             }
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikEquals && state.owned && Arms::DebugKeyEnabled()) {
+                        if (button->IsDown() && !MenuHasInput()) {
+                            Arms::DebugKey();  // the dev key: San Andreas's next weapon set
                         }
                         continue;
                     }
@@ -873,6 +900,7 @@ namespace AhShitRim::PlayerSync
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
             Ini::kPath);
+        Arms::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -897,6 +925,7 @@ namespace AhShitRim::PlayerSync
         a_out = {};
         a_out.handover = state.owned;
         a_out.armor = Vitals::Armor();
+        Arms::Snapshot(a_out.weapons);
         Protocol::PlayerState pose{};
         if (state.owned && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 && pose.handover == state.handover &&
             (pose.flags & Protocol::kPlayerInVehicle) != 0 && pose.vehicleModel && Pose::Finite(pose)) {
@@ -912,6 +941,7 @@ namespace AhShitRim::PlayerSync
         state.resume = a_record;
         state.resumePending = a_record.handover;
         Vitals::SetArmor(a_record.armor);
+        Arms::Restore(a_record.weapons);
     }
 
     void Revert()
@@ -919,5 +949,6 @@ namespace AhShitRim::PlayerSync
         state.resume = {};
         state.resumePending = false;
         Vitals::SetArmor(0.0f);
+        Arms::Revert();
     }
 }

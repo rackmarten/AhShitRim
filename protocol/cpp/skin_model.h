@@ -165,7 +165,7 @@ namespace AhShitRim::SkinModel
 
         Protocol::SkinModelHeader header{};
         if (!a_blob || !take(&header, sizeof(header)) || header.boneCount == 0 || header.boneCount > Protocol::kBodyBoneMax ||
-            header.kind > Protocol::kSkinModelVehicle) {
+            header.kind > Protocol::kSkinModelWeapon) {
             return std::nullopt;
         }
         Model model;

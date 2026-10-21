@@ -3,8 +3,11 @@
 #include "Ini.h"
 #include "hud/Overlay.h"
 #include "hud_layout.h"
+#include "img.h"
 #include "txd.h"
+#include "weapons.h"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -15,12 +18,25 @@ namespace AhShitRim::SaHud
     {
         using namespace HudLayout;
 
-        // Overlay textures, after its white one.
+        // Overlay textures, after its white one. The ones below kFist are always there; the rest are made when the
+        // files have them and are 0 when they don't (nothing is drawn from those).
         enum TextureId : std::uint32_t
         {
             kFont2 = 1,  // Gothic and Menu
             kFont1,      // Subtitles and Pricedown
             kFist,
+        };
+
+        // The weapon in CJ's hands for the HUD (v12).
+        struct WeaponHud
+        {
+            bool               valid = false;
+            std::uint8_t       type = 0;
+            std::string        ammo;  // "" when it counts none
+            Weapons::Scope     scope = Weapons::Scope::None;
+            bool               gun = false;     // the aim crosshair is for guns
+            bool               aiming = false;
+            float              crosshair[2] = { 0.5f, 0.4f };
         };
 
         // Skyrim's HUD clips hidden while San Andreas has the player, under
@@ -90,6 +106,9 @@ namespace AhShitRim::SaHud
             std::uint32_t    frame = 0;
             bool             skyrimHudHidden = false;
             bool             loggedScreen = false;
+            WeaponHud        weapon;
+            std::uint32_t    siteM16 = 0, siteRocket = 0, sniperCrosshair = 0, cameraCrosshair = 0;  // texture ids
+            std::array<std::uint32_t, 64> icons{};  // by weapon type
         } state;
 
         std::vector<std::uint8_t> ReadFile(const std::filesystem::path& a_path)
@@ -158,11 +177,56 @@ namespace AhShitRim::SaHud
             }
         };
 
+        // The four quarters of a crosshair or scope, the three after the first mirrored.
+        void DrawQuarters(Frame& a_frame, std::uint32_t a_texture, const std::array<Quarter, 4>& a_quarters)
+        {
+            if (a_texture == 0) {
+                return;
+            }
+            for (const auto& q : a_quarters) {
+                a_frame.quads.push_back({ a_texture, q.rect.x0, q.rect.y0, q.rect.x1, q.rect.y1, q.flipU ? 1.0f : 0.0f, q.flipV ? 1.0f : 0.0f,
+                    q.flipU ? 0.0f : 1.0f, q.flipV ? 0.0f : 1.0f, 0xFFFFFFFF });
+            }
+        }
+
+        // What San Andreas's camera puts over the picture for the weapon (CHud::DrawCrossHairs): the sniper rifle's
+        // scope with the rest of the screen black, the rocket launchers' sight, the camera's viewfinder, the first
+        // person rifle's corners and the circle round a gun's aim.
+        void DrawScope(Frame& a_frame)
+        {
+            const auto& w = state.weapon;
+            const auto& screen = a_frame.screen;
+            switch (w.scope) {
+            case Weapons::Scope::Sniper: {
+                const auto quarters = SniperScope(screen);
+                a_frame.Box({ 0.0f, 0.0f, quarters[0].rect.x0, screen.height }, kBlack);
+                a_frame.Box({ quarters[1].rect.x1, 0.0f, screen.width, screen.height }, kBlack);
+                a_frame.Box({ quarters[0].rect.x0, 0.0f, quarters[1].rect.x1, quarters[0].rect.y0 }, kBlack);
+                a_frame.Box({ quarters[0].rect.x0, quarters[2].rect.y1, quarters[1].rect.x1, screen.height }, kBlack);
+                DrawQuarters(a_frame, state.sniperCrosshair, quarters);
+                break;
+            }
+            case Weapons::Scope::Rocket: DrawQuarters(a_frame, state.siteRocket, RocketSight(screen)); break;
+            case Weapons::Scope::Camera: DrawQuarters(a_frame, state.cameraCrosshair, CameraFinder(screen)); break;
+            case Weapons::Scope::Rifle: DrawQuarters(a_frame, state.siteM16, AimSight(screen, 0.5f, 0.5f, 1.0f)); break;
+            case Weapons::Scope::Aim:
+                if (w.gun) {
+                    DrawQuarters(a_frame, state.siteM16, AimSight(screen, w.crosshair[0], w.crosshair[1], 0.8f));
+                }
+                break;
+            default: break;
+            }
+        }
+
         // The top right HUD, from the Skyrim player.
         void DrawHud(Frame& a_frame, RE::PlayerCharacter* a_player)
         {
             const auto icon = WeaponIcon(a_frame.screen);
-            a_frame.quads.push_back({ kFist, icon.x0, icon.y0, icon.x1, icon.y1, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF });
+            const auto weaponIcon = state.weapon.valid && state.weapon.type < state.icons.size() && state.icons[state.weapon.type] ? state.icons[state.weapon.type] : kFist;
+            a_frame.quads.push_back({ weaponIcon, icon.x0, icon.y0, icon.x1, icon.y1, 0.0f, 0.0f, 1.0f, 1.0f, 0xFFFFFFFF });
+            if (!state.weapon.ammo.empty()) {
+                a_frame.Text(kAmmo, state.weapon.ammo, kAmmo.colour);
+            }
 
             auto* calendar = RE::Calendar::GetSingleton();
             a_frame.Text(kClock, ClockText(calendar ? calendar->GetHour() : 0.0f), kClock.colour);
@@ -311,9 +375,50 @@ namespace AhShitRim::SaHud
         images[kFont2 - 1] = ImageOf(font2);
         images[kFont1 - 1] = ImageOf(font1);
         images[kFist - 1] = ImageOf(fist);
+        const auto add = [&](const Txd::Texture* a_texture) -> std::uint32_t {
+            if (!a_texture) {
+                return 0;
+            }
+            images.push_back(ImageOf(a_texture));
+            return static_cast<std::uint32_t>(images.size());  // the overlay's ids count from 1
+        };
+        state.siteM16 = add(Txd::Find(hud, "siteM16"));
+        state.siteRocket = add(Txd::Find(hud, "siterocket"));
+
+        // The weapons' icons and scopes are in each weapon's own dictionary in gta3.img.
+        std::ifstream      archive(sa / "models" / "gta3.img", std::ios::binary);
+        const Img::Reader  read = [&archive](std::uint64_t a_offset, void* a_out, std::size_t a_size) {
+            archive.clear();
+            archive.seekg(static_cast<std::streamoff>(a_offset));
+            return static_cast<bool>(archive.read(static_cast<char*>(a_out), static_cast<std::streamsize>(a_size)));
+        };
+        const auto directory = Img::ReadDirectory(read);
+        int        icons = 0, missing = 0;
+        if (directory) {
+            for (std::uint8_t type = 1; type <= Weapons::kLastCarried; ++type) {
+                if (!Weapons::Carried(type)) {
+                    continue;
+                }
+                const auto  model = std::string(Weapons::ModelName(type));
+                const auto* entry = Img::Find(*directory, model + ".txd");
+                const auto  bytes = entry ? Img::ReadEntry(read, *entry) : std::vector<std::uint8_t>{};
+                const auto  textures = Txd::Read(bytes.data(), bytes.size(), &skipped);
+                if (const auto id = add(Txd::Find(textures, Weapons::IconName(type)))) {
+                    state.icons[type] = id;
+                    icons++;
+                } else {
+                    missing++;
+                }
+                if (const auto crosshair = Weapons::CrosshairName(type); !crosshair.empty()) {
+                    (type == Weapons::SniperRifle ? state.sniperCrosshair : state.cameraCrosshair) = add(Txd::Find(textures, crosshair));
+                }
+            }
+        }
         Overlay::SetImages(std::move(images));
         state.loaded = true;
-        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures)", sa.string(), fonts.size(), hud.size());
+        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}{}",
+            sa.string(), fonts.size(), hud.size(), icons, missing, state.sniperCrosshair != 0, state.cameraCrosshair != 0, state.siteRocket != 0, state.siteM16 != 0,
+            directory ? "" : "; gta3.img did not read, the weapon icon stays the fist");
     }
 
     void Update(float a_delta, bool a_owned, bool a_menu)
@@ -344,9 +449,30 @@ namespace AhShitRim::SaHud
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (a_owned && !a_menu && player) {
             DrawHud(frame, player);
+            DrawScope(frame);
         }
         DrawText(frame);
         Overlay::Submit(std::move(frame.quads));
+    }
+
+    void SetWeapon(const Protocol::PlayerState* a_pose)
+    {
+        auto& w = state.weapon;
+        w = {};
+        if (!a_pose) {
+            return;
+        }
+        w.valid = true;
+        w.type = a_pose->weaponType;
+        w.scope = Weapons::ScopeOf(a_pose->cameraMode);
+        w.aiming = (a_pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+        w.gun = (w.type >= Weapons::Pistol && w.type <= Weapons::CountryRifle) || w.type == Weapons::Flamethrower || w.type == Weapons::Minigun;
+        w.crosshair[0] = a_pose->crosshair[0];
+        w.crosshair[1] = a_pose->crosshair[1];
+        if (Weapons::CountsAmmo(w.type)) {
+            const auto& entry = a_pose->loadout[(std::min)(static_cast<std::uint32_t>(a_pose->weaponSlot), Protocol::kWeaponSlotCount - 1)];
+            w.ammo = Weapons::AmmoText(entry.ammo, entry.clip, a_pose->ammoStyle);
+        }
     }
 
     void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }
