@@ -224,6 +224,13 @@ namespace AhShitRim::Vitals
         }
     }
 
+    void Hurt(RE::PlayerCharacter* a_player, float a_damage)
+    {
+        if (a_player && a_damage > 0.0f && !state.sequence.Running()) {
+            Apply(a_player, a_damage);
+        }
+    }
+
     void OnTakeOver(RE::PlayerCharacter* a_player)
     {
         state.meter.Reset();

@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "player/Projectiles.h"
 #include "weapons.h"
 
 #include <random>
@@ -141,7 +142,7 @@ namespace AhShitRim::Shots
             a_actor->NotifyAnimationGraph("staggerStart");
         }
 
-        Damage::Class ClassOf(RE::Actor* a_actor)
+        Damage::Class ClassOfRace(RE::Actor* a_actor)
         {
             auto* race = a_actor->GetRace();
             if (!race) {
@@ -151,11 +152,12 @@ namespace AhShitRim::Shots
             return Damage::ClassOf(id ? id : "", race->HasKeywordString("ActorTypeDragon"));
         }
 
-        void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage)
+        void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
+            bool a_blood = true)
         {
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
-            const auto cls = ClassOf(actor);
+            const auto cls = ClassOfRace(actor);
             const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
@@ -207,6 +209,9 @@ namespace AhShitRim::Shots
             }
 
             // The race's blood where it went in, on the bone it hit.
+            if (!a_blood) {
+                return;
+            }
             auto* race = actor->GetRace();
             auto* set = !melee ? state.bulletSet : Weapons::IsMelee(a_shot.weaponType) && (a_shot.weaponType == Weapons::Knife || a_shot.weaponType == Weapons::Katana ||
                                                                                        a_shot.weaponType == Weapons::Chainsaw)
@@ -263,7 +268,7 @@ namespace AhShitRim::Shots
                 head = node->world.translate;
             }
             const bool headshot = Damage::PassesWithin({ a_origin.x, a_origin.y, a_origin.z }, { a_dir.x, a_dir.y, a_dir.z }, { head.x, head.y, head.z },
-                Damage::HeadRadius(ClassOf(a_actor), a_actor->GetScale()));
+                Damage::HeadRadius(ClassOfRace(a_actor), a_actor->GetScale()));
             return Damage::PartOfHit(headshot, (a_at.z - feet.z) / height);
         }
 
@@ -489,6 +494,8 @@ namespace AhShitRim::Shots
             }
             if (shot.kind == Protocol::kShotMelee) {
                 Blow(a_player, shot, a_anchor);
+            } else if (shot.kind == Protocol::kShotFlame) {
+                Projectiles::Flame(a_player, shot, a_anchor);
             } else {
                 Bullet(a_player, shot, a_anchor);
             }
@@ -503,4 +510,22 @@ namespace AhShitRim::Shots
         state.landed.Clear();
         state.hits.Clear();  // hits that never went belong to the game before
     }
+
+    void Hurt(RE::PlayerCharacter* a_player, RE::Actor* a_actor, std::uint8_t a_weapon, float a_saDamage, const RE::NiPoint3& a_at,
+        const RE::NiPoint3& a_dir, bool a_blood)
+    {
+        if (!a_player || !a_actor || a_actor->IsDead() || !(a_saDamage > 0.0f)) {
+            return;
+        }
+        Victim victim;
+        victim.actor = a_actor;
+        victim.at = a_at;
+        victim.normal = -a_dir;
+        Protocol::ShotEvent shot{};
+        shot.weaponType = a_weapon;
+        shot.kind = Protocol::kShotBullet;
+        Hurt(a_player, victim, shot, a_dir, a_saDamage, a_blood);
+    }
+
+    Damage::Class ClassOf(RE::Actor* a_actor) { return ClassOfRace(a_actor); }
 }

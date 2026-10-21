@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "input.h"
 #include "pose.h"
@@ -8,6 +9,8 @@
 
 class CPlayerPed;
 class CVector;
+struct RpAtomic;
+struct RwObject;
 
 // CJ's weapons for Skyrim (protocol v12). San Andreas keeps them: its slots, ammo, the weapon in his
 // hands, its switching, aiming and firing, driven by the mouse through the pad (the wheel switches,
@@ -40,4 +43,9 @@ namespace AhShitRim::CjWeapons
 
     // Into the pose published this frame: the loadout, the held weapon and what Skyrim draws for it.
     void Fill(CPlayerPed* a_ped, Pose::SanAndreasPose& a_pose);
+
+    // A weapon model's instance (a_object: its clump or atomic, a thrown weapon's or a rocket's) as a SkinModel
+    // of kind kSkinModelWeapon for Skyrim, its drawn parts as bones in a_parts' order, built as the weapon in
+    // his hand is (CjProjectiles draws the projectiles with it). Empty when it has nothing to draw.
+    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts);
 }

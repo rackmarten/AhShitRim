@@ -21,7 +21,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(cmake/plugin_sa.cmake)
 
 # ---- The ASI plugin ----
-add_library(AhShitRim SHARED src/main.cpp src/window.cpp src/runner.cpp src/chunk_world.cpp src/cj_body.cpp src/cj_weapons.cpp src/cj_shots.cpp src/model_sender.cpp
+add_library(AhShitRim SHARED src/main.cpp src/window.cpp src/runner.cpp src/chunk_world.cpp src/cj_body.cpp src/cj_weapons.cpp src/cj_shots.cpp src/cj_projectiles.cpp src/model_sender.cpp
     src/rw_texture.cpp src/vehicles.cpp src/audio.cpp src/scenes.cpp src/vitals.cpp ../protocol/cpp/link.cpp)
 set_target_properties(AhShitRim PROPERTIES SUFFIX ".asi")
 target_include_directories(AhShitRim PRIVATE src ../protocol/cpp)
