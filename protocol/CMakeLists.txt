@@ -37,6 +37,7 @@ add_executable(protocol_tests
     tests/cpp/test_weapons.cpp
     tests/cpp/test_img.cpp
     tests/cpp/test_flash.cpp
+    tests/cpp/test_damage.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)

@@ -5,7 +5,7 @@
 // CJ's weapons on Skyrim's side (protocol v12). San Andreas keeps them; this
 //  - draws the weapon model in CJ's hand (two for a twin pistol) from the weapon slots, smoothed like CJ,
 //    and the flash of each shot (MuzzleFlash),
-//  - keeps the loadout in the co-save: the pose carries San Andreas's weapons, the save holds them, and a
+//  - keeps the loadout and (v13) the weapon skills in the co-save: the pose carries San Andreas's weapons, the save holds them, and a
 //    loaded save (or a new game) sends them back as a SetLoadout command once the link is up,
 //  - gives the debug key's weapon sets ([Debug] WeaponKey in AhShitRim.ini, on until cheats exist).
 // Main thread only.

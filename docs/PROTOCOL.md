@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v12. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11), and weapons: the mouse's fire and aim buttons, the wheel's weapon switches, CJ's loadout, the weapon in his hands, the shots and the camera mode in the pose, two weapon slots with the models of what he holds, weapon commands on the ring to San Andreas, and the loadout in the co-save (v12).
+> Status: protocol v13. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11), and weapons: the mouse's fire and aim buttons, the wheel's weapon switches, CJ's loadout, the weapon in his hands, the shots and the camera mode in the pose, two weapon slots with the models of what he holds, weapon commands on the ring to San Andreas, and the loadout in the co-save (v12), and shots: each bullet, shotgun shot and melee blow CJ deals sent to Skyrim to hit test, his hits sent back to raise his weapon skills, the skills in the pose, the loadout command and the co-save (v13).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -38,13 +38,13 @@ One section, `Local\AhShitRim.Link`, 8,402,752 bytes. Whichever game starts firs
 |---|---|---|---|
 | 0 | 128 | `LinkHeader`: magic, sizes, creator version, one `PeerInfo` per side | creator, then each side its own `PeerInfo` |
 | 128 | 144 | `InputSlot`: the player's input for CJ (v9: 144 bytes, keeping the later slots on 64-byte boundaries) | Skyrim |
-| 272 | 240 | `PlayerSlot`: CJ's pose (v12: 240 bytes) | San Andreas |
-| 512 | 64 | `AudioSlot`: San Andreas's volumes (v7) | Skyrim |
-| 576 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
-| 2496 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
-| 10176 | 2 x 1920 | weapon slots, one `BodySlot` per hand (v12) | San Andreas |
-| 14016 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks, weapon commands) | Skyrim produces, San Andreas consumes |
-| 4208384 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's, the vehicles' and the weapons' models, v5) | San Andreas produces, Skyrim consumes |
+| 272 | 304 | `PlayerSlot`: CJ's pose (v13: 304 bytes) | San Andreas |
+| 576 | 64 | `AudioSlot`: San Andreas's volumes (v7) | Skyrim |
+| 640 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
+| 2560 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
+| 10240 | 2 x 1920 | weapon slots, one `BodySlot` per hand (v12) | San Andreas |
+| 14080 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks, weapon commands) | Skyrim produces, San Andreas consumes |
+| 4208448 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's, the vehicles' and the weapons' models, v5; the shots, v13) | San Andreas produces, Skyrim consumes |
 
 `LinkHeader` (frozen across versions):
 
@@ -103,7 +103,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 
 ### Pose (San Andreas to Skyrim)
 
-`PlayerState`, 224 bytes (80 before v12, 56 before v11, 48 before v7). Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
+`PlayerState`, 248 bytes (224 before v13, 80 before v12, 56 before v11, 48 before v7). Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
 
 | Offset | Field | Meaning |
 |---|---|---|
@@ -131,6 +131,8 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | 88 | `muzzle[2][3]` | where the shots leave, relative to CJ's feet, Skyrim units: the weapon's fire offset on its frame. `[1]` is the left hand's |
 | 112 | `crosshair[2]` | where San Andreas's crosshair sits on the screen, as fractions of its width and height |
 | 120 | `loadout[13]` | `WeaponEntry` (8 bytes: `type` u8, reserved, `clip` u16, `ammo` u32 up to 99,999): San Andreas's weapons, one per slot, type 0 for an empty slot |
+| 224 | `skills[11]` | u16 (v13): San Andreas's weapon skill stats, `STAT_PISTOL_SKILL` (69) to `STAT_SNIPERRIFLE_SKILL` (79) in order (pistol, silenced pistol, Desert Eagle, shotgun, sawn-off, combat shotgun, micro SMG, SMG, AK-47, M4, sniper rifle), 0 to 1000: poor, gangster and hitman by `weapon.dat`'s thresholds |
+| 246 | `aimRadius` | u16 (v13): the free-aim crosshair's size in thousandths, San Andreas's `CPlayerPed::GetWeaponRadiusOnScreen` (200 held steady, growing while he fires, by the weapon's accuracy and range); Skyrim draws `siteM16`'s four quarters that size |
 
 Skyrim adds `offset` to the player's position at the handover.
 
@@ -197,7 +199,8 @@ Messages that must all arrive, one after another: two single-producer, single-co
 |---|---|---|---|
 | 1 | `CollisionChunk` | Skyrim → San Andreas | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
 | 2 | `ModelChunk` | San Andreas → Skyrim (v5; vehicles since v6, weapons since v12) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
-| 3 | `WeaponCommand` | Skyrim → San Andreas (v12) | `WeaponCommand` (112 bytes): `kind`, `argument` and 13 `WeaponEntry`s |
+| 3 | `WeaponCommand` | Skyrim → San Andreas (v12) | `WeaponCommand` (136 bytes since v13): `kind`, `argument`, 13 `WeaponEntry`s and 11 skills |
+| 4 | `Shot` | San Andreas → Skyrim (v13) | `ShotEvent` (64 bytes): a bullet, a shotgun's shot or a blow CJ dealt |
 
 ### CJ's model
 
@@ -207,21 +210,44 @@ The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts, `kin
 
 ### Weapon commands
 
-`WeaponCommand` (v12): `kind` u32, `argument` u32, `entries[13]`.
+`WeaponCommand` (v12): `kind` u32, `argument` u32, `entries[13]`, (v13) `skills[11]` u16 and 2 reserved bytes.
 
 | `kind` | Meaning |
 |---|---|
-| `SetLoadout` 1 | Replace CJ's weapons with `entries` (a loaded save, a new game: all empty) and hold slot `argument`; San Andreas clears his weapons, loads each weapon's model and gives it with its ammo and clip, and a slot he doesn't hold means fists |
+| `SetLoadout` 1 | Replace CJ's weapons with `entries` (a loaded save, a new game: all empty) and hold slot `argument`; San Andreas clears his weapons, loads each weapon's model and gives it with its ammo and clip, and a slot he doesn't hold means fists. (v13) Sets his weapon skill stats to `skills` too (a save from before v13, a new game: all 0) |
 | `GiveSet` 2 | Give one of San Andreas's weapon sets: `argument` 1 to 3 are its three weapon cheats' (`CCheat::WeaponCheat1` to `3`), 4 the gear they leave out (tear gas, satchel charges and detonator, minigun, camera, parachute) |
 | `GiveWeapon` 3 | Give one weapon: `argument` is its type, `entries[0].ammo` its ammo (at least 1) |
+| `Hit` 4 | (v13) CJ hit someone in Skyrim with weapon `argument`, `entries[0].ammo` times (at most 64 a command): San Andreas counts each as its own hit (`CStats::UpdateStatsWhenWeaponHit`), which raises his skill with the guns that have one. Skyrim sends one per weapon each frame it hit with it |
 
 Commands carry no handover (a loadout isn't a place), so San Andreas applies them as it reads them. A weapon in a slot needs its model in memory (a weapon San Andreas gives itself arrives with the game's own streaming flags), so every command loads and keeps the models of the weapons CJ carries (`CStreaming`, kept in memory) before giving them. Skyrim sends `SetLoadout` for the save's loadout whenever the link is up after a load (and again when it comes up after San Andreas restarted), and a new game or a save without weapons sends an empty one. `GiveSet` and `GiveWeapon` are the debug key's (below), until cheats exist.
+
+### Shots
+
+San Andreas's world has no one in it, so nothing CJ fires hurts anything there; Skyrim decides what each shot hits (`sa/src/cj_shots.cpp`, `skse/src/player/Shots.cpp`, the numbers in `protocol/cpp/damage.h`). San Andreas sends a `ShotEvent` (64 bytes, v13) for each:
+
+| Offset | Field | |
+|---|---|---|
+| 0 | `handover` | u32: the `InputState.handover` `origin` belongs to; Skyrim drops a shot of another |
+| 4 | `weaponType` | u8: San Andreas's `eWeaponType` (0 for fists) |
+| 5 | `kind` | u8: `kShotBullet` 0 (a bullet, or a shotgun's shot), `kShotMelee` 1 (a blow at its hit frame) |
+| 6 | `skill` | u8: CJ's skill level with the weapon when it fired: 0 poor, 1 gangster, 2 hitman |
+| 7 | `flags` | u8: `kShotSpread` 0x1 (a shotgun's shot: Skyrim fans it out into its pellets), `kShotFirstPerson` 0x2 (from San Andreas's first-person camera: the sniper scope, the first-person rifle) |
+| 8 | `strike` | u32, melee: counts CJ's blows. A blow can come several frames running (the chainsaw's cut, a slow swing): the same count is the same blow |
+| 12 | `damage` | f32: San Andreas's damage for it, its health points: `weapon.dat`'s per bullet (a shotgun's per pellet) at CJ's skill, `melee.dat`'s for the blow's move |
+| 16 | `origin[3]` | where the bullet starts, or the centre of the blow, relative to `InputState.anchor`, Skyrim units |
+| 28 | `direction[3]` | unit vector: the bullet's line, after San Andreas's spread; for a blow the way CJ faces |
+| 40 | `range` | Skyrim units: how far the bullet reaches (`weapon.dat`'s range, or the line San Andreas worked out if longer); for a blow its radius |
+| 44 | reserved | 20 bytes |
+
+Where they come from: `CWeapon::FireInstantHit` (0x73FB10) tests each line it fires after calling `CBirds::HandleGunShot` with its start and end, hit or not, at four call sites the ASI points at itself (a shotgun's shot is one line there: San Andreas's pellets are only its bullet traces); the first-person rifles fire through `CWeapon::DoBulletImpact` (0x73B550) instead; the sniper rifle fires a moving bullet from the camera instead (`CWeapon::FireSniper`, 0x73AAC0), sent along the camera's front; a blow lands in `CTaskSimpleFight::FightStrike` (0x6240B0) at the move's hit frame, with the blow's centre, and its radius (0x30) and damage (a byte at 0x55) per move come from `melee.dat`'s combo data at 0xC170D0. The ASI hooks all three once the other plugins have patched the game, and sends only CJ's. A third-person bullet's spread is eased in: the first of a burst goes straight down San Andreas's crosshair ray, and the line keeps more of San Andreas's spread the longer the fire button is held (`CPlayerData::m_fAttackButtonCounter`, which also grows the crosshair, `aimRadius`).
+
+Skyrim fans a shotgun's shot out into 8 pellets (the combat shotgun's 6) in a cone of 3 to 6 degrees, the same pattern every time (`Damage::PelletDirection`), and ray tests each bullet and pellet through its Havok world from `origin` along `direction` for `range` on the collision layer `[Weapons] ShotLayer` in `AhShitRim.ini` (6, the projectiles', by default), passing through the player's own body, the dead and what doesn't stop a bullet (clutter, debris, triggers, invisible walls): a static, furniture, a tree, the land or water stops it (Skyrim's impact for its material, from the Hunting Bow's impact set, stone's for a shape without one, two and a half times the size), and the first living actor takes it. Havok gives the actor's capsule, not a bone, so the line passing within a head's radius of the head bone is a headshot and a hit low on the body a leg. A blow lands on each living actor whose capsule it reaches, once per `strike`, the chainsaw every 0.1 s or more for as long as it cuts; a blow does two and a half times its `melee.dat` damage, the chainsaw 150 a second, and staggers its target by chance (the chainsaw every time). The damage (`Damage::ToSkyrim`): San Andreas's times 0.8, times 3 on the head (10 with the sniper and country rifles), 0.75 on a leg, less for targets above level 6 (down to 0.4), a half for giants and mammoths and a quarter for dragons; Skyrim's difficulty doesn't scale it. It goes through Skyrim's own hit with the player as the aggressor (`HitData`, the call the melee hit makes at its 0x4A8), so kill credit, crime and aggro are Skyrim's, and the race's blood shows where it went in. Each hit is counted for its weapon and sent back as a `Hit` command.
 
 ### A weapon's model
 
 Sent whenever CJ takes a weapon in his hand, and again whenever the link comes up (`sa/src/cj_weapons.cpp`), as a `SkinModel` of kind `kSkinModelWeapon` (2) in the same way as a vehicle's: every drawn atomic of the weapon's clump is a part and a bone (the `gunflash` atomic, San Andreas's own flash sprite, is left out), its vertices in the part's own space on that bone alone, a scale or mirror baked in, meshes that look the same merged. A pistol is one part and one mesh of about 200 vertices (28 KB), the minigun two parts (130 KB). The model is built from the weapon's clump the first time it is held and kept by the weapon's model index, under an id of its own for each hand (the left hand's copy is a second id), for good: Skyrim builds a model id once, so switching back to a weapon sends it again but builds nothing. Skyrim builds it like any other and bounds it like CJ.
 
-The debug key (`=`, while San Andreas has the player; off with `[Debug] WeaponKey=0` in `AhShitRim.ini`, which should be set once cheats exist) gives the next of 16 steps: San Andreas's three weapon sets, the gear they leave out, then the golf club, nightstick, shovel, pool cue, katana, the gifts and the chainsaw one at a time (a slot holds one melee weapon), round and round (`Weapons::kDebugSteps`).
+The debug key (`=`, while San Andreas has the player; off with `[Debug] WeaponKey=0` in `AhShitRim.ini`, which should be set once cheats exist) gives the next of 5 steps, round and round, and says which in the help box: San Andreas's three weapon sets (the third has the chainsaw), the gear they leave out, and the katana (`Weapons::kDebugSteps`).
 
 ### A vehicle's model
 

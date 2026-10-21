@@ -80,6 +80,8 @@ namespace AhShitRim::Pose
         Vec3          muzzle[2];                 // where the shots leave, relative to his feet, metres
         float         crosshair[2] = { 0.5f, 0.4f };  // where San Andreas puts its crosshair, fractions of the screen
         Protocol::WeaponEntry loadout[Protocol::kWeaponSlotCount] = {};
+        std::uint16_t skills[Protocol::kWeaponSkillCount] = {};  // v13: the weapon skill stats, 0..1000
+        float         aimRadius = 0.2f;  // v13: San Andreas's crosshair size (GetWeaponRadiusOnScreen)
     };
 
     inline Protocol::PlayerState ToPlayerState(const SanAndreasPose& a_pose, std::uint32_t a_frame, std::uint32_t a_handover)
@@ -125,6 +127,11 @@ namespace AhShitRim::Pose
         for (std::uint32_t i = 0; i < Protocol::kWeaponSlotCount; ++i) {
             s.loadout[i] = a_pose.loadout[i];
         }
+        for (std::uint32_t i = 0; i < Protocol::kWeaponSkillCount; ++i) {
+            s.skills[i] = a_pose.skills[i];
+        }
+        const float radius = std::isfinite(a_pose.aimRadius) ? a_pose.aimRadius : 0.0f;
+        s.aimRadius = static_cast<std::uint16_t>(radius <= 0.0f ? 0.0f : radius >= 60.0f ? 60000.0f : radius * 1000.0f + 0.5f);
         return s;
     }
 

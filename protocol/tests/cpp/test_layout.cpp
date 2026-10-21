@@ -28,9 +28,22 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v12 constants")
+TEST_CASE("protocol v13 constants")
 {
-    CHECK(kProtocolVersion == 12);
+    CHECK(kProtocolVersion == 13);
+    CHECK(kWeaponSkillCount == 11);
+    CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
+    CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
+    CHECK(kShotBullet == 0);
+    CHECK(kShotMelee == 1);
+    CHECK(kShotSpread == 0x1);
+    CHECK(kShotFirstPerson == 0x2);
+    CHECK(sizeof(ShotEvent) == 64);
+    CHECK(offsetof(ShotEvent, strike) == 8);
+    CHECK(offsetof(ShotEvent, damage) == 12);
+    CHECK(offsetof(ShotEvent, origin) == 16);
+    CHECK(offsetof(ShotEvent, direction) == 28);
+    CHECK(offsetof(ShotEvent, range) == 40);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);
     CHECK(kSkinModelWeapon == 2);
@@ -54,7 +67,7 @@ TEST_CASE("protocol v12 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8402752);
+    CHECK(kMappingSize == 8402816);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -66,7 +79,7 @@ TEST_CASE("protocol v12 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v12 slot and ring layout")
+TEST_CASE("the v13 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
@@ -84,9 +97,12 @@ TEST_CASE("the v12 slot and ring layout")
     CHECK(offsetof(InputState, carOffset) == 92);
     CHECK(offsetof(InputState, carHeading) == 104);
     CHECK(sizeof(InputSlot) == 144);
-    CHECK(sizeof(PlayerState) == 224);
+    CHECK(sizeof(PlayerState) == 248);
+    CHECK(offsetof(PlayerState, skills) == 224);
+    CHECK(offsetof(PlayerState, aimRadius) == 246);
     CHECK(sizeof(WeaponEntry) == 8);
-    CHECK(sizeof(WeaponCommand) == 112);
+    CHECK(sizeof(WeaponCommand) == 136);
+    CHECK(offsetof(WeaponCommand, skills) == 112);
     CHECK(offsetof(PlayerState, weaponType) == 80);
     CHECK(offsetof(PlayerState, weaponSlot) == 81);
     CHECK(offsetof(PlayerState, weaponFlags) == 82);
@@ -105,24 +121,24 @@ TEST_CASE("the v12 slot and ring layout")
     CHECK(offsetof(PlayerState, vehicleOffset) == 56);
     CHECK(offsetof(PlayerState, vehicleHeading) == 68);
     CHECK(offsetof(PlayerState, damage) == 72);
-    CHECK(sizeof(PlayerSlot) == 240);
+    CHECK(sizeof(PlayerSlot) == 304);
     CHECK(offsetof(InputSlot, value) == 8);
     CHECK(offsetof(PlayerSlot, value) == 8);
-    CHECK(kOffsetAudioSlot == 512);
+    CHECK(kOffsetAudioSlot == 576);
     CHECK(sizeof(AudioSlot) == 64);
     CHECK(offsetof(AudioSlot, value) == 8);
     CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
-    CHECK(kOffsetBodySlot == 576);
+    CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);
     CHECK(sizeof(BodyState) == 1856);
-    CHECK(kOffsetVehicleSlots == 2496);
+    CHECK(kOffsetVehicleSlots == 2560);
     CHECK(kOffsetVehicleSlots % 64 == 0);
-    CHECK(kOffsetWeaponSlots == 2496 + 4 * 1920);
+    CHECK(kOffsetWeaponSlots == 2560 + 4 * 1920);
     CHECK(kOffsetWeaponSlots % 64 == 0);
-    CHECK(kOffsetRingToSanAndreas == 10176 + 2 * 1920);
+    CHECK(kOffsetRingToSanAndreas == 10240 + 2 * 1920);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4208384);
+    CHECK(kOffsetRingToSkyrim == 4208448);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);

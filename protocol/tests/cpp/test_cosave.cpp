@@ -25,6 +25,9 @@ namespace
         r.weapons.entries[2] = { AhShitRim::Weapons::Pistol, 0, 17, 117 };
         r.weapons.entries[4] = { AhShitRim::Weapons::MicroUzi, 0, 50, 650 };
         r.weapons.entries[7] = { AhShitRim::Weapons::Minigun, 0, 500, 99999 };
+        r.weapons.skills[0] = 999;   // pistol: hitman
+        r.weapons.skills[6] = 120;   // micro SMG: gangster
+        r.weapons.skills[10] = 1000;
         return r;
     }
 }
@@ -32,7 +35,7 @@ namespace
 TEST_CASE("a record round trips")
 {
     const auto bytes = Write(Sample());
-    CHECK(bytes.size() == kSizeV3);
+    CHECK(bytes.size() == kSizeV4);
 
     Record back;
     REQUIRE(Read(kVersion, bytes.data(), bytes.size(), back) == Result::Ok);
@@ -55,6 +58,10 @@ TEST_CASE("a record round trips")
     CHECK(back.weapons.entries[7].ammo == 99999);
     CHECK(back.weapons.entries[1].type == 0);
     CHECK(back.weapons.entries[12].type == 0);
+    CHECK(back.weapons.skills[0] == 999);
+    CHECK(back.weapons.skills[6] == 120);
+    CHECK(back.weapons.skills[10] == 1000);
+    CHECK(back.weapons.skills[1] == 0);
 }
 
 TEST_CASE("a CJ on foot with the handover off round trips")
@@ -92,6 +99,30 @@ TEST_CASE("a version 2 record upgrades: no weapons")
     CHECK(back.weapons.slot == 0);
     CHECK(AhShitRim::Weapons::Empty(back.weapons.entries));
     CHECK(Read(2, v2.data(), kSizeV2 - 1, back) == Result::Short);
+}
+
+TEST_CASE("a version 3 record upgrades: weapons, no skills")
+{
+    const auto full = Write(Sample());
+    const auto v3 = std::vector<std::uint8_t>(full.begin(), full.begin() + kSizeV3);
+
+    Record back = Sample();  // not the defaults, to see them restored
+    REQUIRE(Read(3, v3.data(), v3.size(), back) == Result::Ok);
+    CHECK(back.weapons.entries[2].type == AhShitRim::Weapons::Pistol);
+    for (auto skill : back.weapons.skills) {
+        CHECK(skill == 0);
+    }
+    CHECK(Read(4, v3.data(), v3.size(), back) == Result::Short);
+}
+
+TEST_CASE("a skill past San Andreas's top is held to it")
+{
+    auto r = Sample();
+    r.weapons.skills[3] = 60000;
+    const auto bytes = Write(r);
+    Record     back;
+    REQUIRE(Read(kVersion, bytes.data(), bytes.size(), back) == Result::Ok);
+    CHECK(back.weapons.skills[3] == kSkillMax);
 }
 
 TEST_CASE("a weapon San Andreas can't hold is left out and the rest of the record stays; a slot past the last makes it bad")
