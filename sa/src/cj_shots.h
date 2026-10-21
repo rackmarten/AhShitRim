@@ -8,6 +8,8 @@ class CVector;
 //   shotgun's shot is one line, which Skyrim fans out into pellets), and the first-person rifles'
 //   (CWeapon::DoBulletImpact), from its start along its line, with the weapon's range,
 // - the sniper rifle's shot from San Andreas's camera (CWeapon::FireSniper, which fires a moving bullet),
+// - each puff of the flamethrower (CWeapon::FireAreaEffect, which San Andreas then skips for him: no fire on
+//   its ground), from the nozzle along where he aims, with its range,
 // - each melee blow at its hit frame (CTaskSimpleFight::FightStrike): where it lands, its radius and its
 //   damage from melee.dat, counted so Skyrim lands each blow once, and the chainsaw again and again.
 // Origins go relative to where the handover put CJ's feet, in Skyrim units. Game thread only.
@@ -20,4 +22,7 @@ namespace AhShitRim::CjShots
     // where this handover put his feet (San Andreas metres) and the handover, for the shots until the next
     // call (a blow lands while the world is processed, before it).
     void SetFrame(const CVector& a_spawnFeet, unsigned a_handover);
+
+    // The frame SetFrame last gave (false before the first): CjProjectiles sends from it too.
+    bool Frame(CVector& a_spawnFeet, unsigned& a_handover);
 }

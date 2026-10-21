@@ -13,6 +13,7 @@
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/Arms.h"
+#include "player/Projectiles.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
 #include "pose.h"
@@ -409,6 +410,7 @@ namespace AhShitRim::PlayerSync
             CollisionSampler::Stop();
             Activation::Clear();
             Shots::Clear();
+            Projectiles::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -640,6 +642,8 @@ namespace AhShitRim::PlayerSync
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
+            const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
+            Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr);
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -684,6 +688,8 @@ namespace AhShitRim::PlayerSync
                         ModelView::OnChunk(a_data, a_size);
                     } else if (a_type == Protocol::MessageType::Shot && state.owned) {
                         Shots::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::Projectile && state.owned) {
+                        Projectiles::Queue(a_data, a_size);
                     }
                 });
                 if (state.owned && a_delta > 0.0f) {
@@ -908,6 +914,7 @@ namespace AhShitRim::PlayerSync
             Ini::kPath);
         Arms::OnDataLoaded();
         Shots::OnDataLoaded();
+        Projectiles::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

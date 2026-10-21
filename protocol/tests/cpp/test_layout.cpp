@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v14 constants")
+TEST_CASE("protocol v15 constants")
 {
-    CHECK(kProtocolVersion == 14);
+    CHECK(kProtocolVersion == 15);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
@@ -44,6 +44,27 @@ TEST_CASE("protocol v14 constants")
     CHECK(offsetof(ShotEvent, origin) == 16);
     CHECK(offsetof(ShotEvent, direction) == 28);
     CHECK(offsetof(ShotEvent, range) == 40);
+    CHECK(kShotFlame == 2);
+    CHECK(static_cast<std::uint16_t>(MessageType::Projectile) == 5);
+    CHECK(kProjectileBurst == 0x1);
+    CHECK(kProjectilePartMax == 2);
+    CHECK(sizeof(ProjectileEvent) == 128);
+    CHECK(offsetof(ProjectileEvent, flags) == 5);
+    CHECK(offsetof(ProjectileEvent, model) == 8);
+    CHECK(offsetof(ProjectileEvent, fuseMs) == 12);
+    CHECK(offsetof(ProjectileEvent, origin) == 16);
+    CHECK(offsetof(ProjectileEvent, velocity) == 28);
+    CHECK(offsetof(ProjectileEvent, rotation) == 40);
+    CHECK(offsetof(ProjectileEvent, parts) == 56);
+    CHECK(offsetof(ProjectileEvent, id) == 112);
+    CHECK(static_cast<std::uint16_t>(MessageType::Effect) == 6);
+    CHECK(static_cast<std::uint8_t>(EffectKind::ProjectileGone) == 1);
+    CHECK(static_cast<std::uint8_t>(EffectKind::BurnCj) == 4);
+    CHECK(sizeof(EffectEvent) == 32);
+    CHECK(offsetof(EffectEvent, projectile) == 8);
+    CHECK(offsetof(EffectEvent, at) == 12);
+    CHECK(offsetof(EffectEvent, seconds) == 24);
+    CHECK(kPlayerOnFire == 0x20);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);
     CHECK(kSkinModelWeapon == 2);

@@ -599,6 +599,24 @@ namespace AhShitRim::CjWeapons
         }
     }
 
+    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts)
+    {
+        a_parts.clear();
+        if (!a_object) {
+            return {};
+        }
+        if (RwObjectGetType(a_object) == rpCLUMP) {
+            a_parts = PartsOf(reinterpret_cast<RpClump*>(a_object));
+        } else if (RwObjectGetType(a_object) == rpATOMIC) {
+            a_parts.push_back(reinterpret_cast<RpAtomic*>(a_object));
+        }
+        Cache cache;
+        if (a_parts.empty() || !Build(nullptr, static_cast<eWeaponType>(a_type), a_parts, cache)) {
+            return {};
+        }
+        return std::move(cache.blob);
+    }
+
     void Fill(CPlayerPed* a_ped, Pose::SanAndreasPose& a_pose)
     {
         const auto slot = static_cast<std::uint8_t>((std::min)(static_cast<unsigned>(a_ped->m_nSelectedWepSlot), Protocol::kWeaponSlotCount - 1));

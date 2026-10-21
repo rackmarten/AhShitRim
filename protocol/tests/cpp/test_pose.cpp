@@ -150,3 +150,11 @@ TEST_CASE("CJ's weapons reach Skyrim in its units: the loadout, the shots and wh
     bad.crosshair[1] = std::nanf("");
     CHECK_FALSE(Finite(bad));
 }
+
+TEST_CASE("CJ burning shows in the pose's flags (v15)")
+{
+    Pose::SanAndreasPose sa;
+    CHECK((Pose::ToPlayerState(sa, 1, 1).flags & Protocol::kPlayerOnFire) == 0);
+    sa.onFire = true;
+    CHECK((Pose::ToPlayerState(sa, 1, 1).flags & Protocol::kPlayerOnFire) != 0);
+}

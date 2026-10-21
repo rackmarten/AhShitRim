@@ -35,6 +35,10 @@ namespace AhShitRim::Vitals
     // Wasted is running: the player can't act.
     bool IsWasted();
 
+    // CJ caught in his own blast, fire or gas (v15, Projectiles): a_damage San Andreas health points off his
+    // armour first, then Skyrim's health, as San Andreas's own damage goes. Not while Wasted runs.
+    void Hurt(RE::PlayerCharacter* a_player, float a_damage);
+
     // CJ falls and lies dead (San Andreas gets kInputWasted), and once he lies still, under San
     // Andreas's death camera (kInputWastedCamera).
     bool IsDown();

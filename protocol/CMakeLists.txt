@@ -51,6 +51,7 @@ add_executable(protocol_tests
     tests/cpp/test_img.cpp
     tests/cpp/test_flash.cpp
     tests/cpp/test_damage.cpp
+    tests/cpp/test_explosives.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

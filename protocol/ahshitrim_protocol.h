@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 14;
+    inline constexpr std::uint32_t kProtocolVersion = 15;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -167,6 +167,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kPlayerGrounded = 0x2;   // PlayerState.flags: CJ stands on something
     inline constexpr std::uint32_t kPlayerCrouching = 0x4;  // PlayerState.flags: CJ crouches (v3); Skyrim sneaks
     inline constexpr std::uint32_t kPlayerInVehicle = 0x8;  // PlayerState.flags: CJ drives or rides a vehicle (v6)
+    inline constexpr std::uint32_t kPlayerOnFire = 0x20;  // PlayerState.flags (v15): CJ burns in San Andreas; Skyrim shows flames on him
     inline constexpr std::uint32_t kPlayerRadioRetuning = 0x10;  // PlayerState.flags (v7): the radio is between stations
 
     inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays
@@ -315,6 +316,8 @@ namespace AhShitRim::Protocol
         ModelChunk = 2,      // San Andreas -> Skyrim (v5): CJ's model, each vehicle's (v6) and CJ's weapons' (v12)
         WeaponCommand = 3,   // Skyrim -> San Andreas (v12): set CJ's weapons, give a set of them, (v13) count his hits
         Shot = 4,            // San Andreas -> Skyrim (v13): a bullet, a shotgun's shot or a blow CJ dealt, for Skyrim to hit test
+        Projectile = 5,      // San Andreas -> Skyrim (v15): a rocket, grenade, tear gas or Molotov CJ launched, for Skyrim to fly
+        Effect = 6,          // Skyrim -> San Andreas (v15): what CJ's explosives did, for San Andreas's own sound and fire
     };
 
     struct MessageHeader
@@ -360,6 +363,7 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::uint8_t kShotBullet = 0;  // ShotEvent.kind (v13): a bullet, or a shotgun's shot
     inline constexpr std::uint8_t kShotMelee = 1;   // a blow at a melee weapon's (or the fists') hit frame
+    inline constexpr std::uint8_t kShotFlame = 2;   // v15: one puff of the flamethrower; range is how far it reaches
     inline constexpr std::uint8_t kShotSpread = 0x1;  // ShotEvent.flags: a shotgun's shot, which Skyrim fans out into its pellets (Damage::Pellets)
     inline constexpr std::uint8_t kShotFirstPerson = 0x2;  // fired from San Andreas's first-person camera (the scopes)
 
@@ -377,6 +381,49 @@ namespace AhShitRim::Protocol
         float         direction[3];  // unit vector; melee: the way CJ faces
         float         range;         // Skyrim units: how far a bullet reaches; melee: the blow's radius
         std::uint32_t reserved[5];
+    };
+
+    inline constexpr std::uint8_t  kProjectileBurst = 0x1;  // ProjectileEvent.flags: San Andreas had no room to throw it, it goes off where it is
+    inline constexpr std::uint32_t kProjectilePartMax = 2;  // parts of a projectile's model sent with it
+
+    // Payload of a Projectile message (v15): San Andreas launched it (CProjectileInfo::AddProjectile) and
+    // dropped its own; Skyrim flies it, draws it and blows it up.
+    struct ProjectileEvent
+    {
+        std::uint32_t handover;     // InputState.handover the origin belongs to
+        std::uint8_t  weaponType;   // San Andreas's projectile type: 16 grenade, 17 tear gas, 18 Molotov, 19 rocket, 20 heat seeker
+        std::uint8_t  flags;        // kProjectileBurst
+        std::uint8_t  partCount;    // parts of its model in parts, 0 when it has none to draw
+        std::uint8_t  reserved0;
+        std::uint32_t model;        // ModelChunkHeader.model to draw it with (a kSkinModelWeapon), 0 for none
+        std::uint32_t fuseMs;       // milliseconds until it goes off by itself (a grenade's fuse, a rocket's reach), 0 for never
+        float         origin[3];    // where it starts, relative to InputState.anchor, Skyrim units
+        float         velocity[3];  // Skyrim units a second
+        float         rotation[4];  // its orientation, a unit quaternion x, y, z, w
+        BodyBone      parts[kProjectilePartMax];  // each part of the model relative to the projectile
+        std::uint32_t id;           // San Andreas's number for it, which an Effect names when it is over
+        std::uint32_t reserved[3];
+    };
+
+    enum class EffectKind : std::uint8_t
+    {
+        ProjectileGone = 1,  // projectile `projectile` went off or is gone: San Andreas drops what it kept of it (a rocket's sound)
+        Explosion = 2,       // a blast at `at`: San Andreas's explosion sound
+        Fire = 3,            // fire on the ground at `at` for `seconds`: San Andreas's own (its crackle; CJ catches fire walking into it)
+        BurnCj = 4,          // CJ was caught in fire: San Andreas sets him alight (his scream, the burn)
+    };
+
+    // Payload of an Effect message (v15).
+    struct EffectEvent
+    {
+        std::uint32_t handover;    // InputState.handover `at` belongs to
+        std::uint8_t  kind;        // EffectKind
+        std::uint8_t  weaponType;  // the projectile type it came from (16 grenade .. 20 heat seeker), 0 for none
+        std::uint16_t reserved0;
+        std::uint32_t projectile;  // ProjectileEvent.id, ProjectileGone only
+        float         at[3];       // relative to InputState.anchor, Skyrim units
+        float         seconds;     // Fire only
+        std::uint32_t reserved1;
     };
 
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
@@ -481,6 +528,17 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(ShotEvent, origin) == 16);
     static_assert(offsetof(ShotEvent, direction) == 28);
     static_assert(offsetof(ShotEvent, range) == 40);
+    static_assert(sizeof(ProjectileEvent) == 128);
+    static_assert(offsetof(ProjectileEvent, model) == 8);
+    static_assert(offsetof(ProjectileEvent, origin) == 16);
+    static_assert(offsetof(ProjectileEvent, velocity) == 28);
+    static_assert(offsetof(ProjectileEvent, rotation) == 40);
+    static_assert(offsetof(ProjectileEvent, parts) == 56);
+    static_assert(offsetof(ProjectileEvent, id) == 112);
+    static_assert(sizeof(EffectEvent) == 32);
+    static_assert(offsetof(EffectEvent, projectile) == 8);
+    static_assert(offsetof(EffectEvent, at) == 12);
+    static_assert(offsetof(EffectEvent, seconds) == 24);
     static_assert(sizeof(PlayerState) == 248);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);

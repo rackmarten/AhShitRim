@@ -8,6 +8,7 @@
 
 #include <CCamera.h>
 #include <CDraw.h>
+#include <CPlayerData.h>
 #include <CPlayerPed.h>
 #include <CTaskSimpleFight.h>
 #include <CWeapon.h>
@@ -37,6 +38,7 @@ namespace AhShitRim::CjShots
         constexpr std::uintptr_t kDoBulletImpact = 0x73B550;  // CWeapon::DoBulletImpact (thiscall): the first-person rifles' bullets (and the drive-bys')
         constexpr std::uintptr_t kFireSniper = 0x73AAC0;      // CWeapon::FireSniper (thiscall): the sniper rifle from the camera
         constexpr std::uintptr_t kFightStrike = 0x6240B0;     // CTaskSimpleFight::FightStrike (thiscall): a blow at its hit frame
+        constexpr std::uintptr_t kFireAreaEffect = 0x73E800;  // CWeapon::FireAreaEffect (thiscall): the flamethrower's (and the spray cans') puff
 
         // melee.dat's combos (CTaskSimpleFight::m_aComboData): one CMeleeInfo of 0x88 bytes each, the first
         // for combo set 4 (MELEE_COMBO_UNARMED_1). Per move (attack 1 to 3, on the ground, moving): the
@@ -54,6 +56,7 @@ namespace AhShitRim::CjShots
         void(__cdecl* g_handleGunShot)(const CVector*, const CVector*) = nullptr;
         SafetyHookInline g_fireSniper;
         SafetyHookInline g_fightStrike;
+        SafetyHookInline g_fireAreaEffect;
 
         struct State
         {
@@ -262,6 +265,47 @@ namespace AhShitRim::CjShots
             g_fightStrike.thiscall(a_task, a_ped, a_at);
         }
 
+        // The flamethrower's puff, aimed as FireAreaEffect aims it: through the crosshair while the mouse turns the
+        // camera behind him, else ahead of him at his look pitch. San Andreas's own (fire creeping over its
+        // ground, which no one in Skyrim would see but would still burn him) is skipped for him; the spray can
+        // and the extinguisher stay San Andreas's.
+        bool __fastcall FireAreaEffectHook(CWeapon* a_weapon, void*, CEntity* a_firedBy, CVector* a_origin, CEntity* a_target, CVector* a_targetPos)
+        {
+            if (!IsCj(a_firedBy) || !a_origin || a_weapon->m_eWeaponType != WEAPONTYPE_FTHROWER || a_target || a_targetPos) {
+                return g_fireAreaEffect.thiscall<bool>(a_weapon, a_firedBy, a_origin, a_target, a_targetPos);
+            }
+            auto*       ped = static_cast<CPed*>(a_firedBy);
+            const auto  skill = static_cast<std::uint8_t>(ped->GetWeaponSkill(WEAPONTYPE_FTHROWER));
+            const auto* info = CWeaponInfo::GetWeaponInfo(WEAPONTYPE_FTHROWER, skill);
+            const float range = info && info->m_fWeaponRange > 0.0f ? info->m_fWeaponRange : 5.0f;
+            const auto  mode = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode;
+            CVector     dir;
+            if (mode == MODE_AIMWEAPON || mode == MODE_FOLLOWPED) {
+                CVector source, target;
+                TheCamera.Find3rdPersonCamTargetVector(range, *a_origin, &source, &target);
+                dir = target - source;
+            } else {
+                const float heading = ped->GetHeading();
+                const auto* data = static_cast<CPlayerPed*>(ped)->m_pPlayerData;
+                dir = CVector(-std::sin(heading), std::cos(heading), data ? -std::tan(data->m_fLookPitch) : 0.0f);
+            }
+            const float length = dir.Magnitude();
+            if (length > 1e-4f) {
+                dir /= length;
+                Protocol::ShotEvent shot{};
+                shot.weaponType = static_cast<std::uint8_t>(WEAPONTYPE_FTHROWER);
+                shot.kind = Protocol::kShotFlame;
+                shot.skill = skill;
+                shot.damage = info ? static_cast<float>(info->m_nDamage) : 0.0f;
+                shot.direction[0] = dir.x;
+                shot.direction[1] = dir.y;
+                shot.direction[2] = dir.z;
+                shot.range = range * Pose::kUnitsPerMeter;
+                Send(shot, *a_origin, "flame");
+            }
+            return true;
+        }
+
         // Points the call at a_site to a_detour; returns what it called before, or nullptr when the site is
         // not a call (then it is left alone).
         template <class T>
@@ -303,6 +347,7 @@ namespace AhShitRim::CjShots
         g_doBulletImpact = Hook(kDoBulletImpact, reinterpret_cast<void*>(&DoBulletImpactHook), "CWeapon::DoBulletImpact");
         g_fireSniper = Hook(kFireSniper, reinterpret_cast<void*>(&FireSniperHook), "CWeapon::FireSniper");
         g_fightStrike = Hook(kFightStrike, reinterpret_cast<void*>(&FightStrikeHook), "CTaskSimpleFight::FightStrike");
+        g_fireAreaEffect = Hook(kFireAreaEffect, reinterpret_cast<void*>(&FireAreaEffectHook), "CWeapon::FireAreaEffect");
     }
 
     void SetFrame(const CVector& a_spawnFeet, unsigned a_handover)
@@ -317,5 +362,12 @@ namespace AhShitRim::CjShots
         state.spawnFeet = a_spawnFeet;
         state.handover = a_handover;
         state.framed = true;
+    }
+
+    bool Frame(CVector& a_spawnFeet, unsigned& a_handover)
+    {
+        a_spawnFeet = state.spawnFeet;
+        a_handover = state.handover;
+        return state.framed;
     }
 }

@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
 #include "ground.h"
@@ -301,6 +302,7 @@ namespace AhShitRim::Runner
             sa.view = { front.x, front.y, front.z };
             sa.grounded = a_ped->bIsStanding || vehicle;
             sa.crouching = a_ped->bIsDucking && !vehicle;
+            sa.onFire = a_ped->m_pFire != nullptr;
             sa.damage = Vitals::Damage();
             if (vehicle) {
                 // Saved with the game: Skyrim puts it back under CJ on load.
@@ -473,6 +475,7 @@ namespace AhShitRim::Runner
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            CjProjectiles::Update(ped);
             ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.
@@ -549,6 +552,7 @@ namespace AhShitRim::Runner
             g_frontendIdle = RedirectCall(kCallFrontendIdle, &FrontendIdleHook);
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
             CjShots::Install();
+            CjProjectiles::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {
                 Log("runner: a frame hook is missing; San Andreas will not run as intended");
             }

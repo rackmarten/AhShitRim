@@ -1,5 +1,6 @@
 #include "chunk_world.h"
 
+#include "cj_projectiles.h"
 #include "cj_weapons.h"
 
 #include "fall_rescue.h"
@@ -318,6 +319,8 @@ namespace AhShitRim::ChunkWorld
                 Handle(a_data, a_size);
             } else if (a_type == Protocol::MessageType::WeaponCommand) {
                 CjWeapons::Queue(a_data, a_size);
+            } else if (a_type == Protocol::MessageType::Effect) {
+                CjProjectiles::Queue(a_data, a_size);
             }
         });
     }

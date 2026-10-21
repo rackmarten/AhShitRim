@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v14. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11), and weapons: the mouse's fire and aim buttons, the wheel's weapon switches, CJ's loadout, the weapon in his hands, the shots and the camera mode in the pose, two weapon slots with the models of what he holds, weapon commands on the ring to San Andreas, and the loadout in the co-save (v12), and shots: each bullet, shotgun shot and melee blow CJ deals sent to Skyrim to hit test, his hits sent back to raise his weapon skills, the skills in the pose, the loadout command and the co-save (v13), and Wasted as San Andreas plays it: CJ's fall and the death camera in the input, the camera's up in the body slot (v14).
+> Status: protocol v15. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11), and weapons: the mouse's fire and aim buttons, the wheel's weapon switches, CJ's loadout, the weapon in his hands, the shots and the camera mode in the pose, two weapon slots with the models of what he holds, weapon commands on the ring to San Andreas, and the loadout in the co-save (v12), and shots: each bullet, shotgun shot and melee blow CJ deals sent to Skyrim to hit test, his hits sent back to raise his weapon skills, the skills in the pose, the loadout command and the co-save (v13), and Wasted as San Andreas plays it: CJ's fall and the death camera in the input, the camera's up in the body slot (v14), and explosives and fire: each rocket, grenade, tear gas canister and Molotov CJ launches sent to Skyrim to fly, and each puff of the flamethrower as a shot (v15).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -44,7 +44,7 @@ One section, `Local\AhShitRim.Link`, 8,402,752 bytes. Whichever game starts firs
 | 2560 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
 | 10240 | 2 x 1920 | weapon slots, one `BodySlot` per hand (v12) | San Andreas |
 | 14080 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks, weapon commands) | Skyrim produces, San Andreas consumes |
-| 4208448 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's, the vehicles' and the weapons' models, v5; the shots, v13) | San Andreas produces, Skyrim consumes |
+| 4208448 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's, the vehicles' and the weapons' models, v5; the shots, v13; the projectiles, v15) | San Andreas produces, Skyrim consumes |
 
 `LinkHeader` (frozen across versions):
 
@@ -108,7 +108,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `frame` | San Andreas frame counter |
-| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations |
+| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations, `kPlayerOnFire` (0x20, v15): CJ burns in San Andreas, Skyrim shows flames on him |
 | 8 | `offset[3]` | CJ relative to where the current handover spawned him |
 | 20 | `velocity[3]` | units per second; in a vehicle the vehicle's, which Skyrim samples the ground ahead by |
 | 32 | `heading` | CJ's body |
@@ -201,7 +201,9 @@ Messages that must all arrive, one after another: two single-producer, single-co
 | 1 | `CollisionChunk` | Skyrim → San Andreas | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
 | 2 | `ModelChunk` | San Andreas → Skyrim (v5; vehicles since v6, weapons since v12) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
 | 3 | `WeaponCommand` | Skyrim → San Andreas (v12) | `WeaponCommand` (136 bytes since v13): `kind`, `argument`, 13 `WeaponEntry`s and 11 skills |
-| 4 | `Shot` | San Andreas → Skyrim (v13) | `ShotEvent` (64 bytes): a bullet, a shotgun's shot or a blow CJ dealt |
+| 4 | `Shot` | San Andreas → Skyrim (v13) | `ShotEvent` (64 bytes): a bullet, a shotgun's shot or a blow CJ dealt, (v15) or a puff of the flamethrower |
+| 5 | `Projectile` | San Andreas → Skyrim (v15) | `ProjectileEvent` (128 bytes): a rocket, grenade, tear gas canister or Molotov CJ launched |
+| 6 | `Effect` | Skyrim → San Andreas (v15) | `EffectEvent` (32 bytes): what CJ's explosives did, for San Andreas's own sound, fire and camera shake |
 
 ### CJ's model
 
@@ -230,7 +232,7 @@ San Andreas's world has no one in it, so nothing CJ fires hurts anything there; 
 |---|---|---|
 | 0 | `handover` | u32: the `InputState.handover` `origin` belongs to; Skyrim drops a shot of another |
 | 4 | `weaponType` | u8: San Andreas's `eWeaponType` (0 for fists) |
-| 5 | `kind` | u8: `kShotBullet` 0 (a bullet, or a shotgun's shot), `kShotMelee` 1 (a blow at its hit frame) |
+| 5 | `kind` | u8: `kShotBullet` 0 (a bullet, or a shotgun's shot), `kShotMelee` 1 (a blow at its hit frame), `kShotFlame` 2 (v15: a puff of the flamethrower; `range` is how far it reaches) |
 | 6 | `skill` | u8: CJ's skill level with the weapon when it fired: 0 poor, 1 gangster, 2 hitman |
 | 7 | `flags` | u8: `kShotSpread` 0x1 (a shotgun's shot: Skyrim fans it out into its pellets), `kShotFirstPerson` 0x2 (from San Andreas's first-person camera: the sniper scope, the first-person rifle) |
 | 8 | `strike` | u32, melee: counts CJ's blows. A blow can come several frames running (the chainsaw's cut, a slow swing): the same count is the same blow |
@@ -243,6 +245,42 @@ San Andreas's world has no one in it, so nothing CJ fires hurts anything there; 
 Where they come from: `CWeapon::FireInstantHit` (0x73FB10) tests each line it fires after calling `CBirds::HandleGunShot` with its start and end, hit or not, at four call sites the ASI points at itself (a shotgun's shot is one line there: San Andreas's pellets are only its bullet traces); the first-person rifles fire through `CWeapon::DoBulletImpact` (0x73B550) instead; the sniper rifle fires a moving bullet from the camera instead (`CWeapon::FireSniper`, 0x73AAC0), sent along the camera's front; a blow lands in `CTaskSimpleFight::FightStrike` (0x6240B0) at the move's hit frame, with the blow's centre, and its radius (0x30) and damage (a byte at 0x55) per move come from `melee.dat`'s combo data at 0xC170D0. The ASI hooks all three once the other plugins have patched the game, and sends only CJ's. A third-person bullet's spread is eased in: the first of a burst goes straight down San Andreas's crosshair ray, and the line keeps more of San Andreas's spread the longer the fire button is held (`CPlayerData::m_fAttackButtonCounter`, which also grows the crosshair, `aimRadius`).
 
 Skyrim fans a shotgun's shot out into 8 pellets (the combat shotgun's 6) in a cone of 3 to 6 degrees, the same pattern every time (`Damage::PelletDirection`), and ray tests each bullet and pellet through its Havok world from `origin` along `direction` for `range` on the collision layer `[Weapons] ShotLayer` in `AhShitRim.ini` (6, the projectiles', by default), passing through the player's own body, the dead and what doesn't stop a bullet (clutter, debris, triggers, invisible walls): a static, furniture, a tree, the land or water stops it (Skyrim's impact for its material, from the Hunting Bow's impact set, stone's for a shape without one, two and a half times the size), and the first living actor takes it. Havok gives the actor's capsule, not a bone, so the line passing within a head's radius of the head bone is a headshot and a hit low on the body a leg. A blow lands on each living actor whose capsule it reaches, once per `strike`, the chainsaw every 0.1 s or more for as long as it cuts; a blow does two and a half times its `melee.dat` damage, the chainsaw 150 a second, and staggers its target by chance (the chainsaw every time). The damage (`Damage::ToSkyrim`): San Andreas's times 0.8, times 3 on the head (10 with the sniper and country rifles), 0.75 on a leg, less for targets above level 6 (down to 0.4), a half for giants and mammoths and a quarter for dragons; Skyrim's difficulty doesn't scale it. It goes through Skyrim's own hit with the player as the aggressor (`HitData`, the call the melee hit makes at its 0x4A8), so kill credit, crime and aggro are Skyrim's, and the race's blood shows where it went in. Each hit is counted for its weapon and sent back as a `Hit` command.
+
+### Projectiles
+
+San Andreas's projectiles would fly and blow up in an empty world, so they fly in Skyrim instead (`sa/src/cj_projectiles.cpp`, `skse/src/player/Projectiles.cpp`, the rules in `protocol/cpp/explosives.h`). When `CProjectileInfo::AddProjectile` (0x737C80) makes one of CJ's (types 16 grenade, 17 tear gas, 18 Molotov, 19 rocket, 20 heat seeker; the satchel charge, 39, stays San Andreas's), the ASI finds the slot it filled in `gaProjectileInfo` (0xC891A8) and `CProjectileInfo::ms_apProjectile` (0xC89110), reads the `CProjectile` as San Andreas made it, sends a `ProjectileEvent` and takes it out of San Andreas's world again without a blast (`CProjectileInfo::RemoveIfThisIsAProjectile`). One San Andreas had no room to throw (`CProjectileInfo::RemoveNotAdd`, 0x737C00, which would blow it up where it is) is sent with `kProjectileBurst` instead, and San Andreas's own is skipped.
+
+| Offset | Field | Meaning |
+|---|---|---|
+| 0 | `handover` | u32: the handover `origin` belongs to; Skyrim drops one of an older handover |
+| 4 | `weaponType` | u8: the projectile type San Andreas gave `AddProjectile` |
+| 5 | `flags` | u8: `kProjectileBurst` 0x1, it goes off at `origin` at once |
+| 6 | `partCount` | u8: parts of its model in `parts`, 0 when there is nothing to draw |
+| 8 | `model` | u32: the `ModelChunkHeader.model` it is drawn with, 0 for none |
+| 12 | `fuseMs` | u32: milliseconds until it goes off by itself (`gaProjectileInfo`'s destroy time: a grenade's fuse, a rocket's reach), 0 for Skyrim's default |
+| 16 | `origin[3]` | where it starts, relative to `InputState.anchor`, Skyrim units |
+| 28 | `velocity[3]` | Skyrim units a second (`m_vecMoveSpeed` times 50 steps a second) |
+| 40 | `rotation[4]` | its orientation, a unit quaternion x, y, z, w |
+| 56 | `parts[2]` | `BodyBone`s (28 bytes each, `kProjectilePartMax`): each part of the model relative to the projectile, Skyrim units |
+| 112 | `id` | u32: San Andreas's number for it, which an `Effect` names when it is over |
+| 116 | `reserved[3]` | zero |
+
+A projectile's model is a `kSkinModelWeapon` built the way a held weapon's is, from the `CProjectile`'s own clump or atomic (the thrown weapon's model, or the missile), sent once per projectile type under `ModelSender::kProjectileKey` plus the type less 16, and again whenever the link comes up.
+
+Skyrim flies it in steps of at most 1/30 s under San Andreas's gravity (20 m/s²; a rocket flies straight, at 40 m/s at least), ray testing each step as a bullet is: a rocket and a Molotov go off where they touch a static, the land, water or a living actor, a grenade and tear gas bounce (35% of the speed into the surface back, 70% along it) and lie still once slow, until their fuse runs out. A rocket or grenade blast places a copy of Skyrim's `FireBallExp01` explosion made at startup without its sounds (no damage of its own) and hurts every actor within 7 m (a grenade's 6 m) through the same hit as a bullet (`Damage::ToSkyrim` of 300 San Andreas points in the middle quarter, down to a tenth at the edge, never cut for the target's level or size: about 240 to anyone in the middle, five rockets for a mammoth), knocks the ones in the inner two thirds over (`AIProcess::KnockExplosion`; not giants, mammoths or dragons), and unlocks every locked door and container within 3 m whose lock isn't key-only, the other side of a load door too, with `TrespassAlarm` (a crime if someone sees it) where activating it would be a crime. A Molotov bursts into the same fireball at twice the size (San Andreas's is bigger than a rocket's), does 40 points within 2.5 m and sets those it catches burning (the Flames spell, cast by the player), and its fire spreads on the ground as San Andreas's does: 13 patches of `TrapOilHazard01`'s burning oil (`Effects\FXFireOilHazard.nif`, drawn alone), the middle at once, 4 at 1.5 m from 3 s and 8 at 2.5 m from 6 to 9.5 s, all burning until 30 s after the burst (`Explosives::FirePatch`); whoever stands in one takes 20 points a second and is set burning, and anyone set burning burns on for 6 s more at 15 points a second. Tear gas lets out `DA13PustuleGasCloud` (harmless itself) for 15 s, which chokes everyone within 4 m for 10 points a second and staggers them every 2 s. CJ caught in any of it takes the same points through `Vitals::Hurt`, armour first.
+
+Skyrim tells San Andreas what happened with an `EffectEvent` (32 bytes, the ring to San Andreas), so San Andreas's own sounds play: `handover` u32, `kind` u8, `weaponType` u8 (the projectile type), 2 reserved bytes, `projectile` u32 (a `ProjectileEvent.id`), `at[3]` (relative to the anchor, Skyrim units), `seconds` f32 and 4 reserved bytes.
+
+| `kind` | San Andreas |
+|---|---|
+| `ProjectileGone` 1 | drops the stand-in it kept of projectile `projectile` |
+| `Explosion` 2 | plays its explosion sound at `at` (`CAEExplosionAudioEntity::AddAudioEvent` on `CExplosion::m_ExplosionAudioEntity`; a Molotov's at -36 dB, as its own) and shakes its camera from there (`CCamera::CamShake`, 0.6, a Molotov's 0.2); for a Molotov, its stand-in is put at `at` and smashed (`CAudioEngine::ReportObjectDestruction`, the bottle's own sound) |
+| `Fire` 3 | starts its own fire at `at` for `seconds` (`gFireManager.StartFire`): its crackle, and CJ catches fire walking into it |
+| `BurnCj` 4 | sets CJ alight (`gFireManager.StartFire` on him): his scream, his burning and its damage |
+
+A rocket and a Molotov keep a stand-in in San Andreas's world: the `CProjectile` itself, without collision or gravity, its slot left out of `CProjectileInfo::Update` (hooked at 0x738B20) so San Andreas never blows it up. A rocket's flies along Skyrim's line, so the launch and roar San Andreas tied to it follow the rocket and stop when it goes off; a Molotov's waits to be smashed. A stand-in no `ProjectileGone` came for goes 2 s after its fuse or with a new handover. San Andreas's camera shake goes on its final matrix after the active camera is worked out, so while one lasts the body slot's camera position takes that offset too.
+
+The flamethrower's puffs come from `CWeapon::FireAreaEffect` (0x73E800), aimed as it aims them (through the crosshair while the mouse turns the camera behind him, else ahead at his look pitch); San Andreas's own (fire creeping over its ground) is skipped for CJ. Skyrim launches the Flames spell's flames from the nozzle (every 0.05 s at most) and burns everyone in a 12 degree cone up to the weapon's range (2 to 8 m) for 80 points a second, counted per actor like the chainsaw's cuts, setting them burning.
 
 ### A weapon's model
 
