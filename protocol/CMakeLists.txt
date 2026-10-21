@@ -50,6 +50,7 @@ add_executable(protocol_tests
     tests/cpp/test_weapons.cpp
     tests/cpp/test_img.cpp
     tests/cpp/test_flash.cpp
+    tests/cpp/test_damage.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
@@ -73,7 +74,9 @@ if(WIN32)
 endif()
 
 # The same for CJ's weapons (scripts/fake-weapons.ps1). Not a test.
-add_executable(fake_weapons cpp/link.cpp tools/fake_weapons.cpp)
-if(MSVC)
-    target_compile_options(fake_weapons PRIVATE /W4 /permissive- /utf-8)
+if(WIN32)
+    add_executable(fake_weapons cpp/link.cpp tools/fake_weapons.cpp)
+    if(MSVC)
+        target_compile_options(fake_weapons PRIVATE /W4 /permissive- /utf-8)
+    endif()
 endif()

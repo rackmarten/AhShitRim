@@ -292,8 +292,9 @@ namespace AhShitRim::Weapons
 
     // ---- The debug key ----
 
-    // What the debug key gives, one step per press, round and round: San Andreas's three weapon-set cheats, the
-    // gear they leave out and each melee weapon and gift (a slot holds one, so they come one at a time).
+    // What the debug key gives, one step per press, round and round: San Andreas's three weapon-set cheats (the
+    // third has the chainsaw), the gear they leave out, and the katana. The other melee weapons and the gifts
+    // were for checking their models (#818); a slot holds one melee weapon, so each set swaps it.
     struct DebugStep
     {
         Protocol::WeaponCommandKind kind;
@@ -303,22 +304,11 @@ namespace AhShitRim::Weapons
     };
 
     inline constexpr DebugStep kDebugSteps[] = {
-        { Protocol::WeaponCommandKind::GiveSet, 1, 0, "weapon set 1 (thug tools)" },
-        { Protocol::WeaponCommandKind::GiveSet, 2, 0, "weapon set 2 (professional tools)" },
-        { Protocol::WeaponCommandKind::GiveSet, 3, 0, "weapon set 3 (nutter tools)" },
+        { Protocol::WeaponCommandKind::GiveSet, 1, 0, "weapon set 1: knuckles, bat, pistol, sawn-off, micro SMG, AK-47, rifle, rockets, Molotovs" },
+        { Protocol::WeaponCommandKind::GiveSet, 2, 0, "weapon set 2: knife, Desert Eagle, shotgun, SMG, M4, sniper rifle, heat seeker, grenades" },
+        { Protocol::WeaponCommandKind::GiveSet, 3, 0, "weapon set 3: chainsaw, silenced pistol, combat shotgun, Tec-9, minigun, satchels" },
         { Protocol::WeaponCommandKind::GiveSet, 4, 0, "the rest: tear gas, satchel charges, minigun, camera, parachute" },
-        { Protocol::WeaponCommandKind::GiveWeapon, GolfClub, 1, "golf club" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Nightstick, 1, "nightstick" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Shovel, 1, "shovel" },
-        { Protocol::WeaponCommandKind::GiveWeapon, PoolCue, 1, "pool cue" },
         { Protocol::WeaponCommandKind::GiveWeapon, Katana, 1, "katana" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Dildo1, 1, "dildo" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Dildo2, 1, "dildo, the other" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Vibe1, 1, "vibrator" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Vibe2, 1, "vibrator, the other" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Flowers, 1, "flowers" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Cane, 1, "cane" },
-        { Protocol::WeaponCommandKind::GiveWeapon, Chainsaw, 1, "chainsaw" },
     };
     inline constexpr std::size_t kDebugStepCount = sizeof(kDebugSteps) / sizeof(kDebugSteps[0]);
 
@@ -331,6 +321,29 @@ namespace AhShitRim::Weapons
         command.argument = step.argument;
         command.entries[0].ammo = step.ammo;
         return command;
+    }
+
+    // ---- Skills ----
+
+    // San Andreas's weapon skills (Protocol::PlayerState::skills), in stat order, and the stat each needs to be
+    // gangster (weapon.dat's standard level) and hitman (999 for all).
+    inline constexpr const char* kSkillNames[Protocol::kWeaponSkillCount] = { "Pistol", "Silenced pistol", "Desert Eagle", "Shotgun", "Sawn-off shotgun",
+        "Combat shotgun", "Micro SMG", "SMG", "AK-47", "M4", "Sniper rifle" };
+    inline constexpr std::uint16_t kSkillGangster[Protocol::kWeaponSkillCount] = { 40, 500, 200, 200, 200, 200, 50, 250, 200, 200, 300 };
+    inline constexpr std::uint16_t kSkillHitman = 999;
+
+    // 0 poor, 1 gangster, 2 hitman.
+    constexpr int SkillLevel(std::uint32_t a_index, std::uint16_t a_value)
+    {
+        if (a_index >= Protocol::kWeaponSkillCount) {
+            return 0;
+        }
+        return a_value >= kSkillHitman ? 2 : a_value >= kSkillGangster[a_index] ? 1 : 0;
+    }
+
+    constexpr const char* SkillLevelName(int a_level)
+    {
+        return a_level >= 2 ? "Hitman" : a_level == 1 ? "Gangster" : "Poor";
     }
 
     // ---- The loadout ----

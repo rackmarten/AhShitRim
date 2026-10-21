@@ -201,38 +201,32 @@ TEST_CASE("the ammo line is San Andreas's")
     CHECK(AmmoText(99999, 0, Protocol::kAmmoClip) == "9999-0"); // capped at four digits
 }
 
-TEST_CASE("the debug key walks the sets, the gear and every melee weapon, and wraps")
+TEST_CASE("the debug key walks the three sets, the gear and the katana, and wraps")
 {
-    CHECK(kDebugStepCount == 16);
-    auto c = DebugCommand(0);
-    CHECK(c.kind == static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveSet));
-    CHECK(c.argument == 1);
-    c = DebugCommand(3);
-    CHECK(c.argument == 4);
-    c = DebugCommand(4);
-    CHECK(c.kind == static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon));
-    CHECK(c.argument == GolfClub);
-    CHECK(c.entries[0].ammo == 1);
+    CHECK(kDebugStepCount == 5);
+    for (std::uint32_t set = 1; set <= 4; ++set) {
+        const auto c = DebugCommand(set - 1);
+        CHECK(c.kind == static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveSet));
+        CHECK(c.argument == set);
+    }
+    const auto katana = DebugCommand(4);
+    CHECK(katana.kind == static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon));
+    CHECK(katana.argument == Katana);
+    CHECK(katana.entries[0].ammo == 1);
     CHECK(DebugCommand(kDebugStepCount).argument == 1);  // round again
+}
 
-    // Every step is a set San Andreas has or a weapon it can hold, and every melee weapon comes up by itself
-    // or in a set (1: knuckles and the bat, 2: the knife, 3: the chainsaw).
-    bool melee[16] = {};
-    melee[BrassKnuckle] = melee[BaseballBat] = melee[Knife] = true;
-    for (std::size_t i = 0; i < kDebugStepCount; ++i) {
-        const auto step = DebugCommand(i);
-        if (step.kind == static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveSet)) {
-            CHECK((step.argument >= 1 && step.argument <= 4));
-        } else {
-            CHECK(Carried(static_cast<std::uint8_t>(step.argument)));
-            if (step.argument < 16) {
-                melee[step.argument] = true;
-            }
-        }
-    }
-    for (int type = BrassKnuckle; type <= Cane; ++type) {
-        CHECK_MESSAGE(melee[type], "melee weapon ", type);
-    }
+TEST_CASE("weapon skill levels by San Andreas's thresholds")
+{
+    CHECK(SkillLevel(0, 0) == 0);
+    CHECK(SkillLevel(0, 39) == 0);
+    CHECK(SkillLevel(0, 40) == 1);   // the pistol: gangster at 40
+    CHECK(SkillLevel(1, 499) == 0);  // the silenced pistol at 500
+    CHECK(SkillLevel(1, 500) == 1);
+    CHECK(SkillLevel(10, 999) == 2);
+    CHECK(SkillLevel(11, 999) == 0);  // no such skill
+    CHECK(std::string_view(SkillLevelName(2)) == "Hitman");
+    CHECK(std::string_view(kSkillNames[8]) == "AK-47");
 }
 
 TEST_CASE("the aim looks where the camera does: level is 0 and looking up is negative")

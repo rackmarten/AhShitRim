@@ -13,14 +13,15 @@ class CVector;
 // hands, its switching, aiming and firing, driven by the mouse through the pad (the wheel switches,
 // the right button aims, the left one fires). This module
 // - turns the mouse wheel into the shoulder presses San Andreas switches weapons on,
-// - obeys the WeaponCommands Skyrim sends (a loaded save's loadout, the debug key's sets),
+// - obeys the WeaponCommands Skyrim sends (a loaded save's loadout and skills, the debug key's sets, the hits
+//   CJ landed in Skyrim, which raise his weapon skills),
 // - makes sure the models of the weapons he carries are loaded,
 // - sends the model of the weapon in his hand (and the same again for the second hand of a twin
 //   pistol) as a SkinModel of kind kSkinModelWeapon, its parts as bones, and every frame places the
 //   weapon on his hand bone as San Andreas does when it draws a ped and writes the parts' transforms
 //   to the weapon slots,
-// - fills the pose with the loadout, the held weapon, the shots fired, where they leave and the
-//   camera mode for the scopes.
+// - fills the pose with the loadout, the held weapon, the shots fired, where they leave, the camera
+//   mode for the scopes and the weapon skills.
 // Game thread only.
 namespace AhShitRim::CjWeapons
 {

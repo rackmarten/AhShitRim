@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <utility>
 
 namespace AhShitRim::HudLayout
 {
@@ -261,10 +262,33 @@ namespace AhShitRim::HudLayout
 
     // The aim crosshair: hud.txd's siteM16 four times, 32 x 32 HUD units a quarter at a_radius 1, meeting at the
     // point San Andreas aims at (a_fractionX and a_fractionY of the screen; the first person rifle's is the middle).
+    // Where San Andreas's aim ray (CCamera::Find3rdPersonCamTargetVector: through its crosshair at a_fractionX,
+    // a_fractionY of its 4:3 screen, a_fovDegrees across) shows on Skyrim's screen, whose camera looks the same
+    // way with a frustum a_right across and a_top up (tangents at unit distance). Skyrim's field of view needn't
+    // be the one San Andreas's is turned into: the circle sits where the shots go either way.
+    inline std::pair<float, float> AimPoint(const Screen& a_screen, float a_fractionX, float a_fractionY, float a_fovDegrees, float a_right, float a_top)
+    {
+        const float half = std::tan(a_fovDegrees * 3.14159265f / 360.0f);
+        const float across = half * (a_fractionX - 0.5f) * 2.0f;
+        const float up = half * (0.5f - a_fractionY) * 2.0f / (4.0f / 3.0f);
+        return { a_screen.width / 2.0f + across / a_right * a_screen.width / 2.0f, a_screen.height / 2.0f - up / a_top * a_screen.height / 2.0f };
+    }
+
+    // San Andreas's crosshair quarters around a point on the screen, a_radius its GetWeaponRadiusOnScreen.
+    inline std::array<Quarter, 4> AimSightAt(const Screen& a_screen, float a_x, float a_y, float a_radius)
+    {
+        const float w = 64.0f * a_radius / 2.0f * a_screen.unitX, h = 64.0f * a_radius / 2.0f * a_screen.unitY;
+        return Quarters(a_x, a_y, w, h);  // the four meet at the point, a ring
+    }
+
+    // San Andreas's free-aim crosshair (CHud::DrawCrossHairs) at its fractions of a 4:3 screen, a_radius its
+    // GetWeaponRadiusOnScreen. San Andreas aims through that point of a 4:3 picture, and Skyrim's wider one
+    // shows the same picture with more at the sides, so across it is placed on the middle 4:3.
     inline std::array<Quarter, 4> AimSight(const Screen& a_screen, float a_fractionX, float a_fractionY, float a_radius)
     {
         const float w = 64.0f * a_radius / 2.0f * a_screen.unitX, h = 64.0f * a_radius / 2.0f * a_screen.unitY;
-        return Quarters(a_screen.width * a_fractionX, a_screen.height * a_fractionY, w, h);  // the four meet at the point, a ring
+        const float x = a_screen.width / 2.0f + (a_fractionX - 0.5f) * 640.0f * a_screen.unitX;
+        return Quarters(x, a_screen.height * a_fractionY, w, h);  // the four meet at the point, a ring
     }
 
     // The right edge of wanted star a_index (0 = the rightmost; San Andreas fills them from the right).

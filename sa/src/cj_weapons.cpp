@@ -2,6 +2,7 @@
 
 #include "body.h"
 #include "cj_body.h"
+#include "cj_shots.h"
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
@@ -20,6 +21,7 @@
 #include <CPedIntelligence.h>
 #include <CPlayerData.h>
 #include <CPlayerPed.h>
+#include <CStats.h>
 #include <CStreaming.h>
 #include <CTimer.h>
 #include <CWeapon.h>
@@ -54,6 +56,10 @@ namespace AhShitRim::CjWeapons
         // eModelStreamingFlags: wanted by the game, and kept once loaded.
         constexpr int kStreamKeep = 0x2 | 0x8;
         constexpr int kLoaded = 1;  // LOADSTATE_LOADED
+
+        constexpr unsigned short kStatPistolSkill = 69;  // STAT_PISTOL_SKILL, the first of the 11 weapon skills
+        constexpr float          kSkillMax = 1000.0f;
+        constexpr std::uint32_t  kHitsMax = 64;  // hits one command can count
 
         // The left hand's weapon is the right one's model turned over and nudged (the same routine).
         const RwV3d kXAxis{ 1.0f, 0.0f, 0.0f };
@@ -177,7 +183,30 @@ namespace AhShitRim::CjWeapons
             }
             const unsigned held = a_command.argument < Protocol::kWeaponSlotCount ? a_command.argument : 0;
             a_ped->SetCurrentWeapon(Weapons::Holds(loadout, held) ? static_cast<int>(held) : 0);
-            Log(std::format("weapons: loadout set from Skyrim, {} weapons, holding slot {}", given, a_ped->m_nSelectedWepSlot));
+            std::string skills;
+            for (std::uint32_t i = 0; i < Protocol::kWeaponSkillCount; ++i) {
+                const float value = (std::min)(static_cast<float>(a_command.skills[i]), kSkillMax);
+                CStats::SetStatValue(static_cast<unsigned short>(kStatPistolSkill + i), value);
+                skills += std::format(" {:.0f}", value);
+            }
+            Log(std::format("weapons: loadout set from Skyrim, {} weapons, holding slot {}, skills{}", given, a_ped->m_nSelectedWepSlot, skills));
+        }
+
+        // Skyrim's hits raise CJ's skill with the weapon as San Andreas's own hits would.
+        void Hits(CPlayerPed* a_ped, std::uint32_t a_type, std::uint32_t a_count)
+        {
+            if (a_type > 0xFF || !Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
+                return;
+            }
+            const auto type = static_cast<eWeaponType>(a_type);
+            const auto before = a_ped->GetWeaponSkill(type);
+            for (std::uint32_t i = 0; i < (std::min)(a_count, kHitsMax); ++i) {
+                CStats::UpdateStatsWhenWeaponHit(type);
+            }
+            if (const auto after = a_ped->GetWeaponSkill(type); after != before) {
+                static constexpr const char* kLevels[] = { "poor", "gangster", "hitman" };
+                Log(std::format("weapons: CJ's skill with weapon {} is {} now", a_type, after >= 0 && after <= 2 ? kLevels[after] : "?"));
+            }
         }
 
         void GiveSet(CPlayerPed* a_ped, unsigned a_set)
@@ -215,6 +244,7 @@ namespace AhShitRim::CjWeapons
                 }
                 break;
             }
+            case Protocol::WeaponCommandKind::Hit: Hits(a_ped, command.argument, command.entries[0].ammo); return;  // his hands stay as they are
             default: Log(std::format("weapons: command {} unknown", command.kind)); break;
             }
             // Giving and clearing weapons frees the clump in his hand, and the next one can be made at the same
@@ -553,6 +583,7 @@ namespace AhShitRim::CjWeapons
             state.commands.pop_front();
         }
         Refresh(a_ped, a_spawn, a_lift, a_handover, a_frame);
+        CjShots::SetFrame(a_spawn - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + a_lift), a_handover);
         // San Andreas fires CJ's gun while it finishes drawing him (CPedIntelligence::ProcessAfterPreRender,
         // from CWorld::ProcessPedsAfterPreRender, after PreRender put the bones right): the gun task only
         // marks the shot, and hidden nothing ever fires it. Bones are posed (CjBody), so it does the same.
@@ -588,6 +619,7 @@ namespace AhShitRim::CjWeapons
         if (const auto* info = CWeaponInfo::GetWeaponInfo(weapon.m_eWeaponType, a_ped->GetWeaponSkill(weapon.m_eWeaponType))) {
             a_pose.ammoStyle = Weapons::AmmoStyleOf(type, info->m_nAmmoClip);
         }
+        a_pose.aimRadius = a_ped->GetWeaponRadiusOnScreen();
         a_pose.crosshair[0] = CCamera::m_f3rdPersonCHairMultX;
         a_pose.crosshair[1] = CCamera::m_f3rdPersonCHairMultY;
 
@@ -619,6 +651,10 @@ namespace AhShitRim::CjWeapons
                 a_pose.loadout[i] = { static_cast<std::uint8_t>(w.m_eWeaponType), 0,
                     static_cast<std::uint16_t>((std::min)(w.m_nAmmoInClip, 65535u)), (std::min)(w.m_nAmmoTotal, Weapons::kAmmoMax) };
             }
+        }
+        for (std::uint32_t i = 0; i < Protocol::kWeaponSkillCount; ++i) {
+            const float value = CStats::GetStatValue(static_cast<unsigned short>(kStatPistolSkill + i));
+            a_pose.skills[i] = static_cast<std::uint16_t>(std::isfinite(value) ? std::clamp(value, 0.0f, kSkillMax) : 0.0f);
         }
     }
 }

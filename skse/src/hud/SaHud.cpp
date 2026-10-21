@@ -4,6 +4,7 @@
 #include "hud/Overlay.h"
 #include "hud_layout.h"
 #include "img.h"
+#include "link/LinkService.h"
 #include "txd.h"
 #include "weapons.h"
 
@@ -37,6 +38,8 @@ namespace AhShitRim::SaHud
             bool               gun = false;     // the aim crosshair is for guns
             bool               aiming = false;
             float              crosshair[2] = { 0.5f, 0.4f };
+            float              aimRadius = 0.2f;  // San Andreas's crosshair size, growing as he fires
+            float              fov = 70.0f;       // San Andreas's camera, degrees across a 4:3 screen
         };
 
         // Skyrim's HUD clips hidden while San Andreas has the player, under
@@ -211,7 +214,14 @@ namespace AhShitRim::SaHud
             case Weapons::Scope::Rifle: DrawQuarters(a_frame, state.siteM16, AimSight(screen, 0.5f, 0.5f, 1.0f)); break;
             case Weapons::Scope::Aim:
                 if (w.gun) {
-                    DrawQuarters(a_frame, state.siteM16, AimSight(screen, w.crosshair[0], w.crosshair[1], 0.8f));
+                    const auto* camera = RE::Main::WorldRootCamera();
+                    const auto& frustum = camera ? camera->GetRuntimeData2().viewFrustum : RE::NiFrustum{};
+                    if (frustum.fRight > 0.01f && frustum.fTop > 0.01f && w.fov > 1.0f) {
+                        const auto [x, y] = AimPoint(screen, w.crosshair[0], w.crosshair[1], w.fov, frustum.fRight, frustum.fTop);
+                        DrawQuarters(a_frame, state.siteM16, AimSightAt(screen, x, y, w.aimRadius));
+                    } else {
+                        DrawQuarters(a_frame, state.siteM16, AimSight(screen, w.crosshair[0], w.crosshair[1], w.aimRadius));
+                    }
                 }
                 break;
             default: break;
@@ -469,6 +479,10 @@ namespace AhShitRim::SaHud
         w.gun = (w.type >= Weapons::Pistol && w.type <= Weapons::CountryRifle) || w.type == Weapons::Flamethrower || w.type == Weapons::Minigun;
         w.crosshair[0] = a_pose->crosshair[0];
         w.crosshair[1] = a_pose->crosshair[1];
+        w.aimRadius = a_pose->aimRadius > 0 ? (std::min)(a_pose->aimRadius / 1000.0f, 4.0f) : 0.2f;
+        if (Protocol::BodyState body{}; LinkService::Get().ReadBody(body) && std::isfinite(body.cameraFov) && body.cameraFov > 1.0f) {
+            w.fov = body.cameraFov;
+        }
         if (Weapons::CountsAmmo(w.type)) {
             const auto& entry = a_pose->loadout[(std::min)(static_cast<std::uint32_t>(a_pose->weaponSlot), Protocol::kWeaponSlotCount - 1)];
             w.ammo = Weapons::AmmoText(entry.ammo, entry.clip, a_pose->ammoStyle);
