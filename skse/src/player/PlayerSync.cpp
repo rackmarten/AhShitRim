@@ -142,8 +142,8 @@ namespace AhShitRim::PlayerSync
             }
             const bool wasted = state.owned && Vitals::IsWasted();  // the player is dying: CJ stands still
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted, a_paused);
-            if (wasted) {
-                input.flags |= Protocol::kInputWasted;
+            if (state.owned && Vitals::IsDown()) {
+                input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
             }
             if (state.owned && state.carHandover == state.handover && state.carRequest.model) {
                 input.carModel = state.carRequest.model;
@@ -308,8 +308,9 @@ namespace AhShitRim::PlayerSync
                 Camera::OffsetOf(built, a_fromHeading, a_fromPitch, state.cameraOffset);
                 state.haveCameraOffset = true;
             }
-            const Pose::Vec3 forward{ a_body.cameraForward[0], a_body.cameraForward[1], a_body.cameraForward[2] };
-            Camera::Apply(state.cameraOffset, Pose::HeadingOf(forward.x, forward.y), Pose::PitchOf(forward), 0.0f, posed);
+            // With San Andreas's roll: looking down, its death camera swings about the view.
+            const auto angles = Camera::AnglesOf(a_body.cameraForward, a_body.cameraUp);
+            Camera::Apply(state.cameraOffset, angles.heading, angles.pitch, angles.roll, posed);
             RE::NiMatrix3 rotate;
             for (int r = 0; r < 3; r++) {
                 for (int c = 0; c < 3; c++) {

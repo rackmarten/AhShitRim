@@ -5,14 +5,14 @@ namespace AhShitRim::Protocol
     struct PlayerState;
 }
 
-// CJ's health, armour and Wasted while San Andreas has the player (protocol v11, the rules in
-// protocol/cpp/health.h and wasted.h).
+// CJ's health, armour and Wasted while San Andreas has the player (protocol v11, Wasted as San
+// Andreas plays it since v14; the rules in protocol/cpp/health.h and wasted.h).
 // - Skyrim's health is the only health. The damage San Andreas works out for CJ (a fall, a crash, an
 //   explosion) comes in the pose as a running total and is taken off Skyrim's player, CJ's armour
 //   (ours, the bar in San Andreas's HUD) first.
 // - The player is made essential for the handover, so at 0 health it bleeds out instead of dying, and
-//   that is Wasted: slow motion, the colour draining, "wasted", a fade to black, then the player is
-//   taken to the temple of the hold it fell in (`coc` to the temple's cell), wakes there at full
+//   that is Wasted: CJ falls dead on his front, San Andreas's death camera rises over him, "wasted",
+//   a fade to black with the text, then the player is taken to the temple of the hold it fell in (`coc` to the temple's cell), wakes there at full
 //   health, 100 gold lighter (all of it if short), and the screen fades back in. Weapons are kept.
 // - Not while Unbound (the Helgen intro) runs: the player isn't essential then, dies, and Skyrim
 //   reloads the last save as it does.
@@ -32,8 +32,13 @@ namespace AhShitRim::Vitals
     // isn't valid). a_cjDrawn: CJ is drawn at the player's place. Returns whether Wasted is running.
     bool Update(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose, bool a_cjDrawn);
 
-    // Wasted is running: the player can't act, San Andreas gets kInputWasted.
+    // Wasted is running: the player can't act.
     bool IsWasted();
+
+    // CJ falls and lies dead (San Andreas gets kInputWasted), and once he lies still, under San
+    // Andreas's death camera (kInputWastedCamera).
+    bool IsDown();
+    bool HasDeathCamera();
 
     // CJ's armour in San Andreas's points (0..100), part of the save.
     float Armor();

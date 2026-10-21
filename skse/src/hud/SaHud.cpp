@@ -93,6 +93,7 @@ namespace AhShitRim::SaHud
             Timed            missionTitle{ {}, 0.0f, 0.0f, 0.25f, 1.0f };
             Timed            big;
             const TextStyle* bigStyle = &kBigMessage;
+            bool             bigUnderFade = false;  // "wasted" and "busted" go black with the picture
             Timed            help;
             Timed            prompt{ {}, 0.0f, 0.0f, 0.15f, 0.25f };  // what E activates, in the help box while no help shows
             Timed            subtitle;
@@ -104,7 +105,6 @@ namespace AhShitRim::SaHud
             bool             letterboxOn = false;
             int              wanted = 0;
             float            armor = 0.0f;
-            float            desaturate = 0.0f;
             int              demo = 0;
             std::uint32_t    frame = 0;
             bool             skyrimHudHidden = false;
@@ -265,10 +265,6 @@ namespace AhShitRim::SaHud
 
         void DrawText(Frame& a_frame)
         {
-            // The picture drained of colour, as Wasted does: a grey wash.
-            if (state.desaturate > 0.0f) {
-                a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(Colour{ 128, 128, 128, 255 }, state.desaturate * 0.65f));
-            }
             // The cutscene bars under the text, so subtitles show on the bottom one.
             if (state.letterbox > 0.0f) {
                 auto top = LetterboxTop(a_frame.screen);
@@ -294,12 +290,16 @@ namespace AhShitRim::SaHud
             if (const float alpha = state.radio.Alpha(); alpha > 0.0f && state.drawRadio) {
                 a_frame.Text(kRadioName, state.radio.text, WithAlpha(state.radioRetuning ? kDarkGray : kRadioName.colour, alpha));
             }
+            const float big = state.big.Alpha();
+            if (big > 0.0f && state.bigUnderFade) {
+                a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, big));
+            }
             if (state.fade > 0.0f) {
                 a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(kBlack, state.fade));
             }
-            // Big messages show over the fade, as "wasted" does over San Andreas's.
-            if (const float alpha = state.big.Alpha(); alpha > 0.0f) {
-                a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, alpha));
+            // "mission passed!" shows over the fade; "wasted" and "busted" fade to black with the screen, as in San Andreas.
+            if (big > 0.0f && !state.bigUnderFade) {
+                a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, big));
             }
         }
 
@@ -494,9 +494,12 @@ namespace AhShitRim::SaHud
     void ShowBigMessage(BigMessage a_message, float a_seconds)
     {
         state.bigStyle = a_message == BigMessage::MissionPassed ? &kMissionPassed : &kBigMessage;
-        state.big.Show(a_message == BigMessage::Wasted ? "wasted" : a_message == BigMessage::Busted ? "busted" : "mission passed!", a_seconds);
+        state.bigUnderFade = a_message != BigMessage::MissionPassed;
+        state.big.Show(a_message == BigMessage::Wasted ? "Wasted" : a_message == BigMessage::Busted ? "Busted" : "mission passed!", a_seconds);  // as San Andreas's GXT has them
         state.big.fadeIn = 0.65f;  // San Andreas brings "wasted" up over about two thirds of a second
     }
+
+    void HideBigMessage() { state.big.hold = 0.0f; }
 
     void ShowHelp(std::string a_text, float a_seconds) { state.help.Show(std::move(a_text), a_seconds); }
 
@@ -539,7 +542,6 @@ namespace AhShitRim::SaHud
 
     void SetArmor(float a_fraction) { state.armor = std::clamp(a_fraction, 0.0f, 1.0f); }
 
-    void SetDesaturation(float a_amount) { state.desaturate = std::clamp(a_amount, 0.0f, 1.0f); }
 
     void ClearText()
     {
@@ -547,7 +549,6 @@ namespace AhShitRim::SaHud
             timed->hold = 0.0f;
         }
         FadeTo(0.0f, 0.0f);
-        state.desaturate = 0.0f;
         state.letterboxOn = false;
     }
 

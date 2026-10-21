@@ -7,7 +7,7 @@ class CPlayerPed;
 // nothing it does can kill him, works out the damage it would do (a fall, a crash, an explosion) as
 // what each frame took off, and reports the running total in the pose for Skyrim to take off its
 // player. His armour is Skyrim's side too (it absorbs the damage first), so San Andreas's own stays 0.
-// While the player is dying (Wasted) the game runs in slow motion and damage doesn't count.
+// While the player is dying (Wasted) CJ lies dead under San Andreas's death camera and damage doesn't count.
 // Game thread only.
 namespace AhShitRim::Vitals
 {
@@ -18,8 +18,10 @@ namespace AhShitRim::Vitals
     // Right after the frame: what it took off CJ goes into the total.
     void End(CPlayerPed* a_ped);
 
-    // Wasted: slow motion on or off (kInputWasted).
-    void SetWasted(bool a_wasted);
+    // Every input: Wasted's state. a_down (kInputWasted): CJ falls dead on his front and lies there;
+    // a_camera (kInputWastedCamera): the death camera rises over him. Off, he is up again and the
+    // camera his.
+    void SetWasted(CPlayerPed* a_ped, bool a_down, bool a_camera);
 
     // Damage so far, San Andreas health points.
     float Damage();

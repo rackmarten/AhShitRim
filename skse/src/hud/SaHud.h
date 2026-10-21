@@ -34,7 +34,8 @@ namespace AhShitRim::SaHud
 
     // The text styles; a_seconds is how long each stays before it fades.
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
-    void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);
+    void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
+    void HideBigMessage();
     void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
@@ -42,7 +43,6 @@ namespace AhShitRim::SaHud
     void SetLetterbox(bool a_on);                 // cutscene bars, sliding in and out
     void SetWantedLevel(int a_stars);             // 0..6; 0 shows none
     void SetArmor(float a_fraction);              // 0..1 of the armour bar; 0 hides it
-    void SetDesaturation(float a_amount);         // 0..1, a grey wash over the picture (Wasted)
     void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
     void ClearText();                             // every text style, the fade and the bars off
 

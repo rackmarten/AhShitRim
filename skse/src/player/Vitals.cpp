@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <format>
+#include <vector>
 
 namespace AhShitRim::Vitals
 {
@@ -27,7 +28,8 @@ namespace AhShitRim::Vitals
             bool                       arrived = false;  // the player was re-anchored after the move
             bool                       tracked = false;
             std::chrono::steady_clock::time_point last;
-            float                      scale = 1.0f;  // the game speed we set
+            Wasted::Frame              frame;  // the sequence's latest
+            std::vector<RE::TESFaction*> hunters;  // the crime factions of those fighting the player as it fell
             float                      unboundAge = 100.0f;
             bool                       unbound = false;
         } state;
@@ -63,20 +65,9 @@ namespace AhShitRim::Vitals
             }
         }
 
-        void SetTimeScale(float a_scale)
-        {
-            if (a_scale != state.scale) {
-                state.scale = a_scale;
-                if (auto* timer = RE::BSTimer::GetSingleton()) {
-                    timer->SetGlobalTimeMultiplier(a_scale, true);
-                }
-            }
-        }
-
         void EndShow()
         {
-            SetTimeScale(1.0f);
-            SaHud::SetDesaturation(0.0f);
+            SaHud::HideBigMessage();
             SaHud::FadeTo(0.0f, 0.0f);
         }
 
@@ -131,6 +122,40 @@ namespace AhShitRim::Vitals
             SKSE::log::info("vitals: the player is taken to the {} (coc {})", state.temple->name, state.temple->cell);
         }
 
+        // The holds whose people fight the player as it falls: their bounty goes with Wasted.
+        void NoteHunters(RE::PlayerCharacter* a_player)
+        {
+            state.hunters.clear();
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            lists->ForEachHighActor([&](RE::Actor* a_actor) {
+                if (a_actor && a_actor->GetActorRuntimeData().currentCombatTarget.get().get() == a_player) {
+                    if (auto* faction = a_actor->GetCrimeFaction(); faction && std::ranges::find(state.hunters, faction) == state.hunters.end()) {
+                        state.hunters.push_back(faction);
+                    }
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+        }
+
+        // San Andreas clears the wanted level with Wasted: the bounty those holds put on the player,
+        // and everyone's fight with it.
+        void Forgive(RE::PlayerCharacter* a_player)
+        {
+            for (auto* faction : state.hunters) {
+                const auto bounty = a_player->GetCrimeGoldValue(faction);
+                a_player->ClearAllCrimeGold(faction);
+                SKSE::log::info("vitals: the bounty of {} ({}) is cleared", faction->GetName(), bounty);
+            }
+            state.hunters.clear();
+            if (auto* lists = RE::ProcessLists::GetSingleton()) {
+                lists->StopCombatAndAlarmOnActor(a_player, false);
+            }
+            a_player->StopCombat();
+        }
+
         void Revive(RE::PlayerCharacter* a_player)
         {
             auto* values = a_player->AsActorValueOwner();
@@ -143,6 +168,7 @@ namespace AhShitRim::Vitals
                 a_player->NotifyAnimationGraph("BleedoutStop"sv);
             }
             state.armor = 0.0f;
+            Forgive(a_player);
             const int fee = (std::min)(kFee, a_player->GetGoldAmount());
             if (fee > 0) {
                 if (auto* gold = RE::TESForm::LookupByID<RE::TESBoundObject>(kGold)) {
@@ -152,6 +178,7 @@ namespace AhShitRim::Vitals
             auto* cell = a_player->GetParentCell();
             SKSE::log::info("vitals: the player wakes at full health, {} gold lighter, in {:08X}{}", fee, cell ? cell->GetFormID() : 0,
                 state.moveAsked && !state.arrived ? " (the temple never opened: where it fell)" : "");
+            SaHud::HideBigMessage();
             SaHud::ShowHelp(fee > 0 ? std::format("You wake up at the {}. The healers took {} gold.", state.temple->name, fee) :
                                       std::format("You wake up at the {}.", state.temple->name));
         }
@@ -160,10 +187,13 @@ namespace AhShitRim::Vitals
         {
             const bool arrived = !state.moveAsked || (state.arrived && a_cjDrawn);
             const auto frame = state.sequence.Tick(a_seconds, arrived);
-            SetTimeScale(frame.timeScale);
-            SaHud::SetDesaturation(frame.desaturate);
+            state.frame = frame;
             SaHud::FadeTo(frame.fade, 0.0f);
             switch (frame.action) {
+            case Wasted::Action::Wasted:
+                SaHud::ShowBigMessage(SaHud::BigMessage::Wasted, Wasted::TextSeconds() - 0.65f);  // less its fade in: gone as the screen is black
+                SKSE::log::info("vitals: CJ lies dead, \"wasted\" and San Andreas's death camera");
+                break;
             case Wasted::Action::Move: MoveToTemple(a_player); break;
             case Wasted::Action::Revive: Revive(a_player); break;
             case Wasted::Action::Done:
@@ -176,10 +206,9 @@ namespace AhShitRim::Vitals
 
         void Begin(RE::PlayerCharacter* a_player)
         {
-            const auto frame = state.sequence.Start();
-            SetTimeScale(frame.timeScale);
-            SaHud::ShowBigMessage(SaHud::BigMessage::Wasted, 4.5f);
-            SKSE::log::info("vitals: Wasted (health {:.0f} of {:.0f}, in {:08X}), the temple will be the {}",
+            state.frame = state.sequence.Start();
+            NoteHunters(a_player);
+            SKSE::log::info("vitals: Wasted (health {:.0f} of {:.0f}, in {:08X}), CJ falls, the temple will be the {}",
                 a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), MaxHealth(a_player),
                 a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0, state.temple->name);
         }
@@ -252,6 +281,10 @@ namespace AhShitRim::Vitals
     }
 
     bool IsWasted() { return state.sequence.Running() && state.sequence.GetPhase() != Wasted::Phase::Waking; }
+
+    bool IsDown() { return state.sequence.Running() && state.frame.down; }
+
+    bool HasDeathCamera() { return state.sequence.Running() && state.frame.camera; }
 
     float Armor() { return state.armor; }
 
