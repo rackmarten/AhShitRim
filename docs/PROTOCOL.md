@@ -1,6 +1,6 @@
 # Protocol
 
-> Status: protocol v11. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11).
+> Status: protocol v12. Shared memory section, version handshake and heartbeat (v1), an input slot and a pose slot (v2), CJ's crouch in the pose (v3), the handover spot in the input and a ring from Skyrim to San Andreas carrying collision chunks (v4), a body slot with CJ's skeleton and San Andreas's camera and a ring from San Andreas to Skyrim carrying CJ's model (v5), vehicles: spawn requests and the vehicle keys in the input, four vehicle slots with each vehicle's parts, and the vehicles' models on the ring back (v6), sound: the mouse wheel's radio steps in the input, an audio slot with Skyrim's volumes and the radio station in the pose (v7), the handbrake as its own button, so the classic key layout can sprint on Space, handovers that re-anchor CJ where a load door or fast travel puts the player (v8), and scenes in the input: CJ following Skyrim's player when Skyrim moves it, sitting where it sits, facing the one he talks to, and a shout counter for his gesture (v9), the pose's radio station as the dial's, with Sweetroll FM (v10), and health and the save: the damage San Andreas works out for CJ and the vehicle he is in in the pose, the dying flag and a loaded save's car in the input (v11), and weapons: the mouse's fire and aim buttons, the wheel's weapon switches, CJ's loadout, the weapon in his hands, the shots and the camera mode in the pose, two weapon slots with the models of what he holds, weapon commands on the ring to San Andreas, and the loadout in the co-save (v12).
 
 The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-bit) exchange data over one shared memory section. See [DESIGN.md](DESIGN.md) for the architecture and ownership rules. The design follows PerkeleRim's link.
 
@@ -21,25 +21,30 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/radio.h`](../protocol/cpp/radio.h) | Skyrim's sliders to San Andreas's volumes, the radio's dial and station names, Radio Sovngarde's track picks, Sweetroll FM's tracks and shuffle |
 | [`protocol/cpp/health.h`](../protocol/cpp/health.h) | CJ's health and armour: the damage San Andreas worked out turned into new damage, armour absorbing first, a share of Skyrim's health |
 | [`protocol/cpp/wasted.h`](../protocol/cpp/wasted.h) | The Wasted sequence (slow motion, fade, move, wake) and which temple the player wakes in |
-| [`protocol/cpp/cosave.h`](../protocol/cpp/cosave.h) | The versioned co-save record: handover on or off, armour, the car |
+| [`protocol/cpp/cosave.h`](../protocol/cpp/cosave.h) | The versioned co-save record: handover on or off, armour, the car, the weapons |
+| [`protocol/cpp/weapons.h`](../protocol/cpp/weapons.h) | San Andreas's weapon ids and what Skyrim needs of them (model and icon names, ammo, flash), the scopes its camera modes mean, the wheel's presses on its pad, shots counted from the ammo, the muzzle, the loadout and the debug key's steps |
+| [`protocol/cpp/img.h`](../protocol/cpp/img.h) | San Andreas's IMG archives: the directory and entries, so Skyrim reads the weapons' icons and scopes out of `gta3.img` |
+| [`protocol/cpp/flash_model.h`](../protocol/cpp/flash_model.h) | The muzzle flash model: three crossed blended quads with a star-shaped glow |
 | [`protocol/cpp/vehicle.h`](../protocol/cpp/vehicle.h) | Where a spawned vehicle goes, a vehicle's paint and lights colours, baking a part's scale or mirror into its vertices, merging a vehicle's meshes |
-| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging, volumes, the radio dial, Radio Sovngarde and Sweetroll FM's shuffle), run by `scripts/test.ps1` |
+| `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging, volumes, the radio dial, Radio Sovngarde and Sweetroll FM's shuffle, the weapons, the IMG reader, the flash and the scopes' layout), run by `scripts/test.ps1` |
 | `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it and its radio dials round all 14 stops, the Sanchez rides, and a re-anchor far off and far below (fast travel in a car) takes CJ out, removes them and holds him until the ground there is in (`scripts/fake-skyrim.ps1`) |
+| `protocol/tools/fake_weapons.cpp` | Stands in for the Skyrim plugin to check CJ's weapons against a running San Andreas: gives the sets, switches through every weapon on the wheel, aims and fires each, checks the model of the weapon in his hand arrives, shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent (`scripts/fake-weapons.ps1`) |
 
 ## Section layout
 
-One section, `Local\AhShitRim.Link`, 8,398,784 bytes. Whichever game starts first creates it; it disappears when both have closed.
+One section, `Local\AhShitRim.Link`, 8,402,752 bytes. Whichever game starts first creates it; it disappears when both have closed.
 
 | Offset | Size | Part | Written by |
 |---|---|---|---|
 | 0 | 128 | `LinkHeader`: magic, sizes, creator version, one `PeerInfo` per side | creator, then each side its own `PeerInfo` |
 | 128 | 144 | `InputSlot`: the player's input for CJ (v9: 144 bytes, keeping the later slots on 64-byte boundaries) | Skyrim |
-| 272 | 112 | `PlayerSlot`: CJ's pose (v11: 112 bytes) | San Andreas |
-| 384 | 64 | `AudioSlot`: San Andreas's volumes (v7) | Skyrim |
-| 448 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
-| 2368 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
-| 10048 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks) | Skyrim produces, San Andreas consumes |
-| 4204416 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's and the vehicles' models, v5) | San Andreas produces, Skyrim consumes |
+| 272 | 240 | `PlayerSlot`: CJ's pose (v12: 240 bytes) | San Andreas |
+| 512 | 64 | `AudioSlot`: San Andreas's volumes (v7) | Skyrim |
+| 576 | 1920 | `BodySlot`: CJ's skeleton and San Andreas's camera (v5) | San Andreas |
+| 2496 | 4 x 1920 | vehicle slots, one `BodySlot` per vehicle (v6) | San Andreas |
+| 10176 | 2 x 1920 | weapon slots, one `BodySlot` per hand (v12) | San Andreas |
+| 14016 | 64 + 4 MiB | ring Skyrim → San Andreas (collision chunks, weapon commands) | Skyrim produces, San Andreas consumes |
+| 4208384 | 64 + 4 MiB | ring San Andreas → Skyrim (CJ's, the vehicles' and the weapons' models, v5) | San Andreas produces, Skyrim consumes |
 
 `LinkHeader` (frozen across versions):
 
@@ -75,14 +80,14 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 4 | `flags` | `kInputOwnsPlayer` (0x1): apply this input to CJ. `kInputPaused` (0x2): a Skyrim menu pauses the game, San Andreas pauses too. `kInputFace` (0x4, v9): a dialogue has the input, CJ stands still and turns to `sceneHeading`. `kInputScripted` (0x8, v9): Skyrim moves the player itself (a scene, a seat, a bed), CJ is put at `sceneOffset` facing `sceneHeading` and the keys do nothing. `kInputSeated` (0x10, v9, with `kInputScripted`): the player sits. `kInputWasted` (0x20, v11): the player is dying, the axes and buttons are zero, San Andreas runs at 0.3 speed and its damage isn't counted |
 | 8 | `mouseX`, `mouseY` | doubles, raw mouse counts accumulated since Skyrim started (y positive down); San Andreas applies the change since its last read |
 | 24 | `moveX`, `moveY` | -1..1, right and forwards positive; `moveY` is W and S only, the up and down arrows are `kButtonLean*` |
-| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, `kButtonEnterExit` 0x10, `kButtonHorn` 0x20, `kButtonLeanForward` 0x40 (up arrow), `kButtonLeanBack` 0x80 (down arrow) (v6), `kButtonHandbrake` 0x100 (v8: Space, and Right Ctrl in the classic layout), held. Actions, not keys: Skyrim maps the keys in the modern or classic layout (`protocol/cpp/input.h`) |
+| 32 | `buttons` | `kButtonSprint` 0x1, `kButtonJump` 0x2, `kButtonCrouch` 0x4, `kButtonWalk` 0x8, `kButtonEnterExit` 0x10, `kButtonHorn` 0x20, `kButtonLeanForward` 0x40 (up arrow), `kButtonLeanBack` 0x80 (down arrow) (v6), `kButtonHandbrake` 0x100 (v8: Space, and Right Ctrl in the classic layout), `kButtonFire` 0x200 (v12: the left mouse button) and `kButtonAim` 0x400 (v12: the right one), held. Actions, not keys: Skyrim maps the keys in the modern or classic layout (`protocol/cpp/input.h`) |
 | 36 | `handover` | counts handovers and re-anchors (v8: the game moved the player through a load door, by fast travel or a script while CJ has it, and the handover goes on); a new value puts CJ at `anchor`, drops the collision chunks of older ones and removes every vehicle |
 | 40 | `heading` | the Skyrim player's heading at that handover or re-anchor (radians, Skyrim's convention); CJ spawns facing it |
 | 44 | `anchor[3]` | the Skyrim player's feet at that handover, Skyrim world units: the floating origin's base (v4) |
 | 56 | `spawnModel` | u16, the San Andreas vehicle model the last spawn request asked for (v6) |
 | 58 | `spawnCount` | u16, counts spawn requests; a new value spawns `spawnModel` (v6) |
-| 60 | `radioNext` | u16, counts mouse wheel steps up (v7); in a vehicle each one tunes the next station |
-| 62 | `radioPrev` | u16, counts wheel steps down, the previous station (v7) |
+| 60 | `radioNext` | u16, counts mouse wheel steps up (v7); in a vehicle each one tunes the next station, on foot (v12) each one switches to the next weapon |
+| 62 | `radioPrev` | u16, counts wheel steps down, the previous station (v7), on foot the previous weapon (v12) |
 | 64 | `sceneOffset[3]` | with `kInputScripted`: the Skyrim player's feet relative to `anchor`, Skyrim units; with `kInputSeated` the seat (the furniture marker the player uses), and San Andreas puts CJ's pelvis over it (v9) |
 | 76 | `sceneHeading` | with `kInputScripted`: the player's heading; with `kInputFace`: the heading to the speaker (radians, Skyrim's convention, v9) |
 | 80 | `shoutCount` | u16, counts shouts the player let out (Skyrim's voice cooldown starting, v9); a new value plays CJ's gesture on foot. San Andreas only acts on a change after the first value it read |
@@ -94,11 +99,11 @@ Continuous state where the reader only wants the newest value: no queue, a seqlo
 | 104 | `carHeading` | the car's heading, Skyrim radians (v11) |
 | 108 | reserved | 4 bytes |
 
-Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrows move (in a vehicle the up and down arrows lean a bike instead), Left Shift sprints, Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle, H sounds the horn. ], [ and `\` ask for a Sandking (495), a ZR-350 (477) and a Sanchez (468): each press sets `spawnModel` and counts `spawnCount` up once. Escape, Tab, M, `~` and F10 stay with Skyrim. While a Skyrim menu has the input (paused, or a cursor menu like dialogue), the axes and buttons are zero but the mouse totals and the spawn requests keep counting. San Andreas writes the actions into pad 0 right after `CPad::UpdatePads` and the mouse change into `CPad::NewMouseControllerState`, vertical flipped (passed through as is, the camera looked the wrong way). On foot: left stick, Cross for sprint, Square for jump, L3 for crouch, the walk flag, Triangle to get into a vehicle. In a vehicle: W holds Cross (accelerate) and S Square (brake, then reverse), the left stick's X steers and its Y leans a bike (up arrow forward, down arrow back), jump holds R1 (handbrake), the horn L3 and Triangle gets out. San Andreas spawns only on a change of `spawnCount` after the first value it read (a San Andreas that starts after Skyrim doesn't spawn the last vehicle again), and only while it has the player and CJ is on foot. A read of the slot that stays torn keeps the last input rather than counting as the link going down.
+Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrows move (in a vehicle the up and down arrows lean a bike instead), Left Shift sprints, Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle, H sounds the horn. ], [ and `\` ask for a Sandking (495), a ZR-350 (477) and a Sanchez (468): each press sets `spawnModel` and counts `spawnCount` up once. Escape, Tab, M, `~` and F10 stay with Skyrim. While a Skyrim menu has the input (paused, or a cursor menu like dialogue), the axes and buttons are zero but the mouse totals and the spawn requests keep counting. San Andreas writes the actions into pad 0 right after `CPad::UpdatePads` and the mouse change into `CPad::NewMouseControllerState`, vertical flipped (passed through as is, the camera looked the wrong way). On foot: left stick, Cross for sprint, Square for jump, L3 for crouch, the walk flag, Triangle to get into a vehicle. In a vehicle: W holds Cross (accelerate) and S Square (brake, then reverse), the left stick's X steers and its Y leans a bike (up arrow forward, down arrow back), jump holds R1 (handbrake), the horn L3 and Triangle gets out. San Andreas spawns only on a change of `spawnCount` after the first value it read (a San Andreas that starts after Skyrim doesn't spawn the last vehicle again), and only while it has the player and CJ is on foot. A read of the slot that stays torn keeps the last input rather than counting as the link going down. v12, on foot only: the left mouse button is Circle (fire; a melee weapon attacks), the right one R1 (aim: San Andreas's lock-on and free aim, with the sniper rifle's, rocket launchers' and camera's first-person modes), and each wheel step is one press of R2 (next weapon) or L2 (previous) on a frame of its own after one without it, which is the edge San Andreas's weapon switch reads (`Weapons::WheelPulse`; steps that come in together go out one after another, and a counter that jumps by more than a hand does in a frame, a restarted Skyrim, is followed, not played). The wheel's counters are followed whatever CJ does, so the radio's steps in a vehicle never switch a weapon later. Weapons are San Andreas's own state: its slots, ammo, switching and animations. `=` is the debug key (below).
 
 ### Pose (San Andreas to Skyrim)
 
-`PlayerState`, 80 bytes (56 before v11, 48 before v7). Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
+`PlayerState`, 224 bytes (80 before v12, 56 before v11, 48 before v7). Written every San Andreas frame (30 a second) once CJ exists. Skyrim axes and units: game units (70 to the metre), Z up, heading 0 = north and clockwise, pitch positive looking down.
 
 | Offset | Field | Meaning |
 |---|---|---|
@@ -117,6 +122,15 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | 68 | `vehicleHeading` | the vehicle's heading, radians (v11) |
 | 72 | `damage` | f32 (v11): the damage San Andreas has worked out for CJ since it started, in its health points (100 = a full health bar), running. Only counted while Skyrim has the player; Skyrim takes the difference between reads off its own player (`protocol/cpp/health.h`) |
 | 76 | reserved | 4 bytes |
+| 80 | `weaponType` | u8 (v12): the weapon in CJ's hands, San Andreas's `eWeaponType`, 0 = fists |
+| 81 | `weaponSlot` | u8: its slot, an index into `loadout` |
+| 82 | `weaponFlags` | u16: `kWeaponInHand` 0x1 (a weapon model is in his hand), `kWeaponTwin` 0x2 (a twin pistol: the second hand's slot is drawn too), `kWeaponAiming` 0x4 (a scope or aim camera is up), `kWeaponFiring` 0x8, `kWeaponReloading` 0x10, `kWeaponMelee` 0x20 (fists, a melee weapon or a gift: no ammo to show) |
+| 84 | `shots` | u16: counts the shots fired, from the held weapon's rounds going down; wraps. Skyrim flashes for each |
+| 86 | `cameraMode` | u8: San Andreas's `eCamMode`: 0x07 and 0x27 the sniper scope, 0x08, 0x28, 0x33 and 0x34 a rocket sight, 0x22 the first-person rifle, 0x2E the camera, 0x35 free aim |
+| 87 | `ammoStyle` | u8: how the HUD writes the rounds: `kAmmoTotal` 0 ("200"), `kAmmoClip` 1 ("83-17", the rest then the clip), `kAmmoFlame` 2 (the same in tenths) |
+| 88 | `muzzle[2][3]` | where the shots leave, relative to CJ's feet, Skyrim units: the weapon's fire offset on its frame. `[1]` is the left hand's |
+| 112 | `crosshair[2]` | where San Andreas's crosshair sits on the screen, as fractions of its width and height |
+| 120 | `loadout[13]` | `WeaponEntry` (8 bytes: `type` u8, reserved, `clip` u16, `ammo` u32 up to 99,999): San Andreas's weapons, one per slot, type 0 for an empty slot |
 
 Skyrim adds `offset` to the player's position at the handover.
 
@@ -169,6 +183,12 @@ Four vehicle slots (v6), one per vehicle San Andreas keeps (`kVehicleMax`), each
 
 Skyrim draws each vehicle like CJ, 50 ms behind with its own `Body::Interpolator`, and only while it has handed the player over. The chase camera needs nothing of its own: San Andreas's active camera in the body slot follows the vehicle while CJ drives it.
 
+### Weapons (San Andreas to Skyrim)
+
+Two weapon slots (v12, `kWeaponHandMax`), the right and the left hand, each a `BodySlot` holding a `BodyState` like a vehicle's: `feet` is CJ's feet relative to where the handover put them, `boneCount` the weapon's parts and `bones` each part's frame relative to `feet`, every San Andreas frame. San Andreas places the weapon on CJ's hand bone the way it does when it draws a ped (`CVisibilityPlugins::RenderWeaponPedsForPC`: the weapon's frame takes the right hand's matrix, a twin pistol's second hand the left's turned over and nudged, a parachute the spine's), which never runs while it is hidden, and writes the parts' transforms from there. The slot is empty (flags 0) while he holds no weapon with a model; the left hand's only for a twin pistol (the same model, a model id of its own). Skyrim draws them like CJ, with their own `Body::Interpolator`s and under the same node, and not at all while the camera looks through a scope (sniper rifle, rocket launcher, camera), when CJ isn't drawn either.
+
+San Andreas's own routines need nothing more than that to work hidden, except two: the minigun's barrels are turned by `CPed::PreRenderAfterTest`, which it does itself, and a gun task only marks its shot and `CPedIntelligence::ProcessAfterPreRender` (part of drawing the ped) fires it, so it calls that after posing his bones.
+
 ## Rings
 
 Messages that must all arrive, one after another: two single-producer, single-consumer byte rings of 4 MiB, one each way (Skyrim to San Andreas since v4, San Andreas to Skyrim since v5). `head` (producer) and `tail` (consumer) are monotonic byte counts on separate 32-byte halves of the 64-byte `RingHeader`; a record is an 8-byte `MessageHeader` (`type` u16, reserved u16, `size` u32) plus its payload, and may wrap around the end. `Send` puts a message in the ring to the other side and refuses while the link is down, when the ring is full or when the message can never fit; each side drains its own ring every frame. A side empties its ring when it attaches, so messages sent to an earlier instance never arrive.
@@ -176,13 +196,32 @@ Messages that must all arrive, one after another: two single-producer, single-co
 | Type | Message | Direction | Payload |
 |---|---|---|---|
 | 1 | `CollisionChunk` | Skyrim → San Andreas | `CollisionChunkHeader` (chunk x/y, worldspace, generation, origin, counts), vertices relative to origin, triangle indices |
-| 2 | `ModelChunk` | San Andreas → Skyrim (v5; vehicles since v6) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
+| 2 | `ModelChunk` | San Andreas → Skyrim (v5; vehicles since v6, weapons since v12) | `ModelChunkHeader` (model id, total size, offset, size), then that part of the model blob |
+| 3 | `WeaponCommand` | Skyrim → San Andreas (v12) | `WeaponCommand` (112 bytes): `kind`, `argument` and 13 `WeaponEntry`s |
 
 ### CJ's model
 
 San Andreas sends CJ's model whenever the link comes up (a Skyrim that just started has none of it) and whenever his geometry changes, as one blob cut into `ModelChunk`s of at most 256 KiB (`protocol/cpp/skin_model.h`). Chunks of a model come in order from offset 0; Skyrim builds the model once the last one is in, and drops one that comes out of order. Every model gets a new id; `BodyState.model` names the one its bones belong to. CJ's model and the vehicles' go one whole model after another (`sa/src/model_sender.cpp`), CJ's first, all of them again whenever the link comes up.
 
-The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts, `kind`: `kSkinModelBody` 0 or `kSkinModelVehicle` 1 (v6)), `boneCount` u32 bone ids (San Andreas's node ids, for the logs), then per texture a `SkinTexture` (width, height, format 1 = RGBA8) and its pixels, top row first, then per mesh a `SkinMesh` (texture index or -1, vertex and index counts, flags `kSkinMeshCutout` 0x1 / `kSkinMeshBlend` 0x2, RGBA colour) with `vertexCount` `SkinVertex` (52 bytes: position, normal, UV, four bone indices, four weights; bind pose, Skyrim units) and `indexCount` u16 triangle indices. CJ comes as 5 meshes, about 1,750 vertices and 2,370 triangles, 4 textures and 32 bones, about 580 KB.
+The blob: `SkinModelHeader` (48 bytes: name, texture, mesh and bone counts, `kind`: `kSkinModelBody` 0, `kSkinModelVehicle` 1 (v6) or `kSkinModelWeapon` 2 (v12)), `boneCount` u32 bone ids (San Andreas's node ids, for the logs), then per texture a `SkinTexture` (width, height, format 1 = RGBA8) and its pixels, top row first, then per mesh a `SkinMesh` (texture index or -1, vertex and index counts, flags `kSkinMeshCutout` 0x1 / `kSkinMeshBlend` 0x2, RGBA colour) with `vertexCount` `SkinVertex` (52 bytes: position, normal, UV, four bone indices, four weights; bind pose, Skyrim units) and `indexCount` u16 triangle indices. CJ comes as 5 meshes, about 1,750 vertices and 2,370 triangles, 4 textures and 32 bones, about 580 KB.
+
+### Weapon commands
+
+`WeaponCommand` (v12): `kind` u32, `argument` u32, `entries[13]`.
+
+| `kind` | Meaning |
+|---|---|
+| `SetLoadout` 1 | Replace CJ's weapons with `entries` (a loaded save, a new game: all empty) and hold slot `argument`; San Andreas clears his weapons, loads each weapon's model and gives it with its ammo and clip, and a slot he doesn't hold means fists |
+| `GiveSet` 2 | Give one of San Andreas's weapon sets: `argument` 1 to 3 are its three weapon cheats' (`CCheat::WeaponCheat1` to `3`), 4 the gear they leave out (tear gas, satchel charges and detonator, minigun, camera, parachute) |
+| `GiveWeapon` 3 | Give one weapon: `argument` is its type, `entries[0].ammo` its ammo (at least 1) |
+
+Commands carry no handover (a loadout isn't a place), so San Andreas applies them as it reads them. A weapon in a slot needs its model in memory (a weapon San Andreas gives itself arrives with the game's own streaming flags), so every command loads and keeps the models of the weapons CJ carries (`CStreaming`, kept in memory) before giving them. Skyrim sends `SetLoadout` for the save's loadout whenever the link is up after a load (and again when it comes up after San Andreas restarted), and a new game or a save without weapons sends an empty one. `GiveSet` and `GiveWeapon` are the debug key's (below), until cheats exist.
+
+### A weapon's model
+
+Sent whenever CJ takes a weapon in his hand, and again whenever the link comes up (`sa/src/cj_weapons.cpp`), as a `SkinModel` of kind `kSkinModelWeapon` (2) in the same way as a vehicle's: every drawn atomic of the weapon's clump is a part and a bone (the `gunflash` atomic, San Andreas's own flash sprite, is left out), its vertices in the part's own space on that bone alone, a scale or mirror baked in, meshes that look the same merged. A pistol is one part and one mesh of about 200 vertices (28 KB), the minigun two parts (130 KB). The model is built from the weapon's clump the first time it is held and kept by the weapon's model index, under an id of its own for each hand (the left hand's copy is a second id), for good: Skyrim builds a model id once, so switching back to a weapon sends it again but builds nothing. Skyrim builds it like any other and bounds it like CJ.
+
+The debug key (`=`, while San Andreas has the player; off with `[Debug] WeaponKey=0` in `AhShitRim.ini`, which should be set once cheats exist) gives the next of 16 steps: San Andreas's three weapon sets, the gear they leave out, then the golf club, nightstick, shovel, pool cue, katana, the gifts and the chainsaw one at a time (a slot holds one melee weapon), round and round (`Weapons::kDebugSteps`).
 
 ### A vehicle's model
 
@@ -203,6 +242,8 @@ The 5 x 5 chunks around the player are sampled nearest first, then the 5 x 5 aro
 
 San Andreas side (`sa/src/chunk_world.cpp`, the game-free half in `protocol/cpp/ground.h`): one invisible `CBuilding` per chunk, its model's `CColModel` holding the chunk's triangles, all of them tarmac (`SURFACE_TARMAC`: chunks carry no material yet), under the floating origin described in [DESIGN.md](DESIGN.md#ground-skyrims-collision-in-san-andreas).
 
+Log lines for weapons, in San Andreas's log: `weapons: mouse aiming on`, `weapons: weapon set N given`, `weapons: weapon TYPE given`, `weapons: loadout set from Skyrim, N weapons, holding slot N`, `weapons: the NAME's model read in N ms: N parts (N skipped), N meshes, N vertices, N triangles (...), N textures: ...; N bytes`, `weapons: CJ holds weapon TYPE (model N)[, in both hands]`, `weapons: the NAME's model for the right|left hand ID sent to Skyrim in N chunks`, `weapons: nothing in his hand any more (...)`. In Skyrim's: `arms: the debug weapon key (=) is on|off`, `arms: debug key N: WHAT`, `arms: the loaded save holds slot N: TYPE:AMMO ...`, `arms: CJ's weapons sent to San Andreas, holding slot N: ...`, `muzzle flash: ...`, `sa hud: ... N weapon icons (N missing), scopes: ...`, `model view: NAME ID built|shown|hidden` for each weapon.
+
 Log lines for CJ: `body: CJ's model ID read in N ms: N meshes, N vertices, N triangles (...), N bones (world|local space), N textures: ...`, `body: CJ's model ID sent to Skyrim in N chunks`, `body: texture NAME of CJ left white: why` in San Andreas's log; `model view: model ID CJ built in N ms: ...`, `model view: CJ ID attached under NODE`, `model view: CJ ID shown|hidden`, `player sync: CJ drawn from San Andreas's model ID, Skyrim's camera on San Andreas's (fov N)` in Skyrim's.
 
 Log lines for vehicles, in San Andreas's log: `vehicle: NAME (MODEL) spawned in slot N at (x,y,z), spot N of 15 tried, colours N/N`, or why nothing was (`CJ is in a vehicle`, `no flat, clear spot for the NAME in front of CJ`, ...); `vehicle: the NAME's model ID read in N ms: N parts (N with a scale or mirror baked in; ...), N meshes, ...`, `vehicle: the NAME's model ID sent to Skyrim in N chunks`; `vehicle: driving at N m/s, N wheels on the ground, gas N, brake N, gear N, engine on|off, status N` every 5 s while CJ drives; `vehicle: the NAME in slot N removed|is gone`, `vehicle: CJ taken out of his vehicle` at a new handover; `ground: CJ's vehicle was below the ground at (...), put back at (...)`. In Skyrim's: `model view: NAME ID built|shown|hidden`.
@@ -220,9 +261,9 @@ Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Di
 
 Log lines on both sides, prefixed `link:`:
 
-- `started (protocol v11)`
+- `started (protocol v12)`
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
-- `link up: <peer> pid N, protocol v11`
+- `link up: <peer> pid N, protocol v12`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
 - `link disabled: ...`
 

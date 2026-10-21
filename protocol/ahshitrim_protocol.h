@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 11;
+    inline constexpr std::uint32_t kProtocolVersion = 12;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -37,19 +37,28 @@ namespace AhShitRim::Protocol
     // Vehicles San Andreas keeps at once (v6): spawning another removes the oldest one CJ isn't in.
     inline constexpr std::uint32_t kVehicleMax = 4;
 
+    // Weapon models San Andreas has in CJ's hands at once (v12): one per hand, a twin pistol draws the
+    // same model in both.
+    inline constexpr std::uint32_t kWeaponHandMax = 2;
+
+    // San Andreas's weapon slots (CPed::m_aWeapons): the loadout in the pose and the save has one entry
+    // per slot (v12).
+    inline constexpr std::uint32_t kWeaponSlotCount = 13;
+
     // Section layout (byte offsets from the start of the mapping): the header, the latest-value
     // slots, the ring from Skyrim to San Andreas, then the ring back.
     inline constexpr std::uint32_t kOffsetHeader = 0;
     inline constexpr std::uint32_t kOffsetInputSlot = 128;
     inline constexpr std::uint32_t kOffsetPlayerSlot = 272;              // v9: after the larger input slot
-    inline constexpr std::uint32_t kOffsetAudioSlot = 384;               // v7; v11: after the larger player slot
-    inline constexpr std::uint32_t kOffsetBodySlot = 448;                // v5
-    inline constexpr std::uint32_t kOffsetVehicleSlots = 2368;           // v6: kVehicleMax BodySlots
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 10048;      // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetAudioSlot = 512;               // v7; v12: after the larger player slot
+    inline constexpr std::uint32_t kOffsetBodySlot = 576;                // v5
+    inline constexpr std::uint32_t kOffsetVehicleSlots = 2496;           // v6: kVehicleMax BodySlots
+    inline constexpr std::uint32_t kOffsetWeaponSlots = 10176;           // v12: kWeaponHandMax BodySlots
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 14016;      // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4204416;        // v5
-    inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's and the vehicles' models
-    inline constexpr std::uint32_t kMappingSize = 8398784;               // 4204416 + 64 + 4 MiB
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4208384;        // v5
+    inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's, the vehicles' and the weapons' models
+    inline constexpr std::uint32_t kMappingSize = 8402752;               // 4208384 + 64 + 4 MiB
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -109,6 +118,8 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonLeanForward = 0x40;  // v6: up arrow; on foot it walks forwards, on a bike it leans forward
     inline constexpr std::uint32_t kButtonLeanBack = 0x80;     // v6: down arrow; on foot back, on a bike it leans back (wheelies)
     inline constexpr std::uint32_t kButtonHandbrake = 0x100;   // v8: in a vehicle, the handbrake (Space in both key layouts, also Right Ctrl in the classic one)
+    inline constexpr std::uint32_t kButtonFire = 0x200;        // v12: left mouse; on foot it fires the weapon in CJ's hands (a melee weapon attacks)
+    inline constexpr std::uint32_t kButtonAim = 0x400;         // v12: right mouse; on foot it aims the weapon (San Andreas's lock-on, free aim and scopes)
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState
@@ -125,8 +136,8 @@ namespace AhShitRim::Protocol
         float         anchor[3];   // the Skyrim player's feet at that handover, Skyrim world units (v4)
         std::uint16_t spawnModel;  // v6: San Andreas vehicle model id to spawn in front of CJ
         std::uint16_t spawnCount;  // v6: counts spawn requests; a new value spawns spawnModel
-        std::uint16_t radioNext;   // v7: counts mouse wheel steps up; in a vehicle each one tunes the next station
-        std::uint16_t radioPrev;   // v7: counts wheel steps down, the previous station
+        std::uint16_t radioNext;   // v7: counts mouse wheel steps up; in a vehicle each one tunes the next station, on foot (v12) it switches to the next weapon
+        std::uint16_t radioPrev;   // v7: counts wheel steps down, the previous station or (v12) the previous weapon
         float         sceneOffset[3];  // v9, kInputScripted: the Skyrim player's feet relative to anchor
         float         sceneHeading;    // v9, kInputScripted: the player's heading; kInputFace: the heading CJ turns to (Skyrim radians)
         std::uint16_t shoutCount;      // v9: counts shouts the player let out; a new value plays CJ's gesture
@@ -155,6 +166,26 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays
 
+    inline constexpr std::uint16_t kWeaponInHand = 0x1;      // PlayerState.weaponFlags (v12): a weapon model is in CJ's hand (weapon slot 0 draws it)
+    inline constexpr std::uint16_t kWeaponTwin = 0x2;        // a twin pistol: the same model in the other hand too (weapon slot 1)
+    inline constexpr std::uint16_t kWeaponAiming = 0x4;      // CJ aims it: right mouse held, San Andreas's aim camera is up
+    inline constexpr std::uint16_t kWeaponFiring = 0x8;      // it fires right now (San Andreas's weapon state)
+    inline constexpr std::uint16_t kWeaponReloading = 0x10;  // it reloads
+    inline constexpr std::uint16_t kWeaponMelee = 0x20;      // a melee weapon or fists: there is no ammo to show
+
+    inline constexpr std::uint8_t kAmmoTotal = 0;  // PlayerState.ammoStyle (v12): the rounds in all ("200"), for a weapon with no clip to speak of
+    inline constexpr std::uint8_t kAmmoClip = 1;   // the rounds left, a dash, the clip ("83-17")
+    inline constexpr std::uint8_t kAmmoFlame = 2;  // as a clip, in tenths: the flamethrower's fuel
+
+    // One of San Andreas's weapon slots (v12). type 0 = the slot is empty.
+    struct WeaponEntry
+    {
+        std::uint8_t  type;      // San Andreas's eWeaponType
+        std::uint8_t  reserved;
+        std::uint16_t clip;      // rounds in the clip (m_nAmmoInClip)
+        std::uint32_t ammo;      // rounds in all, the clip included (m_nAmmoTotal), at most 99999
+    };
+
     // San Andreas -> Skyrim, every San Andreas frame. Skyrim axes and units: game units, Z up,
     // heading 0 = north, clockwise; pitch positive looks down.
     struct PlayerState
@@ -175,6 +206,15 @@ namespace AhShitRim::Protocol
         float         vehicleHeading;     // v11: its heading, Skyrim radians
         float         damage;             // v11: damage San Andreas has worked out for CJ since it started, in its health points (100 = a full health bar); only counted while Skyrim has the player
         std::uint32_t reserved1;
+        std::uint8_t  weaponType;   // v12: the weapon in CJ's hands (San Andreas's eWeaponType), 0 = fists
+        std::uint8_t  weaponSlot;   // v12: its slot, an index into loadout
+        std::uint16_t weaponFlags;  // v12: kWeapon*
+        std::uint16_t shots;        // v12: counts the shots fired (Skyrim flashes for each); wraps
+        std::uint8_t  cameraMode;   // v12: San Andreas's camera mode (eCamMode), for the sniper and rocket scopes
+        std::uint8_t  ammoStyle;    // v12: how the HUD writes the held weapon's rounds, kAmmo*
+        float         muzzle[2][3];  // v12: where the shots leave, relative to CJ's feet, Skyrim units; [1] is the left hand's (kWeaponTwin)
+        float         crosshair[2];  // v12: where San Andreas puts its crosshair on the screen, as fractions of its width and height
+        WeaponEntry   loadout[kWeaponSlotCount];  // v12: San Andreas's weapons, one per slot
     };
 
     struct PlayerSlot
@@ -182,7 +222,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         PlayerState   value;
-        std::uint8_t  pad[24];  // v11: the audio slot follows on a 64-byte boundary
+        std::uint8_t  pad[8];  // v12: the audio slot follows on a 64-byte boundary
     };
 
     // Skyrim -> San Andreas, every Skyrim frame (v7): how loud San Andreas plays, from Skyrim's audio
@@ -264,7 +304,8 @@ namespace AhShitRim::Protocol
     enum class MessageType : std::uint16_t
     {
         CollisionChunk = 1,  // Skyrim -> San Andreas
-        ModelChunk = 2,      // San Andreas -> Skyrim (v5): CJ's model, and each vehicle's (v6)
+        ModelChunk = 2,      // San Andreas -> Skyrim (v5): CJ's model, each vehicle's (v6) and CJ's weapons' (v12)
+        WeaponCommand = 3,   // Skyrim -> San Andreas (v12): set CJ's weapons, give a set of them
     };
 
     struct MessageHeader
@@ -290,6 +331,21 @@ namespace AhShitRim::Protocol
         std::uint32_t reserved;
     };
 
+    enum class WeaponCommandKind : std::uint32_t
+    {
+        SetLoadout = 1,  // replace CJ's weapons with entries (a loaded save, a new game: all empty); argument is the slot he holds
+        GiveSet = 2,     // give one of San Andreas's weapon sets: 1 to 3 are its three cheats', 4 the gear they leave out; argument is the set
+        GiveWeapon = 3,  // give one weapon; argument is its type, entries[0].ammo its ammo (at least 1)
+    };
+
+    // Payload of a WeaponCommand message (v12).
+    struct WeaponCommand
+    {
+        std::uint32_t kind;      // WeaponCommandKind
+        std::uint32_t argument;
+        WeaponEntry   entries[kWeaponSlotCount];  // SetLoadout only
+    };
+
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
     // arrive in order; offset 0 starts a model.
     struct ModelChunkHeader
@@ -309,6 +365,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kSkinMeshBlend = 0x2;   // alpha blended
     inline constexpr std::uint32_t kSkinModelBody = 0;     // SkinModelHeader.kind: a ped (CJ)
     inline constexpr std::uint32_t kSkinModelVehicle = 1;  // v6: a vehicle, its parts as bones
+    inline constexpr std::uint32_t kSkinModelWeapon = 2;   // v12: a weapon in CJ's hand, its parts as bones, bounded like CJ
 
     struct SkinModelHeader
     {
@@ -383,7 +440,9 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, carOffset) == 92);
     static_assert(offsetof(InputState, carHeading) == 104);
     static_assert(sizeof(InputSlot) == 144);
-    static_assert(sizeof(PlayerState) == 80);
+    static_assert(sizeof(WeaponEntry) == 8);
+    static_assert(sizeof(WeaponCommand) == 8 + kWeaponSlotCount * sizeof(WeaponEntry));
+    static_assert(sizeof(PlayerState) == 224);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);
     static_assert(offsetof(PlayerState, heading) == 32);
@@ -396,7 +455,16 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(PlayerState, vehicleOffset) == 56);
     static_assert(offsetof(PlayerState, vehicleHeading) == 68);
     static_assert(offsetof(PlayerState, damage) == 72);
-    static_assert(sizeof(PlayerSlot) == 112);
+    static_assert(offsetof(PlayerState, weaponType) == 80);
+    static_assert(offsetof(PlayerState, weaponSlot) == 81);
+    static_assert(offsetof(PlayerState, weaponFlags) == 82);
+    static_assert(offsetof(PlayerState, shots) == 84);
+    static_assert(offsetof(PlayerState, cameraMode) == 86);
+    static_assert(offsetof(PlayerState, ammoStyle) == 87);
+    static_assert(offsetof(PlayerState, muzzle) == 88);
+    static_assert(offsetof(PlayerState, crosshair) == 112);
+    static_assert(offsetof(PlayerState, loadout) == 120);
+    static_assert(sizeof(PlayerSlot) == 240);
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
@@ -429,7 +497,9 @@ namespace AhShitRim::Protocol
     static_assert(kOffsetBodySlot == kOffsetAudioSlot + sizeof(AudioSlot));
     static_assert(kOffsetBodySlot % 64 == 0);
     static_assert(kOffsetVehicleSlots == kOffsetBodySlot + sizeof(BodySlot));
-    static_assert(kOffsetRingToSanAndreas == kOffsetVehicleSlots + kVehicleMax * sizeof(BodySlot));
+    static_assert(kOffsetWeaponSlots == kOffsetVehicleSlots + kVehicleMax * sizeof(BodySlot));
+    static_assert(kOffsetWeaponSlots % 64 == 0);
+    static_assert(kOffsetRingToSanAndreas == kOffsetWeaponSlots + kWeaponHandMax * sizeof(BodySlot));
     static_assert(kOffsetRingToSanAndreas % 64 == 0);
     static_assert(kOffsetRingToSkyrim == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
     static_assert(kMappingSize == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);

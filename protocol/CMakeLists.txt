@@ -34,6 +34,9 @@ add_executable(protocol_tests
     tests/cpp/test_health.cpp
     tests/cpp/test_wasted.cpp
     tests/cpp/test_cosave.cpp
+    tests/cpp/test_weapons.cpp
+    tests/cpp/test_img.cpp
+    tests/cpp/test_flash.cpp
 )
 target_link_libraries(protocol_tests PRIVATE doctest::doctest)
 if(MSVC)
@@ -47,4 +50,10 @@ add_test(NAME protocol_tests COMMAND protocol_tests)
 add_executable(fake_skyrim cpp/link.cpp tools/fake_skyrim.cpp)
 if(MSVC)
     target_compile_options(fake_skyrim PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+# The same for CJ's weapons (scripts/fake-weapons.ps1). Not a test.
+add_executable(fake_weapons cpp/link.cpp tools/fake_weapons.cpp)
+if(MSVC)
+    target_compile_options(fake_weapons PRIVATE /W4 /permissive- /utf-8)
 endif()

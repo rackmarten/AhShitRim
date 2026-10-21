@@ -3,10 +3,10 @@
 //
 // A record is a version and a run of bytes (SKSE's serialization keeps both). Fields are only ever
 // added at the end, each version's fields behind the version that brought them, and an older record
-// reads with the newer fields at their defaults. Later increments add weapons, skills and the wanted
-// level the same way.
+// reads with the newer fields at their defaults. Later increments add skills and the wanted level the
+// same way.
 //
-// Version history: 1 the handover and the armour; 2 the car.
+// Version history: 1 the handover and the armour; 2 the car; 3 the weapons.
 
 #pragma once
 
@@ -15,10 +15,13 @@
 #include <cstring>
 #include <vector>
 
+#include "../ahshitrim_protocol.h"
+#include "weapons.h"
+
 namespace AhShitRim::Cosave
 {
     inline constexpr std::uint32_t kRecordType = 0x4D525341;  // "ASRM"
-    inline constexpr std::uint32_t kVersion = 2;
+    inline constexpr std::uint32_t kVersion = 3;
 
     // The car CJ was in, relative to him; model 0 = on foot.
     struct Car
@@ -29,11 +32,19 @@ namespace AhShitRim::Cosave
         float         heading = 0.0f;  // Skyrim radians
     };
 
+    // CJ's weapons: one entry per San Andreas weapon slot, and the slot he held.
+    struct Arms
+    {
+        std::uint8_t                slot = 0;
+        AhShitRim::Protocol::WeaponEntry entries[AhShitRim::Protocol::kWeaponSlotCount] = {};
+    };
+
     struct Record
     {
-        bool  handover = false;  // San Andreas had the player
-        float armor = 0.0f;      // San Andreas points, 0..100
-        Car   car;
+        bool    handover = false;  // San Andreas had the player
+        float   armor = 0.0f;      // San Andreas points, 0..100
+        Car     car;
+        Arms    weapons;           // version 3
     };
 
     enum class Result
@@ -46,6 +57,8 @@ namespace AhShitRim::Cosave
 
     inline constexpr std::size_t kSizeV1 = 5;
     inline constexpr std::size_t kSizeV2 = kSizeV1 + 2 + 4 + 12 + 4;
+    inline constexpr std::size_t kWeaponBytes = 1 + 2 + 4;  // type, clip, ammo
+    inline constexpr std::size_t kSizeV3 = kSizeV2 + 1 + AhShitRim::Protocol::kWeaponSlotCount * kWeaponBytes;
 
     namespace detail
     {
@@ -80,6 +93,12 @@ namespace AhShitRim::Cosave
             detail::Put(out, offset);
         }
         detail::Put(out, a_record.car.heading);
+        detail::Put(out, a_record.weapons.slot);
+        for (const auto& entry : a_record.weapons.entries) {
+            detail::Put(out, entry.type);
+            detail::Put(out, entry.clip);
+            detail::Put(out, entry.ammo);
+        }
         return out;
     }
 
@@ -91,7 +110,7 @@ namespace AhShitRim::Cosave
         if (a_version > kVersion) {
             return Result::TooNew;
         }
-        if (a_version < 1 || a_size < kSizeV1 || (a_version >= 2 && a_size < kSizeV2)) {
+        if (a_version < 1 || a_size < kSizeV1 || (a_version >= 2 && a_size < kSizeV2) || (a_version >= 3 && a_size < kSizeV3)) {
             return Result::Short;
         }
         const std::uint8_t* at = a_data;
@@ -115,6 +134,19 @@ namespace AhShitRim::Cosave
                     return Result::Bad;
                 }
             }
+        }
+        if (a_version >= 3) {
+            record.weapons.slot = detail::Get<std::uint8_t>(at);
+            for (auto& entry : record.weapons.entries) {
+                entry.type = detail::Get<std::uint8_t>(at);
+                entry.clip = detail::Get<std::uint16_t>(at);
+                entry.ammo = detail::Get<std::uint32_t>(at);
+            }
+            if (record.weapons.slot >= AhShitRim::Protocol::kWeaponSlotCount) {
+                return Result::Bad;
+            }
+            // A weapon this version doesn't know (a later one's) is left out rather than losing the rest of the record.
+            AhShitRim::Weapons::Sanitise(record.weapons.entries);
         }
         record.armor = record.armor < 0.0f ? 0.0f : record.armor > 100.0f ? 100.0f : record.armor;
         a_out = record;

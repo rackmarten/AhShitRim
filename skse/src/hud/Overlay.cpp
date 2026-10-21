@@ -243,16 +243,22 @@ namespace AhShitRim::Overlay
                     continue;
                 }
                 const auto& texture = textures[quad.texture];
-                const RECT  source{ std::lround(quad.u0 * texture.width), std::lround(quad.v0 * texture.height), std::lround(quad.u1 * texture.width),
-                     std::lround(quad.v1 * texture.height) };
+                // A quad with its corners the other way round (u1 < u0) is the texture mirrored: San Andreas draws the
+                // four quarters of a scope that way.
+                const bool  flipU = quad.u1 < quad.u0, flipV = quad.v1 < quad.v0;
+                const float u0 = (std::min)(quad.u0, quad.u1), u1 = (std::max)(quad.u0, quad.u1);
+                const float v0 = (std::min)(quad.v0, quad.v1), v1 = (std::max)(quad.v0, quad.v1);
+                const RECT  source{ std::lround(u0 * texture.width), std::lround(v0 * texture.height), std::lround(u1 * texture.width),
+                     std::lround(v1 * texture.height) };
                 if (source.right <= source.left || source.bottom <= source.top || quad.x1 <= quad.x0 || quad.y1 <= quad.y0) {
                     continue;
                 }
+                const auto effects = static_cast<DirectX::SpriteEffects>((flipU ? DirectX::SpriteEffects_FlipHorizontally : 0) | (flipV ? DirectX::SpriteEffects_FlipVertically : 0));
                 const DirectX::XMVECTORF32 colour{ { { (quad.colour & 0xFF) / 255.0f, ((quad.colour >> 8) & 0xFF) / 255.0f, ((quad.colour >> 16) & 0xFF) / 255.0f,
                     ((quad.colour >> 24) & 0xFF) / 255.0f } } };
                 const DirectX::XMFLOAT2    scale{ (quad.x1 - quad.x0) / static_cast<float>(source.right - source.left),
                     (quad.y1 - quad.y0) / static_cast<float>(source.bottom - source.top) };
-                batch->Draw(texture.view.Get(), DirectX::XMFLOAT2(quad.x0, quad.y0), &source, colour, 0.0f, DirectX::XMFLOAT2(0.0f, 0.0f), scale);
+                batch->Draw(texture.view.Get(), DirectX::XMFLOAT2(quad.x0, quad.y0), &source, colour, 0.0f, DirectX::XMFLOAT2(0.0f, 0.0f), scale, effects, 0.0f);
             }
             batch->End();
         }

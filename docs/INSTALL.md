@@ -66,7 +66,9 @@ Load a save (or start a new game) and press **F10**: the player is now CJ, on Sk
 | F or Enter | Get into the nearest vehicle | Get out |
 | H | | Horn |
 | ] / [ / `\` | Spawn a Sandking / a ZR-350 / a Sanchez | |
-| Mouse wheel | | Next or previous radio station |
+| Mouse wheel | Next or previous weapon | Next or previous radio station |
+| Right / left mouse button | Aim / fire the weapon in CJ's hands | |
+| `=` | Give CJ the next set of San Andreas's weapons (a test key, for now) | |
 
 The full list is in the [README](../README.md#keys).
 

@@ -25,8 +25,8 @@ namespace AhShitRim::ModelView
         constexpr std::uint32_t kNormalOffset = 20;
         constexpr std::uint32_t kTangentOffset = 24;
 
-        // CJ fits in this sphere around his feet whatever he does (a jump, a roll); a vehicle's parts
-        // in the other around its position (a Sandking is about 6 m long).
+        // CJ fits in this sphere around his feet whatever he does (a jump, a roll), and so does what he
+        // holds; a vehicle's parts in the other around its position (a Sandking is about 6 m long).
         const RE::NiPoint3     kBodyBoundCenter{ 0.0f, 0.0f, 70.0f };
         constexpr float        kBodyBoundRadius = 160.0f;
         constexpr float        kVehicleBoundRadius = 600.0f;
@@ -355,7 +355,7 @@ namespace AhShitRim::ModelView
 
             RE::NiPointer<RE::BSTriShape> shape(static_cast<RE::BSTriShape*>(state.templateShape->Clone()));
             const bool vehicle = a_built.model.kind == Protocol::kSkinModelVehicle;
-            shape->name = vehicle ? "AhShitRimVehicle" : "AhShitRimCJ";
+            shape->name = vehicle ? "AhShitRimVehicle" : a_built.model.kind == Protocol::kSkinModelWeapon ? "AhShitRimWeapon" : "AhShitRimCJ";
             shape->local = RE::NiTransform();
             auto& geometry = shape->GetGeometryRuntimeData();
             geometry.rendererData = data;
@@ -421,7 +421,7 @@ namespace AhShitRim::ModelView
                 return out;
             };
             built->node.reset(RE::NiNode::Create(static_cast<std::uint16_t>(built->model.meshes.size())));
-            built->node->name = built->model.kind == Protocol::kSkinModelVehicle ? "AhShitRimVehicle" : "AhShitRimCJ";
+            built->node->name = built->model.kind == Protocol::kSkinModelVehicle ? "AhShitRimVehicle" : built->model.kind == Protocol::kSkinModelWeapon ? "AhShitRimWeapon" : "AhShitRimCJ";
             std::uint32_t vertices = 0, triangles = 0;
             for (std::uint32_t m = 0; m < built->model.meshes.size(); m++) {
                 const auto& mesh = built->model.meshes[m];
@@ -491,6 +491,15 @@ namespace AhShitRim::ModelView
             return;
         }
         Build(state.assembler.Id(), state.assembler.Blob());
+    }
+
+    bool AddModel(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob)
+    {
+        if (state.models.contains(a_id)) {
+            return false;
+        }
+        Build(a_id, a_blob);
+        return Find(a_id) != nullptr;
     }
 
     bool Has(std::uint32_t a_model)

@@ -8,6 +8,7 @@ It runs San Andreas hidden as a simulator of CJ (see "Running San Andreas hidden
 - `src/window.cpp` windowed and minimized, never paused for losing the focus
 - `src/runner.cpp` straight into a game, empty world, CJ, frame cap, input (spawn requests too) and pose
 - `src/chunk_world.cpp` Skyrim's collision chunks as collision objects around CJ, the floating origin, holding CJ until the ground is in, fall rescue
+- `src/cj_weapons.cpp` CJ's weapons: the wheel's presses on San Andreas's pad, weapon commands from Skyrim, the models of what he carries, the weapon in his hand placed on his hand bone and sent to Skyrim as a model and a slot per hand, firing hidden, and the loadout, shots and camera mode in the pose
 - `src/cj_body.cpp` CJ's model (geometry, skin, textures) sent to Skyrim, his animations run in full while hidden and his bones posed every frame, with San Andreas's camera
 - `src/vehicles.cpp` vehicles spawned in front of CJ, their models (every drawn part a bone) sent to Skyrim, and their parts posed every frame (PreRender, a bike's lean)
 - `src/model_sender.cpp` CJ's and the vehicles' models over the ring to Skyrim, one whole model after another

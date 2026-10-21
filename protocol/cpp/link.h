@@ -56,6 +56,10 @@ namespace AhShitRim
         // Vehicle slot a_index (< kVehicleMax, v6); out-of-range indices are ignored.
         void WriteVehicle(std::uint32_t a_index, const Protocol::BodyState& a_value);
         bool ReadVehicle(std::uint32_t a_index, Protocol::BodyState& a_out) const;
+        // Weapon slot a_hand (< kWeaponHandMax, v12): the model in CJ's right (0) or left (1) hand, posed
+        // like a body (feet are CJ's, the bones the weapon's parts); out-of-range hands are ignored.
+        void WriteWeapon(std::uint32_t a_hand, const Protocol::BodyState& a_value);
+        bool ReadWeapon(std::uint32_t a_hand, Protocol::BodyState& a_out) const;
 
         // The rings: Send puts a message in the ring to the other side, and returns false when the
         // link is down, the ring is full or the message can never fit. Receive drains the ring to
