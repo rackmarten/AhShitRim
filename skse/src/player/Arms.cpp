@@ -5,6 +5,7 @@
 #include "body/ModelView.h"
 #include "body/MuzzleFlash.h"
 #include "cosave.h"
+#include "hud/SaHud.h"
 #include "link/LinkService.h"
 #include "pose.h"
 #include "weapons.h"
@@ -25,6 +26,8 @@ namespace AhShitRim::Arms
             bool               settling = false;  // it was sent, San Andreas hasn't shown it yet
             std::chrono::steady_clock::time_point settleUntil;
             bool               wasUp = false;
+            int                levels[Protocol::kWeaponSkillCount] = {};  // the skill levels shown so far
+            bool               haveLevels = false;  // false until San Andreas shows the loaded save's skills
             std::uint16_t      lastShots = 0;
             bool               haveShots = false;
             unsigned           nextHand = 0;
@@ -36,6 +39,7 @@ namespace AhShitRim::Arms
             command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::SetLoadout);
             command.argument = a_arms.slot;
             std::copy(std::begin(a_arms.entries), std::end(a_arms.entries), command.entries);
+            std::copy(std::begin(a_arms.skills), std::end(a_arms.skills), command.skills);
             return command;
         }
 
@@ -63,7 +67,14 @@ namespace AhShitRim::Arms
                     text += std::format(" {}:{}", a_arms.entries[i].type, a_arms.entries[i].ammo);
                 }
             }
-            return text.empty() ? " none" : text;
+            text = text.empty() ? " none" : text;
+            std::string skills;
+            for (std::uint32_t i = 0; i < Protocol::kWeaponSkillCount; ++i) {
+                if (a_arms.skills[i]) {
+                    skills += std::format(" {}:{}", i, a_arms.skills[i]);
+                }
+            }
+            return text + "; skills" + (skills.empty() ? " none" : skills);
         }
     }
 
@@ -79,7 +90,7 @@ namespace AhShitRim::Arms
     {
         auto&      link = LinkService::Get();
         const bool up = link.IsUp();
-        if (up && !state.wasUp && !Weapons::Empty(state.known.entries)) {
+        if (up && !state.wasUp && (!Weapons::Empty(state.known.entries) || std::any_of(std::begin(state.known.skills), std::end(state.known.skills), [](auto a_s) { return a_s != 0; }))) {
             state.pending = true;  // a San Andreas that started after Skyrim, or again, has none of them
         }
         state.wasUp = up;
@@ -104,6 +115,17 @@ namespace AhShitRim::Arms
         if (posed && !state.pending && !state.settling) {
             std::copy(std::begin(pose.loadout), std::end(pose.loadout), state.known.entries);
             Weapons::Sanitise(state.known.entries);
+            for (std::uint32_t i = 0; i < Protocol::kWeaponSkillCount; ++i) {
+                state.known.skills[i] = (std::min)(pose.skills[i], Cosave::kSkillMax);
+                // San Andreas's "skill increased", as a help box: a level up since the save was loaded.
+                const int level = Weapons::SkillLevel(i, state.known.skills[i]);
+                if (state.haveLevels && level > state.levels[i]) {
+                    SaHud::ShowHelp(std::format("{} skill: {}", Weapons::kSkillNames[i], Weapons::SkillLevelName(level)));
+                    SKSE::log::info("arms: CJ's {} skill is {} now ({})", Weapons::kSkillNames[i], Weapons::SkillLevelName(level), state.known.skills[i]);
+                }
+                state.levels[i] = level;
+            }
+            state.haveLevels = true;
             state.known.slot = (std::min)(pose.weaponSlot, static_cast<std::uint8_t>(Protocol::kWeaponSlotCount - 1));
         }
     }
@@ -115,6 +137,7 @@ namespace AhShitRim::Arms
         const auto& step = Weapons::kDebugSteps[state.debugStep % Weapons::kDebugStepCount];
         if (Send(Weapons::DebugCommand(state.debugStep))) {
             SKSE::log::info("arms: debug key {}: {}", state.debugStep % Weapons::kDebugStepCount + 1, step.what);
+            SaHud::ShowHelp(std::format("Debug {}/{}: {}", state.debugStep % Weapons::kDebugStepCount + 1, Weapons::kDebugStepCount, step.what), 4.0f);
             state.debugStep++;
         } else {
             SKSE::log::warn("arms: debug key: the link is down, nothing given");
@@ -176,6 +199,7 @@ namespace AhShitRim::Arms
         state.known = a_arms;
         state.pending = true;
         state.settling = false;
+        state.haveLevels = false;
         SKSE::log::info("arms: the loaded save holds slot {}:{}", a_arms.slot, Describe(a_arms));
     }
 
@@ -184,5 +208,6 @@ namespace AhShitRim::Arms
         state.known = {};
         state.pending = true;  // a new game or a save without weapons: San Andreas starts over too
         state.settling = false;
+        state.haveLevels = false;
     }
 }

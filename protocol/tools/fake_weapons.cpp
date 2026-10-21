@@ -2,8 +2,10 @@
 // the player over on flat ground, gives the weapon sets the way the debug key does, then switches
 // through every weapon with the mouse wheel, aims and fires each one, and reports what San Andreas
 // publishes: the loadout, the weapon in his hand and its model and slots, the shots counted and the
-// camera mode. Also sets a loadout the way a loaded save does and checks it came back as sent.
-// Exits non-zero when a weapon doesn't show up in the hand, doesn't switch or doesn't fire.
+// camera mode, and (v13) the Shot messages each one sends: bullets, shotgun shots, melee blows.
+// Also sets a loadout the way a loaded save does and checks it came back as sent, skills and all, and
+// sends Hit commands and checks they raise the skill.
+// Exits non-zero when a weapon doesn't show up in the hand, doesn't switch, doesn't fire or sends no shot.
 // Built with the protocol tests; run it through scripts/fake-weapons.ps1 while San Andreas runs
 // (launch-sa.ps1) and Skyrim is closed.
 
@@ -11,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <optional>
@@ -33,8 +36,18 @@ using namespace std::chrono;
 
 constexpr float kAnchor[3] = { 10000.0f, -20000.0f, 3000.0f };
 
+struct ShotCount
+{
+    unsigned                bullets = 0;
+    unsigned                spread = 0;  // shotgun shots
+    unsigned                blows = 0;
+    std::set<std::uint32_t> strikes;
+    Protocol::ShotEvent     last{};
+};
+
 struct Received
 {
+    std::map<std::uint8_t, ShotCount>                   shots;  // by weapon type
     SkinModel::Assembler                                assembler;
     std::map<std::uint32_t, std::vector<std::uint8_t>> blobs;
     std::map<std::uint32_t, std::string>                names;
@@ -49,6 +62,21 @@ struct Received
 void Drain(Link& a_link, Received& a_received)
 {
     a_link.Receive([&](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+        if (a_type == Protocol::MessageType::Shot && a_size == sizeof(Protocol::ShotEvent)) {
+            Protocol::ShotEvent shot{};
+            std::memcpy(&shot, a_data, sizeof(shot));
+            auto& count = a_received.shots[shot.weaponType];
+            if (shot.kind == Protocol::kShotMelee) {
+                count.blows++;
+                count.strikes.insert(shot.strike);
+            } else if (shot.flags & Protocol::kShotSpread) {
+                count.spread++;
+            } else {
+                count.bullets++;
+            }
+            count.last = shot;
+            return;
+        }
         if (a_type != Protocol::MessageType::ModelChunk || a_received.assembler.Add(a_data, a_size) != SkinModel::Assembler::Result::Complete) {
             return;
         }
@@ -158,6 +186,49 @@ int main()
         return std::make_tuple(p, haveHand, model.has_value(), height);
     };
 
+    // AHSHITRIM_AIM_ONLY=1: only how one-handed guns point while aiming, at each skill level (the gangster
+    // and hitman styles hold them differently), then quit.
+    if (const char* only = std::getenv("AHSHITRIM_AIM_ONLY"); only && *only == '1') {
+        for (const std::uint8_t type : { Weapons::Pistol, Weapons::MicroUzi, Weapons::DesertEagle }) {
+            for (const std::uint16_t skill : { std::uint16_t{ 0 }, std::uint16_t{ 500 }, std::uint16_t{ 999 } }) {
+                Protocol::WeaponCommand c{};
+                c.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::SetLoadout);
+                const std::uint32_t slot = type == Weapons::MicroUzi ? 4 : 2;
+                c.argument = slot;
+                c.entries[slot] = { type, 0, 10, 200 };
+                for (auto& s : c.skills) {
+                    s = skill;
+                }
+                link.Send(Protocol::MessageType::WeaponCommand, &c, sizeof(c));
+                run(1.5);
+                input.SetAim(true);
+                run(1.5);
+                const auto p = pose();
+                Protocol::BodyState hand{};
+                link.ReadWeapon(0, hand);
+                const float rise = p.muzzle[0][2] - hand.bones[0].translation[2];
+                const float reach = std::hypot(p.muzzle[0][0] - hand.bones[0].translation[0], p.muzzle[0][1] - hand.bones[0].translation[1]);
+                std::printf("type %2u skill %3u aiming: cam 0x%02X, hand %.2f m up, the gun points %.0f degrees up, flags 0x%02X%s\n", type, skill, p.cameraMode,
+                    hand.bones[0].translation[2] * Pose::kMetersPerUnit, std::atan2(rise, reach) * 57.2958f, p.weaponFlags,
+                    (p.weaponFlags & Protocol::kWeaponTwin) ? " (twin)" : "");
+                input.SetAim(false);
+                run(1.0);
+                // Firing from the hip, no aim camera.
+                input.SetFire(true);
+                run(0.4);
+                const auto f = pose();
+                link.ReadWeapon(0, hand);
+                const float riseF = f.muzzle[0][2] - hand.bones[0].translation[2];
+                const float reachF = std::hypot(f.muzzle[0][0] - hand.bones[0].translation[0], f.muzzle[0][1] - hand.bones[0].translation[1]);
+                std::printf("type %2u skill %3u from the hip: cam 0x%02X, hand %.2f m up, the gun points %.0f degrees up\n", type, skill, f.cameraMode,
+                    hand.bones[0].translation[2] * Pose::kMetersPerUnit, std::atan2(riseF, reachF) * 57.2958f);
+                input.SetFire(false);
+                run(1.0);
+            }
+        }
+        return 0;
+    }
+
     // The sets, the way the debug key gives them.
     for (std::uint32_t set = 1; set <= 4; ++set) {
         command(Protocol::WeaponCommandKind::GiveSet, set);
@@ -201,6 +272,23 @@ int main()
         run(0.3);
         input.SetAim(false);
         run(0.3);
+        {
+            const auto& count = received.shots[p.weaponType];
+            const auto& last = count.last;
+            std::printf("  ^ shots to Skyrim: %u bullets, %u shotgun shots, %u blows in %zu strikes; the last from (%.1f, %.1f, %.1f) m along (%.2f, %.2f, %.2f), "
+                        "reach %.0f m, damage %.0f, skill %u\n",
+                count.bullets, count.spread, count.blows, count.strikes.size(), last.origin[0] * Pose::kMetersPerUnit, last.origin[1] * Pose::kMetersPerUnit,
+                last.origin[2] * Pose::kMetersPerUnit, last.direction[0], last.direction[1], last.direction[2], last.range * Pose::kMetersPerUnit, last.damage, last.skill);
+            const bool gun = p.weaponType >= Weapons::Pistol && (p.weaponType <= Weapons::SniperRifle || p.weaponType == Weapons::Minigun);
+            const bool none = count.bullets + count.spread + count.blows == 0;
+            if ((gun || Weapons::IsMelee(p.weaponType)) && none) {
+                std::printf("  ^ weapon %u sent no shot\n", p.weaponType);
+                failed++;
+            } else if (!none && (last.handover != handoverId || std::hypot(last.origin[0], last.origin[1]) * Pose::kMetersPerUnit > 4.0f)) {
+                std::printf("  ^ weapon %u's shot isn't where CJ is\n", p.weaponType);
+                failed++;
+            }
+        }
         const bool fired = after.shots != shotsBefore || after.loadout[after.weaponSlot].ammo < ammoBefore;
         std::printf("  ^ %s: shots %u -> %u, ammo %u -> %u%s\n", melee ? "melee" : "gun", shotsBefore, after.shots, ammoBefore, after.loadout[after.weaponSlot].ammo,
             fired ? "" : (melee || p.weaponType == 0 ? " (nothing to count)" : "  NO SHOT FIRED"));
@@ -214,17 +302,38 @@ int main()
     std::printf("%u weapons went by on the wheel (%zu different)\n", steps, seen.size());
     failed += seen.size() < 10;
 
-    // A loadout as a loaded save sets it.
+    // A loadout as a loaded save sets it, skills and all.
     Protocol::WeaponEntry entries[Protocol::kWeaponSlotCount]{};
     entries[0] = { Weapons::BrassKnuckle, 0, 1, 1 };
     entries[2] = { Weapons::DesertEagle, 0, 5, 44 };
     entries[5] = { Weapons::Ak47, 0, 12, 300 };
-    command(Protocol::WeaponCommandKind::SetLoadout, 5, entries);
+    {
+        Protocol::WeaponCommand c{};
+        c.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::SetLoadout);
+        c.argument = 5;
+        std::memcpy(c.entries, entries, sizeof(c.entries));
+        c.skills[0] = 10;
+        c.skills[8] = 500;  // the AK-47: gangster
+        link.Send(Protocol::MessageType::WeaponCommand, &c, sizeof(c));
+    }
     run(1.0);
     const auto after = pose();
-    std::printf("loadout set:%s, holding slot %u (type %u)\n", loadoutText(after).c_str(), after.weaponSlot, after.weaponType);
+    std::printf("loadout set:%s, holding slot %u (type %u), skills: pistol %u, AK-47 %u\n", loadoutText(after).c_str(), after.weaponSlot, after.weaponType,
+        after.skills[0], after.skills[8]);
     failed += !(after.loadout[2].type == Weapons::DesertEagle && after.loadout[2].ammo == 44 && after.loadout[2].clip == 5 &&
-                after.loadout[5].type == Weapons::Ak47 && after.loadout[5].ammo == 300 && after.weaponSlot == 5 && after.loadout[1].type == 0);
+                after.loadout[5].type == Weapons::Ak47 && after.loadout[5].ammo == 300 && after.weaponSlot == 5 && after.loadout[1].type == 0 &&
+                after.skills[0] == 10 && after.skills[8] == 500);
+
+    // Hits in Skyrim raise the skill as San Andreas's own would.
+    {
+        Protocol::WeaponEntry hits[Protocol::kWeaponSlotCount]{};
+        hits[0].ammo = 20;
+        command(Protocol::WeaponCommandKind::Hit, Weapons::Pistol, hits);
+        run(1.0);
+        const auto raised = pose();
+        std::printf("20 pistol hits: pistol skill %u -> %u\n", after.skills[0], raised.skills[0]);
+        failed += !(raised.skills[0] > after.skills[0]);
+    }
 
     // Twin pistols (San Andreas gives them to a CJ with the skill): the second hand's slot carries the same model.
     Protocol::WeaponEntry twins[Protocol::kWeaponSlotCount]{};
@@ -291,8 +400,8 @@ int main()
     command(Protocol::WeaponCommandKind::SetLoadout, 0, none);
     run(1.0);
     const auto cleared = pose();
-    std::printf("loadout cleared:%s, holding type %u\n", loadoutText(cleared).c_str(), cleared.weaponType);
-    failed += !(Weapons::Empty(*reinterpret_cast<const Weapons::Loadout*>(cleared.loadout)) && cleared.weaponType == 0);
+    std::printf("loadout cleared:%s, holding type %u, pistol skill %u\n", loadoutText(cleared).c_str(), cleared.weaponType, cleared.skills[0]);
+    failed += !(Weapons::Empty(*reinterpret_cast<const Weapons::Loadout*>(cleared.loadout)) && cleared.weaponType == 0 && cleared.skills[0] == 0);
 
     link.Tick(ms());
     std::printf("%s\n", failed ? "FAILED" : "weapons check passed");

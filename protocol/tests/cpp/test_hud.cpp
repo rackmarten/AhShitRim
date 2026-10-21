@@ -355,6 +355,21 @@ TEST_CASE("the scopes and crosshairs are four quarters round the middle, the oth
     CHECK(aim[0].rect.y1 == doctest::Approx(1080.0f * 0.4f));
     CHECK(aim[2].rect.y0 == doctest::Approx(1080.0f * 0.4f));
     CHECK((aim[0].rect.y1 - aim[0].rect.y0) == doctest::Approx(32.0f * screen.unitY));
+    // Through Skyrim's frustum: with the same 4:3 field of view the point is the fractions of the middle 4:3,
+    // with a narrower one (a field of view meant across 16:9) it sits higher, where the shots go.
+    const float half = std::tan(70.0f * 3.14159265f / 360.0f);
+    const auto  same = AimPoint(screen, 0.5f, 0.4f, 70.0f, half * 16.0f / 9.0f / (4.0f / 3.0f), half * 0.75f);
+    CHECK(same.first == doctest::Approx(960.0f));
+    CHECK(same.second == doctest::Approx(1080.0f * 0.4f));
+    const auto narrow = AimPoint(screen, 0.5f, 0.4f, 70.0f, half, half * 9.0f / 16.0f);
+    CHECK(narrow.second < same.second);
+    const auto at = AimSightAt(screen, 900.0f, 400.0f, 0.2f);
+    CHECK(at[0].rect.x1 == doctest::Approx(900.0f));
+    CHECK(at[0].rect.y1 == doctest::Approx(400.0f));
+    // Off the middle across, by the middle 4:3's width, not the whole screen's.
+    const auto right = AimSight(screen, 0.53f, 0.4f, 0.2f);
+    CHECK(right[0].rect.x1 == doctest::Approx(960.0f + 0.03f * 640.0f * screen.unitX));
+    CHECK((right[0].rect.x1 - right[0].rect.x0) == doctest::Approx(64.0f * 0.2f / 2.0f * screen.unitX));
 
     CHECK(kAmmo.align == HudFont::Align::Centre);
     CHECK(kAmmo.colour.b == 241);

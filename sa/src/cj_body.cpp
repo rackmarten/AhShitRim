@@ -10,8 +10,11 @@
 #include <plugin.h>
 
 #include <CCamera.h>
+#include <CPedIntelligence.h>
 #include <CPlayerPed.h>
+#include <CTaskSimpleUseGun.h>
 #include <CTimer.h>
+#include <CWeaponInfo.h>
 #include <common.h>
 
 #include <safetyhook.hpp>
@@ -51,6 +54,170 @@ namespace AhShitRim::CjBody
         } state;
 
         constexpr int kBonePelvis = 2;  // BONE_PELVIS
+        constexpr int kBoneRightUpperArm = 22, kBoneRightForeArm = 23, kBoneRightHand = 24, kBoneLeftUpperArm = 32, kBoneLeftForeArm = 33, kBoneLeftHand = 34;
+        constexpr int kModeAimWeapon = 0x35;  // MODE_AIMWEAPON: free aim in the third person
+
+        int IndexOf(RpHAnimHierarchy* a_hierarchy, int a_bone)
+        {
+            for (int i = 0; i < a_hierarchy->numNodes; i++) {
+                if (a_hierarchy->pNodeInfo[i].nodeID == a_bone) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        // Each node's parent, from the hierarchy's push and pop flags (RenderWare walks the nodes depth first: a
+        // node without the pop flag is its next node's parent; one with the push flag has a sibling after its
+        // subtree).
+        std::vector<int> ParentsOf(RpHAnimHierarchy* a_hierarchy)
+        {
+            std::vector<int> parents(a_hierarchy->numNodes, -1), stack;
+            int              current = -1;
+            for (int i = 0; i < a_hierarchy->numNodes; i++) {
+                parents[i] = current;
+                const auto flags = a_hierarchy->pNodeInfo[i].flags;
+                if (flags & rpHANIMPUSHPARENTMATRIX) {
+                    stack.push_back(current);
+                }
+                if (flags & rpHANIMPOPPARENTMATRIX) {
+                    current = stack.empty() ? -1 : stack.back();
+                    if (!stack.empty()) {
+                        stack.pop_back();
+                    }
+                } else {
+                    current = i;
+                }
+            }
+            return parents;
+        }
+
+        bool Under(const std::vector<int>& a_parents, int a_node, int a_root)
+        {
+            for (int n = a_node; n >= 0; n = a_parents[n]) {
+                if (n == a_root) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        CVector Rotate(const CVector& a_axis, float a_cos, float a_sin, const CVector& a_v)
+        {
+            // Rodrigues: v cos + (k x v) sin + k (k . v)(1 - cos)
+            const CVector cross(a_axis.y * a_v.z - a_axis.z * a_v.y, a_axis.z * a_v.x - a_axis.x * a_v.z, a_axis.x * a_v.y - a_axis.y * a_v.x);
+            const float   dot = a_axis.x * a_v.x + a_axis.y * a_v.y + a_axis.z * a_v.z;
+            return a_v * a_cos + cross * a_sin + a_axis * (dot * (1.0f - a_cos));
+        }
+
+        CVector Pos(const RwMatrix& a_m) { return CVector(a_m.pos.x, a_m.pos.y, a_m.pos.z); }
+
+        // Turns node a_root and everything under it about a_pivot so that a_from points along a_to.
+        void Turn(RpHAnimHierarchy* a_hierarchy, const std::vector<int>& a_parents, RwMatrix* a_matrices, int a_root, const CVector& a_pivot, CVector a_from, CVector a_to)
+        {
+            if (a_from.Magnitude() < 1e-4f || a_to.Magnitude() < 1e-4f) {
+                return;
+            }
+            a_from.Normalize();
+            a_to.Normalize();
+            CVector     axis(a_from.y * a_to.z - a_from.z * a_to.y, a_from.z * a_to.x - a_from.x * a_to.z, a_from.x * a_to.y - a_from.y * a_to.x);
+            const float sin = axis.Magnitude();
+            const float cos = a_from.x * a_to.x + a_from.y * a_to.y + a_from.z * a_to.z;
+            if (sin < 1e-4f) {
+                return;
+            }
+            axis /= sin;
+            for (int i = 0; i < a_hierarchy->numNodes; i++) {
+                if (!Under(a_parents, i, a_root)) {
+                    continue;
+                }
+                RwMatrix&     m = a_matrices[i];
+                const CVector right = Rotate(axis, cos, sin, CVector(m.right.x, m.right.y, m.right.z));
+                const CVector up = Rotate(axis, cos, sin, CVector(m.up.x, m.up.y, m.up.z));
+                const CVector at = Rotate(axis, cos, sin, CVector(m.at.x, m.at.y, m.at.z));
+                const CVector pos = a_pivot + Rotate(axis, cos, sin, Pos(m) - a_pivot);
+                m.right = { right.x, right.y, right.z };
+                m.up = { up.x, up.y, up.z };
+                m.at = { at.x, at.y, at.z };
+                m.pos = { pos.x, pos.y, pos.z };
+            }
+        }
+
+        constexpr float kArmAcross = 0.26f;  // sin 15 degrees: how far an arm reaches across his front
+
+        // The line an arm aiming along a_wanted takes: kept on its own side of his body (the right arm from
+        // a bit left of straight ahead round to his right, the left arm the other way), so aiming across him
+        // or behind him the arm stops and the wrist turns the rest of the way.
+        CVector ArmLine(CPlayerPed* a_ped, const CVector& a_wanted, bool a_left)
+        {
+            CVector forward = a_ped->GetForward(), right = a_ped->GetRight();
+            forward.z = right.z = 0.0f;
+            const float horizontal = std::hypot(a_wanted.x, a_wanted.y);
+            if (forward.Magnitude() < 1e-3f || right.Magnitude() < 1e-3f || horizontal < 1e-3f) {
+                return a_wanted;
+            }
+            forward.Normalize();
+            right.Normalize();
+            const float side = a_left ? -1.0f : 1.0f;
+            const float ahead = (a_wanted.x * forward.x + a_wanted.y * forward.y) / horizontal;
+            const float out = side * (a_wanted.x * right.x + a_wanted.y * right.y) / horizontal;
+            if (out >= -kArmAcross && ahead >= 0.0f) {
+                return a_wanted;
+            }
+            // Across his body or behind him: as far across as the arm goes, at the same height.
+            const float   across = ahead >= 0.0f ? -kArmAcross : (out >= 0.0f ? 1.0f : -kArmAcross);
+            const float   straight = std::sqrt((std::max)(0.0f, 1.0f - across * across));
+            const CVector flat = forward * straight + right * (side * across);
+            return CVector(flat.x * horizontal, flat.y * horizontal, a_wanted.z);
+        }
+
+        // San Andreas points a one-handed gun with its arm IK (IKChainManager_c), which hidden leaves the arm
+        // half raised and the gun pointing at the sky. So while he uses the gun (aiming or firing) the arm is
+        // posed here as San Andreas's pistol stance looks: upper arm and forearm straight along the line from
+        // the shoulder to the aim point, then the hand turned so the barrel (the weapon's fire offset on the
+        // hand, as the weapon is put on it) points there too. Only the pose: shots go where San Andreas fires them.
+        void AimArms(CPlayerPed* a_ped, RpHAnimHierarchy* a_hierarchy, RwMatrix* a_matrices)
+        {
+            const auto& cam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
+            const bool  aiming = cam.m_nMode == kModeAimWeapon;
+            auto*       task = a_ped->m_pIntelligence ? a_ped->m_pIntelligence->GetTaskUseGun() : nullptr;
+            if (a_ped->bIsDucking || (!aiming && !task)) {
+                return;  // he isn't using the gun: his arms are the animation's
+            }
+            const auto  type = a_ped->m_aWeapons[a_ped->m_nSelectedWepSlot].m_eWeaponType;
+            const auto* info = CWeaponInfo::GetWeaponInfo(type, a_ped->GetWeaponSkill(type));
+            if (!info || !info->m_nFlags.bAimWithArm) {
+                return;
+            }
+            // Free aim: where San Andreas's crosshair aims. Firing without the aim camera: ahead of him.
+            CVector source, target;
+            if (aiming) {
+                TheCamera.Find3rdPersonCamTargetVector(20.0f, a_ped->GetPosition() + CVector(0.0f, 0.0f, 0.7f), &source, &target);
+            } else {
+                target = a_ped->GetPosition() + a_ped->GetForward() * 20.0f + CVector(0.0f, 0.0f, 0.5f);
+            }
+            const CVector offset(info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z);
+            const auto    parents = ParentsOf(a_hierarchy);
+            for (int arm = 0; arm < (info->m_nFlags.bTwinPistol ? 2 : 1); ++arm) {
+                const int upper = IndexOf(a_hierarchy, arm == 0 ? kBoneRightUpperArm : kBoneLeftUpperArm);
+                const int fore = IndexOf(a_hierarchy, arm == 0 ? kBoneRightForeArm : kBoneLeftForeArm);
+                const int hand = IndexOf(a_hierarchy, arm == 0 ? kBoneRightHand : kBoneLeftHand);
+                if (upper < 0 || fore < 0 || hand < 0) {
+                    continue;
+                }
+                const CVector shoulder = Pos(a_matrices[upper]);
+                const CVector wanted = ArmLine(a_ped, target - shoulder, arm == 1);
+                // The upper arm along the line, then the forearm, then the barrel at the target itself.
+                Turn(a_hierarchy, parents, a_matrices, upper, shoulder, Pos(a_matrices[fore]) - shoulder, wanted);
+                const CVector elbow = Pos(a_matrices[fore]);
+                Turn(a_hierarchy, parents, a_matrices, fore, elbow, Pos(a_matrices[hand]) - elbow, wanted);
+                // The left hand's weapon is turned over about its X axis (RenderWeaponPedsForPC).
+                const CVector   fire = arm == 0 ? offset : CVector(offset.x, -offset.y, -offset.z);
+                const RwMatrix& h = a_matrices[hand];
+                const CVector   barrel = CVector(h.right.x, h.right.y, h.right.z) * fire.x + CVector(h.up.x, h.up.y, h.up.z) * fire.y + CVector(h.at.x, h.at.y, h.at.z) * fire.z;
+                Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), barrel, target - Pos(h));
+            }
+        }
 
         // Full animation updates for CJ, as if he were on screen: hidden, San Andreas draws nothing,
         // never sees him on screen and only moves his root (RpAnimBlendClumpUpdateAnimations with
@@ -300,6 +467,10 @@ namespace AhShitRim::CjBody
         // CPed::PreRender then sets the breast bones (between clavicle and upper arm) from the posed
         // upper arms; hidden it never runs, and the shoulders stretched back to wherever those bones
         // were left.
+        // His arm aimed first, so the shoulder follows it.
+        if ((hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) == 0 && RpHAnimHierarchyGetMatrixArray(hierarchy)) {
+            AimArms(a_ped, hierarchy, RpHAnimHierarchyGetMatrixArray(hierarchy));
+        }
         ShoulderBoneRotation(clump);
         const RwMatrix* matrices = RpHAnimHierarchyGetMatrixArray(hierarchy);
         const RwMatrix* skinToBone = RpSkinGetSkinToBoneMatrices(skin);

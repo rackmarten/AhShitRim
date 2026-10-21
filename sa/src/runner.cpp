@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_shots.h"
 #include "cj_weapons.h"
 #include "ground.h"
 #include "input.h"
@@ -550,6 +551,7 @@ namespace AhShitRim::Runner
             g_idle = RedirectCall(kCallIdle, &IdleHook);
             g_frontendIdle = RedirectCall(kCallFrontendIdle, &FrontendIdleHook);
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
+            CjShots::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {
                 Log("runner: a frame hook is missing; San Andreas will not run as intended");
             }

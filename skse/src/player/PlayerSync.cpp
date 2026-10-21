@@ -13,6 +13,7 @@
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/Arms.h"
+#include "player/Shots.h"
 #include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
@@ -406,6 +407,7 @@ namespace AhShitRim::PlayerSync
             Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
             CollisionSampler::Stop();
             Activation::Clear();
+            Shots::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -636,6 +638,7 @@ namespace AhShitRim::PlayerSync
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
+            Shots::Update(a_player, state.anchor, state.handover);
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -678,6 +681,8 @@ namespace AhShitRim::PlayerSync
                 LinkService::Get().Receive([](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
                     if (a_type == Protocol::MessageType::ModelChunk) {
                         ModelView::OnChunk(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::Shot && state.owned) {
+                        Shots::Queue(a_data, a_size);
                     }
                 });
                 if (state.owned && a_delta > 0.0f) {
@@ -901,6 +906,7 @@ namespace AhShitRim::PlayerSync
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
             Ini::kPath);
         Arms::OnDataLoaded();
+        Shots::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
