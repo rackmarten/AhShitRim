@@ -56,38 +56,47 @@ TEST_CASE("every temple names the cell to wake in")
     CHECK(std::string(Info(Temple::Kynareth).name) == "Temple of Kynareth");
 }
 
-TEST_CASE("the sequence runs dying, fading, moving and waking, and ends")
+TEST_CASE("the sequence runs falling, dying, fading, moving and waking, and ends")
 {
     Sequence   seq;
     const auto begin = seq.Start();
     CHECK(begin.action == Action::Begin);
     CHECK(begin.active);
-    CHECK(seq.GetPhase() == Phase::Dying);
+    CHECK(seq.GetPhase() == Phase::Falling);
+    CHECK(begin.down);
+    CHECK_FALSE(begin.camera);  // he falls under the camera he had
 
-    const Timing t;
-    // Slow motion comes in, and the picture drains.
+    const float falling = RunTo(seq, Phase::Dying);
+    CHECK(falling == doctest::Approx(Timing{}.fall).epsilon(0.1));
+
+    // CJ lies dead at full speed and colour under the death camera, the picture still clear.
     const auto mid = seq.Tick(1.0f, false);
-    CHECK(mid.timeScale == doctest::Approx(t.timeScale));
-    CHECK(mid.desaturate > 0.0f);
+    CHECK(mid.down);
+    CHECK(mid.camera);
     CHECK(mid.fade == 0.0f);
 
-    RunTo(seq, Phase::Fading);
-    CHECK(seq.GetPhase() == Phase::Fading);
-    const auto fading = seq.Tick(0.5f, false);
+    const float dying = RunTo(seq, Phase::Fading) + 1.0f;
+    CHECK(dying == doctest::Approx(Timing{}.dying).epsilon(0.05));
+    const auto fading = seq.Tick(1.5f, false);
     CHECK(fading.fade == doctest::Approx(0.5f));
     CHECK(fading.active);
+    CHECK(fading.down);
+    CHECK(fading.camera);
 
     RunTo(seq, Phase::Moving);
     CHECK(seq.GetPhase() == Phase::Moving);
     const auto black = seq.Tick(0.1f, false);
     CHECK(black.fade == doctest::Approx(1.0f));
-    CHECK(black.timeScale == doctest::Approx(1.0f));
+    CHECK(black.active);
+    CHECK_FALSE(black.down);  // black: he gets up, out of sight, for the move
+    CHECK_FALSE(black.camera);
     CHECK(black.action == Action::None);
 
     const auto arrived = seq.Tick(0.1f, true);
     CHECK(arrived.action == Action::Revive);
     CHECK(seq.GetPhase() == Phase::Waking);
     CHECK_FALSE(arrived.active);
+    CHECK_FALSE(arrived.down);
 
     const auto waking = seq.Tick(1.0f, true);
     CHECK(waking.fade == doctest::Approx(0.5f));
@@ -97,14 +106,18 @@ TEST_CASE("the sequence runs dying, fading, moving and waking, and ends")
     CHECK(seq.Tick(1.0f, true).action == Action::None);
 }
 
-TEST_CASE("the move is asked for exactly once")
+TEST_CASE("\"wasted\" and the move are asked for exactly once")
 {
     Sequence seq;
     seq.Start();
+    int wasted = 0;
     int moves = 0;
     for (int i = 0; i < 1000 && seq.Running(); i++) {
-        moves += seq.Tick(0.05f, seq.GetPhase() == Phase::Moving).action == Action::Move;
+        const auto action = seq.Tick(0.05f, seq.GetPhase() == Phase::Moving).action;
+        wasted += action == Action::Wasted;
+        moves += action == Action::Move;
     }
+    CHECK(wasted == 1);
     CHECK(moves == 1);
 }
 
@@ -128,5 +141,32 @@ TEST_CASE("cancelling the sequence leaves nothing running")
     const auto f = seq.Tick(1.0f, false);
     CHECK_FALSE(f.active);
     CHECK(f.fade == 0.0f);
-    CHECK(f.timeScale == doctest::Approx(1.0f));
+    CHECK_FALSE(f.down);
+}
+
+TEST_CASE("San Andreas's timing: the fall, 3 s dead, 3 s to black, \"wasted\" from a moment after the cut until then")
+{
+    const Timing t;
+    CHECK(t.fall == doctest::Approx(1.25f));
+    CHECK(t.dying == doctest::Approx(3.0f));
+    CHECK(t.fadeOut == doctest::Approx(3.0f));
+    CHECK(t.wake == doctest::Approx(2.0f));
+    CHECK(TextSeconds(t) == doctest::Approx(5.4f));
+}
+
+TEST_CASE("\"wasted\" comes up a moment after the death camera, not with it")
+{
+    Sequence seq;
+    seq.Start();
+    RunTo(seq, Phase::Dying);
+    float cameraFor = 0.0f;
+    for (int i = 0; i < 100; i++) {
+        const auto f = seq.Tick(0.05f, false);
+        cameraFor += 0.05f;
+        CHECK(f.camera);
+        if (f.action == Action::Wasted) {
+            break;
+        }
+    }
+    CHECK(cameraFor == doctest::Approx(Timing{}.textDelay).epsilon(0.1));
 }

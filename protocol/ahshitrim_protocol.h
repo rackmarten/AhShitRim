@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 13;
+    inline constexpr std::uint32_t kProtocolVersion = 14;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -111,7 +111,8 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kInputFace = 0x4;        // InputState.flags (v9): CJ stands still and turns to sceneHeading (the one he talks to)
     inline constexpr std::uint32_t kInputScripted = 0x8;    // InputState.flags (v9): Skyrim moves the player in a scene; CJ follows sceneOffset and sceneHeading
     inline constexpr std::uint32_t kInputSeated = 0x10;     // InputState.flags (v9), with kInputScripted: the player sits
-    inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas runs in slow motion and ignores damage
+    inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas ignores damage; (v14) CJ falls dead on his front
+    inline constexpr std::uint32_t kInputWastedCamera = 0x40;  // InputState.flags (v14), with kInputWasted: San Andreas's death camera rises over him
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;
@@ -280,6 +281,7 @@ namespace AhShitRim::Protocol
         float         cameraForward[3];  // unit vector
         float         cameraFov;         // degrees, horizontal for a 4:3 screen: Skyrim's own fov convention
         BodyBone      bones[kBodyBoneMax];
+        float         cameraUp[3];       // v14: the camera's up, a unit vector (its roll: the death camera's swing); zero for none
     };
 
     struct BodySlot
@@ -287,7 +289,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[56];
+        std::uint8_t  pad[44];
     };
 
     // ---- Rings (single producer, single consumer) ----
@@ -507,7 +509,8 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 12);
+    static_assert(offsetof(BodyState, cameraUp) == 64 + kBodyBoneMax * 28);
     static_assert(offsetof(BodyState, feet) == 24);
     static_assert(offsetof(BodyState, cameraFov) == 60);
     static_assert(offsetof(BodyState, bones) == 64);

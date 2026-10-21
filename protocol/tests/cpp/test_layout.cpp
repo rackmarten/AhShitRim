@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v13 constants")
+TEST_CASE("protocol v14 constants")
 {
-    CHECK(kProtocolVersion == 13);
+    CHECK(kProtocolVersion == 14);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
@@ -57,6 +57,7 @@ TEST_CASE("protocol v13 constants")
     CHECK(kInputScripted == 0x8);
     CHECK(kInputSeated == 0x10);
     CHECK(kInputWasted == 0x20);
+    CHECK(kInputWastedCamera == 0x40);
     CHECK(kButtonHandbrake == 0x100);
     CHECK(kPlayerRadioRetuning == 0x10);
     CHECK(kRadioNone == -1);
@@ -79,7 +80,7 @@ TEST_CASE("protocol v13 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v13 slot and ring layout")
+TEST_CASE("the v14 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
@@ -131,7 +132,8 @@ TEST_CASE("the v13 slot and ring layout")
     CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 1856);
+    CHECK(sizeof(BodyState) == 1868);
+    CHECK(offsetof(BodyState, cameraUp) == 1856);
     CHECK(kOffsetVehicleSlots == 2560);
     CHECK(kOffsetVehicleSlots % 64 == 0);
     CHECK(kOffsetWeaponSlots == 2560 + 4 * 1920);

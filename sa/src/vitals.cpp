@@ -5,8 +5,12 @@
 
 #include <plugin.h>
 
+#include <CAnimBlendAssociation.h>
+#include <CAnimManager.h>
+#include <CCamera.h>
+#include <CPedIntelligence.h>
 #include <CPlayerPed.h>
-#include <CTimer.h>
+#include <CTaskSimpleRunAnim.h>
 
 #include <format>
 #include <utility>
@@ -15,14 +19,23 @@ namespace AhShitRim::Vitals
 {
     namespace
     {
-        constexpr float kSlowMotion = 0.3f;  // game speed while the player is dying, as Wasted::Timing
+        // gta-reversed's names. San Andreas's own CTaskSimpleDie would kill him and start its own
+        // Wasted and hospital (CGameLogic), so the fall is a plain animation held on its last frame.
+        constexpr int   kGroupDefault = 0;     // ANIM_GROUP_DEFAULT
+        constexpr int   kKoSkidBack = 26;      // ANIM_ID_KO_SKID_BACK: pitched onto his front, as San Andreas's deaths mostly end
+        constexpr int   kMoveIdle = 3;         // ANIM_ID_IDLE, within his own move group
+        constexpr int   kTaskPrimary = 3;      // TASK_PRIMARY_PRIMARY, over CJ's own on-foot task
+        constexpr short kModeDeadBaby = 0x1D;  // MODE_PED_DEAD_BABY: the camera rising over the dead player, swinging side to side
+        constexpr int   kScriptCamera = 1;     // TakeControl's who: the script, as Restore gives back
 
         struct State
         {
             bool  counting = false;
             float total = 0.0f;
-            bool  wasted = false;
-        bool  deadLogged = false;
+            bool  down = false;
+            bool  fallen = false;  // the fall's task is ours to take off
+            bool  camera = false;  // the death camera is ours to give back
+            bool  deadLogged = false;
         } state;
     }
 
@@ -52,14 +65,47 @@ namespace AhShitRim::Vitals
         }
     }
 
-    void SetWasted(bool a_wasted)
+    void SetWasted(CPlayerPed* a_ped, bool a_down, bool a_camera)
     {
-        if (a_wasted == state.wasted) {
+        if (!a_ped) {
             return;
         }
-        state.wasted = a_wasted;
-        CTimer::ms_fTimeScale = a_wasted ? kSlowMotion : 1.0f;
-        Log(a_wasted ? "health: Wasted, San Andreas in slow motion" : "health: Wasted is over, San Andreas at full speed");
+        if (a_down != state.down) {
+            state.down = a_down;
+            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
+            if (a_down) {
+                const bool inVehicle = a_ped->bInVehicle && a_ped->m_pVehicle;
+                if (!inVehicle) {  // in a vehicle he stays in the seat
+                    tasks.SetTask(new CTaskSimpleRunAnim(kGroupDefault, kKoSkidBack, 4.0f, true), kTaskPrimary, false);
+                    state.fallen = true;
+                }
+                Log(inVehicle ? "health: Wasted, CJ dies in his seat" : "health: Wasted, CJ falls dead on his front");
+            } else {
+                if (std::exchange(state.fallen, false)) {
+                    // He stands up, out of sight under the fade. A task holding its last frame leaves its
+                    // animation on him when it ends (CTaskSimpleAnim's destructor only marks it for removal),
+                    // so the fall is taken off and his idle snapped back, as CTaskSimpleDie's abort does. (Not
+                    // CPed::SetMoveAnim: plugin-sdk calls it through vtable slot 24, which is CPed::Save.)
+                    tasks.SetTask(nullptr, kTaskPrimary, false);
+                    if (auto* fall = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, static_cast<unsigned int>(kKoSkidBack))) {
+                        fall->m_fBlendDelta = -1000.0f;
+                    }
+                    a_ped->SetMoveState(PEDMOVE_STILL);
+                    CAnimManager::BlendAnimation(a_ped->m_pRwClump, a_ped->m_nAnimGroup, kMoveIdle, 1000.0f);
+                }
+                Log("health: Wasted is over, CJ is up again");
+            }
+        }
+        if (a_camera != state.camera) {
+            state.camera = a_camera;
+            if (a_camera) {
+                TheCamera.TakeControl(a_ped, kModeDeadBaby, SWITCHTYPE_JUMPCUT, kScriptCamera);  // a cut, as San Andreas does
+                Log("health: San Andreas's death camera rises over CJ");
+            } else {
+                TheCamera.Restore();
+                TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
+            }
+        }
     }
 
     float Damage() { return state.total; }

@@ -339,11 +339,8 @@ namespace AhShitRim::Runner
                 CTimer::m_UserPause = paused;
                 Log(paused ? "runner: a Skyrim menu pauses the game" : "runner: unpaused");
             }
-            const bool wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
-            if (wasted != state.wasted) {
-                state.wasted = wasted;
-                Vitals::SetWasted(wasted);
-            }
+            state.wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
+            Vitals::SetWasted(a_ped, state.wasted, state.wasted && (a_input.flags & Protocol::kInputWastedCamera) != 0);
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
                 state.carPending = false;

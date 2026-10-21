@@ -209,6 +209,12 @@ namespace AhShitRim::Body
         out.cameraForward[0] = f.x;
         out.cameraForward[1] = f.y;
         out.cameraForward[2] = f.z;
+        float up[3];
+        Lerp3(a.cameraUp, b.cameraUp, t, up);
+        const Vec3 u = Normalize({ up[0], up[1], up[2] }, { b.cameraUp[0], b.cameraUp[1], b.cameraUp[2] });
+        out.cameraUp[0] = u.x;
+        out.cameraUp[1] = u.y;
+        out.cameraUp[2] = u.z;
         out.cameraFov = a.cameraFov + (b.cameraFov - a.cameraFov) * t;
         const std::uint32_t count = (std::min)(b.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
@@ -235,7 +241,7 @@ namespace AhShitRim::Body
             }
             return true;
         };
-        if (!finite(a_body.feet, 3) || !finite(a_body.cameraPosition, 3) || !finite(a_body.cameraForward, 3) || !std::isfinite(a_body.cameraFov)) {
+        if (!finite(a_body.feet, 3) || !finite(a_body.cameraPosition, 3) || !finite(a_body.cameraForward, 3) || !finite(a_body.cameraUp, 3) || !std::isfinite(a_body.cameraFov)) {
             return false;
         }
         const std::uint32_t count = (std::min)(a_body.boneCount, Protocol::kBodyBoneMax);

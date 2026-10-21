@@ -57,6 +57,34 @@ namespace AhShitRim::Camera
         Multiply(zx, y, out);
     }
 
+    struct Angles
+    {
+        float heading = 0.0f;
+        float pitch = 0.0f;
+        float roll = 0.0f;
+    };
+
+    // The angles Basis takes to a view looking along a_forward with a_up as its up (unit vectors).
+    // Straight down the heading is a guess from the forward's last crumbs, and the roll makes up the
+    // rest of the turn about the view: San Andreas's death camera swings that way. A zero a_up (none
+    // sent) is no roll.
+    inline Angles AnglesOf(const float (&a_forward)[3], const float (&a_up)[3])
+    {
+        Angles a;
+        a.heading = std::atan2(a_forward[0], a_forward[1]);
+        a.pitch = std::atan2(-a_forward[2], std::hypot(a_forward[0], a_forward[1]));
+        const float sh = std::sin(a.heading), ch = std::cos(a.heading);
+        const float sp = std::sin(a.pitch), cp = std::cos(a.pitch);
+        const float right[3] = { ch, -sh, 0.0f };       // Basis's local x without roll
+        const float up[3] = { sh * sp, ch * sp, cp };    // and its local z
+        const float x = a_up[0] * right[0] + a_up[1] * right[1] + a_up[2] * right[2];
+        const float z = a_up[0] * up[0] + a_up[1] * up[1] + a_up[2] * up[2];
+        if (x * x + z * z > 1e-6f) {
+            a.roll = std::atan2(x, z);
+        }
+        return a;
+    }
+
     // What Skyrim's camera rotation a_skyrim, built for a view turned to (a_fromHeading, a_fromPitch),
     // does on top of plain heading and pitch: its own local axes, and in a dialogue its turn to the
     // speaker. Kept from before a menu, it leaves that turn out.

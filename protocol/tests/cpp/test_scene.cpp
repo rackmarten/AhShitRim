@@ -175,3 +175,39 @@ TEST_CASE("in a dialogue Skyrim's turn to the speaker stays out of the camera")
         }
     }
 }
+TEST_CASE("a view's forward and up give back its heading, pitch and roll, straight down too")
+{
+    constexpr float kHalfPi = 1.5707963f;
+    const float views[][3] = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.2f, 0.0f }, { 2.5f, -0.4f, 0.3f }, { 4.0f, 1.2f, -0.5f },
+        { 0.7f, kHalfPi, 0.0f }, { 0.0f, kHalfPi, 0.4f }, { 3.0f, kHalfPi - 1e-4f, -0.4f } };  // the death camera, swinging
+    for (const auto& v : views) {
+        Camera::Matrix m, back;
+        Camera::Basis(v[0], v[1], v[2], m);
+        const float forward[3] = { m[0][1], m[1][1], m[2][1] };
+        const float up[3] = { m[0][2], m[1][2], m[2][2] };
+        const auto angles = Camera::AnglesOf(forward, up);
+        Camera::Basis(angles.heading, angles.pitch, angles.roll, back);
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                CHECK(back[r][c] == doctest::Approx(m[r][c]).epsilon(1e-3));
+            }
+        }
+    }
+    const float forward[3] = { 0.0f, 1.0f, 0.0f };
+    const float none[3] = { 0.0f, 0.0f, 0.0f };
+    CHECK(Camera::AnglesOf(forward, none).roll == 0.0f);
+}
+
+TEST_CASE("San Andreas's death camera as logged: looking down, its up is the screen's top")
+{
+    // From a Wasted in game: the camera 2 m over CJ, front nearly straight down, up along world -y.
+    const float forward[3] = { 0.058f, -0.003f, -0.998f };
+    const float up[3] = { -0.050f, -0.999f, 0.000f };
+    const auto  angles = Camera::AnglesOf(forward, up);
+    Camera::Matrix m;
+    Camera::Basis(angles.heading, angles.pitch, angles.roll, m);
+    for (int r = 0; r < 3; ++r) {
+        CHECK(m[r][1] == doctest::Approx(forward[r]).epsilon(0.01));
+        CHECK(m[r][2] == doctest::Approx(up[r]).epsilon(0.01));
+    }
+}
