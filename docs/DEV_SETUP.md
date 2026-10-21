@@ -121,6 +121,18 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 Every pull request, every push to `main` and a manual run (Actions > build > Run workflow) builds both plugins on a GitHub `windows-latest` runner (Visual Studio 2026; `scripts/build.ps1` switches the San Andreas build to its generator) with the same scripts: `scripts/build.ps1 -Target skse`, `scripts/build.ps1 -Target sa -PluginSaCache .plugin-sa`, `scripts/test.ps1`, then `scripts/package.ps1`. There's no `local.props` on the runner, so the HUD test that reads a real San Andreas install skips itself. vcpkg's binary archives are cached between runs, so only the first build (or one after a `vcpkg.json` change) is slow. So is plugin-sdk's `plugin_sa.lib`, keyed on the plugin-sdk commit, `sa/cmake/plugin_sa.cmake` and the MSVC toolset: `-PluginSaCache` links the cached one when it's there and keeps a fresh build there otherwise (`PLUGIN_SA_LIB` in CMake, Release only). A newer push to the same branch cancels the run in progress.
 
+Next to it, a `protocol-tests-linux` job on `ubuntu-latest` runs `scripts/test.sh` (below) in a couple of minutes, so a broken test shows up long before the Windows build finishes.
+
+### Protocol tests on Linux
+
+The game-free doctest cases also build natively on Linux with gcc or clang, through the `linux-tests` preset in `protocol/CMakePresets.json` (Ninja, Debug). It needs no vcpkg: CMake downloads a pinned doctest release itself (`AHSR_FETCH_DOCTEST`). The link (`link.cpp`, `test_link.cpp`, `fake_skyrim`) is Windows' shared memory and is left out, and so are the launcher's Pester tests. You need CMake 3.21 or later, Ninja and a C++23 compiler (gcc 13 or clang 18 do; on Ubuntu 24.04, `sudo apt install cmake ninja-build g++`). Then:
+
+```bash
+scripts/test.sh                                  # configure, build and ctest the linux-tests preset
+AHSR_SA_PATH=/path/to/san-andreas scripts/test.sh   # also read a real install's fonts and HUD textures
+CXX=clang++ scripts/test.sh                      # clang instead (on a fresh build directory)
+```
+
 Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<commit>` with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`, and `AhShitRim-release-<commit>` with the player release zip.
 
 To try a PR in game, either:

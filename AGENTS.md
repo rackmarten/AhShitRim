@@ -20,9 +20,10 @@ Both games, MSVC and the scripts are here, so build and test locally instead of 
 
 ## Headless sessions (Linux)
 
-A headless session runs on Linux with no MSVC and neither game installed, so `scripts/*.ps1` don't run. CI is your compiler and test runner:
+A headless session runs on Linux with no MSVC and neither game installed, so `scripts/*.ps1` don't run. The game-free tests do, and CI covers the rest:
 
-- Every PR gets a Windows build of both plugins plus `scripts/test.ps1` (`.github/workflows/build.yml`).
+- Run `scripts/test.sh` before pushing: it builds and runs the protocol tests natively (gcc or clang; see `docs/DEV_SETUP.md`). Everything but the link's tests runs there. No compiler on the host? `docker run --rm -v "$PWD:$PWD" -w "$PWD" ubuntu:24.04 bash -c 'apt-get update -qq && apt-get install -y -qq cmake ninja-build g++ && scripts/test.sh'` does the same (delete the root-owned `protocol/build/linux-tests` afterwards the same way).
+- Every PR gets a quick `protocol-tests-linux` job running `scripts/test.sh`, plus a Windows build of both plugins and `scripts/test.ps1` (`.github/workflows/build.yml`).
 - `gh pr checks` shows the result, `gh run view <run-id> --log-failed` the failing step's log. Fix and push again until it's green.
 - A cold build (no vcpkg cache) can take around 30 minutes; later ones are much quicker.
 
