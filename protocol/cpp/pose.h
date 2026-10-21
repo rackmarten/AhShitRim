@@ -61,6 +61,7 @@ namespace AhShitRim::Pose
         Vec3 forward;   // CJ's facing (his matrix's forward row)
         Vec3 view;      // the camera's look direction
         bool grounded = false;
+        bool onFire = false;  // v15: CJ burns
         bool crouching = false;
 
         // The vehicle CJ is in (v11), if any.
@@ -89,7 +90,7 @@ namespace AhShitRim::Pose
         Protocol::PlayerState s{};
         s.frame = a_frame;
         s.flags = Protocol::kPlayerValid | (a_pose.grounded ? Protocol::kPlayerGrounded : 0) |
-                  (a_pose.crouching ? Protocol::kPlayerCrouching : 0);
+                  (a_pose.crouching ? Protocol::kPlayerCrouching : 0) | (a_pose.onFire ? Protocol::kPlayerOnFire : 0);
         s.offset[0] = (a_pose.position.x - a_pose.spawn.x) * kUnitsPerMeter;
         s.offset[1] = (a_pose.position.y - a_pose.spawn.y) * kUnitsPerMeter;
         s.offset[2] = (a_pose.position.z - a_pose.spawn.z) * kUnitsPerMeter;

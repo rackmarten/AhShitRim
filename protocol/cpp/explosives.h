@@ -250,17 +250,44 @@ namespace AhShitRim::Explosives
 
     // ---- Fire and gas ----
 
-    inline constexpr float kFireSpread = 1.0f * kMeter;  // a Molotov's fire: one patch where it burst, more this far round it
-    inline constexpr int   kFirePatches = 4;              // round the first
+    // A Molotov's fire catches where the bottle burst and spreads as San Andreas's does: about a metre round at
+    // first, three after kFireGrow seconds, then it burns on until kFireSeconds after the burst. Patches: the
+    // middle, 4 round it at 1.5 m, then 8 at 2.5 m.
+    inline constexpr float kFireSeconds = 30.0f;
+    inline constexpr float kFireGrow = 10.0f;
+    inline constexpr int   kFirePatchCount = 13;
+    inline constexpr float kFireInner = 1.5f * kMeter;
+    inline constexpr float kFireOuter = 2.5f * kMeter;
 
-    // Where the a_index-th patch of a Molotov's fire goes (0 the middle, then round it), relative to its burst.
-    inline Vec3 FirePatch(int a_index)
+    struct Patch
     {
-        if (a_index <= 0) {
+        Vec3  offset;         // from the burst
+        float start = 0.0f;   // seconds after the burst it catches
+    };
+
+    inline Patch FirePatch(int a_index)
+    {
+        if (a_index <= 0 || a_index >= kFirePatchCount) {
             return {};
         }
-        const float angle = 6.28318531f * static_cast<float>(a_index - 1) / static_cast<float>(kFirePatches);
-        return { std::cos(angle) * kFireSpread, std::sin(angle) * kFireSpread, 0.0f };
+        const bool  inner = a_index <= 4;
+        const int   k = inner ? a_index - 1 : a_index - 5;
+        const int   n = inner ? 4 : 8;
+        const float angle = 6.28318531f * (static_cast<float>(k) + (inner ? 0.0f : 0.5f)) / static_cast<float>(n);
+        const float radius = inner ? kFireInner : kFireOuter;
+        const float start = inner ? 3.0f + 0.5f * static_cast<float>(k) : 6.0f + 0.5f * static_cast<float>(k);
+        return { { std::cos(angle) * radius, std::sin(angle) * radius, 0.0f }, start };
+    }
+
+    inline constexpr float kFirePatchRadius = 0.8f * kMeter;  // who stands this close to a patch burns
+    inline constexpr float kFirePerSecond = 20.0f;         // San Andreas health points a second standing in it
+    inline constexpr float kBurnSeconds = 6.0f;            // someone it caught burns on this long, as San Andreas's peds do
+    inline constexpr float kBurnPerSecond = 15.0f;         // San Andreas health points a second while burning
+
+    inline bool InFire(const Vec3& a_patch, const Vec3& a_feet, float a_radius)
+    {
+        const float dx = a_feet.x - a_patch.x, dy = a_feet.y - a_patch.y;
+        return dx * dx + dy * dy <= (kFirePatchRadius + a_radius) * (kFirePatchRadius + a_radius) && std::fabs(a_feet.z - a_patch.z) <= 1.5f * kMeter;
     }
 
     inline constexpr float kGasRadius = 4.0f * kMeter;  // tear gas chokes everyone this close to the canister

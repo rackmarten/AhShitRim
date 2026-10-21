@@ -167,6 +167,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kPlayerGrounded = 0x2;   // PlayerState.flags: CJ stands on something
     inline constexpr std::uint32_t kPlayerCrouching = 0x4;  // PlayerState.flags: CJ crouches (v3); Skyrim sneaks
     inline constexpr std::uint32_t kPlayerInVehicle = 0x8;  // PlayerState.flags: CJ drives or rides a vehicle (v6)
+    inline constexpr std::uint32_t kPlayerOnFire = 0x20;  // PlayerState.flags (v15): CJ burns in San Andreas; Skyrim shows flames on him
     inline constexpr std::uint32_t kPlayerRadioRetuning = 0x10;  // PlayerState.flags (v7): the radio is between stations
 
     inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays
@@ -316,6 +317,7 @@ namespace AhShitRim::Protocol
         WeaponCommand = 3,   // Skyrim -> San Andreas (v12): set CJ's weapons, give a set of them, (v13) count his hits
         Shot = 4,            // San Andreas -> Skyrim (v13): a bullet, a shotgun's shot or a blow CJ dealt, for Skyrim to hit test
         Projectile = 5,      // San Andreas -> Skyrim (v15): a rocket, grenade, tear gas or Molotov CJ launched, for Skyrim to fly
+        Effect = 6,          // Skyrim -> San Andreas (v15): what CJ's explosives did, for San Andreas's own sound and fire
     };
 
     struct MessageHeader
@@ -399,7 +401,29 @@ namespace AhShitRim::Protocol
         float         velocity[3];  // Skyrim units a second
         float         rotation[4];  // its orientation, a unit quaternion x, y, z, w
         BodyBone      parts[kProjectilePartMax];  // each part of the model relative to the projectile
-        std::uint32_t reserved[4];
+        std::uint32_t id;           // San Andreas's number for it, which an Effect names when it is over
+        std::uint32_t reserved[3];
+    };
+
+    enum class EffectKind : std::uint8_t
+    {
+        ProjectileGone = 1,  // projectile `projectile` went off or is gone: San Andreas drops what it kept of it (a rocket's sound)
+        Explosion = 2,       // a blast at `at`: San Andreas's explosion sound
+        Fire = 3,            // fire on the ground at `at` for `seconds`: San Andreas's own (its crackle; CJ catches fire walking into it)
+        BurnCj = 4,          // CJ was caught in fire: San Andreas sets him alight (his scream, the burn)
+    };
+
+    // Payload of an Effect message (v15).
+    struct EffectEvent
+    {
+        std::uint32_t handover;    // InputState.handover `at` belongs to
+        std::uint8_t  kind;        // EffectKind
+        std::uint8_t  weaponType;  // the projectile type it came from (16 grenade .. 20 heat seeker), 0 for none
+        std::uint16_t reserved0;
+        std::uint32_t projectile;  // ProjectileEvent.id, ProjectileGone only
+        float         at[3];       // relative to InputState.anchor, Skyrim units
+        float         seconds;     // Fire only
+        std::uint32_t reserved1;
     };
 
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
@@ -510,6 +534,11 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(ProjectileEvent, velocity) == 28);
     static_assert(offsetof(ProjectileEvent, rotation) == 40);
     static_assert(offsetof(ProjectileEvent, parts) == 56);
+    static_assert(offsetof(ProjectileEvent, id) == 112);
+    static_assert(sizeof(EffectEvent) == 32);
+    static_assert(offsetof(EffectEvent, projectile) == 8);
+    static_assert(offsetof(EffectEvent, at) == 12);
+    static_assert(offsetof(EffectEvent, seconds) == 24);
     static_assert(sizeof(PlayerState) == 248);
     static_assert(offsetof(PlayerState, offset) == 8);
     static_assert(offsetof(PlayerState, velocity) == 20);

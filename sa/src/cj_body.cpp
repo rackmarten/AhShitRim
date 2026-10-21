@@ -519,7 +519,17 @@ namespace AhShitRim::CjBody
         };
         toSkyrim(feet, body.feet);
         const auto& cam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
-        toSkyrim(cam.m_vecSource, body.cameraPosition);
+        // San Andreas shakes its camera (CamShake: an explosion close by) on its final matrix, after the active
+        // camera is done: that shake goes on top while it lasts (CCamera::Process lets it fade 0.28 a second).
+        CVector source = cam.m_vecSource;
+        const float shake = TheCamera.m_fCamShakeForce - 0.28f * static_cast<float>(CTimer::m_snTimeInMilliseconds - TheCamera.m_nCamShakeStart) / 1000.0f;
+        if (shake > 0.0f) {
+            const CVector offset = TheCamera.GetPosition() - cam.m_vecSource;
+            if (offset.Magnitude() < 1.0f) {
+                source += offset;
+            }
+        }
+        toSkyrim(source, body.cameraPosition);
         const auto forward = Body::Normalize(Vec(cam.m_vecFront), { 0.0f, 1.0f, 0.0f });
         body.cameraForward[0] = forward.x;
         body.cameraForward[1] = forward.y;

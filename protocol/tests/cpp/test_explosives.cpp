@@ -110,16 +110,25 @@ TEST_CASE("a blast opens locks close by, but not a key's")
     CHECK_FALSE(OpensLock(Kind::TearGas, 0.0f, true, false));
 }
 
-TEST_CASE("a Molotov's fire spreads round where it burst")
+TEST_CASE("a Molotov's fire grows from the middle to 3 m and burns 30 s")
 {
-    const Vec3 middle = FirePatch(0);
-    CHECK(Length(middle) == 0.0f);
-    for (int i = 1; i <= kFirePatches; ++i) {
-        const Vec3 p = FirePatch(i);
-        CHECK(Length(p) == doctest::Approx(kFireSpread));
-        CHECK(p.z == 0.0f);
+    const Patch middle = FirePatch(0);
+    CHECK(Length(middle.offset) == 0.0f);
+    CHECK(middle.start == 0.0f);
+    float last = 0.0f, reach = 0.0f;
+    for (int i = 1; i < kFirePatchCount; ++i) {
+        const Patch p = FirePatch(i);
+        CHECK(p.offset.z == 0.0f);
+        CHECK(p.start >= last);  // outwards, never back in
+        last = p.start;
+        reach = (std::max)(reach, Length(p.offset) + kFirePatchRadius);
     }
-    CHECK(Length(Sub(FirePatch(1), FirePatch(3))) == doctest::Approx(2.0f * kFireSpread));  // opposite sides
+    CHECK(last <= kFireGrow);
+    CHECK(reach == doctest::Approx(3.3f * kMeter));
+    CHECK(Length(FirePatch(1).offset) == doctest::Approx(kFireInner));
+    CHECK(Length(FirePatch(5).offset) == doctest::Approx(kFireOuter));
+    CHECK(Length(Sub(FirePatch(1).offset, FirePatch(3).offset)) == doctest::Approx(2.0f * kFireInner));  // opposite sides
+    CHECK(kFireSeconds - last >= 20.0f);  // burning on well after it stopped growing
 }
 
 TEST_CASE("tear gas and the flamethrower reach who they should")
@@ -170,4 +179,26 @@ TEST_CASE("a rocket leaves at rocket speed, a throw as San Andreas threw it")
     const Vec3 fast{ 0.0f, 2.0f * kRocketSpeed, 0.0f };
     CHECK(LaunchVelocity(Kind::Rocket, fast, {}).y == doctest::Approx(fast.y));
     CHECK(LaunchVelocity(Kind::Grenade, { 5.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }).x == doctest::Approx(5.0f));
+}
+
+TEST_CASE("a blast hits big and seasoned targets in full")
+{
+    // The level 38 mammoth from the first in-game test (931 health) took 61 a rocket; now about five kill it.
+    const float rocket = Damage::ToSkyrim(BlastDamage(Kind::Rocket, 0.0f), Weapons::RocketLauncher, Damage::Part::Torso, 38, Damage::Class::Giant);
+    CHECK(rocket == doctest::Approx(240.0f));
+    CHECK(Damage::HitsToKill(931.0f, rocket) <= 5);
+    CHECK(Damage::ToSkyrim(300.0f, Weapons::Grenade, Damage::Part::Torso, 50, Damage::Class::Dragon) == doctest::Approx(240.0f));
+    // Guns keep their falloff.
+    CHECK(Damage::ToSkyrim(30.0f, Weapons::Ak47, Damage::Part::Torso, 38, Damage::Class::Giant) < 30.0f * Damage::kScale * 0.5f);
+    CHECK_FALSE(Damage::Explosive(Weapons::Flamethrower));
+    CHECK_FALSE(Damage::Explosive(Weapons::TearGas));
+}
+
+TEST_CASE("who stands in a Molotov's fire")
+{
+    const Vec3 patch{ 0.0f, 0.0f, 0.0f };
+    CHECK(InFire(patch, { 0.5f * kMeter, 0.0f, 0.0f }, 20.0f));
+    CHECK(InFire(patch, { kFirePatchRadius + 15.0f, 0.0f, 10.0f }, 20.0f));  // its capsule's edge in the flames
+    CHECK_FALSE(InFire(patch, { 2.0f * kMeter, 0.0f, 0.0f }, 20.0f));
+    CHECK_FALSE(InFire(patch, { 0.0f, 0.0f, 3.0f * kMeter }, 20.0f));  // on a ledge above it
 }

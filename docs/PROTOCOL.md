@@ -108,7 +108,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `frame` | San Andreas frame counter |
-| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations |
+| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations, `kPlayerOnFire` (0x20, v15): CJ burns in San Andreas, Skyrim shows flames on him |
 | 8 | `offset[3]` | CJ relative to where the current handover spawned him |
 | 20 | `velocity[3]` | units per second; in a vehicle the vehicle's, which Skyrim samples the ground ahead by |
 | 32 | `heading` | CJ's body |
@@ -203,6 +203,7 @@ Messages that must all arrive, one after another: two single-producer, single-co
 | 3 | `WeaponCommand` | Skyrim → San Andreas (v12) | `WeaponCommand` (136 bytes since v13): `kind`, `argument`, 13 `WeaponEntry`s and 11 skills |
 | 4 | `Shot` | San Andreas → Skyrim (v13) | `ShotEvent` (64 bytes): a bullet, a shotgun's shot or a blow CJ dealt, (v15) or a puff of the flamethrower |
 | 5 | `Projectile` | San Andreas → Skyrim (v15) | `ProjectileEvent` (128 bytes): a rocket, grenade, tear gas canister or Molotov CJ launched |
+| 6 | `Effect` | Skyrim → San Andreas (v15) | `EffectEvent` (32 bytes): what CJ's explosives did, for San Andreas's own sound, fire and camera shake |
 
 ### CJ's model
 
@@ -261,11 +262,23 @@ San Andreas's projectiles would fly and blow up in an empty world, so they fly i
 | 28 | `velocity[3]` | Skyrim units a second (`m_vecMoveSpeed` times 50 steps a second) |
 | 40 | `rotation[4]` | its orientation, a unit quaternion x, y, z, w |
 | 56 | `parts[2]` | `BodyBone`s (28 bytes each, `kProjectilePartMax`): each part of the model relative to the projectile, Skyrim units |
-| 112 | `reserved[4]` | zero |
+| 112 | `id` | u32: San Andreas's number for it, which an `Effect` names when it is over |
+| 116 | `reserved[3]` | zero |
 
 A projectile's model is a `kSkinModelWeapon` built the way a held weapon's is, from the `CProjectile`'s own clump or atomic (the thrown weapon's model, or the missile), sent once per projectile type under `ModelSender::kProjectileKey` plus the type less 16, and again whenever the link comes up.
 
-Skyrim flies it in steps of at most 1/30 s under San Andreas's gravity (20 m/s²; a rocket flies straight, at 40 m/s at least), ray testing each step as a bullet is: a rocket and a Molotov go off where they touch a static, the land, water or a living actor, a grenade and tear gas bounce (35% of the speed into the surface back, 70% along it) and lie still once slow, until their fuse runs out. A rocket or grenade blast places Skyrim's `FireBallExp01` explosion (no damage of its own) and hurts every actor within 7 m (a grenade's 6 m) through the same hit as a bullet (`Damage::ToSkyrim` of 300 San Andreas points in the middle quarter, down to a tenth at the edge), knocks the ones in the inner two thirds over (`AIProcess::KnockExplosion`; not giants, mammoths or dragons), and unlocks every locked door and container within 3 m whose lock isn't key-only, the other side of a load door too, with `TrespassAlarm` (a crime if someone sees it) where activating it would be a crime. A Molotov bursts into `FireballStormImpactExplosionNoDamage`, leaves `TrapOilHazard01` burning on the ground in five patches, does 40 points within 2.5 m and sets those it catches burning (the Flames spell, cast by the player). Tear gas lets out `DA13PustuleGasCloud` (harmless itself) for 15 s, which chokes everyone within 4 m for 10 points a second and staggers them every 2 s. CJ caught in any of it takes the same points through `Vitals::Hurt`, armour first.
+Skyrim flies it in steps of at most 1/30 s under San Andreas's gravity (20 m/s²; a rocket flies straight, at 40 m/s at least), ray testing each step as a bullet is: a rocket and a Molotov go off where they touch a static, the land, water or a living actor, a grenade and tear gas bounce (35% of the speed into the surface back, 70% along it) and lie still once slow, until their fuse runs out. A rocket or grenade blast places a copy of Skyrim's `FireBallExp01` explosion made at startup without its sounds (no damage of its own) and hurts every actor within 7 m (a grenade's 6 m) through the same hit as a bullet (`Damage::ToSkyrim` of 300 San Andreas points in the middle quarter, down to a tenth at the edge, never cut for the target's level or size: about 240 to anyone in the middle, five rockets for a mammoth), knocks the ones in the inner two thirds over (`AIProcess::KnockExplosion`; not giants, mammoths or dragons), and unlocks every locked door and container within 3 m whose lock isn't key-only, the other side of a load door too, with `TrespassAlarm` (a crime if someone sees it) where activating it would be a crime. A Molotov bursts into the same fireball at twice the size (San Andreas's is bigger than a rocket's), does 40 points within 2.5 m and sets those it catches burning (the Flames spell, cast by the player), and its fire spreads on the ground as San Andreas's does: 13 patches of `TrapOilHazard01`'s burning oil (`Effects\FXFireOilHazard.nif`, drawn alone), the middle at once, 4 at 1.5 m from 3 s and 8 at 2.5 m from 6 to 9.5 s, all burning until 30 s after the burst (`Explosives::FirePatch`); whoever stands in one takes 20 points a second and is set burning, and anyone set burning burns on for 6 s more at 15 points a second. Tear gas lets out `DA13PustuleGasCloud` (harmless itself) for 15 s, which chokes everyone within 4 m for 10 points a second and staggers them every 2 s. CJ caught in any of it takes the same points through `Vitals::Hurt`, armour first.
+
+Skyrim tells San Andreas what happened with an `EffectEvent` (32 bytes, the ring to San Andreas), so San Andreas's own sounds play: `handover` u32, `kind` u8, `weaponType` u8 (the projectile type), 2 reserved bytes, `projectile` u32 (a `ProjectileEvent.id`), `at[3]` (relative to the anchor, Skyrim units), `seconds` f32 and 4 reserved bytes.
+
+| `kind` | San Andreas |
+|---|---|
+| `ProjectileGone` 1 | drops the stand-in it kept of projectile `projectile` |
+| `Explosion` 2 | plays its explosion sound at `at` (`CAEExplosionAudioEntity::AddAudioEvent` on `CExplosion::m_ExplosionAudioEntity`; a Molotov's at -36 dB, as its own) and shakes its camera from there (`CCamera::CamShake`, 0.6, a Molotov's 0.2); for a Molotov, its stand-in is put at `at` and smashed (`CAudioEngine::ReportObjectDestruction`, the bottle's own sound) |
+| `Fire` 3 | starts its own fire at `at` for `seconds` (`gFireManager.StartFire`): its crackle, and CJ catches fire walking into it |
+| `BurnCj` 4 | sets CJ alight (`gFireManager.StartFire` on him): his scream, his burning and its damage |
+
+A rocket and a Molotov keep a stand-in in San Andreas's world: the `CProjectile` itself, without collision or gravity, its slot left out of `CProjectileInfo::Update` (hooked at 0x738B20) so San Andreas never blows it up. A rocket's flies along Skyrim's line, so the launch and roar San Andreas tied to it follow the rocket and stop when it goes off; a Molotov's waits to be smashed. A stand-in no `ProjectileGone` came for goes 2 s after its fuse or with a new handover. San Andreas's camera shake goes on its final matrix after the active camera is worked out, so while one lasts the body slot's camera position takes that offset too.
 
 The flamethrower's puffs come from `CWeapon::FireAreaEffect` (0x73E800), aimed as it aims them (through the crosshair while the mouse turns the camera behind him, else ahead at his look pitch); San Andreas's own (fire creeping over its ground) is skipped for CJ. Skyrim launches the Flames spell's flames from the nozzle (every 0.05 s at most) and burns everyone in a 12 degree cone up to the weapon's range (2 to 8 m) for 80 points a second, counted per actor like the chainsaw's cuts, setting them burning.
 

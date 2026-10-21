@@ -208,11 +208,22 @@ namespace AhShitRim::Damage
         }
     }
 
+    // The explosives (rockets, grenades, Molotovs, satchel charges) hit everyone in full: a blast doesn't care
+    // how big or seasoned its target is, so a mammoth takes about five rockets and a dragon not many more.
+    constexpr bool Explosive(std::uint8_t a_type)
+    {
+        return a_type == Weapons::Grenade || a_type == Weapons::Molotov || a_type == Weapons::RocketLauncher || a_type == Weapons::RocketLauncherHs ||
+               a_type == Weapons::SatchelCharge;
+    }
+
     // Skyrim health a hit takes: San Andreas's damage for it (the shot's own, else the table's) and where
-    // and whom it hit. Skyrim's difficulty doesn't scale it.
+    // and whom it hit; the explosives without the level and size falloff. Skyrim's difficulty doesn't scale it.
     inline float ToSkyrim(float a_sanAndreas, std::uint8_t a_type, Part a_part, std::uint16_t a_level, Class a_class)
     {
         const float base = std::isfinite(a_sanAndreas) && a_sanAndreas > 0.0f ? a_sanAndreas : SanAndreasDamage(a_type);
+        if (Explosive(a_type)) {
+            return base * kScale * PartMultiplier(a_part, a_type);
+        }
         return base * kScale * PartMultiplier(a_part, a_type) * LevelMultiplier(a_level) * ClassMultiplier(a_class);
     }
 

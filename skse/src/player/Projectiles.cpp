@@ -2,6 +2,7 @@
 
 #include "body/ModelView.h"
 #include "explosives.h"
+#include "link/LinkService.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
 
@@ -33,8 +34,10 @@ namespace AhShitRim::Projectiles
 
         // Vanilla forms (Skyrim.esm).
         constexpr RE::FormID kBlastExplosion = 0x000439C0;    // FireBallExp01: the fireball's blast, no damage of its own
-        constexpr RE::FormID kMolotovExplosion = 0x000EA517;  // FireballStormImpactExplosionNoDamage: a small fireball
-        constexpr RE::FormID kFireHazard = 0x000303FF;        // TrapOilHazard01: burning oil on the ground, 9 s
+        constexpr float      kMolotovScale = 2.0f;            // San Andreas's Molotov fireball is twice a rocket's
+        constexpr const char* kFireModel = "Effects\\FXFireOilHazard.nif";  // TrapOilHazard01's burning oil, drawn alone
+        constexpr const char* kCjFireModel = "Effects\\FXFire02New.nif";   // a small fire (FireSmLongHazard's), on CJ while he burns
+        constexpr float       kCjFireEvery = 0.2f;  // seconds between the flames put on CJ
         constexpr RE::FormID kGasHazard = 0x00106380;         // DA13PustuleGasCloud: a gas cloud that hurts no one itself
         constexpr RE::FormID kFlames = 0x00012FCD;            // Flames
 
@@ -47,9 +50,26 @@ namespace AhShitRim::Projectiles
             float                                                        age = 0.0f;
             float                                                        fuse = 0.0f;
             bool                                                         resting = false;
+            std::uint32_t                                                id = 0;  // San Andreas's, for the Effect that says it's over
             std::uint32_t                                                model = 0;
             std::uint32_t                                                partCount = 0;
             std::array<Protocol::BodyBone, Protocol::kProjectilePartMax> parts{};
+        };
+
+        struct Fire
+        {
+            RE::NiPoint3 at;
+            float        start = 0.0f;  // seconds until it catches
+            float        left = kFireSeconds;
+            float        tick = 0.0f;
+            bool         caught = false;
+            std::uint8_t type = 0;
+        };
+
+        struct Burning
+        {
+            double cast = -1e9;   // when the Flames were last cast on it
+            double until = 0.0;   // when it stops burning
         };
 
         struct Gas
@@ -66,12 +86,13 @@ namespace AhShitRim::Projectiles
             std::vector<Protocol::ProjectileEvent> queue;
             std::deque<Projectile>                 flights;  // oldest first
             std::vector<Gas>                       gases;
+            std::vector<Fire>                      fires;
+            float                                  cjFire = 0.0f;  // seconds since the last flames on CJ
             Damage::Blows                          flames;   // the flamethrower's cuts, as the chainsaw's
-            std::map<RE::FormID, double>           burning;  // when each actor was last set burning
+            std::map<RE::FormID, Burning>          burning;
+            float                                  burnTick = 0.0f;
             double                                 lastFlame = 0.0;
             RE::BGSExplosion*                      blast = nullptr;
-            RE::BGSExplosion*                      molotov = nullptr;
-            RE::BGSHazard*                         fire = nullptr;
             RE::BGSHazard*                         gas = nullptr;
             RE::SpellItem*                         flamesSpell = nullptr;
             int                                    logged = 0;
@@ -102,6 +123,49 @@ namespace AhShitRim::Projectiles
             }
         }
 
+        // ---- San Andreas's side of it ----
+
+        // San Andreas plays its own sound and fire for what CJ's explosives do (Effect messages).
+        void Tell(Protocol::EffectKind a_kind, std::uint32_t a_handover, const RE::NiPoint3& a_anchor, const RE::NiPoint3& a_at, std::uint8_t a_type,
+            std::uint32_t a_projectile = 0, float a_seconds = 0.0f)
+        {
+            Protocol::EffectEvent effect{};
+            effect.handover = a_handover;
+            effect.kind = static_cast<std::uint8_t>(a_kind);
+            effect.weaponType = a_type;
+            effect.projectile = a_projectile;
+            const auto at = a_at - a_anchor;
+            effect.at[0] = at.x;
+            effect.at[1] = at.y;
+            effect.at[2] = at.z;
+            effect.seconds = a_seconds;
+            LinkService::Get().Send(Protocol::MessageType::Effect, &effect, sizeof(effect));
+        }
+
+        struct Frame
+        {
+            std::uint32_t handover = 0;
+            RE::NiPoint3  anchor;
+        } frame;
+
+        // A vanilla explosion made again without its sounds: San Andreas's own play instead.
+        RE::BGSExplosion* Silent(RE::BGSExplosion* a_vanilla)
+        {
+            auto* factory = a_vanilla ? RE::IFormFactory::GetConcreteFormFactoryByType<RE::BGSExplosion>() : nullptr;
+            auto* copy = factory ? factory->Create() : nullptr;
+            if (!copy) {
+                SKSE::log::warn("explosives: {:08X} couldn't be copied, its own sound stays", a_vanilla ? a_vanilla->GetFormID() : 0);
+                return a_vanilla;
+            }
+            copy->SetModel(a_vanilla->GetModel());
+            copy->boundData = a_vanilla->boundData;
+            copy->imageSpaceModifying = a_vanilla->imageSpaceModifying;
+            copy->data = a_vanilla->data;
+            copy->data.sound1 = nullptr;
+            copy->data.sound2 = nullptr;
+            return copy;
+        }
+
         // ---- Placing Skyrim's own ----
 
         RE::ObjectRefHandle Place(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_form, const RE::NiPoint3& a_at)
@@ -124,18 +188,46 @@ namespace AhShitRim::Projectiles
             a_handle = {};
         }
 
-        void SetBurning(RE::PlayerCharacter* a_player, RE::Actor* a_actor, double a_now)
+        void CastFlames(RE::PlayerCharacter* a_player, RE::Actor* a_actor, Burning& a_burning, double a_now)
         {
-            if (!state.flamesSpell || a_actor->IsDead()) {
+            if (!state.flamesSpell || a_now - a_burning.cast < kBurnEvery) {
                 return;
             }
-            auto& last = state.burning[a_actor->GetFormID()];
-            if (a_now - last < kBurnEvery) {
-                return;
-            }
-            last = a_now;
+            a_burning.cast = a_now;
             if (auto* caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant)) {
                 caster->CastSpellImmediate(state.flamesSpell, false, a_actor, 1.0f, false, 0.0f, a_player);
+            }
+        }
+
+        // Sets a_actor burning for kBurnSeconds from now (the Flames spell, cast by the player, shows it).
+        void SetBurning(RE::PlayerCharacter* a_player, RE::Actor* a_actor, double a_now)
+        {
+            if (a_actor->IsDead()) {
+                return;
+            }
+            auto& burning = state.burning[a_actor->GetFormID()];
+            burning.until = a_now + kBurnSeconds;
+            CastFlames(a_player, a_actor, burning, a_now);
+        }
+
+        // Everyone burning burns on, hurt a little and set alight again, until their time is up.
+        void Afterburn(RE::PlayerCharacter* a_player, float a_dt)
+        {
+            state.burnTick += a_dt;
+            if (state.burnTick < kGasTick) {
+                return;
+            }
+            state.burnTick -= kGasTick;
+            const double now = NowSeconds();
+            for (auto it = state.burning.begin(); it != state.burning.end();) {
+                auto* actor = RE::TESForm::LookupByID<RE::Actor>(it->first);
+                if (!actor || actor->IsDead() || now >= it->second.until) {
+                    it = state.burning.erase(it);
+                    continue;
+                }
+                Shots::Hurt(a_player, actor, Weapons::Molotov, kBurnPerSecond * kGasTick, actor->GetPosition(), RE::NiPoint3(0.0f, 0.0f, 1.0f), false);
+                CastFlames(a_player, actor, it->second, now);
+                ++it;
             }
         }
 
@@ -242,7 +334,8 @@ namespace AhShitRim::Projectiles
 
         // ---- Going off ----
 
-        void Explode(RE::PlayerCharacter* a_player, Kind a_kind, std::uint8_t a_weapon, const RE::NiPoint3& a_at)
+        // Returns what CJ took.
+        float Explode(RE::PlayerCharacter* a_player, Kind a_kind, std::uint8_t a_weapon, const RE::NiPoint3& a_at)
         {
             const double now = NowSeconds();
             int          caught = 0;
@@ -275,6 +368,7 @@ namespace AhShitRim::Projectiles
                 Vitals::Hurt(a_player, self);
             }
             Log(std::format("{} went off, {} caught, CJ took {:.0f}", a_weapon, caught, self));
+            return self;
         }
 
         void GoOff(RE::PlayerCharacter* a_player, const Projectile& a_p, const RE::NiPoint3& a_at)
@@ -284,17 +378,31 @@ namespace AhShitRim::Projectiles
             case Kind::Rocket:
             case Kind::Grenade:
                 {
+                    Tell(Protocol::EffectKind::Explosion, frame.handover, frame.anchor, a_at, a_p.type);
                     auto explosion = Place(a_player, state.blast, a_at);
                     Explode(a_player, a_p.kind, weapon, a_at);
                     OpenLocks(a_player, a_p.kind, a_at, explosion.get().get());
                     break;
                 }
             case Kind::Molotov:
-                Place(a_player, state.molotov, a_at);
-                for (int i = 0; i <= kFirePatches; ++i) {
-                    Place(a_player, state.fire, a_at + Ni(FirePatch(i)));
+                {
+                    Tell(Protocol::EffectKind::Explosion, frame.handover, frame.anchor, a_at, a_p.type, a_p.id);  // its bottle smashes there
+                    if (auto ball = Place(a_player, state.blast, a_at).get()) {
+                        ball->SetScale(kMolotovScale);
+                    }
+                    for (int i = 0; i < kFirePatchCount; ++i) {
+                        const auto patch = FirePatch(i);
+                        Fire       fire;
+                        fire.at = a_at + Ni(patch.offset);
+                        fire.start = patch.start;
+                        fire.left = kFireSeconds - patch.start;
+                        fire.type = a_p.type;
+                        state.fires.push_back(fire);
+                    }
                 }
-                Explode(a_player, a_p.kind, weapon, a_at);
+                if (Explode(a_player, a_p.kind, weapon, a_at) > 0.0f) {
+                    Tell(Protocol::EffectKind::BurnCj, frame.handover, frame.anchor, a_at, a_p.type);
+                }
                 break;
             case Kind::TearGas:
                 {
@@ -384,8 +492,19 @@ namespace AhShitRim::Projectiles
             return contact;
         }
 
-        // One projectile a_dt seconds on; false once it is gone.
+        bool FlyOn(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt);
+
+        // One projectile a_dt seconds on; false once it is gone (San Andreas told, for a rocket's stand-in).
         bool Fly(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt)
+        {
+            const bool flying = FlyOn(a_player, a_p, a_dt);
+            if (!flying && (a_p.kind == Kind::Rocket || a_p.kind == Kind::Molotov)) {
+                Tell(Protocol::EffectKind::ProjectileGone, frame.handover, frame.anchor, Ni(a_p.body.position), a_p.type, a_p.id);
+            }
+            return flying;
+        }
+
+        bool FlyOn(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt)
         {
             a_p.age += a_dt;
             if (a_p.age >= a_p.fuse) {
@@ -454,6 +573,7 @@ namespace AhShitRim::Projectiles
             p.body.position = V(at);
             p.body.velocity = LaunchVelocity(p.kind, { a_event.velocity[0], a_event.velocity[1], a_event.velocity[2] }, Rotate(p.turn, { 0.0f, 1.0f, 0.0f }));
             p.fuse = FuseSeconds(p.kind, a_event.fuseMs);
+            p.id = a_event.id;
             p.model = a_event.model;
             p.partCount = (std::min)(static_cast<std::uint32_t>(a_event.partCount), Protocol::kProjectilePartMax);
             for (std::uint32_t i = 0; i < p.partCount; ++i) {
@@ -461,9 +581,61 @@ namespace AhShitRim::Projectiles
             }
             Log(std::format("projectile {} launched at {:.0f} units a second, fuse {:.1f} s", p.type, Length(p.body.velocity), p.fuse));
             if (state.flights.size() >= kFlightMax) {
+                Tell(Protocol::EffectKind::ProjectileGone, frame.handover, frame.anchor, Ni(state.flights.front().body.position), state.flights.front().type,
+                    state.flights.front().id);
                 state.flights.pop_front();
             }
             state.flights.push_back(p);
+        }
+
+        // ---- Fire ----
+
+        // A Molotov's patch: whoever stands in it burns (San Andreas's own fire there burns CJ).
+        bool Burn(RE::PlayerCharacter* a_player, Fire& a_fire, float a_dt)
+        {
+            if (!a_fire.caught) {
+                a_fire.start -= a_dt;
+                if (a_fire.start > 0.0f) {
+                    return true;
+                }
+                a_fire.caught = true;
+                if (auto* cell = a_player->GetParentCell()) {
+                    RE::BSTempEffectParticle::Spawn(cell, a_fire.left, kFireModel, RE::NiPoint3(0.0f, 0.0f, 1.0f), a_fire.at, 1.0f, 7, nullptr);
+                }
+                Tell(Protocol::EffectKind::Fire, frame.handover, frame.anchor, a_fire.at, a_fire.type, 0, a_fire.left);
+            }
+            a_fire.left -= a_dt;
+            if (a_fire.left <= 0.0f) {
+                return false;
+            }
+            a_fire.tick += a_dt;
+            if (a_fire.tick < kGasTick) {
+                return true;
+            }
+            a_fire.tick -= kGasTick;
+            const double now = NowSeconds();
+            ForActorsNear(a_player, a_fire.at, [&](RE::Actor* a_actor) {
+                if (a_actor->IsDead() || !InFire(V(a_fire.at), V(a_actor->GetPosition()), RadiusOf(a_actor))) {
+                    return;
+                }
+                Shots::Hurt(a_player, a_actor, Weapons::Molotov, kFirePerSecond * kGasTick, a_actor->GetPosition(), RE::NiPoint3(0.0f, 0.0f, 1.0f), false);
+                SetBurning(a_player, a_actor, now);
+            });
+            return true;
+        }
+
+        // Flames on CJ while San Andreas has him burning: small fires at his hips and chest, over and over.
+        void FlamesOnCj(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, float a_dt)
+        {
+            state.cjFire += a_dt;
+            auto* cell = a_player->GetParentCell();
+            if (state.cjFire < kCjFireEvery || !cell) {
+                return;
+            }
+            state.cjFire = 0.0f;
+            for (const float height : { 60.0f, 100.0f }) {
+                RE::BSTempEffectParticle::Spawn(cell, 0.5f, kCjFireModel, RE::NiPoint3(0.0f, 0.0f, 1.0f), a_feet + RE::NiPoint3(0.0f, 0.0f, height), 0.5f, 7, nullptr);
+            }
         }
 
         // ---- Gas ----
@@ -505,8 +677,7 @@ namespace AhShitRim::Projectiles
     void OnDataLoaded()
     {
         state.blast = Lookup<RE::BGSExplosion>(kBlastExplosion, "the rockets' and grenades' blast (FireBallExp01)");
-        state.molotov = Lookup<RE::BGSExplosion>(kMolotovExplosion, "the Molotov's burst (FireballStormImpactExplosionNoDamage)");
-        state.fire = Lookup<RE::BGSHazard>(kFireHazard, "the Molotov's fire (TrapOilHazard01)");
+        state.blast = Silent(state.blast);
         state.gas = Lookup<RE::BGSHazard>(kGasHazard, "the tear gas cloud (DA13PustuleGasCloud)");
         state.flamesSpell = Lookup<RE::SpellItem>(kFlames, "the flamethrower's flames (Flames)");
     }
@@ -555,8 +726,10 @@ namespace AhShitRim::Projectiles
         });
     }
 
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta)
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning)
     {
+        frame.handover = a_handover;
+        frame.anchor = a_anchor;
         auto queue = std::move(state.queue);
         state.queue.clear();
         for (const auto& event : queue) {
@@ -573,6 +746,13 @@ namespace AhShitRim::Projectiles
         for (auto it = state.gases.begin(); it != state.gases.end();) {
             it = Choke(a_player, *it, dt) ? it + 1 : state.gases.erase(it);
         }
+        for (auto it = state.fires.begin(); it != state.fires.end();) {
+            it = Burn(a_player, *it, dt) ? it + 1 : state.fires.erase(it);
+        }
+        Afterburn(a_player, dt);
+        if (a_cjBurning) {
+            FlamesOnCj(a_player, *a_cjBurning, dt);
+        }
         Draw(state.flights);
     }
 
@@ -585,6 +765,7 @@ namespace AhShitRim::Projectiles
             Remove(gas.cloud);
         }
         state.gases.clear();
+        state.fires.clear();
         state.flames.Clear();
         state.burning.clear();
     }

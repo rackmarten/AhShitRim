@@ -12,6 +12,9 @@
 
 #include <plugin.h>
 
+#include <CAudioEngine.h>
+#include <CCamera.h>
+#include <CFireManager.h>
 #include <CProjectile.h>
 #include <CProjectileInfo.h>
 #include <CTimer.h>
@@ -22,7 +25,10 @@
 #include <Windows.h>
 
 #include <array>
+#include <deque>
+#include <vector>
 #include <cmath>
+#include <cstring>
 #include <format>
 #include <map>
 #include <set>
@@ -35,10 +41,32 @@ namespace AhShitRim::CjProjectiles
 
         constexpr std::uintptr_t kAddProjectile = 0x737C80;  // CProjectileInfo::AddProjectile (cdecl)
         constexpr std::uintptr_t kRemoveNotAdd = 0x737C00;   // CProjectileInfo::RemoveNotAdd (cdecl): one with no room to go, blown up where it is
+        constexpr std::uintptr_t kUpdate = 0x738B20;         // CProjectileInfo::Update (cdecl): flies them, blows them up
         constexpr std::uint32_t  kSlots = 32;                // gaProjectileInfo, CProjectileInfo::ms_apProjectile
+        constexpr std::uintptr_t kExplosionAudio = 0xC888D0;     // CExplosion::m_ExplosionAudioEntity
+        constexpr std::uintptr_t kAddExplosionAudio = 0x4DCBE0;  // CAEExplosionAudioEntity::AddAudioEvent (thiscall)
+        constexpr int            kAeExplosion = 0x81;            // AE_EXPLOSION
+        constexpr std::uintptr_t kReportObjectDestruction = 0x506ED0;  // CAudioEngine::ReportObjectDestruction (thiscall): a Molotov's bottle smashing
+        constexpr std::uint32_t  kStandInGrace = 2000;  // ms a rocket's stand-in outlives its fuse if Skyrim never says it went off
 
         SafetyHookInline g_addProjectile;
         SafetyHookInline g_removeNotAdd;
+        SafetyHookInline g_update;
+
+        // A rocket Skyrim flies keeps a stand-in in San Andreas's world, without collision, flown along the same
+        // straight line, so the sound San Andreas tied to it (the launch and its roar) follows it and stops when
+        // it goes off. A Molotov keeps one too, left where it was thrown and put where it burst at the end, to
+        // smash there with San Andreas's own bottle sound.
+        struct StandIn
+        {
+            std::uint32_t id = 0;
+            std::uint32_t slot = 0;
+            CProjectile*  projectile = nullptr;
+            CVector       position;
+            CVector       velocity;  // metres a second
+            std::uint32_t untilMs = 0;
+            unsigned      handover = 0;
+        };
 
         struct Model
         {
@@ -53,6 +81,10 @@ namespace AhShitRim::CjProjectiles
             std::map<int, Model> models;  // by San Andreas's model index
             std::uint32_t        builds = 0;
             std::set<int>        logged;  // projectile types logged once
+            std::uint32_t        nextId = 0;
+            std::vector<StandIn> standIns;
+            std::deque<Protocol::EffectEvent> effects;
+            std::set<int>        loggedEffects;
         } state;
 
         bool IsCj(const void* a_entity) { return a_entity && a_entity == FindPlayerPed(0); }
@@ -135,6 +167,101 @@ namespace AhShitRim::CjProjectiles
             }
         }
 
+        bool KeepStandIn(std::uint32_t a_slot, CProjectile* a_projectile, const Protocol::ProjectileEvent& a_event, Explosives::Kind a_kind)
+        {
+            CVector  feet;
+            unsigned handover = 0;
+            CjShots::Frame(feet, handover);
+            const auto& m = a_projectile->GetMatrix();
+            const auto  v = Explosives::LaunchVelocity(Explosives::Kind::Rocket, { a_event.velocity[0], a_event.velocity[1], a_event.velocity[2] },
+                 { m.up.x, m.up.y, m.up.z });
+            StandIn s;
+            s.id = a_event.id;
+            s.slot = a_slot;
+            s.projectile = a_projectile;
+            s.position = a_projectile->GetPosition();
+            s.velocity = a_kind == Explosives::Kind::Rocket ? CVector(v.x, v.y, v.z) / Pose::kUnitsPerMeter : CVector(0.0f, 0.0f, 0.0f);
+            s.untilMs = CTimer::m_snTimeInMilliseconds + static_cast<std::uint32_t>(Explosives::FuseSeconds(a_kind, a_event.fuseMs) * 1000.0f) + kStandInGrace;
+            s.handover = handover;
+            a_projectile->bUsesCollision = false;
+            a_projectile->bApplyGravity = false;
+            a_projectile->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+            a_projectile->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+            gaProjectileInfo[a_slot].m_nDestroyTime = static_cast<int>(s.untilMs + 60000);
+            state.standIns.push_back(s);
+            return true;
+        }
+
+        void DropStandIn(const StandIn& a_s)
+        {
+            if (CProjectileInfo::ms_apProjectile[a_s.slot] == a_s.projectile) {
+                CProjectileInfo::RemoveIfThisIsAProjectile(a_s.projectile);
+            }
+        }
+
+        // San Andreas would fly and blow up the stand-ins too: they sit out its update.
+        void __cdecl UpdateHook()
+        {
+            for (const auto& s : state.standIns) {
+                gaProjectileInfo[s.slot].m_bActive = false;
+            }
+            g_update.call();
+            for (const auto& s : state.standIns) {
+                if (CProjectileInfo::ms_apProjectile[s.slot] == s.projectile) {
+                    gaProjectileInfo[s.slot].m_bActive = true;
+                }
+            }
+        }
+
+        void Effect(CPlayerPed* a_ped, const Protocol::EffectEvent& a_effect, const CVector& a_spawnFeet)
+        {
+            const CVector at = a_spawnFeet + CVector(a_effect.at[0], a_effect.at[1], a_effect.at[2]) / Pose::kUnitsPerMeter;
+            if (state.loggedEffects.insert(a_effect.kind).second) {
+                Log(std::format("projectiles: the first effect {} from Skyrim at ({:.1f},{:.1f},{:.1f})", a_effect.kind, at.x, at.y, at.z));
+            }
+            switch (static_cast<Protocol::EffectKind>(a_effect.kind)) {
+            case Protocol::EffectKind::ProjectileGone:
+                for (auto it = state.standIns.begin(); it != state.standIns.end(); ++it) {
+                    if (it->id == a_effect.projectile) {
+                        DropStandIn(*it);
+                        state.standIns.erase(it);
+                        break;
+                    }
+                }
+                break;
+            case Protocol::EffectKind::Explosion:
+                {
+                    CVector    where = at;
+                    const auto add = reinterpret_cast<void(__thiscall*)(void*, int, CVector*, float)>(kAddExplosionAudio);
+                    const bool molotov = a_effect.weaponType == Weapons::Molotov;
+                    add(reinterpret_cast<void*>(kExplosionAudio), kAeExplosion, &where, molotov ? -36.0f : 0.0f);  // as San Andreas's own Molotov: its fire is the sound
+                    if (molotov) {
+                        // The bottle smashes as San Andreas's own does: its stand-in, put where it burst, destroyed.
+                        for (const auto& s : state.standIns) {
+                            if (s.id == a_effect.projectile && CProjectileInfo::ms_apProjectile[s.slot] == s.projectile) {
+                                s.projectile->SetPosition(where);
+                                const auto smash = reinterpret_cast<void(__thiscall*)(void*, CEntity*)>(kReportObjectDestruction);
+                                smash(&AudioEngine, s.projectile);
+                                break;
+                            }
+                        }
+                    }
+                    // San Andreas's own shake (CExplosion::AddExplosion's), weaker the farther off; Skyrim's camera follows it.
+                    TheCamera.CamShake(molotov ? 0.2f : 0.6f, where.x, where.y, where.z);
+                    break;
+                }
+            case Protocol::EffectKind::Fire:
+                gFireManager.StartFire(at, 0.8f, 0, nullptr, static_cast<unsigned int>((std::max)(a_effect.seconds, 0.5f) * 1000.0f), 0, 0);
+                break;
+            case Protocol::EffectKind::BurnCj:
+                if (a_ped && !a_ped->m_pFire) {
+                    gFireManager.StartFire(a_ped, nullptr, 0.8f, 1, 7000, 0);
+                }
+                break;
+            default: break;
+            }
+        }
+
         // San Andreas just made it in slot a_slot: read it, send it, and take it out of San Andreas's world (no blast).
         void Take(std::uint32_t a_slot, std::uint8_t a_type)
         {
@@ -167,7 +294,12 @@ namespace AhShitRim::CjProjectiles
                         event.parts[i] = model->parts[i];
                     }
                 }
+                event.id = ++state.nextId;
                 Send(event, "launch");
+                const auto kind = Explosives::KindOf(a_type);
+                if ((kind == Explosives::Kind::Rocket || kind == Explosives::Kind::Molotov) && KeepStandIn(a_slot, projectile, event, kind)) {
+                    return;
+                }
             }
             CProjectileInfo::RemoveIfThisIsAProjectile(projectile);
         }
@@ -219,5 +351,44 @@ namespace AhShitRim::CjProjectiles
     {
         g_addProjectile = Hook(kAddProjectile, reinterpret_cast<void*>(&AddProjectileHook), "CProjectileInfo::AddProjectile");
         g_removeNotAdd = Hook(kRemoveNotAdd, reinterpret_cast<void*>(&RemoveNotAddHook), "CProjectileInfo::RemoveNotAdd");
+        g_update = Hook(kUpdate, reinterpret_cast<void*>(&UpdateHook), "CProjectileInfo::Update");
+    }
+
+    void Queue(const std::uint8_t* a_data, std::uint32_t a_size)
+    {
+        if (a_size != sizeof(Protocol::EffectEvent) || state.effects.size() >= 256) {
+            return;
+        }
+        Protocol::EffectEvent effect{};
+        std::memcpy(&effect, a_data, sizeof(effect));
+        state.effects.push_back(effect);
+    }
+
+    void Update(CPlayerPed* a_ped)
+    {
+        CVector    spawnFeet;
+        unsigned   handover = 0;
+        const bool framed = CjShots::Frame(spawnFeet, handover);
+        while (!state.effects.empty()) {
+            const auto effect = state.effects.front();
+            state.effects.pop_front();
+            if (framed && effect.handover == handover) {
+                Effect(a_ped, effect, spawnFeet);
+            }
+        }
+        const float dt = CTimer::ms_fTimeStep / 50.0f;
+        for (auto it = state.standIns.begin(); it != state.standIns.end();) {
+            const bool stale = it->handover != handover || CTimer::m_snTimeInMilliseconds > it->untilMs;
+            if (stale || CProjectileInfo::ms_apProjectile[it->slot] != it->projectile) {
+                if (stale) {
+                    DropStandIn(*it);
+                }
+                it = state.standIns.erase(it);
+                continue;
+            }
+            it->position += it->velocity * dt;
+            it->projectile->SetPosition(it->position);
+            ++it;
+        }
     }
 }

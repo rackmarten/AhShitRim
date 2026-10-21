@@ -16,11 +16,14 @@ namespace AhShitRim::Protocol
 //  - blows a rocket or a grenade up as a vanilla fireball explosion (FireBallExp01, which does no damage of
 //    its own), hurting everyone in reach through Skyrim's own hit by Damage::ToSkyrim, throwing people
 //    (AIProcess::KnockExplosion) and opening locks close by (a crime where picking them would be one),
-//  - bursts a Molotov into a small fireball and burning oil on the ground (TrapOilHazard01), and sets
-//    whoever it catches burning (the Flames spell, cast by the player),
+//  - bursts a Molotov into a small fireball and burning oil on the ground (the oil trap's fire, drawn alone),
+//    and sets whoever it catches or stands in it burning (the Flames spell, cast by the player),
 //  - lets tear gas out as a gas cloud (DA13PustuleGasCloud, harmless itself) that chokes everyone in it,
 //  - shoots the Flames spell's flames from the nozzle for the flamethrower and burns everyone in its cone,
-//  - and hurts CJ too when he is caught in his own (Vitals::Hurt).
+//  - and hurts CJ too when he is caught in his own (Vitals::Hurt),
+//  - tells San Andreas what happened (Effect messages) so its own sounds play: its explosion, a rocket's
+//    roar until it goes off, its fire's crackle where a Molotov burns (where CJ catches fire, as he does
+//    caught in the burst), and shows Skyrim's flames on CJ while he burns there.
 // Main thread only.
 namespace AhShitRim::Projectiles
 {
@@ -33,8 +36,8 @@ namespace AhShitRim::Projectiles
     void Flame(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor);
 
     // Every frame San Andreas has the player, before ModelView::EndFrame: the projectiles of a_handover,
-    // relative to a_anchor, a_delta seconds on.
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta);
+    // relative to a_anchor, a_delta seconds on. a_cjBurning: CJ's feet while San Andreas has him on fire.
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning);
 
     // Back to Skyrim's own player: projectiles in flight are dropped and gas clouds cleared.
     void Clear();
