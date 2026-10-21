@@ -12,6 +12,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The game-free doctest cases on Linux (scripts/test.sh): a quick check next to the Windows build.
+  # The link's tests need Windows and run in the build job's scripts/test.ps1.
+  protocol-tests-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+
+      - name: Protocol tests
+        run: ./scripts/test.sh
+
   build:
     runs-on: windows-latest
     env:

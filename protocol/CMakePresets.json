@@ -12,8 +12,24 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
       }
+    },
+    {
+      "name": "linux-tests",
+      "displayName": "Protocol tests (Ninja, gcc or clang, doctest fetched)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AHSR_FETCH_DOCTEST": "ON"
+      }
     }
   ],
-  "buildPresets": [{ "name": "tests", "configurePreset": "tests" }],
-  "testPresets": [{ "name": "tests", "configurePreset": "tests", "output": { "outputOnFailure": true } }]
+  "buildPresets": [
+    { "name": "tests", "configurePreset": "tests" },
+    { "name": "linux-tests", "configurePreset": "linux-tests" }
+  ],
+  "testPresets": [
+    { "name": "tests", "configurePreset": "tests", "output": { "outputOnFailure": true } },
+    { "name": "linux-tests", "configurePreset": "linux-tests", "output": { "outputOnFailure": true } }
+  ]
 }
