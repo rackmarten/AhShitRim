@@ -38,7 +38,8 @@ function Enter-DevShell {
     $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $vsPath) { throw "No Visual Studio install with the C++ x64 tools found. Add the 'Desktop development with C++' workload." }
     # A stray quote in PATH makes VsDevCmd.bat fail on "(x86)" entries; strip quotes for this process only.
-    $env:Path = $env:Path -replace '"', ''
+    # VsDevCmd.bat also runs vswhere.exe by name, so put its folder on PATH or every build logs "not recognized".
+    $env:Path = (Split-Path $vswhere) + ';' + ($env:Path -replace '"', '')
     Import-Module (Join-Path $vsPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
     if (-not $env:VCPKG_ROOT -and $env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT }  # GitHub runners
