@@ -14,6 +14,10 @@ namespace AhShitRim::ModelView
 {
     void OnChunk(const std::uint8_t* a_payload, std::uint32_t a_size);
 
+    // Builds a model made here rather than received (the muzzle flash); a_id must not be one San Andreas
+    // sends (those are odd). False when it is built already or doesn't build.
+    bool AddModel(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob);
+
     // Whether model a_model is built and ready to draw.
     bool Has(std::uint32_t a_model);
 

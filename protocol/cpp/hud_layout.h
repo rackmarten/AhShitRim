@@ -10,6 +10,7 @@
 #include "hud_font.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -160,6 +161,10 @@ namespace AhShitRim::HudLayout
     inline constexpr TextStyle kRadioName{ HudFont::Style::Menu, 0.6f, 0.9f, true, 1, HudFont::Align::Centre, 320.0f, 22.0f, Edge::Middle, Edge::Start, false, 0.0f, kGold };
     inline constexpr float     kRadioNameSeconds = 2.5f;
 
+    // CHud::DrawAmmo (v12): the ammo line under the weapon icon, light blue, centred on it.
+    inline constexpr Colour    kLightBlue{ 172, 203, 241, 255 };
+    inline constexpr TextStyle kAmmo{ HudFont::Style::Subtitles, 0.3f, 0.7f, true, 1, HudFont::Align::Centre, 520.5f, 63.0f, Edge::End, Edge::Start, false, 0.0f, kLightBlue };
+
     inline constexpr float kHelpPadding = 4.0f;  // the help box round its text, HUD units
     inline constexpr Colour kHelpBox{ 0, 0, 0, 190 };
     inline constexpr float kStarSpacing = 19.0f;  // between wanted stars, HUD units
@@ -211,6 +216,55 @@ namespace AhShitRim::HudLayout
         const float padX = kHelpPadding * a_screen.unitX, padY = kHelpPadding * a_screen.unitY;
         return { placed.x - padX, placed.y - padY, placed.x + placed.params.wrap + padX,
             placed.y + HudFont::LineHeight(placed.params) * static_cast<float>(placed.lines) + padY };
+    }
+
+    // ---- Crosshairs and scopes (CHud::DrawCrossHairs, v12) ----
+
+    // A texture that is one quarter of a picture: San Andreas draws it four times round a centre, the
+    // others mirrored. rect is where, and flipU and flipV say the texture is read backwards.
+    struct Quarter
+    {
+        Rect rect;
+        bool flipU = false;
+        bool flipV = false;
+    };
+
+    // Four quarters a_width x a_height pixels round (a_centreX, a_centreY), each a_offsetX and a_offsetY
+    // away from it: top left, top right, bottom left, bottom right.
+    inline std::array<Quarter, 4> Quarters(float a_centreX, float a_centreY, float a_width, float a_height, float a_offsetX = 0.0f, float a_offsetY = 0.0f)
+    {
+        const float left = a_centreX - a_offsetX - a_width, right = a_centreX + a_offsetX;
+        const float top = a_centreY - a_offsetY - a_height, bottom = a_centreY + a_offsetY;
+        return { { { { left, top, left + a_width, top + a_height }, false, false },
+            { { right, top, right + a_width, top + a_height }, true, false },
+            { { left, bottom, left + a_width, bottom + a_height }, false, true },
+            { { right, bottom, right + a_width, bottom + a_height }, true, true } } };
+    }
+
+    // The sniper rifle's scope: its crosshair texture, 210 x 210 HUD units a quarter, round the middle of the screen.
+    inline std::array<Quarter, 4> SniperScope(const Screen& a_screen)
+    {
+        return Quarters(a_screen.width / 2.0f, a_screen.height / 2.0f, 210.0f * a_screen.unitX, 210.0f * a_screen.unitY);
+    }
+
+    // The rocket launchers' sight: hud.txd's siterocket, 24 x 24 a quarter, 20 units out from the middle.
+    inline std::array<Quarter, 4> RocketSight(const Screen& a_screen)
+    {
+        return Quarters(a_screen.width / 2.0f, a_screen.height / 2.0f, 24.0f * a_screen.unitX, 24.0f * a_screen.unitY, 20.0f * a_screen.unitX, 20.0f * a_screen.unitY);
+    }
+
+    // The camera's viewfinder: its crosshair texture, 256 x 192 a quarter.
+    inline std::array<Quarter, 4> CameraFinder(const Screen& a_screen)
+    {
+        return Quarters(a_screen.width / 2.0f, a_screen.height / 2.0f, 256.0f * a_screen.unitX, 192.0f * a_screen.unitY);
+    }
+
+    // The aim crosshair: hud.txd's siteM16 four times, 32 x 32 HUD units a quarter at a_radius 1, meeting at the
+    // point San Andreas aims at (a_fractionX and a_fractionY of the screen; the first person rifle's is the middle).
+    inline std::array<Quarter, 4> AimSight(const Screen& a_screen, float a_fractionX, float a_fractionY, float a_radius)
+    {
+        const float w = 64.0f * a_radius / 2.0f * a_screen.unitX, h = 64.0f * a_radius / 2.0f * a_screen.unitY;
+        return Quarters(a_screen.width * a_fractionX, a_screen.height * a_fractionY, w, h);  // the four meet at the point, a ring
     }
 
     // The right edge of wanted star a_index (0 = the rightmost; San Andreas fills them from the right).

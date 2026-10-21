@@ -325,3 +325,38 @@ TEST_CASE("The San Andreas install's fonts.dat, fonts.txd and hud.txd read in fu
     REQUIRE(fist);
     CHECK(fist->width == 64);
 }
+
+TEST_CASE("the scopes and crosshairs are four quarters round the middle, the others mirrored")
+{
+    using namespace HudLayout;
+    const auto screen = ScreenOf(1920.0f, 1080.0f);
+    const auto sniper = SniperScope(screen);
+    CHECK(sniper[0].rect.x1 == doctest::Approx(960.0f));  // the top left ends at the middle
+    CHECK(sniper[0].rect.y1 == doctest::Approx(540.0f));
+    CHECK(sniper[0].rect.x0 == doctest::Approx(960.0f - 210.0f * screen.unitX));
+    CHECK(sniper[1].rect.x0 == doctest::Approx(960.0f));  // the top right starts there
+    CHECK(sniper[3].rect.y0 == doctest::Approx(540.0f));
+    CHECK_FALSE(sniper[0].flipU);
+    CHECK_FALSE(sniper[0].flipV);
+    CHECK(sniper[1].flipU);
+    CHECK_FALSE(sniper[1].flipV);
+    CHECK_FALSE(sniper[2].flipU);
+    CHECK(sniper[2].flipV);
+    CHECK(sniper[3].flipU);
+    CHECK(sniper[3].flipV);
+
+    const auto rocket = RocketSight(screen);  // 20 units out from the middle
+    CHECK(rocket[0].rect.x1 == doctest::Approx(960.0f - 20.0f * screen.unitX));
+    CHECK(rocket[1].rect.x0 == doctest::Approx(960.0f + 20.0f * screen.unitX));
+
+    const auto aim = AimSight(screen, 0.5f, 0.4f, 1.0f);  // where San Andreas aims, a point above the middle
+    CHECK(aim[0].rect.x1 == doctest::Approx(960.0f));  // the quarters meet at the point, making a ring
+    CHECK(aim[1].rect.x0 == doctest::Approx(960.0f));
+    CHECK(aim[0].rect.y1 == doctest::Approx(1080.0f * 0.4f));
+    CHECK(aim[2].rect.y0 == doctest::Approx(1080.0f * 0.4f));
+    CHECK((aim[0].rect.y1 - aim[0].rect.y0) == doctest::Approx(32.0f * screen.unitY));
+
+    CHECK(kAmmo.align == HudFont::Align::Centre);
+    CHECK(kAmmo.colour.b == 241);
+    CHECK(CameraFinder(screen)[0].rect.x0 == doctest::Approx(960.0f - 256.0f * screen.unitX));
+}

@@ -10,7 +10,9 @@
 //   sprints, Left Shift or Right Ctrl jumps, the rest as above. In a vehicle Space or Right Ctrl is
 //   the handbrake and Caps Lock or H the horn.
 // In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a
-// Sandking, a ZR-350 and a Sanchez. Everything else stays with Skyrim (see docs/PROTOCOL.md#input).
+// Sandking, a ZR-350 and a Sanchez. The mouse: the left button fires and the right one aims on foot,
+// and the wheel switches weapons on foot and tunes the radio in a vehicle. Everything else stays with
+// Skyrim (see docs/PROTOCOL.md#input).
 
 #pragma once
 
@@ -29,6 +31,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikM = 0x32;
     inline constexpr std::uint32_t kDikSlash = 0x35;
     inline constexpr std::uint32_t kDikF10 = 0x44;
+    inline constexpr std::uint32_t kDikEquals = 0x0D;  // the debug key: gives CJ San Andreas's next weapon set
 
     inline constexpr std::uint32_t kDikW = 0x11;
     inline constexpr std::uint32_t kDikA = 0x1E;
@@ -188,8 +191,13 @@ namespace AhShitRim::Input
             _mouseY += a_dy;
         }
 
-        // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before.
-        // San Andreas only acts on the change while CJ is in a vehicle.
+        // The mouse buttons (v12): the left one fires, the right one aims, on foot.
+        void SetFire(bool a_down) { _fire = a_down; }
+        void SetAim(bool a_down) { _aim = a_down; }
+
+        // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before; on
+        // foot (v12) up switches to the next weapon and down to the previous one. San Andreas acts on
+        // the change by where CJ is.
         void AddWheel(bool a_up)
         {
             (a_up ? _radioNext : _radioPrev)++;
@@ -201,6 +209,7 @@ namespace AhShitRim::Input
             for (auto& k : _keys) {
                 k = 0;
             }
+            _fire = _aim = false;
         }
 
         // a_live false (a Skyrim menu has the input): no movement or buttons, so CJ stands still.
@@ -232,6 +241,8 @@ namespace AhShitRim::Input
             if (Held(Action::Horn)) s.buttons |= Protocol::kButtonHorn;
             if (Held(Action::LeanForward)) s.buttons |= Protocol::kButtonLeanForward;
             if (Held(Action::LeanBack)) s.buttons |= Protocol::kButtonLeanBack;
+            if (_fire) s.buttons |= Protocol::kButtonFire;
+            if (_aim) s.buttons |= Protocol::kButtonAim;
             for (std::uint32_t dik = 0; dik < 256; ++dik) {
                 if (IsKeyDown(dik) && IsHandbrakeKey(dik, _layout)) {
                     s.buttons |= Protocol::kButtonHandbrake;
@@ -258,6 +269,8 @@ namespace AhShitRim::Input
         }
 
         KeyLayout     _layout = KeyLayout::Modern;
+        bool          _fire = false;
+        bool          _aim = false;
         std::uint64_t _keys[4]{};
         double        _mouseX = 0.0;
         double        _mouseY = 0.0;
@@ -276,7 +289,8 @@ namespace AhShitRim::Input
         std::int16_t buttonCross = 0;     // on foot: sprint; in a vehicle: accelerate
         std::int16_t buttonSquare = 0;    // on foot: jump; in a vehicle: brake and reverse
         std::int16_t buttonTriangle = 0;  // get in or out of a vehicle
-        std::int16_t rightShoulder1 = 0;  // in a vehicle: handbrake
+        std::int16_t buttonCircle = 0;    // on foot (v12): fire; a melee weapon attacks
+        std::int16_t rightShoulder1 = 0;  // on foot (v12): aim; in a vehicle: handbrake
         std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn
         std::int16_t pedWalk = 0;         // on foot: walk
     };
@@ -311,6 +325,8 @@ namespace AhShitRim::Input
         p.buttonSquare = held(Protocol::kButtonJump);
         p.shockButtonL = held(Protocol::kButtonCrouch);
         p.pedWalk = held(Protocol::kButtonWalk);
+        p.buttonCircle = held(Protocol::kButtonFire);
+        p.rightShoulder1 = held(Protocol::kButtonAim);
         return p;
     }
 }

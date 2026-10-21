@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstdint>
+
 class CPlayerPed;
 class CVector;
+struct RwMatrixTag;
 
 // CJ's body for Skyrim to draw (protocol v5).
 // - His model: the skinned geometry of his clump (as CClothes built it), its textures read from
@@ -23,4 +26,11 @@ namespace AhShitRim::CjBody
 
     // CJ's pelvis joint relative to his position as of the last Update (metres); false before one.
     bool Pelvis(CVector& a_offset);
+
+    // The world matrix of the bone with this id (San Andreas's ePedBones: 24 is the right hand, 34 the
+    // left) as last posed; false when he has no such bone.
+    bool BoneWorld(CPlayerPed* a_ped, int a_boneId, RwMatrixTag& a_out);
+
+    // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call).
+    std::uint32_t NowMs();
 }

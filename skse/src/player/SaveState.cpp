@@ -7,6 +7,15 @@ namespace AhShitRim::SaveState
 {
     namespace
     {
+        int WeaponCount(const Cosave::Record& a_record)
+        {
+            int count = 0;
+            for (const auto& entry : a_record.weapons.entries) {
+                count += entry.type != 0;
+            }
+            return count;
+        }
+
         void Save(SKSE::SerializationInterface* a_intfc)
         {
             Cosave::Record record;
@@ -16,8 +25,8 @@ namespace AhShitRim::SaveState
                 SKSE::log::error("save state: the co-save record could not be written");
                 return;
             }
-            SKSE::log::info("save state: saved (San Andreas {} the player, armour {:.0f}{})", record.handover ? "has" : "doesn't have", record.armor,
-                record.car.model ? std::format(", in a vehicle of model {}", record.car.model) : std::string());
+            SKSE::log::info("save state: saved (San Andreas {} the player, armour {:.0f}, {} weapons{})", record.handover ? "has" : "doesn't have", record.armor,
+                WeaponCount(record), record.car.model ? std::format(", in a vehicle of model {}", record.car.model) : std::string());
         }
 
         void Load(SKSE::SerializationInterface* a_intfc)
@@ -35,8 +44,8 @@ namespace AhShitRim::SaveState
                 Cosave::Record record;
                 switch (Cosave::Read(version, bytes.data(), bytes.size(), record)) {
                 case Cosave::Result::Ok:
-                    SKSE::log::info("save state: loaded version {} (San Andreas {} the player, armour {:.0f}{})", version,
-                        record.handover ? "has" : "doesn't have", record.armor,
+                    SKSE::log::info("save state: loaded version {} (San Andreas {} the player, armour {:.0f}, {} weapons{})", version,
+                        record.handover ? "has" : "doesn't have", record.armor, WeaponCount(record),
                         record.car.model ? std::format(", in a vehicle of model {}", record.car.model) : std::string());
                     PlayerSync::Restore(record);
                     break;

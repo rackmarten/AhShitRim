@@ -451,6 +451,55 @@ TEST_CASE("each vehicle slot carries its own vehicle's parts, apart from CJ's bo
     CHECK_FALSE(p.skyrim->ReadBody(back));
 }
 
+TEST_CASE("each hand has a weapon slot of its own, apart from the body and the vehicles")
+{
+    Pair p;
+    p.Tick(3);
+    BodyState gun{};
+    gun.frame = 12;
+    gun.flags = kBodyValid;
+    gun.boneCount = 2;
+    gun.model = 99;
+    gun.bones[1].translation[2] = 33.0f;
+    p.sa->WriteWeapon(1, gun);
+    p.sa->WriteWeapon(kWeaponHandMax, gun);  // ignored
+
+    BodyState back{};
+    REQUIRE(p.skyrim->ReadWeapon(1, back));
+    CHECK(back.model == 99);
+    CHECK(back.bones[1].translation[2] == 33.0f);
+    CHECK_FALSE(p.skyrim->ReadWeapon(0, back));  // never written
+    CHECK_FALSE(p.skyrim->ReadWeapon(kWeaponHandMax, back));
+    CHECK_FALSE(p.skyrim->ReadBody(back));
+    CHECK_FALSE(p.skyrim->ReadVehicle(1, back));
+}
+
+TEST_CASE("a weapon command goes to San Andreas and arrives whole")
+{
+    Pair p;
+    p.Tick(3);
+    WeaponCommand command{};
+    command.kind = static_cast<std::uint32_t>(WeaponCommandKind::SetLoadout);
+    command.argument = 2;
+    command.entries[2] = { 22, 0, 17, 117 };
+    command.entries[12] = { 40, 0, 1, 1 };
+    REQUIRE(p.skyrim->Send(MessageType::WeaponCommand, &command, sizeof(command)));
+
+    int seen = 0;
+    p.sa->Receive([&](MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+        REQUIRE(a_type == MessageType::WeaponCommand);
+        REQUIRE(a_size == sizeof(WeaponCommand));
+        WeaponCommand got{};
+        std::memcpy(&got, a_data, sizeof(got));
+        CHECK(got.kind == static_cast<std::uint32_t>(WeaponCommandKind::SetLoadout));
+        CHECK(got.argument == 2);
+        CHECK(got.entries[2].ammo == 117);
+        CHECK(got.entries[12].type == 40);
+        seen++;
+    });
+    CHECK(seen == 1);
+}
+
 TEST_CASE("nothing is sent while the link is down, and a restarted San Andreas drops stale chunks")
 {
     Pair p;
