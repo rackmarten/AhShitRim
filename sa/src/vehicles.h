@@ -42,6 +42,10 @@ namespace AhShitRim::Vehicles
     // CJ out of his vehicle at once (a scene takes him), the vehicle left where it is.
     void GetOut(CPlayerPed* a_ped);
 
+    // CJ was put back from a broken position (PositionGuard): out of his vehicle, and every vehicle
+    // whose own position is broken goes. One he can't be got out of goes to a_at with him, stopped.
+    void Recover(CPlayerPed* a_ped, const CVector& a_at);
+
     // The floating origin moved by a_shift (metres): the vehicles move back with everything else.
     void Shift(const CVector& a_shift);
 

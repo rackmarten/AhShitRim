@@ -37,11 +37,16 @@ namespace AhShitRim::Ground
     {
         double base[3]{};  // Skyrim world units at San Andreas (0, 0, kHeight)
 
-        void Reset(const float (&a_anchor)[3])
+        // A handover's anchor. One that isn't a number is refused and base stays as it was.
+        bool Reset(const float (&a_anchor)[3])
         {
+            if (!std::isfinite(a_anchor[0]) || !std::isfinite(a_anchor[1]) || !std::isfinite(a_anchor[2])) {
+                return false;
+            }
             for (int i = 0; i < 3; ++i) {
                 base[i] = a_anchor[i];
             }
+            return true;
         }
 
         // A Skyrim world position in San Andreas, metres.
@@ -62,9 +67,13 @@ namespace AhShitRim::Ground
 
         // With CJ at a_cj (San Andreas metres) far from the middle, moves base under him and returns
         // true with the shift (whole metres) to subtract from every San Andreas position: CJ, the
-        // collision chunks, the camera, remembered spots. Skyrim positions don't change.
+        // collision chunks, the camera, remembered spots. Skyrim positions don't change. A position
+        // that isn't a number moves nothing: shifted by NaN, base and everything else stayed NaN for good.
         bool Recenter(const Vec3& a_cj, Vec3& a_shift)
         {
+            if (!std::isfinite(a_cj.x) || !std::isfinite(a_cj.y) || !std::isfinite(a_cj.z)) {
+                return false;
+            }
             if (std::hypot(a_cj.x, a_cj.y) < kRecenterDistance && std::abs(a_cj.z - kHeight) < kRecenterHeight) {
                 return false;
             }

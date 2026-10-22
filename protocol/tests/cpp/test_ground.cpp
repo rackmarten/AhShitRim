@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "../../cpp/collision.h"
@@ -86,6 +87,22 @@ TEST_CASE("the origin stays put near the middle and follows CJ far from it")
         CHECK(skyrimAfter[i] == doctest::Approx(skyrimBefore[i]).epsilon(1e-6));
     }
     CHECK_FALSE(o.Recenter(moved, shift));
+}
+
+TEST_CASE("a position or an anchor that isn't a number moves nothing")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    Origin      o = At(100.0f, 200.0f, 300.0f);
+    Vec3        shift;
+    CHECK_FALSE(o.Recenter({ nan, nan, nan }, shift));
+    CHECK_FALSE(o.Recenter({ 0.0f, 0.0f, nan }, shift));
+    CHECK_FALSE(o.Recenter({ std::numeric_limits<float>::infinity(), 0.0f, kHeight }, shift));
+    CHECK(o.base[0] == 100.0);
+    CHECK(o.base[2] == 300.0);
+    const float broken[3] = { nan, 0.0f, 0.0f };
+    CHECK_FALSE(o.Reset(broken));
+    CHECK(o.base[0] == 100.0);
+    CHECK(o.base[1] == 200.0);
 }
 
 TEST_CASE("falling or climbing far moves the origin too")
