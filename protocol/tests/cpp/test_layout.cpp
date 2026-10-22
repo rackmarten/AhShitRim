@@ -115,8 +115,8 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, sceneHeading) == 76);
     CHECK(offsetof(InputState, shoutCount) == 80);
     CHECK(offsetof(InputState, carModel) == 82);
-    CHECK(offsetof(InputState, swearCount) == 84);
-    CHECK(offsetof(InputState, ventCount) == 90);
+    CHECK(offsetof(InputState, insultCount) == 84);
+    CHECK(offsetof(InputState, swearCount) == 90);
     CHECK(offsetof(InputState, carColours) == 86);
     CHECK(offsetof(InputState, carOffset) == 92);
     CHECK(offsetof(InputState, carHeading) == 104);

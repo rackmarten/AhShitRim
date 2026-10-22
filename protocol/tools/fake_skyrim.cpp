@@ -478,7 +478,7 @@ int main(int argc, char** argv)
     // Swearing (v16): the finger moves his arm too.
     run(1.5, [&] { return false; });
     link.ReadBody(still);
-    input.AddSwear();
+    input.AddInsult();
     float fingered = 0.0f;
     run(1.5, [&] {
         if (link.ReadBody(gesture) && gesture.boneCount == still.boneCount) {

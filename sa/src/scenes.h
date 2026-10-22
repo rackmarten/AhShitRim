@@ -15,11 +15,15 @@ namespace AhShitRim::Protocol
 //   he left it. When Skyrim gives the player back he goes on from there.
 // - Talking: with kInputFace CJ stands still and turns to the one he talks to.
 // - Shouting: a new InputState.shoutCount plays SHOVE_PARTIAL over whatever he does, with an angry face.
-// - Swearing (v16): a new InputState.swearCount has CJ say an insult, and give the finger on foot; a new
-//   ventCount has him swear to himself. Neither waits for San Andreas's repeat time.
+// - Swearing (v16): a new InputState.insultCount has CJ say an insult, and give the finger on foot; a new
+//   swearCount has him swear to himself. Neither waits for San Andreas's repeat time, and each plays
+//   the lines picked in protocol/cpp/voice_lines.h when it has any.
 // Game thread only.
 namespace AhShitRim::Scenes
 {
+    // Once the window shows (after SilentPatch): CJ's swear keys play the lines picked in voice_lines.h.
+    void Install();
+
     // Every input read (CPad::UpdatePads), before the pad is set: remembers what Skyrim asks for and
     // plays the gesture of a new shout. Returns whether CJ follows Skyrim's player, so the pad stays
     // empty.

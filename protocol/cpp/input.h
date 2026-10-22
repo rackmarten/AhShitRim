@@ -210,9 +210,9 @@ namespace AhShitRim::Input
         }
 
         // The insult key (v16), X: each press has CJ insult whoever's about, and give the finger on foot.
-        // The vent key, the middle mouse button: each press has him swear to himself.
+        // The swear key, the middle mouse button: each press has him swear to himself.
+        void AddInsult() { _insultCount++; }
         void AddSwear() { _swearCount++; }
-        void AddVent() { _ventCount++; }
 
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
@@ -239,8 +239,8 @@ namespace AhShitRim::Input
             s.spawnCount = _spawnCount;
             s.radioNext = _radioNext;
             s.radioPrev = _radioPrev;
+            s.insultCount = _insultCount;
             s.swearCount = _swearCount;
-            s.ventCount = _ventCount;
             if (!a_live) {
                 return s;
             }
@@ -291,8 +291,8 @@ namespace AhShitRim::Input
         std::uint16_t _spawnCount = 0;
         std::uint16_t _radioNext = 0;
         std::uint16_t _radioPrev = 0;
+        std::uint16_t _insultCount = 0;
         std::uint16_t _swearCount = 0;
-        std::uint16_t _ventCount = 0;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

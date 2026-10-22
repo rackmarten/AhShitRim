@@ -553,6 +553,7 @@ namespace AhShitRim::Runner
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
             CjShots::Install();
             CjProjectiles::Install();
+            Scenes::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {
                 Log("runner: a frame hook is missing; San Andreas will not run as intended");
             }

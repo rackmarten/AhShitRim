@@ -233,19 +233,19 @@ TEST_CASE("each wheel step counts a radio retune, also while a menu has the inpu
     CHECK(s.radioPrev == 1);
 }
 
-TEST_CASE("each insult and vent press counts on its own, also while a menu has the input")
+TEST_CASE("each insult and swear press counts on its own, also while a menu has the input")
 {
     Builder b;
-    CHECK(b.Build(1, true, true).swearCount == 0);
+    CHECK(b.Build(1, true, true).insultCount == 0);
+    b.AddInsult();
+    b.AddInsult();
     b.AddSwear();
-    b.AddSwear();
-    b.AddVent();
     auto s = b.Build(2, true, true);
-    CHECK(s.swearCount == 2);
-    CHECK(s.ventCount == 1);
+    CHECK(s.insultCount == 2);
+    CHECK(s.swearCount == 1);
     s = b.Build(3, true, false);  // the counts carry over; San Andreas decides what a change means
-    CHECK(s.swearCount == 2);
-    CHECK(s.ventCount == 1);
+    CHECK(s.insultCount == 2);
+    CHECK(s.swearCount == 1);
 }
 
 TEST_CASE("the ini picks the classic layout by name, anything else is modern")
