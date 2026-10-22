@@ -4,7 +4,7 @@
 //
 // San Andreas does the damage (its vehicles run in the hidden San Andreas); its particles are never drawn, so
 // the vehicle slot carries the health, the wrecked and burning flags and the engine's place, and Skyrim puts
-// vanilla white smoke and fire there, and black smoke of our own (smoke_model.h). The thresholds are San Andreas's own (gta-reversed):
+// San Andreas's own white and black smoke (smoke_model.h) and a vanilla fire there. The thresholds are San Andreas's own (gta-reversed):
 //  - CVehicle::AddDamagedVehicleParticles: "overheat_car" smoke from the engine dummy while the health is
 //    under 650 and not under 250, thicker and darker as it drops (its SetConstTime: 1 - (health - 250) / 400),
 //  - CAutomobile::ProcessCarOnFireAndExplode: under 250 (not wrecked, not drowning) "fire_car" at the engine
@@ -91,48 +91,46 @@ namespace AhShitRim::VehicleDamage
 
     // ---- What Skyrim shows ----
 
-    enum class Effect : std::uint8_t
+    // San Andreas's smoke, drawn with its own sprites (smoke_model.h): the strengths its WhiteSmoke and
+    // BlackSmoke run at, negative for none. While the vehicle smokes both run at the smoke's strength, as
+    // overheat_car does (the white thinning out as the black thickens); through the fire and while a wreck
+    // burns, the black at full strength.
+    struct Smoke
     {
-        WhiteSmoke,  // vanilla chimney smoke
-        Fire,        // vanilla small fire
+        float white = -1.0f;
+        float black = -1.0f;
     };
 
-    // One of Skyrim's temporary effects, spawned every `every` seconds at the same spot for `life` seconds,
-    // so the smoke trails behind a moving vehicle as San Andreas's does.
-    struct Puff
+    inline Smoke SmokeOf(Stage a_stage, float a_level, bool a_burning)
     {
-        Effect effect = Effect::WhiteSmoke;
-        float  scale = 1.0f;
-        float  every = 0.5f;
-        float  life = 2.0f;
+        if (a_stage == Stage::Smoke) {
+            return { a_level, a_level };
+        }
+        if (a_stage == Stage::Fire || (a_stage == Stage::Wreck && a_burning)) {
+            return { -1.0f, 1.0f };
+        }
+        return {};
+    }
+
+    // A fire: Skyrim's small fire, which only scales evenly, so `layers` of it stacked `rise` units apart,
+    // each a share `taper` smaller than the one under it, burn tall and narrow. Each is spawned every `every`
+    // seconds for `life` seconds.
+    struct Fire
+    {
+        float scale = 1.0f;
+        int   layers = 1;
+        float rise = 0.0f;
+        float taper = 0.0f;
+        float every = 0.2f;
+        float life = 0.5f;
+
+        constexpr float ScaleOf(int a_layer) const { return scale * (1.0f - taper * static_cast<float>(a_layer)); }
+        constexpr float HeightOf(int a_layer) const { return rise * static_cast<float>(a_layer); }
     };
 
-    inline constexpr float kDarkFrom = 0.5f;  // smoke this thick or more is black (from 450 health)
-
-    // San Andreas's stages before the fire: white smoke, then all at once black (SmokeModel's, made here, as
-    // Skyrim's smoke can't be turned black). The black smoke goes on through the fire and while a wreck burns.
-    inline bool WhiteSmoke(Stage a_stage, float a_level) { return a_stage == Stage::Smoke && a_level < kDarkFrom; }
-
-    inline bool BlackSmoke(Stage a_stage, float a_level, bool a_burning)
-    {
-        return (a_stage == Stage::Smoke && a_level >= kDarkFrom) || a_stage == Stage::Fire || (a_stage == Stage::Wreck && a_burning);
-    }
-
-    // The white smoke at a_level (SmokeLevel): thicker and more often as the health drops.
-    inline Puff SmokePuff(float a_level)
-    {
-        const float level = std::clamp(a_level, 0.0f, 1.0f);
-        Puff        puff;
-        puff.scale = 0.4f + 0.6f * level;
-        puff.every = 0.5f - 0.3f * level;
-        puff.life = 2.5f;
-        return puff;
-    }
-
-    // The engine's fire, and a burning wreck's (bigger, from its middle): big enough to see from a distance,
-    // four and six times the small fire Skyrim puts on a burning CJ.
-    inline constexpr Puff kEngineFire{ Effect::Fire, 3.2f, 0.2f, 0.5f };
-    inline constexpr Puff kWreckFire{ Effect::Fire, 4.8f, 0.2f, 0.6f };
+    // The engine's fire, and a burning wreck's (bigger, from its middle): big enough to see from a distance.
+    inline constexpr Fire kEngineFire{ 1.8f, 4, 40.0f, 0.15f, 0.2f, 0.5f };
+    inline constexpr Fire kWreckFire{ 2.6f, 4, 55.0f, 0.15f, 0.2f, 0.6f };
 
     // ---- The blow-up ----
 

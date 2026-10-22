@@ -1,18 +1,23 @@
-// A damaged vehicle's black smoke (protocol v18), as San Andreas draws it: its overheat_car system's
-// BlackSmoke (models/effects.fxp), the bullethitsmoke sprite from models/effectsPC.txd drawn black, read
-// from the player's own San Andreas install at startup. Skyrim's own smoke can't be turned black, so the
-// sprites are drawn as camera-facing quads on bones of their own, through ModelView. Header-only and free
-// of game types, so the protocol tests cover it.
+// A damaged vehicle's smoke (protocol v18), as San Andreas draws it: its overheat_car system's two prims
+// (models/effects.fxp), WhiteSmoke and BlackSmoke, both the bullethitsmoke sprite from models/effectsPC.txd,
+// read from the player's own San Andreas install at startup. Skyrim's own smoke can't be turned black or
+// follow these numbers, so the sprites are drawn as camera-facing quads on bones of their own, through
+// ModelView. Header-only and free of game types, so the protocol tests cover it.
 //
-// BlackSmoke's numbers, as they are: from none to 60 sprites a second from the engine as the smoke's strength
-// (SmokeLevel, overheat_car's time) goes from 0.3 to 1, 0.8 s each, let out at 1.5 to
-// 2.5 m/s up to 40 degrees off straight up, slowed by friction 0.96 a step, pushed up by 3 m/s², with the
-// vehicle's own speed added (SetVelAdd); each grows from 0.2 to 1.0 m in its first fifth and on to 1.2 m,
-// its alpha going 0, 128 at a fifth of its life, 0; it turns 30 degrees a second from a random start.
+// San Andreas drives overheat_car with the smoke's strength (SmokeLevel: 0 at 650 health, 1 at 250) as the
+// system's time, and each prim's keys over it say how many sprites a second it lets out, how long they last
+// and how fast they go; each sprite's own keys over its life say its size and alpha. Both are let out at the
+// engine up to 40 degrees off straight up, slowed by friction 0.96 a step, pushed up by 3 m/s², with the
+// vehicle's own speed added (SetVelAdd), and turn 30 to 60 degrees a second from a random start:
+//  - WhiteSmoke: none, up to 60 a second at a strength of 0.5, none again at 1; 0.4 to 0.6 s; 1.5 to 2 m/s;
+//    0.1 m growing to 0.8 m in its first tenth; white.
+//  - BlackSmoke: none up to 0.3, then up to 60 a second at 1; 0.4 to 0.8 s; 1.5 to 2.5 m/s; 0.2 m growing to
+//    1 m in its first fifth and on to 1.2 m; black.
+// Both fade in to alpha 128 at a fifth of their life, then out.
 //
-// A bone can't scale, so the model holds kAges sizes of sprite, kPerAge of each, every size in a mesh of its
-// own with its own alpha: a sprite is drawn on a bone of the size and fade its age has reached. Unused bones
-// go far below the ground.
+// A bone can't scale, so a prim's model holds kAges sizes of sprite, kPerAge of each, every size in a mesh
+// of its own with its own alpha: a sprite is drawn on a bone of the size and fade its age has reached.
+// Unused bones go far below the ground.
 
 #pragma once
 
@@ -31,54 +36,72 @@ namespace AhShitRim::SmokeModel
 {
     using Pose::Vec3;
 
-    inline constexpr float kMeter = Pose::kUnitsPerMeter;
-    inline constexpr int   kAges = 8;    // sizes a sprite goes through
-    inline constexpr int   kPerAge = 8;  // sprites of each size drawn at once
-    inline constexpr int   kBones = kAges * kPerAge;
+    inline constexpr float       kMeter = Pose::kUnitsPerMeter;
+    inline constexpr int         kAges = 8;    // sizes a sprite goes through
+    inline constexpr int         kPerAge = 8;  // sprites of each size drawn at once
+    inline constexpr int         kBones = kAges * kPerAge;
     inline constexpr const char* kTextureName = "bullethitsmoke";  // in models/effectsPC.txd
-
-    inline constexpr float kLife = 0.8f;                   // seconds a sprite lasts
-    inline constexpr float kRateMax = 60.0f;               // sprites a second at full strength
-    inline constexpr float kEvery = 1.0f / kRateMax;       // seconds between sprites then
-    inline constexpr float kSpeedMin = 1.5f * kMeter;      // units a second it is let out at
-    inline constexpr float kSpeedMax = 2.5f * kMeter;
-    inline constexpr float kConeDegrees = 40.0f;           // off straight up at most
-    inline constexpr float kFriction = 0.96f;              // of the speed kept each 1/50 s
-    inline constexpr float kLift = 3.0f * kMeter;          // units a second², up
-    inline constexpr float kSpin = 30.0f * 0.0174532925f;  // radians a second
-    inline constexpr float kHidden = -100000.0f;           // where an unused bone goes
+    inline constexpr float       kRateMax = 60.0f;                 // sprites a second, either prim at its most
+    inline constexpr float       kConeDegrees = 40.0f;              // off straight up at most
+    inline constexpr float       kFriction = 0.96f;                 // of the speed kept each 1/50 s
+    inline constexpr float       kLift = 3.0f * kMeter;             // units a second², up
+    inline constexpr float       kSpinMin = 30.0f * 0.0174532925f;  // radians a second
+    inline constexpr float       kSpinMax = 60.0f * 0.0174532925f;
+    inline constexpr float       kHidden = -100000.0f;              // where an unused bone goes
 
     static_assert(kBones <= static_cast<int>(Protocol::kBodyBoneMax));
-    static_assert(kLife / kEvery / kAges <= kPerAge);
 
-    // BlackSmoke's keys over a sprite's life t (0..1): half its size in metres, and its alpha (0..255).
-    inline float HalfSizeAt(float a_t)
+    // Three keys of effects.fxp: linear between them, flat past the ends.
+    struct Keys
     {
-        const float t = std::clamp(a_t, 0.0f, 1.0f);
-        const float size = t < 0.2f ? 0.2f + (1.0f - 0.2f) * t / 0.2f : 1.0f + (1.2f - 1.0f) * (t - 0.2f) / 0.8f;
-        return 0.5f * size;
-    }
+        float t[3];
+        float v[3];
 
-    inline float AlphaAt(float a_t)
+        constexpr float At(float a_t) const
+        {
+            if (a_t <= t[0]) {
+                return v[0];
+            }
+            for (int i = 1; i < 3; ++i) {
+                if (a_t <= t[i]) {
+                    return v[i - 1] + (v[i] - v[i - 1]) * (a_t - t[i - 1]) / (t[i] - t[i - 1]);
+                }
+            }
+            return v[2];
+        }
+    };
+
+    struct Prim
     {
-        const float t = std::clamp(a_t, 0.0f, 1.0f);
-        return t < 0.2f ? 128.0f * t / 0.2f : 128.0f * (1.0f - (t - 0.2f) / 0.8f);
-    }
+        const char*  name;
+        std::uint8_t shade;      // its colour, grey: 255 white, 0 black
+        Keys         rate;       // sprites a second, over the strength
+        Keys         life;       // seconds, over the strength
+        Keys         speed;      // metres a second, over the strength
+        Keys         speedBias;  // and how far a sprite's speed strays either way
+        Keys         size;       // metres across, over a sprite's life
+        Keys         alpha;      // 0..255, over a sprite's life
+    };
 
-    // BlackSmoke's RATE keys: none up to a strength of 0.3, then up to 60 a second at 1.
-    inline float RateAt(float a_level)
-    {
-        const float level = std::clamp(a_level, 0.0f, 1.0f);
-        return level <= 0.3f ? 0.0f : kRateMax * (level - 0.3f) / 0.7f;
-    }
+    inline constexpr Prim kWhite{ "WhiteSmoke", 255, { { 0.0f, 0.5f, 1.0f }, { 0.0f, 60.0f, 0.0f } }, { { 0.0f, 0.5f, 1.0f }, { 0.4f, 0.5f, 0.6f } },
+        { { 0.0f, 0.5f, 1.0f }, { 1.5f, 1.75f, 2.0f } }, { { 0.0f, 0.5f, 1.0f }, { 0.2f, 0.25f, 0.3f } }, { { 0.0f, 0.1f, 1.0f }, { 0.1f, 0.8f, 0.8f } },
+        { { 0.0f, 0.2f, 1.0f }, { 0.0f, 128.0f, 0.0f } } };
+    inline constexpr Prim kBlack{ "BlackSmoke", 0, { { 0.0f, 0.3f, 1.0f }, { 0.0f, 0.0f, 60.0f } }, { { 0.0f, 0.5f, 1.0f }, { 0.4f, 0.6f, 0.8f } },
+        { { 0.0f, 0.5f, 1.0f }, { 1.5f, 2.0f, 2.5f } }, { { 0.0f, 0.5f, 1.0f }, { 0.2f, 0.25f, 0.3f } }, { { 0.0f, 0.2f, 1.0f }, { 0.2f, 1.0f, 1.2f } },
+        { { 0.0f, 0.2f, 1.0f }, { 0.0f, 128.0f, 0.0f } } };
 
-    // An age bucket's sprite is the keys at the bucket's middle.
+    // At most 60 a second for 0.8 s fit kPerAge to an age bucket.
+    static_assert(kRateMax * 0.8f / kAges <= kPerAge);
+
+    inline float RateAt(const Prim& a_prim, float a_level) { return a_prim.rate.At(std::clamp(a_level, 0.0f, 1.0f)); }
+
+    // An age bucket's sprite is the keys at the bucket's middle: half its size in Skyrim units, its alpha.
     inline float BucketMiddle(int a_age) { return (static_cast<float>(a_age) + 0.5f) / kAges; }
-    inline float SizeOf(int a_age) { return HalfSizeAt(BucketMiddle(a_age)) * kMeter; }
-    inline std::uint8_t AlphaOf(int a_age) { return static_cast<std::uint8_t>(std::lround(AlphaAt(BucketMiddle(a_age)))); }
-    inline int AgeBucket(float a_age) { return std::clamp(static_cast<int>(a_age / kLife * kAges), 0, kAges - 1); }
+    inline float SizeOf(const Prim& a_prim, int a_age) { return 0.5f * a_prim.size.At(BucketMiddle(a_age)) * kMeter; }
+    inline std::uint8_t AlphaOf(const Prim& a_prim, int a_age) { return static_cast<std::uint8_t>(std::lround(a_prim.alpha.At(BucketMiddle(a_age)))); }
+    inline int AgeBucket(float a_t) { return std::clamp(static_cast<int>(a_t * kAges), 0, kAges - 1); }
 
-    // A small hash for the sprites' spread, start angle and speed, the same every run.
+    // A small hash for the sprites' spread, speed, start angle and spin, the same every run.
     inline float Hash(std::uint32_t a_n)
     {
         a_n = (a_n ^ 61u) ^ (a_n >> 16);
@@ -89,21 +112,22 @@ namespace AhShitRim::SmokeModel
         return static_cast<float>(a_n & 0xFFFFu) / 65535.0f;
     }
 
-    // kBones sprites, one quad each in its bone's XZ plane facing -Y: bone b is of age bucket b / kPerAge,
-    // each age bucket a blended mesh, black, of its own alpha. a_sprite is San Andreas's bullethitsmoke.
-    inline SkinModel::ModelIn Build(const SkinModel::TextureIn& a_sprite)
+    // a_prim's kBones sprites, one quad each in its bone's XZ plane facing -Y: bone b is of age bucket
+    // b / kPerAge, each age bucket a blended mesh in the prim's colour and of its own alpha. a_sprite is San
+    // Andreas's bullethitsmoke.
+    inline SkinModel::ModelIn Build(const Prim& a_prim, const SkinModel::TextureIn& a_sprite)
     {
         SkinModel::ModelIn model;
-        model.name = "BlackSmoke";
+        model.name = a_prim.name;
         model.kind = Protocol::kSkinModelVehicle;  // a vehicle's bounds: the smoke rises above its origin
         model.textures.push_back(a_sprite);
         for (int age = 0; age < kAges; ++age) {
             SkinModel::MeshIn mesh;
             mesh.texture = 0;
             mesh.flags = Protocol::kSkinMeshBlend;
-            mesh.color[0] = mesh.color[1] = mesh.color[2] = 0;
-            mesh.color[3] = AlphaOf(age);
-            const float h = SizeOf(age);
+            mesh.color[0] = mesh.color[1] = mesh.color[2] = a_prim.shade;
+            mesh.color[3] = AlphaOf(a_prim, age);
+            const float h = SizeOf(a_prim, age);
             for (int k = 0; k < kPerAge; ++k) {
                 const auto  bone = static_cast<std::uint32_t>(age * kPerAge + k);
                 const auto  base = static_cast<std::uint16_t>(mesh.vertices.size());
@@ -139,8 +163,8 @@ namespace AhShitRim::SmokeModel
         return Body::FromAxes(right, away);
     }
 
-    // One vehicle's black smoke: sprites let out at the engine while it smokes black, moving on their own
-    // from there, and drawn until they are gone.
+    // One prim of one vehicle's smoke: sprites let out at the engine, moving on their own from there, and
+    // drawn until they are gone.
     class Trail
     {
     public:
@@ -149,13 +173,17 @@ namespace AhShitRim::SmokeModel
             Vec3          at;
             Vec3          speed;  // units a second
             float         age = 0.0f;
+            float         life = 1.0f;
             float         roll = 0.0f;
+            float         spin = 0.0f;
             std::uint32_t n = 0;
         };
 
-        // a_dt seconds on; a_rate sprites a second come out at a_engine (none: 0), which moves at a_carry units a
-        // second (the vehicle's speed, added to theirs).
-        void Step(float a_dt, float a_rate, const Vec3& a_engine, const Vec3& a_carry = {})
+        explicit Trail(const Prim& a_prim = kBlack) : _prim(&a_prim) {}
+
+        // a_dt seconds on at strength a_level (SmokeLevel; negative lets nothing out): the prim's sprites come
+        // out at a_engine, which moves at a_carry units a second (the vehicle's speed, added to theirs).
+        void Step(float a_dt, float a_level, const Vec3& a_engine, const Vec3& a_carry = {})
         {
             const float dt = std::clamp(a_dt, 0.0f, 0.25f);
             const float keep = std::pow(kFriction, dt * 50.0f);
@@ -164,23 +192,34 @@ namespace AhShitRim::SmokeModel
                 sprite.speed = Body::Scale(sprite.speed, keep);
                 sprite.speed.z += kLift * dt;
                 sprite.at = Body::Add(sprite.at, Body::Scale(sprite.speed, dt));
-                sprite.roll += kSpin * dt;
+                sprite.roll += sprite.spin * dt;
             }
-            std::erase_if(_sprites, [](const Sprite& a_sprite) { return a_sprite.age >= kLife; });
-            if (!(a_rate > 0.0f)) {
+            std::erase_if(_sprites, [](const Sprite& a_sprite) { return a_sprite.age >= a_sprite.life; });
+            const float rate = a_level < 0.0f ? 0.0f : RateAt(*_prim, a_level);
+            if (!(rate > 0.0f)) {
                 _since = 1.0f;  // the first sprite comes at once when it starts again
                 return;
             }
-            const float every = 1.0f / (std::min)(a_rate, kRateMax);
+            const float level = std::clamp(a_level, 0.0f, 1.0f);
+            const float every = 1.0f / (std::min)(rate, kRateMax);
             _since = (std::min)(_since, every) + dt;
             while (_since >= every && _sprites.size() < static_cast<std::size_t>(kBones)) {
                 _since -= every;
                 const std::uint32_t n = _count++;
-                const float         heading = Hash(n * 3u) * 6.2831853f;
-                const float         tilt = Hash(n * 3u + 1u) * kConeDegrees * 0.0174532925f;
-                const float         speed = kSpeedMin + (kSpeedMax - kSpeedMin) * Hash(n * 3u + 2u);
+                const float         heading = Hash(n * 5u) * 6.2831853f;
+                const float         tilt = Hash(n * 5u + 1u) * kConeDegrees * 0.0174532925f;
+                const float         bias = _prim->speedBias.At(level);
+                const float         speed = (_prim->speed.At(level) + bias * (2.0f * Hash(n * 5u + 2u) - 1.0f)) * kMeter;
                 const Vec3          dir{ std::sin(tilt) * std::cos(heading), std::sin(tilt) * std::sin(heading), std::cos(tilt) };
-                _sprites.push_back({ a_engine, Body::Add(Body::Scale(dir, speed), a_carry), _since, Hash(n * 7u + 5u) * 6.2831853f, n });
+                Sprite              sprite;
+                sprite.at = a_engine;
+                sprite.speed = Body::Add(Body::Scale(dir, speed), a_carry);
+                sprite.age = _since;
+                sprite.life = _prim->life.At(level);
+                sprite.roll = Hash(n * 5u + 3u) * 6.2831853f;
+                sprite.spin = kSpinMin + (kSpinMax - kSpinMin) * Hash(n * 5u + 4u);
+                sprite.n = n;
+                _sprites.push_back(sprite);
             }
         }
 
@@ -201,7 +240,7 @@ namespace AhShitRim::SmokeModel
                 bone.translation[2] = kHidden;
             }
             for (const auto& sprite : _sprites) {
-                const int age = AgeBucket(sprite.age);
+                const int age = AgeBucket(sprite.age / sprite.life);
                 if (used[age] >= kPerAge) {
                     continue;
                 }
@@ -224,6 +263,7 @@ namespace AhShitRim::SmokeModel
         }
 
     private:
+        const Prim*         _prim;
         std::vector<Sprite> _sprites;
         float               _since = 1.0f;  // seconds since the last sprite
         std::uint32_t       _count = 0;

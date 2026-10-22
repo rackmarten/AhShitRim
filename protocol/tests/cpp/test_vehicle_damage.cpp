@@ -38,34 +38,30 @@ TEST_CASE("vehicle damage: a slot's stage")
     CHECK(StageOf(valid, 200.0f) == Stage::Fine);  // under 250 without San Andreas's fire: nothing of ours
 }
 
-TEST_CASE("vehicle damage: white smoke, then all at once black, through the fire and a burning wreck")
+TEST_CASE("vehicle damage: both of San Andreas's smokes while it smokes, the black alone through the fire and a burning wreck")
 {
-    const float white = kDarkFrom - 0.001f;
-    CHECK(WhiteSmoke(Stage::Smoke, white));
-    CHECK_FALSE(BlackSmoke(Stage::Smoke, white, false));
-    CHECK_FALSE(WhiteSmoke(Stage::Smoke, kDarkFrom));
-    CHECK(BlackSmoke(Stage::Smoke, kDarkFrom, false));
-    CHECK(SmokeLevel(450.0f) >= kDarkFrom);  // black from 450 health
-    CHECK(SmokeLevel(451.0f) < kDarkFrom);
-    CHECK(BlackSmoke(Stage::Fire, 0.0f, true));
-    CHECK_FALSE(WhiteSmoke(Stage::Fire, 0.0f));
-    CHECK(BlackSmoke(Stage::Wreck, 0.0f, true));
-    CHECK_FALSE(BlackSmoke(Stage::Wreck, 0.0f, false));
-    CHECK_FALSE(BlackSmoke(Stage::Fine, 0.0f, false));
-    CHECK_FALSE(WhiteSmoke(Stage::Fine, 0.0f));
+    const Smoke smoking = SmokeOf(Stage::Smoke, 0.4f, false);
+    CHECK(smoking.white == doctest::Approx(0.4f));
+    CHECK(smoking.black == doctest::Approx(0.4f));
+    const Smoke fire = SmokeOf(Stage::Fire, 0.0f, true);
+    CHECK(fire.white < 0.0f);
+    CHECK(fire.black == 1.0f);
+    CHECK(SmokeOf(Stage::Wreck, 0.0f, true).black == 1.0f);
+    CHECK(SmokeOf(Stage::Wreck, 0.0f, false).black < 0.0f);
+    CHECK(SmokeOf(Stage::Fine, 0.0f, false).white < 0.0f);
+    CHECK(SmokeOf(Stage::Fine, 0.0f, false).black < 0.0f);
 }
 
-TEST_CASE("vehicle damage: white smoke grows thicker and more often; the fire is big")
+TEST_CASE("vehicle damage: the fire burns tall and narrow, stacked and tapering")
 {
-    const Puff thin = SmokePuff(0.1f);
-    const Puff thick = SmokePuff(0.45f);
-    CHECK(thin.effect == Effect::WhiteSmoke);
-    CHECK(thick.scale > thin.scale);
-    CHECK(thick.every < thin.every);
-    CHECK(thin.every > 0.0f);
-    CHECK(SmokePuff(5.0f).scale == doctest::Approx(SmokePuff(1.0f).scale));
-    CHECK(kEngineFire.effect == Effect::Fire);
-    CHECK(kEngineFire.scale >= 3.0f);
+    for (const Fire* fire : { &kEngineFire, &kWreckFire }) {
+        CHECK(fire->layers >= 3);
+        CHECK(fire->HeightOf(0) == 0.0f);
+        CHECK(fire->HeightOf(fire->layers - 1) > 100.0f);  // taller than one fire
+        CHECK(fire->ScaleOf(fire->layers - 1) < fire->ScaleOf(0));
+        CHECK(fire->ScaleOf(fire->layers - 1) > 0.0f);
+    }
+    CHECK(kEngineFire.scale < 3.2f);  // narrower than the one fire it was
     CHECK(kWreckFire.scale > kEngineFire.scale);
 }
 

@@ -9,10 +9,10 @@ namespace AhShitRim::Protocol
 
 // A damaged vehicle in Skyrim (protocol v18; the rules in protocol/cpp/vehicle_damage.h). San Andreas damages
 // its vehicles but draws none of their particles, so from each vehicle slot's health and flags this
-//  - puts vanilla white smoke at its engine as the health drops under 650, and from 450 thick black smoke of
-//    our own instead (protocol/cpp/smoke_model.h: Skyrim's smoke can't be turned black), drawn through
-//    ModelView, which goes on through the fire,
-//  - a big vanilla fire there once the engine burns (under 250: San Andreas blows it up 5 s later),
+//  - puts San Andreas's own white and black smoke at its engine as the health drops under 650
+//    (protocol/cpp/smoke_model.h: its overheat_car's sprites and numbers, drawn through ModelView), the black
+//    going on through the fire,
+//  - a tall vanilla fire there once the engine burns (under 250: San Andreas blows it up 5 s later),
 //  - Projectiles::VehicleBlast where it blows up (the fireball, Skyrim's people hurt and thrown; San Andreas
 //    plays the sound and hurts CJ),
 //  - and fire on the wreck while San Andreas's own fire burns it.
