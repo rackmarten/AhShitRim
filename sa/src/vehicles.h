@@ -17,12 +17,10 @@ class CVehicle;
 //   part's frame goes to Skyrim in the vehicle's slot.
 // - Air control: the player's car steers kAirTurnGain times as hard in the air as San Andreas
 //   lets it, on the gas too, and the player's motorbike yaws with left/right (protocol/cpp/vehicle.h),
-//   through hooks on CAutomobile::ProcessAI and CBike::ProcessAI.
+//   pushed in Update after San Andreas's physics step.
 // Game thread only.
 namespace AhShitRim::Vehicles
 {
-    void Install();  // at ASI load
-
     // A spawn request: a_model (a San Andreas vehicle model id) in front of CJ. Refused (logged) while
     // CJ is in a vehicle or when nothing in front of him will do.
     void Spawn(CPlayerPed* a_ped, int a_model);

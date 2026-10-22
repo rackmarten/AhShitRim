@@ -33,8 +33,6 @@
 #include <NodeName.h>
 #include <common.h>
 
-#include <safetyhook.hpp>
-
 #include <Windows.h>
 
 #include <algorithm>
@@ -54,11 +52,6 @@ namespace AhShitRim::Vehicles
         constexpr float kGroundBelow = Vehicle::kMaxStep + 1.0f;  // ... and look this far below them
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
-
-        constexpr std::uintptr_t kProcessAI = 0x6B4800;      // CAutomobile::ProcessAI(uint32& extraHandlingFlags) (thiscall)
-        constexpr std::uintptr_t kBikeProcessAI = 0x6BC930;  // CBike::ProcessAI(uint32& extraHandlingFlags) (thiscall)
-        SafetyHookInline         g_processAI;
-        SafetyHookInline         g_bikeProcessAI;
 
         struct Slot
         {
@@ -463,76 +456,57 @@ namespace AhShitRim::Vehicles
             }
         }
 
-        // San Andreas's car steering in the air, kAirTurnGain times as strong for the player's car
-        // (protocol/cpp/vehicle.h): after San Andreas's own pushes, the same pushes again, as many
-        // more as ExtraAirPushes says, under the same conditions (CJ at the wheel, no wheel down,
-        // not a helicopter or a plane).
-        bool __fastcall ProcessAIHook(CAutomobile* a_car, void*, unsigned* a_flags)
+        // Steering in the air, stronger than San Andreas's (protocol/cpp/vehicle.h), for the vehicle CJ
+        // drives with no wheel down, once a frame after San Andreas's own physics step: a car gets
+        // San Andreas's own pushes again, as many more as ExtraAirPushes says, under its conditions (not
+        // a helicopter or a plane); a motorbike yaws with left/right (BikeAirYaw), which San Andreas
+        // leaves out (a bicycle yaws by its rules already). Not a hook on ProcessAI: hooked, San Andreas
+        // stopped taking the keys in that vehicle altogether.
+        void AirControl(CVehicle* a_vehicle, CPlayerPed* a_ped)
         {
-            const CVector spin = a_car->m_vecTurnSpeed;  // what San Andreas's pushes go by
-            const bool    done = g_processAI.thiscall<bool>(a_car, a_flags);
-            auto*         ped = FindPlayerPed(0);
-            const auto    type = a_car->m_nVehicleSubClass;
-            if (done || a_car->m_nStatus != STATUS_PLAYER || !ped || a_car->m_pDriver != ped || a_car->m_nNumContactWheels != 0 ||
-                type == VEHICLE_HELI || type == VEHICLE_PLANE || ped->m_ePedState == PEDSTATE_EXIT_CAR || ped->m_ePedState == PEDSTATE_DRAGGED_FROM_CAR ||
-                ped->m_ePedState == PEDSTATE_ARRESTED) {
-                return done;
+            if (CTimer::m_UserPause || CTimer::m_CodePause || a_vehicle->m_nStatus != STATUS_PLAYER || a_vehicle->m_pDriver != a_ped ||
+                a_ped->m_ePedState != PEDSTATE_DRIVING) {
+                return;
             }
-            auto* pad = ped->GetPadFromPlayer();
+            auto* pad = a_ped->GetPadFromPlayer();
             if (!pad) {
-                return done;
+                return;
+            }
+            const auto    type = a_vehicle->m_nVehicleSubClass;
+            const CVector spin = a_vehicle->m_vecTurnSpeed;
+            const CVector right = a_vehicle->GetRight(), forward = a_vehicle->GetForward(), up = a_vehicle->GetUp();
+            const float   skill = 0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14);  // 14: driving skill
+            if (a_vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                if (type == VEHICLE_BMX || static_cast<CBike*>(a_vehicle)->m_nNumContactWheels != 0) {
+                    return;
+                }
+                const float steer = pad->GetSteeringLeftRight() / 128.0f;
+                if (const float push = Vehicle::BikeAirYaw(spin.Dot(up), steer); push != 0.0f) {
+                    const float force = Vehicle::AirPushForce(skill, a_vehicle->m_fTurnMass) * CTimer::ms_fTimeStep;
+                    a_vehicle->ApplyTurnForce(right * (steer * force * push), a_vehicle->m_vecCentreOfMass + forward);
+                }
+                return;
+            }
+            if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || type == VEHICLE_HELI || type == VEHICLE_PLANE ||
+                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0) {
+                return;
             }
             const auto& mouse = CPad::NewMouseControllerState;
             const auto  steer = Vehicle::AirSteering(pad->GetSteeringLeftRight(), pad->GetSteeringUpDown(), CCamera::m_bUseMouse3rdPerson, mouse.x, mouse.y);
-            const auto  push = Vehicle::ExtraAirPushes(spin.Dot(a_car->GetUp()), spin.Dot(a_car->GetForward()), spin.Dot(a_car->GetRight()),
-                 steer, pad->GetHandBrake() != 0, pad->GetAccelerate() != 0);
-            const float perMass = type == VEHICLE_MTRUCK ? 0.0025f : 0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14);  // 14: driving skill
-            const float force = Vehicle::AirPushForce(perMass, a_car->m_fTurnMass) * CTimer::ms_fTimeStep;
-            const CVector right = a_car->GetRight(), forward = a_car->GetForward(), up = a_car->GetUp();
+            const auto  push = Vehicle::ExtraAirPushes(spin.Dot(up), spin.Dot(forward), spin.Dot(right), steer, pad->GetHandBrake() != 0, pad->GetAccelerate() != 0);
+            const float force = Vehicle::AirPushForce(type == VEHICLE_MTRUCK ? 0.0025f : skill, a_vehicle->m_fTurnMass) * CTimer::ms_fTimeStep;
             if (push.yaw != 0.0f) {
-                a_car->ApplyTurnForce(right * (steer.leftRight * force * push.yaw), a_car->m_vecCentreOfMass + forward);
+                a_vehicle->ApplyTurnForce(right * (steer.leftRight * force * push.yaw), a_vehicle->m_vecCentreOfMass + forward);
             }
             if (push.roll != 0.0f) {
-                a_car->ApplyTurnForce(right * (steer.leftRight * force * push.roll), a_car->m_vecCentreOfMass + up);
+                a_vehicle->ApplyTurnForce(right * (steer.leftRight * force * push.roll), a_vehicle->m_vecCentreOfMass + up);
             }
             if (push.pitch != 0.0f) {
-                a_car->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_car->m_vecCentreOfMass + forward);
+                a_vehicle->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_vehicle->m_vecCentreOfMass + forward);
             }
-            return done;
-        }
-
-        // A motorbike in the air yaws with left/right (Vehicle::BikeAirYaw), pushed as a car's yaw is.
-        // A bicycle (CBmx) yaws by San Andreas's own rules already.
-        bool __fastcall BikeProcessAIHook(CBike* a_bike, void*, unsigned* a_flags)
-        {
-            const CVector spin = a_bike->m_vecTurnSpeed;
-            const bool    done = g_bikeProcessAI.thiscall<bool>(a_bike, a_flags);
-            auto*         ped = FindPlayerPed(0);
-            if (done || a_bike->m_nVehicleSubClass == VEHICLE_BMX || a_bike->m_nStatus != STATUS_PLAYER || !ped || a_bike->m_pDriver != ped || a_bike->m_nNumContactWheels != 0 ||
-                ped->m_ePedState == PEDSTATE_EXIT_CAR || ped->m_ePedState == PEDSTATE_DRAGGED_FROM_CAR || ped->m_ePedState == PEDSTATE_ARRESTED) {
-                return done;
-            }
-            auto* pad = ped->GetPadFromPlayer();
-            if (!pad) {
-                return done;
-            }
-            const float steer = pad->GetSteeringLeftRight() / 128.0f;
-            const float push = Vehicle::BikeAirYaw(spin.Dot(a_bike->GetUp()), steer);
-            if (push != 0.0f) {
-                const float force = Vehicle::AirPushForce(0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14), a_bike->m_fTurnMass) * CTimer::ms_fTimeStep;
-                a_bike->ApplyTurnForce(a_bike->GetRight() * (steer * force * push), a_bike->m_vecCentreOfMass + a_bike->GetForward());
-            }
-            return done;
         }
     }
 
-    void Install()
-    {
-        g_processAI = safetyhook::create_inline(reinterpret_cast<void*>(kProcessAI), reinterpret_cast<void*>(&ProcessAIHook));
-        Log(g_processAI ? "vehicle: CAutomobile::ProcessAI hooked, cars steer harder in the air" : "vehicle: could not hook CAutomobile::ProcessAI");
-        g_bikeProcessAI = safetyhook::create_inline(reinterpret_cast<void*>(kBikeProcessAI), reinterpret_cast<void*>(&BikeProcessAIHook));
-        Log(g_bikeProcessAI ? "vehicle: CBike::ProcessAI hooked, bikes yaw in the air" : "vehicle: could not hook CBike::ProcessAI");
-    }
 
     CVehicle* Driven(CPlayerPed* a_ped)
     {
@@ -734,6 +708,7 @@ namespace AhShitRim::Vehicles
             }
         }
         if (driven) {
+            AirControl(driven, a_ped);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
             // What the vehicle makes of the input and the ground, every 5 s while CJ drives.
             if (const std::uint64_t now = ::GetTickCount64(); now - state.drivenLogMs >= 5000) {
