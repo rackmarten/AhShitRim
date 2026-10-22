@@ -263,6 +263,13 @@ namespace AhShitRim::Input
         void AddInsult() { _insultCount++; }
         void AddSwear() { _swearCount++; }
 
+        // A line for CJ to say (v21), of a Dialogue::Category: his answer in a conversation.
+        void AddLine(std::uint8_t a_kind)
+        {
+            _lineCount++;
+            _lineKind = a_kind;
+        }
+
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
         {
@@ -290,6 +297,8 @@ namespace AhShitRim::Input
             s.radioPrev = _radioPrev;
             s.insultCount = _insultCount;
             s.swearCount = _swearCount;
+            s.lineCount = _lineCount;
+            s.lineKind = _lineKind;
             if (!a_live) {
                 return s;
             }
@@ -350,6 +359,8 @@ namespace AhShitRim::Input
         std::uint16_t _radioPrev = 0;
         std::uint16_t _insultCount = 0;
         std::uint16_t _swearCount = 0;
+        std::uint16_t _lineCount = 0;
+        std::uint8_t  _lineKind = 0;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

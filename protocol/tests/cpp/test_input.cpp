@@ -257,6 +257,20 @@ TEST_CASE("each insult and swear press counts on its own, also while a menu has 
     CHECK(s.swearCount == 1);
 }
 
+TEST_CASE("each line asked of CJ counts, with the kind of the latest")
+{
+    Builder b;
+    CHECK(b.Build(1, true, true).lineCount == 0);
+    b.AddLine(2);
+    b.AddLine(7);
+    auto s = b.Build(2, true, true);
+    CHECK(s.lineCount == 2);
+    CHECK(s.lineKind == 7);
+    s = b.Build(3, true, false);  // a menu has the input: the dialogue's lines still count
+    CHECK(s.lineCount == 2);
+    CHECK(s.lineKind == 7);
+}
+
 TEST_CASE("the ini picks the classic layout by name, anything else is modern")
 {
     CHECK(ParseKeyLayout("Classic") == KeyLayout::Classic);

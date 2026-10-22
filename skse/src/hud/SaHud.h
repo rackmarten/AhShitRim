@@ -40,6 +40,7 @@ namespace AhShitRim::SaHud
     void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
+    void HoldSubtitle(std::string a_text);  // the subtitles, as long as it's called every frame with the line (Skyrim's subtitles, a scene's lines)
     void FadeTo(float a_black, float a_seconds);  // 0 = clear, 1 = black over everything
     void SetLetterbox(bool a_on);                 // cutscene bars, sliding in and out
     void SetWantedLevel(int a_stars);             // 0..6; 0 shows none

@@ -18,6 +18,9 @@ namespace AhShitRim::Protocol
 // - Swearing (v16): a new InputState.insultCount has CJ say an insult, and give the finger on foot; a new
 //   swearCount has him swear to himself. Neither waits for San Andreas's repeat time, and each plays
 //   the lines picked in protocol/cpp/voice_lines.h when it has any.
+// - Talking (v21): a new InputState.lineCount has CJ say the next of his lines of lineKind
+//   (protocol/cpp/dialogue.h's categories: greet, agree, refuse, ask, threaten, joke, goodbye), cutting
+//   off his last line, also while he follows Skyrim's player in a scene.
 // Game thread only.
 namespace AhShitRim::Scenes
 {

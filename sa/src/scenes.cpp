@@ -1,6 +1,7 @@
 #include "scenes.h"
 
 #include "cj_body.h"
+#include "dialogue.h"
 #include "log.h"
 #include "pose.h"
 #include "scene.h"
@@ -59,9 +60,10 @@ namespace AhShitRim::Scenes
             int                  seatFrames = 0;
             bool                 haveShout = false;  // shoutCount read once: a change after that is a shout
             std::uint16_t        shoutCount = 0;
-            bool                 haveSpeech = false;  // likewise for insultCount and swearCount
+            bool                 haveSpeech = false;  // likewise for insultCount, swearCount and lineCount
             std::uint16_t        insultCount = 0;
             std::uint16_t        swearCount = 0;
+            std::uint16_t        lineCount = 0;
         } state;
 
         float Seconds() { return CTimer::ms_fTimeStep * 0.02f; }  // San Andreas steps in 1/50 s
@@ -102,6 +104,13 @@ namespace AhShitRim::Scenes
         GetSoundAndBankIds g_getSoundAndBankIds = nullptr;
         VoiceLines::Deck   g_insultLines(VoiceLines::kInsult, ::GetTickCount());
         VoiceLines::Deck   g_swearLines(VoiceLines::kSwear, ::GetTickCount() * 31u);
+        // CJ's answers in a conversation, a deck per category (dialogue.h).
+        VoiceLines::Deck DialogueDeck(std::uint8_t a_kind)
+        {
+            return VoiceLines::Deck(Dialogue::LinesOf(static_cast<Dialogue::Category>(a_kind)), ::GetTickCount() * (2u * a_kind + 37u));
+        }
+        std::array<VoiceLines::Deck, Dialogue::kCategoryCount> g_dialogueLines{ DialogueDeck(0), DialogueDeck(1), DialogueDeck(2), DialogueDeck(3),
+            DialogueDeck(4), DialogueDeck(5), DialogueDeck(6), DialogueDeck(7) };
         const CAEPedSpeechAudioEntity* g_forcedFor = nullptr;
         VoiceLines::Line               g_forced{};
 
@@ -176,7 +185,7 @@ namespace AhShitRim::Scenes
     {
         g_getSoundAndBankIds = RedirectCall(kCallGetSoundAndBankIds, &GetSoundAndBankIdsHook);
         Log(std::format("scenes: {} insult and {} swear lines picked{}", VoiceLines::kInsult.size(), VoiceLines::kSwear.size(),
-            g_getSoundAndBankIds ? "" : ", but San Andreas picks them (no hook)"));
+            g_getSoundAndBankIds ? "" : ", but San Andreas picks them (no hook), and CJ keeps quiet in conversations"));
     }
 
     bool OnInput(CPlayerPed* a_ped, const Protocol::InputState& a_input, bool a_owned)
@@ -204,8 +213,17 @@ namespace AhShitRim::Scenes
         if (state.haveSpeech && a_input.swearCount != state.swearCount && canSpeak) {
             SayNow(a_ped, kCrashGeneric, g_swearLines, "swears");
         }
+        // A line Skyrim asks for (v21): CJ's answer in a conversation, also in a scene. Only his own lines:
+        // the insult context merely carries them, so without the hook he says nothing.
+        const auto kind = a_input.lineKind;
+        if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && g_getSoundAndBankIds && kind > 0 &&
+            kind < Dialogue::kCategoryCount && !g_dialogueLines[kind].Empty()) {
+            const auto what = std::format("answers ({})", Dialogue::NameOf(static_cast<Dialogue::Category>(kind)));
+            SayNow(a_ped, kInsultMale, g_dialogueLines[kind], what.c_str());
+        }
         state.insultCount = a_input.insultCount;
         state.swearCount = a_input.swearCount;
+        state.lineCount = a_input.lineCount;
         state.haveSpeech = true;
 
         const bool follow = a_owned && (a_input.flags & Protocol::kInputScripted) != 0;

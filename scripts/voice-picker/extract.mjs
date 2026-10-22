@@ -1,5 +1,5 @@
 // Builds a local page for listening to CJ's speech lines and picking the ones the insult (X) and
-// swear (middle mouse) keys play. Reads San Andreas's own speech banks from your install
+// swear (middle mouse) keys play, and his answers in Skyrim's conversations by category. Reads San Andreas's own speech banks from your install
 // (audio/SFX/SPC_PA, found through audio/CONFIG/BankLkup.dat) and writes every line of CJ's 20 voice
 // banks as a WAV under extracted/voice-picker/, which git ignores: the audio never leaves your machine.
 //

@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 20;
+    inline constexpr std::uint32_t kProtocolVersion = 21;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -160,7 +160,9 @@ namespace AhShitRim::Protocol
         std::uint16_t swearCount;      // v16: counts presses of the swear key; a new value has CJ swear to himself
         float         carOffset[3];    // v11: the car relative to the anchor, Skyrim units
         float         carHeading;      // v11: the car's heading, Skyrim radians
-        std::uint32_t reserved1;
+        std::uint16_t lineCount;       // v21: counts lines Skyrim asks CJ to say; a new value has him say one of lineKind
+        std::uint8_t  lineKind;        // v21: Dialogue::Category (protocol/cpp/dialogue.h): greet, agree, refuse, ask, threaten, joke, goodbye
+        std::uint8_t  reserved1;
     };
 
     struct InputSlot
@@ -555,6 +557,8 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, carColours) == 86);
     static_assert(offsetof(InputState, carOffset) == 92);
     static_assert(offsetof(InputState, carHeading) == 104);
+    static_assert(offsetof(InputState, lineCount) == 108);
+    static_assert(offsetof(InputState, lineKind) == 110);
     static_assert(sizeof(InputSlot) == 144);
     static_assert(sizeof(WeaponEntry) == 8);
     static_assert(sizeof(WeaponCommand) == 8 + kWeaponSlotCount * sizeof(WeaponEntry) + 24);

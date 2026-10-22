@@ -40,7 +40,7 @@ TEST_CASE("protocol v20: cheats")
 
 TEST_CASE("protocol v19 constants")
 {
-    CHECK(kProtocolVersion == 20);
+    CHECK(kProtocolVersion == 21);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
@@ -138,6 +138,8 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, carColours) == 86);
     CHECK(offsetof(InputState, carOffset) == 92);
     CHECK(offsetof(InputState, carHeading) == 104);
+    CHECK(offsetof(InputState, lineCount) == 108);
+    CHECK(offsetof(InputState, lineKind) == 110);
     CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 248);
     CHECK(offsetof(PlayerState, skills) == 224);
