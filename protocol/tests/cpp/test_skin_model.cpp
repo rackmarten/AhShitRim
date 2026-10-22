@@ -159,3 +159,27 @@ TEST_CASE("a weapon model keeps its kind, and a kind past the weapon's is refuse
     const auto bad = SkinModel::Serialize(in);
     CHECK_FALSE(SkinModel::Parse(bad.data(), bad.size()));
 }
+
+TEST_CASE("triangles back to back over the same corners are twins, whatever their vertices and order")
+{
+    auto in = TwoMeshes();
+    auto& mesh = in.meshes[0];
+    // The same corners again as their own vertices, normal turned round, wound the other way.
+    for (int i = 0; i < 3; i++) {
+        auto v = mesh.vertices[i];
+        v.normal[2] = -1.0f;
+        mesh.vertices.push_back(v);
+    }
+    mesh.indices.insert(mesh.indices.end(), { 3, 5, 4 });
+    // A fourth corner and a triangle sharing an edge only.
+    auto apart = mesh.vertices[0];
+    apart.position[1] = 70.0f;
+    mesh.vertices.push_back(apart);
+    mesh.indices.insert(mesh.indices.end(), { 0, 1, 6 });
+
+    const auto blob = SkinModel::Serialize(in);
+    const auto model = SkinModel::Parse(blob.data(), blob.size());
+    REQUIRE(model);
+    CHECK(SkinModel::Twins(model->meshes[0]) == 1);
+    CHECK(SkinModel::Twins(model->meshes[1]) == 0);
+}

@@ -37,6 +37,7 @@ namespace AhShitRim::Projectiles
         // Vanilla forms (Skyrim.esm).
         constexpr RE::FormID kBlastExplosion = 0x000439C0;    // FireBallExp01: the fireball's blast, no damage of its own
         constexpr float      kMolotovScale = 2.0f;            // San Andreas's Molotov fireball is twice a rocket's
+        constexpr float      kVehicleScale = 2.0f;            // and a vehicle's (EXPLOSION_CAR) as big
         constexpr const char* kFireModel = "Effects\\FXFireOilHazard.nif";  // TrapOilHazard01's burning oil, drawn alone
         constexpr const char* kCjFireModel = "Effects\\FXFire02New.nif";   // a small fire (FireSmLongHazard's), on CJ while he burns
         constexpr float       kCjFireEvery = 0.2f;  // seconds between the flames put on CJ
@@ -362,8 +363,8 @@ namespace AhShitRim::Projectiles
 
         // ---- Going off ----
 
-        // Returns what CJ took.
-        float Explode(RE::PlayerCharacter* a_player, Kind a_kind, std::uint8_t a_weapon, const RE::NiPoint3& a_at)
+        // Returns what CJ took, nothing when !a_hurtCj (he sat in the vehicle that blew up: San Andreas killed him).
+        float Explode(RE::PlayerCharacter* a_player, Kind a_kind, std::uint8_t a_weapon, const RE::NiPoint3& a_at, bool a_hurtCj = true)
         {
             const double now = NowSeconds();
             int          caught = 0;
@@ -391,7 +392,7 @@ namespace AhShitRim::Projectiles
                 }
             });
             // CJ in his own blast.
-            const float self = BlastDamage(a_kind, DistanceTo(a_player, a_at));
+            const float self = a_hurtCj ? BlastDamage(a_kind, DistanceTo(a_player, a_at)) : 0.0f;
             if (self > 0.0f) {
                 Vitals::Hurt(a_player, self);
             }
@@ -934,6 +935,14 @@ namespace AhShitRim::Projectiles
         state.blast = Silent(state.blast);
         state.gas = Lookup<RE::BGSHazard>(kGasHazard, "the tear gas cloud (DA13PustuleGasCloud)");
         state.flamesSpell = Lookup<RE::SpellItem>(kFlames, "the flamethrower's flames (Flames)");
+    }
+
+    void VehicleBlast(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, bool a_hurtCj)
+    {
+        if (auto ball = Place(a_player, state.blast, a_at).get()) {
+            ball->SetScale(kVehicleScale);
+        }
+        Explode(a_player, Kind::Vehicle, Weapons::RocketLauncher, a_at, a_hurtCj);
     }
 
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size)

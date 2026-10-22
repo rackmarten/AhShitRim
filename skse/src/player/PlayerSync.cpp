@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "collision/CollisionSampler.h"
 #include "cosave.h"
+#include "hud/Overlay.h"
 #include "hud/SaHud.h"
 #include "input.h"
 #include "link/LinkService.h"
@@ -15,6 +16,7 @@
 #include "player/Arms.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
+#include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
@@ -59,6 +61,7 @@ namespace AhShitRim::PlayerSync
             bool           cameraParentLogged = false;
             Camera::Matrix cameraOffset{};          // Skyrim's camera node on top of the player's angles, from the last frame without a menu
             bool           haveCameraOffset = false;
+            bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
 
             // Per-second stats while owned.
@@ -284,6 +287,8 @@ namespace AhShitRim::PlayerSync
             }
         }
 
+        constexpr float kCameraShakeMax = 0.5f;  // radians Skyrim's camera may be off its own axes and still count as a shake
+
         // Puts Skyrim's camera where San Andreas's is (BodyState camera, relative to the handover
         // spot), looking where it looks, with its field of view, so the view behind CJ is San
         // Andreas's own. Skyrim's camera stays in its first-person state, which only draws the
@@ -305,8 +310,23 @@ namespace AhShitRim::PlayerSync
             }
             // In a dialogue Skyrim turns its camera to the speaker on top of the player's angles;
             // San Andreas's camera stays where it was, so the offset from before the menu is kept.
+            // Only Skyrim's own axes are kept from it: a hit's shake, or Improved Camera turning the view
+            // with the hidden player's head as it staggers, would otherwise shake San Andreas's camera.
+            // A bigger turn than a shake keeps the axes from before.
             if (!a_menu || !state.haveCameraOffset) {
-                Camera::OffsetOf(built, a_fromHeading, a_fromPitch, state.cameraOffset);
+                Camera::Matrix offset;
+                Camera::OffsetOf(built, a_fromHeading, a_fromPitch, offset);
+                if (Camera::AxesOf(offset, kCameraShakeMax, state.cameraOffset)) {
+                    state.cameraAxes = true;
+                } else if (!state.haveCameraOffset || !state.cameraAxes) {
+                    // No axes yet: the whole offset, as it is, until there are.
+                    for (int r = 0; r < 3; r++) {
+                        for (int c = 0; c < 3; c++) {
+                            state.cameraOffset[r][c] = offset[r][c];
+                        }
+                    }
+                    state.cameraAxes = false;
+                }
                 state.haveCameraOffset = true;
             }
             // With San Andreas's roll: looking down, its death camera swings about the view.
@@ -374,9 +394,9 @@ namespace AhShitRim::PlayerSync
             }
         }
 
-        // San Andreas's vehicles where it has them, their parts posed, smoothed like CJ. A slot whose
-        // vehicle is gone reads with no flags and draws nothing.
-        void DrawVehicles()
+        // San Andreas's vehicles where it has them, their parts posed, smoothed like CJ, with their damage's
+        // smoke and fire (VehicleFx). A slot whose vehicle is gone reads with no flags and draws nothing.
+        void DrawVehicles(RE::PlayerCharacter* a_player, float a_delta)
         {
             const double now = NowMs();
             for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
@@ -385,6 +405,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -393,7 +414,9 @@ namespace AhShitRim::PlayerSync
                 }
                 Protocol::BodyState pose{};
                 if (state.vehicles[i].Sample(now, pose)) {
-                    ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+                    const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                    ModelView::Show(pose, feet);
+                    VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                 }
             }
         }
@@ -411,6 +434,7 @@ namespace AhShitRim::PlayerSync
             Activation::Clear();
             Shots::Clear();
             Projectiles::Clear();
+            VehicleFx::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -485,6 +509,7 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            VehicleFx::Clear();
             Activation::Clear();
             state.reanchoring = true;
             Vitals::OnReanchor();
@@ -637,7 +662,7 @@ namespace AhShitRim::PlayerSync
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
-            DrawVehicles();
+            DrawVehicles(a_player, a_delta);
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
@@ -702,6 +727,9 @@ namespace AhShitRim::PlayerSync
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
+                if (Overlay::ScreenshotSaved()) {
+                    SaHud::ShowHelp("Screenshot saved", 3.0f);
+                }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
             }
@@ -804,6 +832,13 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikF10) {
                         if (button->IsDown()) {
                             Toggle();
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikF11) {
+                        // A screenshot of what's on screen, San Andreas's HUD and Skyrim's own included.
+                        if (button->IsDown()) {
+                            Overlay::Screenshot(Ini::Value("Screenshots", "Dir"));  // the launcher's Screenshots folder
                         }
                         continue;
                     }

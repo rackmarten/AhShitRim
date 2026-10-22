@@ -176,7 +176,9 @@ if ((Test-Path $asi) -and -not ((Test-Path $asiDest) -and (Get-FileHash $asiDest
 # Data folder, which MO2 shows to Skyrim as well, never in a mod manager's mod.
 $ini = Join-Path $realPlugins 'AhShitRim.ini'
 # The plugin reads it as narrow text, so it's in the ANSI code page (a non-ASCII folder name survives).
-$iniLines = [string[]] @('[SanAndreas]', "Path=$sa")
+# F11 screenshots go to Screenshots next to this script.
+$shots = Join-Path $Root 'Screenshots'
+$iniLines = [string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots")
 $ansi = [Text.Encoding]::Default
 if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") -ne ($iniLines -join "`n")) {
     New-Item -ItemType Directory -Force $realPlugins | Out-Null
@@ -184,6 +186,7 @@ if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") 
     catch { Fail "Can't write $ini ($($_.Exception.Message))." }
     Write-Host "Wrote $ini"
 }
+Write-Host "Screenshots (F11) go to $shots"
 
 if ($NoStart) { Write-Host 'Checked and installed, not starting the games (-NoStart).'; return }
 

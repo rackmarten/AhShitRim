@@ -48,6 +48,7 @@ namespace AhShitRim::Explosives
         TearGas,
         Molotov,
         Satchel,  // a satchel charge: sticks where it lands, goes off when the detonator says
+        Vehicle,  // (v18) a vehicle blowing up: no projectile, its blast only
     };
 
     constexpr Kind KindOf(std::uint8_t a_projectileType)
@@ -279,6 +280,7 @@ namespace AhShitRim::Explosives
         case Kind::Grenade:
         case Kind::Satchel: return { 6.0f * kMeter, 300.0f, 12.0f, true };
         case Kind::Molotov: return { 2.5f * kMeter, 40.0f, 0.0f, false };
+        case Kind::Vehicle: return { 9.0f * kMeter, 300.0f, 14.0f, false };  // EXPLOSION_CAR reaches further than a rocket
         default: return {};
         }
     }
