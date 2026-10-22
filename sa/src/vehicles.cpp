@@ -1,6 +1,7 @@
 #include "vehicles.h"
 
 #include "log.h"
+#include "position_guard.h"
 #include "model_sender.h"
 #include "rw_texture.h"
 #include "skin_build.h"
@@ -638,6 +639,33 @@ namespace AhShitRim::Vehicles
             a_ped->m_pIntelligence->FlushImmediately(true);
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(new CTaskSimplePlayerOnFoot(), 4, false);  // TASK_PRIMARY_DEFAULT, as at his creation
             Log(Driven(a_ped) ? "vehicle: could not get CJ out of his vehicle" : "vehicle: CJ taken out of his vehicle");
+        }
+    }
+
+    void Recover(CPlayerPed* a_ped, const CVector& a_at)
+    {
+        GetOut(a_ped);
+        for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
+            auto* vehicle = Live(i);
+            if (!vehicle) {
+                continue;
+            }
+            const auto& at = vehicle->GetPosition();
+            if (PositionGuard::Sound({ at.x, at.y, at.z })) {
+                continue;
+            }
+            if (vehicle == Driven(a_ped)) {
+                vehicle->Teleport(a_at, true);  // also resets its rotation and suspension
+                vehicle->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+                vehicle->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+                vehicle->m_vecFrictionMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+                vehicle->m_vecFrictionTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+                vehicle->m_vecForce = CVector(0.0f, 0.0f, 0.0f);
+                vehicle->m_vecTorque = CVector(0.0f, 0.0f, 0.0f);
+                Log(std::format("vehicle: CJ's {} was at a broken position, put back with him", state.slots[i].name));
+            } else {
+                Remove(i);
+            }
         }
     }
 

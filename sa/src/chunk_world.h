@@ -9,7 +9,8 @@ class CVector;
 // around CJ, one invisible CBuilding with its own CColModel (triangles) per chunk, under the
 // floating origin of protocol/cpp/ground.h (namespace Ground). Chunks more than Ground::kKeepRadius from CJ go away.
 // Also holds CJ at the handover spot until the ground under him has arrived, and puts him back
-// where he last stood when he ends up below it (FallRescue). Game thread only.
+// where he last stood when he ends up below it (FallRescue), or where he last was sound when his
+// position breaks (PositionGuard). Game thread only.
 namespace AhShitRim::ChunkWorld
 {
     // A new handover: drops every chunk and puts the origin's base at a_anchor (Skyrim units).
@@ -23,6 +24,11 @@ namespace AhShitRim::ChunkWorld
     // under it is in, and catches him when he falls through, unless a_following (a scene puts him
     // where Skyrim's player is, collision or not).
     void Update(CPlayerPed* a_ped, CVector& a_spawn, bool a_following = false);
+
+    // Puts CJ at a_at (San Andreas metres) facing a_rotation (San Andreas radians) from a clean
+    // state: no speed, spin or push left over, a camera with no broken position in it, and San
+    // Andreas's player controls on and its screen faded in.
+    void Place(CPlayerPed* a_ped, const CVector& a_at, float a_rotation);
 
     // Whether the ground under the handover spot is in and CJ has been let go.
     bool Ready();

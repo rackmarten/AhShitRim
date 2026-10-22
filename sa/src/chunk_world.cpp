@@ -6,6 +6,7 @@
 #include "fall_rescue.h"
 #include "ground.h"
 #include "log.h"
+#include "position_guard.h"
 #include "vehicles.h"
 
 #include <plugin.h>
@@ -17,6 +18,7 @@
 #include <CColModel.h>
 #include <CColPoint.h>
 #include <CModelInfo.h>
+#include <CPad.h>
 #include <CPlayerPed.h>
 #include <CTimer.h>
 #include <CWorld.h>
@@ -68,6 +70,7 @@ namespace AhShitRim::ChunkWorld
             bool                  ready = false;  // the chunk under the handover spot is in
             std::uint64_t         beganMs = 0;
             FallRescue::Watch     fall;
+            PositionGuard::Watch  guard;
             CVehicle*             falling = nullptr;  // what fall watches: CJ's vehicle, or CJ himself (nullptr)
 
             // Stats, logged every 5 s while chunks come in.
@@ -221,12 +224,78 @@ namespace AhShitRim::ChunkWorld
             TheCamera.GetPosition() -= shift;
             Vehicles::Shift(shift);
             state.fall.Shift(a_shift);
+            state.guard.Shift(a_shift);
             Log(std::format("ground: origin moved by ({:.0f},{:.0f},{:.0f}) m with CJ", a_shift.x, a_shift.y, a_shift.z));
         }
 
         Ground::Vec3 ToVec(const CVector& a_v)
         {
             return { a_v.x, a_v.y, a_v.z };
+        }
+
+        bool Finite(const CVector& a_v) { return PositionGuard::Finite(ToVec(a_v)); }
+
+        void Mend(CVector& a_v, const CVector& a_to)
+        {
+            if (!Finite(a_v)) {
+                a_v = a_to;
+            }
+        }
+
+        void Mend(float& a_f, float a_to)
+        {
+            if (!std::isfinite(a_f)) {
+                a_f = a_to;
+            }
+        }
+
+        // Whatever of San Andreas's camera isn't a number any more, from round a_at: the origin moves
+        // took the camera along, and a NaN one stayed NaN (CJ walks where the camera faces).
+        void MendCamera(const CVector& a_at)
+        {
+            const CVector behind = a_at + CVector(0.0f, -4.0f, 1.0f);
+            const CVector front(0.0f, 1.0f, 0.0f), up(0.0f, 0.0f, 1.0f), none(0.0f, 0.0f, 0.0f);
+            for (auto& cam : TheCamera.m_aCams) {
+                Mend(cam.m_vecSource, behind);
+                Mend(cam.m_vecSourceBeforeLookBehind, behind);
+                Mend(cam.m_vecTargetCoorsForFudgeInter, a_at);
+                Mend(cam.m_vecFront, front);
+                Mend(cam.m_vecUp, up);
+                Mend(cam.m_vecSourceSpeedOverOneFrame, none);
+                Mend(cam.m_vecTargetSpeedOverOneFrame, none);
+                Mend(cam.m_vecUpOverOneFrame, none);
+                Mend(cam.m_vecBufferedPlayerBodyOffset, none);
+                Mend(cam.m_vecLastAboveWaterCamPosition, behind);
+                for (auto& v : cam.m_avecPreviousVectors) {
+                    Mend(v, none);
+                }
+                for (auto& v : cam.m_avecTargetHistoryPos) {
+                    Mend(v, a_at);
+                }
+                Mend(cam.m_fHorizontalAngle, 0.0f);
+                Mend(cam.m_fVerticalAngle, 0.0f);
+                Mend(cam.m_fAlphaSpeed, 0.0f);
+                Mend(cam.m_fBetaSpeed, 0.0f);
+            }
+            Mend(TheCamera.m_vecGameCamPos, behind);
+            Mend(TheCamera.GetPosition(), behind);
+        }
+
+        // CJ's position broke (PositionGuard): out of a broken vehicle and back to a sound spot.
+        void Recover(CPlayerPed* a_ped, CVector& a_spawn, const PositionGuard::Recovery& a_recovery)
+        {
+            const CVector from = a_ped->GetPosition();
+            const CVector at(a_recovery.at.x, a_recovery.at.y, a_recovery.at.z);
+            Vehicles::Recover(a_ped, at);
+            if (!PositionGuard::Sound(ToVec(a_spawn))) {
+                a_spawn = at;
+            }
+            const float heading = a_ped->m_fHeadingCurrent;
+            Place(a_ped, at, std::isfinite(heading) ? heading : 0.0f);
+            TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
+            state.fall.Reset();
+            Log(std::format("ground: CJ was at ({:.1f},{:.1f},{:.1f}), a broken position; put back at {} ({:.1f},{:.1f},{:.1f})",
+                from.x, from.y, from.z, PositionGuard::NameOf(a_recovery.to), at.x, at.y, at.z));
         }
 
         // Whether a vertical line from a_from to height a_toZ hits a building (a chunk), and where.
@@ -290,10 +359,13 @@ namespace AhShitRim::ChunkWorld
         for (int slot : state.book.Begin(a_handover)) {
             TakeOut(state.slots[slot]);
         }
-        state.origin.Reset(a_anchor);
+        if (!state.origin.Reset(a_anchor)) {
+            Log("ground: the handover's anchor isn't a number, the origin stays where it was");
+        }
         state.ready = false;
         state.beganMs = ::GetTickCount64();
         state.fall.Reset();
+        state.guard.Reset();
         Log(std::format("ground: handover {} at Skyrim ({:.0f},{:.0f},{:.0f}), waiting for the ground under CJ",
             a_handover, a_anchor[0], a_anchor[1], a_anchor[2]));
 
@@ -327,6 +399,11 @@ namespace AhShitRim::ChunkWorld
 
     void Update(CPlayerPed* a_ped, CVector& a_spawn, bool a_following)
     {
+        // First, so nothing broken reaches the origin, the ground or the fall rescue.
+        if (const auto recovery = state.guard.Update(CTimer::ms_fTimeStep / 50.0f, ToVec(a_ped->GetPosition()), ToVec(a_spawn))) {
+            Recover(a_ped, a_spawn, *recovery);
+        }
+
         Ground::Vec3 shift;
         if (state.ready && state.origin.Recenter(ToVec(a_ped->GetPosition()), shift)) {
             Shift(a_ped, a_spawn, shift);
@@ -364,6 +441,25 @@ namespace AhShitRim::ChunkWorld
             state.statMs = now;
             state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = 0;
         }
+    }
+
+    void Place(CPlayerPed* a_ped, const CVector& a_at, float a_rotation)
+    {
+        a_ped->SetPosn(a_at);
+        a_ped->SetHeading(a_rotation);  // the whole rotation, whatever was in it
+        a_ped->m_fHeadingCurrent = a_rotation;
+        a_ped->m_fHeadingGoal = a_rotation;
+        a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+        a_ped->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+        a_ped->m_vecFrictionMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+        a_ped->m_vecFrictionTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+        a_ped->m_vecForce = CVector(0.0f, 0.0f, 0.0f);
+        a_ped->m_vecTorque = CVector(0.0f, 0.0f, 0.0f);
+        MendCamera(a_at);
+        // What San Andreas's own Wasted left behind (it can't run any more, but a game that ran it
+        // kept CJ standing still for good): its player controls off, its screen faded out.
+        CPad::GetPad(0)->DisablePlayerControls = 0;
+        TheCamera.Fade(0.0f, 1);  // fade in, at once
     }
 
     bool Ready() { return state.ready; }

@@ -188,11 +188,7 @@ namespace AhShitRim::Runner
         {
             const float rotation = Pose::SanAndreasHeading(a_skyrimHeading);
             CVector     at(0.0f, 0.0f, Ground::kHeight + a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + kSpawnLift);
-            a_ped->SetPosn(at);
-            a_ped->SetHeading(rotation);
-            a_ped->m_fHeadingCurrent = rotation;
-            a_ped->m_fHeadingGoal = rotation;
-            a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+            ChunkWorld::Place(a_ped, at, rotation);  // a load or a handover starts clean
             TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
             state.spawn = at;
         }
@@ -553,6 +549,7 @@ namespace AhShitRim::Runner
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
             CjShots::Install();
             CjProjectiles::Install();
+            Vitals::Install();
             Scenes::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {
                 Log("runner: a frame hook is missing; San Andreas will not run as intended");

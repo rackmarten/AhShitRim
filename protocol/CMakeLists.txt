@@ -33,6 +33,7 @@ add_executable(protocol_tests
     tests/cpp/test_collision.cpp
     tests/cpp/test_ground.cpp
     tests/cpp/test_fall_rescue.cpp
+    tests/cpp/test_position_guard.cpp
     tests/cpp/test_skin_model.cpp
     tests/cpp/test_skin_build.cpp
     tests/cpp/test_body.cpp
