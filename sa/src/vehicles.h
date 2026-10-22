@@ -15,9 +15,13 @@ class CVehicle;
 // - The pose: nothing is drawn while hidden, so each vehicle's PreRender (which turns and steers the
 //   wheels, a bike's forks and handlebars) runs here every frame, a bike gets its lean, and every
 //   part's frame goes to Skyrim in the vehicle's slot.
+// - Air control: the player's car steers kAirTurnGain times as hard in the air as San Andreas
+//   lets it (protocol/cpp/vehicle.h), through a hook on CAutomobile::ProcessAI.
 // Game thread only.
 namespace AhShitRim::Vehicles
 {
+    void Install();  // at ASI load
+
     // A spawn request: a_model (a San Andreas vehicle model id) in front of CJ. Refused (logged) while
     // CJ is in a vehicle or when nothing in front of him will do.
     void Spawn(CPlayerPed* a_ped, int a_model);

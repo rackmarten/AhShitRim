@@ -284,4 +284,78 @@ namespace AhShitRim::Vehicle
         }
         return out;
     }
+
+    // ---- Steering a car in the air ----
+    //
+    // San Andreas turns a car with no wheel on the ground (CAutomobile::ProcessAI, 0x6B4F69): the
+    // handbrake and left/right yaw it, left/right alone roll it, up/down pitch it, roll and pitch
+    // only off the gas. Each push goes on only while the car turns slower than kSaAirSpin that way,
+    // so it barely moves a car that left a slope already turning. AhShitRim pushes the player's car
+    // kAirTurnGain times as hard, up to kAirSpin: the ASI adds what San Andreas's own push didn't.
+    // Turn speeds are San Andreas's, radians per 1/50 s.
+
+    inline constexpr float kSaAirSpin = 0.02f;  // San Andreas's cap: 1 rad/s, 57 degrees a second
+    inline constexpr float kAirTurnGain = 3.0f;
+    inline constexpr float kAirSpin = 0.06f;  // 172 degrees a second
+
+    // Whether a push of a_steer (negative or positive) goes on about an axis the car turns about at
+    // a_spin: only while it turns slower than a_cap the way it pushes.
+    constexpr bool AirPushes(float a_spin, float a_steer, float a_cap)
+    {
+        return (a_steer < 0.0f && a_spin < a_cap) || (a_steer > 0.0f && a_spin > -a_cap);
+    }
+
+    // The push AhShitRim adds about one axis, in San Andreas's own pushes: kAirTurnGain of them up to
+    // kAirSpin, less the one San Andreas gave below kSaAirSpin.
+    constexpr float ExtraAirPush(float a_spin, float a_steer)
+    {
+        return (AirPushes(a_spin, a_steer, kAirSpin) ? kAirTurnGain : 0.0f) - (AirPushes(a_spin, a_steer, kSaAirSpin) ? 1.0f : 0.0f);
+    }
+
+    // San Andreas's steering in the air (-1..1 each): the keys, or with the mouse steering in the
+    // third person (m_bUseMouse3rdPerson) and both key axes idle, the mouse's movement / 50, -1.5..1.5.
+    struct AirSteer
+    {
+        float leftRight = 0.0f;
+        float upDown = 0.0f;
+    };
+    constexpr AirSteer AirSteering(short a_stickX, short a_stickY, bool a_mouseSteers, float a_mouseX, float a_mouseY)
+    {
+        AirSteer s{ a_stickX / 128.0f, a_stickY / 128.0f };
+        const auto idle = [](float a_v) { return a_v > -0.05f && a_v < 0.05f; };
+        if (a_mouseSteers && idle(s.leftRight) && idle(s.upDown)) {
+            s.leftRight = std::clamp(a_mouseX / 50.0f, -1.5f, 1.5f);
+            s.upDown = std::clamp(a_mouseY / 50.0f, -1.5f, 1.5f);
+        }
+        return s;
+    }
+
+    // The extra pushes about the car's up (yaw), forward (roll) and right (pitch) axes, given how
+    // fast it turns about each.
+    struct AirPush
+    {
+        float yaw = 0.0f;
+        float roll = 0.0f;
+        float pitch = 0.0f;
+    };
+    constexpr AirPush ExtraAirPushes(float a_spinUp, float a_spinForward, float a_spinRight, const AirSteer& a_steer, bool a_handbrake, bool a_gas)
+    {
+        AirPush p;
+        if (a_handbrake) {
+            p.yaw = ExtraAirPush(a_spinUp, a_steer.leftRight);
+        } else if (!a_gas) {
+            p.roll = ExtraAirPush(a_spinForward, a_steer.leftRight);
+        }
+        if (!a_gas) {
+            p.pitch = ExtraAirPush(a_spinRight, a_steer.upDown);
+        }
+        return p;
+    }
+
+    // One San Andreas push's force per 1/50 s: a_perMass (0.0007 times the driving skill's modifier,
+    // a monster truck 0.0025) times the turn mass, counted up to 3000.
+    constexpr float AirPushForce(float a_perMass, float a_turnMass)
+    {
+        return a_perMass * std::min(a_turnMass, 3000.0f);
+    }
 }

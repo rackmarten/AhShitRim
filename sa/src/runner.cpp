@@ -540,6 +540,7 @@ namespace AhShitRim::Runner
         }
         g_hasCollisionLoaded = Hook(kHasCollisionLoaded, &Yes);
         CjBody::Install();
+        Vehicles::Install();
 
         // WinMain shows the window once RenderWare is up, right before its game loop starts: skip the
         // splashes and movies there. (plugin-sdk's initRwEvent is a void() event on a bool function

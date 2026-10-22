@@ -13,20 +13,26 @@
 #include <CAutomobile.h>
 #include <CBike.h>
 #include <CBmx.h>
+#include <CCamera.h>
 #include <CColPoint.h>
 #include <CModelInfo.h>
 #include <CMonsterTruck.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
+#include <CPad.h>
 #include <CQuadBike.h>
+#include <CStats.h>
 #include <CStreaming.h>
 #include <CTaskSimpleCarSetPedInAsDriver.h>
 #include <CTaskSimplePlayerOnFoot.h>
+#include <CTimer.h>
 #include <CVehicleModelInfo.h>
 #include <CWorld.h>
 #include <NodeName.h>
 #include <common.h>
+
+#include <safetyhook.hpp>
 
 #include <Windows.h>
 
@@ -47,6 +53,9 @@ namespace AhShitRim::Vehicles
         constexpr float kGroundBelow = Vehicle::kMaxStep + 1.0f;  // ... and look this far below them
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
+
+        constexpr std::uintptr_t kProcessAI = 0x6B4800;  // CAutomobile::ProcessAI(uint32& extraHandlingFlags) (thiscall)
+        SafetyHookInline         g_processAI;
 
         struct Slot
         {
@@ -416,6 +425,50 @@ namespace AhShitRim::Vehicles
                 GetLink().WriteVehicle(static_cast<std::uint32_t>(a_index), s);
             }
         }
+
+        // San Andreas's car steering in the air, kAirTurnGain times as strong for the player's car
+        // (protocol/cpp/vehicle.h): after San Andreas's own pushes, the same pushes again, as many
+        // more as ExtraAirPushes says, under the same conditions (CJ at the wheel, no wheel down,
+        // not a helicopter or a plane).
+        bool __fastcall ProcessAIHook(CAutomobile* a_car, void*, unsigned* a_flags)
+        {
+            const CVector spin = a_car->m_vecTurnSpeed;  // what San Andreas's pushes go by
+            const bool    done = g_processAI.thiscall<bool>(a_car, a_flags);
+            auto*         ped = FindPlayerPed(0);
+            const auto    type = a_car->m_nVehicleSubClass;
+            if (done || a_car->m_nStatus != STATUS_PLAYER || !ped || a_car->m_pDriver != ped || a_car->m_nNumContactWheels != 0 ||
+                type == VEHICLE_HELI || type == VEHICLE_PLANE || ped->m_ePedState == PEDSTATE_EXIT_CAR || ped->m_ePedState == PEDSTATE_DRAGGED_FROM_CAR ||
+                ped->m_ePedState == PEDSTATE_ARRESTED) {
+                return done;
+            }
+            auto* pad = ped->GetPadFromPlayer();
+            if (!pad) {
+                return done;
+            }
+            const auto& mouse = CPad::NewMouseControllerState;
+            const auto  steer = Vehicle::AirSteering(pad->GetSteeringLeftRight(), pad->GetSteeringUpDown(), CCamera::m_bUseMouse3rdPerson, mouse.x, mouse.y);
+            const auto  push = Vehicle::ExtraAirPushes(spin.Dot(a_car->GetUp()), spin.Dot(a_car->GetForward()), spin.Dot(a_car->GetRight()),
+                 steer, pad->GetHandBrake() != 0, pad->GetAccelerate() != 0);
+            const float perMass = type == VEHICLE_MTRUCK ? 0.0025f : 0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14);  // 14: driving skill
+            const float force = Vehicle::AirPushForce(perMass, a_car->m_fTurnMass) * CTimer::ms_fTimeStep;
+            const CVector right = a_car->GetRight(), forward = a_car->GetForward(), up = a_car->GetUp();
+            if (push.yaw != 0.0f) {
+                a_car->ApplyTurnForce(right * (steer.leftRight * force * push.yaw), a_car->m_vecCentreOfMass + forward);
+            }
+            if (push.roll != 0.0f) {
+                a_car->ApplyTurnForce(right * (steer.leftRight * force * push.roll), a_car->m_vecCentreOfMass + up);
+            }
+            if (push.pitch != 0.0f) {
+                a_car->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_car->m_vecCentreOfMass + forward);
+            }
+            return done;
+        }
+    }
+
+    void Install()
+    {
+        g_processAI = safetyhook::create_inline(reinterpret_cast<void*>(kProcessAI), reinterpret_cast<void*>(&ProcessAIHook));
+        Log(g_processAI ? "vehicle: CAutomobile::ProcessAI hooked, cars steer harder in the air" : "vehicle: could not hook CAutomobile::ProcessAI");
     }
 
     CVehicle* Driven(CPlayerPed* a_ped)
