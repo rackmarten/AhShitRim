@@ -85,7 +85,7 @@ scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/fake-weapons.ps1           # with San Andreas running and Skyrim closed: give the weapon sets, switch through every weapon on the mouse wheel, aim and fire each, and check the weapon is in CJ's hand with its model, the shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent
-scripts/restart-games.ps1 -Build   # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim
+scripts/restart-games.ps1          # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim (-NoBuild skips the build)
 scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
 scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones; then spawn a Sandking, drive it, ride a Sanchez, spawn a ZR-350, check a new handover takes CJ out and removes them, and drive 1.3 km through a floating origin move
 ```
@@ -138,7 +138,7 @@ Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<co
 
 To try a PR in game, either:
 
-- build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1 -Build`), or
+- build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1`), or
 - install its release zip (the `AhShitRim-release-<commit>` artifact) as a player would, following [INSTALL.md](INSTALL.md), or
 - download its artifact (`gh run download <run-id>`), put the files where a local build would (`AhShitRim.dll`/`.pdb` in `skse/build/release/`, `AhShitRim.asi`/`.map` in `sa/build/Release/`) and run `scripts/deploy-local.ps1`, which also writes `AhShitRim.ini`.
 

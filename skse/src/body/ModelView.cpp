@@ -273,7 +273,7 @@ namespace AhShitRim::ModelView
             std::memcpy(a_out + kTangentOffset, tangent, sizeof(tangent));
         }
 
-        RE::BSLightingShaderProperty* MakeShader(RE::NiSourceTexture* a_diffuse, bool a_blend, float a_alpha)
+        RE::BSLightingShaderProperty* MakeShader(RE::NiSourceTexture* a_diffuse, bool a_blend, float a_alpha, bool a_twoSided)
         {
             auto& shaderState = *RE::BSGraphics::State::GetSingleton();
             auto* material = RE::BSLightingShaderMaterialBase::CreateMaterial<RE::BSLightingShaderMaterial>();
@@ -289,7 +289,8 @@ namespace AhShitRim::ModelView
             own->specularColorScale = 0.0f;
             using F = RE::BSShaderProperty::EShaderPropertyFlag;
             // Both sides drawn: CJ is a closed mesh, so the far side is behind the near one anyway, and
-            // a winding San Andreas and Skyrim read differently can't turn him inside out. A blended
+            // a winding San Andreas and Skyrim read differently can't turn him inside out. A mesh of
+            // twins (a weapon's, SkinModel::Twins) gets one side only, as in San Andreas. A blended
             // mesh (glass) doesn't write depth, so what's behind it still shows.
             shader->flags.set(F::kReceiveShadows);
             shader->flags.set(F::kZBufferTest);
@@ -298,12 +299,16 @@ namespace AhShitRim::ModelView
             } else {
                 shader->flags.set(F::kZBufferWrite);
             }
-            shader->flags.set(F::kTwoSided);
+            if (a_twoSided) {
+                shader->flags.set(F::kTwoSided);
+            } else {
+                shader->flags.reset(F::kTwoSided);
+            }
             return shader;
         }
 
         // A shape for one mesh, its vertex buffer dynamic so Show can pose it every frame.
-        bool MakeShape(Built& a_built, std::uint32_t a_mesh, RE::NiSourceTexture* a_diffuse, Shape& a_out)
+        bool MakeShape(Built& a_built, std::uint32_t a_mesh, RE::NiSourceTexture* a_diffuse, bool a_twoSided, Shape& a_out)
         {
             const auto& mesh = a_built.model.meshes[a_mesh];
             auto*       device = RE::BSGraphics::Renderer::GetDevice();
@@ -369,7 +374,7 @@ namespace AhShitRim::ModelView
             auto& bound = shape->GetModelData().modelBound;
             bound.center = vehicle ? RE::NiPoint3() : kBodyBoundCenter;
             bound.radius = vehicle ? kVehicleBoundRadius : kBodyBoundRadius;
-            auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f);
+            auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f, a_twoSided);
             geometry.shaderProperty.reset(shader);
             shader->SetupGeometry(shape.get());
             shader->FinishSetupGeometry(shape.get());
@@ -422,7 +427,7 @@ namespace AhShitRim::ModelView
             };
             built->node.reset(RE::NiNode::Create(static_cast<std::uint16_t>(built->model.meshes.size())));
             built->node->name = built->model.kind == Protocol::kSkinModelVehicle ? "AhShitRimVehicle" : built->model.kind == Protocol::kSkinModelWeapon ? "AhShitRimWeapon" : "AhShitRimCJ";
-            std::uint32_t vertices = 0, triangles = 0;
+            std::uint32_t vertices = 0, triangles = 0, twins = 0, oneSided = 0;
             for (std::uint32_t m = 0; m < built->model.meshes.size(); m++) {
                 const auto& mesh = built->model.meshes[m];
                 RE::NiSourceTexture* diffuse = nullptr;
@@ -432,10 +437,13 @@ namespace AhShitRim::ModelView
                     const std::uint8_t pixel[4] = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
                     diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
                 }
-                Shape shape;
-                if (!MakeShape(*built, m, diffuse, shape)) {
+                const auto meshTwins = SkinModel::Twins(mesh);
+                Shape      shape;
+                if (!MakeShape(*built, m, diffuse, meshTwins == 0, shape)) {
                     continue;
                 }
+                twins += meshTwins;
+                oneSided += meshTwins > 0 ? 1 : 0;
                 built->node->AttachChild(shape.shape.get(), true);
                 vertices += mesh.vertexCount;
                 triangles += mesh.indexCount / 3;
@@ -443,8 +451,9 @@ namespace AhShitRim::ModelView
             }
             built->node->SetAppCulled(true);
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            SKSE::log::info("model view: model {:08X} {} built in {:.1f} ms: {} shapes, {} vertices, {} triangles, {} textures ({} tinted), {} bones ({} bytes)", a_id,
-                built->model.name, ms, built->shapes.size(), vertices, triangles, textures.size(), tinted.size(), built->model.boneIds.size(), a_blob.size());
+            SKSE::log::info("model view: model {:08X} {} built in {:.1f} ms: {} shapes ({} one-sided, {} twin triangles), {} vertices, {} triangles, {} textures ({} tinted), {} bones ({} bytes)",
+                a_id, built->model.name, ms, built->shapes.size(), oneSided, twins, vertices, triangles, textures.size(), tinted.size(), built->model.boneIds.size(),
+                a_blob.size());
             state.models[a_id] = std::move(built);
         }
 

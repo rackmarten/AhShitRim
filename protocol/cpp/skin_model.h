@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -224,6 +225,34 @@ namespace AhShitRim::SkinModel
             model.meshes.push_back(out);
         }
         return at == a_size ? std::optional<Model>(std::move(model)) : std::nullopt;
+    }
+
+    // Triangles over the same three corners as another one. San Andreas gives a face two sides (every
+    // face of a weapon) as two triangles back to back, turned and lit opposite ways, and lets backface
+    // culling hide the one turned away; drawn two-sided, the pair fights over the depth buffer and each
+    // triangle comes out lit or black.
+    inline std::uint32_t Twins(const Mesh& a_mesh)
+    {
+        using Corner = std::array<float, 3>;
+        std::vector<std::array<Corner, 3>> triangles;
+        triangles.reserve(a_mesh.indexCount / 3);
+        for (std::uint32_t t = 0; t + 2 < a_mesh.indexCount; t += 3) {
+            std::array<Corner, 3> triangle;
+            for (std::uint32_t k = 0; k < 3; k++) {
+                const auto v = a_mesh.Vertex(a_mesh.Index(t + k));
+                triangle[k] = { v.position[0], v.position[1], v.position[2] };
+            }
+            std::sort(triangle.begin(), triangle.end());
+            triangles.push_back(triangle);
+        }
+        std::sort(triangles.begin(), triangles.end());
+        std::uint32_t twins = 0;
+        for (std::size_t i = 1; i < triangles.size(); i++) {
+            if (triangles[i] == triangles[i - 1]) {
+                twins++;
+            }
+        }
+        return twins;
     }
 
     // Puts blobs back together from ModelChunk payloads (PerkeleRim's Model::Assembler).

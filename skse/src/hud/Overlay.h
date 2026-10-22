@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // Flat 2D quads drawn over Skyrim's finished frame: a hook on its swap chain's Present draws them
@@ -39,4 +40,13 @@ namespace AhShitRim::Overlay
 
     // The back buffer's size at the last Present; false before the first one.
     bool ScreenSize(float& a_width, float& a_height);
+
+    // Saves the next frame as it's presented, with Skyrim's HUD and menus and these quads on it
+    // (Skyrim's own screenshot is taken before any of them are drawn), as a PNG in a_folder (ANSI, as
+    // AhShitRim.ini has it; a relative one is under Skyrim's folder), or in Documents\My Games\
+    // AhShitRim\Screenshots when it's empty. The file's path goes to the log.
+    void Screenshot(std::string a_folder);
+
+    // Whether a screenshot was saved since the last call.
+    bool ScreenshotSaved();
 }

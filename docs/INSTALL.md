@@ -61,6 +61,7 @@ Load a save (or start a new game) and press **F10**: the player is now CJ, on Sk
 | Key | On foot | In a vehicle |
 |---|---|---|
 | F10 | Back to Skyrim | Back to Skyrim |
+| F11 | Screenshot, HUD and all, to `Screenshots` next to `Start AhShitRim.bat` | Same |
 | W A S D, mouse | Walk, look | Drive, look |
 | Left Shift / Space / C / Left Alt | Sprint / jump / crouch / walk | Space: handbrake |
 | F or Enter | Get into the nearest vehicle | Get out |
