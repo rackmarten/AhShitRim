@@ -147,9 +147,9 @@ namespace AhShitRim::Protocol
         float         sceneHeading;    // v9, kInputScripted: the player's heading; kInputFace: the heading CJ turns to (Skyrim radians)
         std::uint16_t shoutCount;      // v9: counts shouts the player let out; a new value plays CJ's gesture
         std::uint16_t carModel;        // v11: San Andreas vehicle model id to put CJ in once the ground is in (a loaded save's car), 0 = none; only read with a new handover
-        std::uint16_t swearCount;      // v16: counts presses of the swear key; a new value has CJ insult and gesture
+        std::uint16_t swearCount;      // v16: counts presses of the insult key; a new value has CJ insult whoever's about, with the finger on foot
         std::uint8_t  carColours[4];   // v11: the car's four colour table indices
-        std::uint16_t reserved0;
+        std::uint16_t ventCount;       // v16: counts presses of the vent key; a new value has CJ swear to himself
         float         carOffset[3];    // v11: the car relative to the anchor, Skyrim units
         float         carHeading;      // v11: the car's heading, Skyrim radians
         std::uint32_t reserved1;
@@ -517,6 +517,7 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, shoutCount) == 80);
     static_assert(offsetof(InputState, carModel) == 82);
     static_assert(offsetof(InputState, swearCount) == 84);
+    static_assert(offsetof(InputState, ventCount) == 90);
     static_assert(offsetof(InputState, carColours) == 86);
     static_assert(offsetof(InputState, carOffset) == 92);
     static_assert(offsetof(InputState, carHeading) == 104);

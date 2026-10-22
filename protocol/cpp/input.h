@@ -53,6 +53,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikBackslash = 0x2B;
     inline constexpr std::uint32_t kDikE = 0x12;  // activates what CJ faces, on Skyrim's side
     inline constexpr std::uint32_t kDikRightCtrl = 0x9D;
+    inline constexpr std::uint32_t kDikLeftCtrl = 0x1D;  // the vent key (v16): CJ swears to himself
     inline constexpr std::uint32_t kDikCapsLock = 0x3A;
 
     enum class KeyLayout : std::uint8_t
@@ -152,15 +153,6 @@ namespace AhShitRim::Input
         return a_dik == kDikSpace || (a_layout == KeyLayout::Classic && a_dik == kDikRightCtrl);
     }
 
-    // The subtitle under CJ's insult (v16). San Andreas's speech has no text, so the line is bleeped:
-    // a few grawlix in turn, one per press.
-    inline constexpr const char* kSwearLines[] = { "CJ: $#%&@!", "CJ: @!#*$ you!", "CJ: You %&#@ing @$#!", "CJ: Aw, #*@%!", "CJ: Get outta here, $%&#!" };
-
-    constexpr const char* SwearSubtitle(std::uint16_t a_count)
-    {
-        return kSwearLines[a_count % (sizeof(kSwearLines) / sizeof(kSwearLines[0]))];
-    }
-
     // Accumulates held keys and mouse movement and produces the InputState to publish.
     class Builder
     {
@@ -212,10 +204,10 @@ namespace AhShitRim::Input
             (a_up ? _radioNext : _radioPrev)++;
         }
 
-        // The swear key (v16), the middle mouse button: each press has CJ shout an insult, and give the
-        // finger on foot.
+        // The insult key (v16), the middle mouse button: each press has CJ insult whoever's about, and
+        // give the finger on foot. The vent key, Left Ctrl: each press has him swear to himself.
         void AddSwear() { _swearCount++; }
-        std::uint16_t SwearCount() const { return _swearCount; }
+        void AddVent() { _ventCount++; }
 
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
@@ -243,6 +235,7 @@ namespace AhShitRim::Input
             s.radioNext = _radioNext;
             s.radioPrev = _radioPrev;
             s.swearCount = _swearCount;
+            s.ventCount = _ventCount;
             if (!a_live) {
                 return s;
             }
@@ -294,6 +287,7 @@ namespace AhShitRim::Input
         std::uint16_t _radioNext = 0;
         std::uint16_t _radioPrev = 0;
         std::uint16_t _swearCount = 0;
+        std::uint16_t _ventCount = 0;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

@@ -784,10 +784,9 @@ namespace AhShitRim::PlayerSync
                             state.input.SetAim(button->IsPressed() && !MenuHasInput());
                             changed = true;
                         } else if (id == RE::BSWin32MouseDevice::Key::kMiddleButton) {
-                            // The swear key: CJ insults whoever's about (San Andreas plays it), bleeped here.
+                            // The insult key: CJ insults whoever's about, San Andreas plays it.
                             if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
                                 state.input.AddSwear();
-                                SaHud::ShowSubtitle(Input::SwearSubtitle(state.input.SwearCount()), 2.5f);
                                 changed = true;
                             }
                         } else if (button->IsDown() && !MenuHasInput() &&
@@ -804,6 +803,14 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikF10) {
                         if (button->IsDown()) {
                             Toggle();
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikLeftCtrl && state.owned) {
+                        // The vent key: CJ swears to himself, San Andreas plays it.
+                        if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                            state.input.AddVent();
+                            changed = true;
                         }
                         continue;
                     }

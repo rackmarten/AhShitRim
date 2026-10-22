@@ -32,6 +32,9 @@ namespace AhShitRim::Scenes
         constexpr int kFaceAnger = 157;       // ANIM_DEFAULT_FACANGER_0
         constexpr int kFuckU = 144;           // ANIM_ID_FUCKU: the finger, as CTaskSimpleShakeFist plays it
         constexpr unsigned short kInsultMale = 110;  // CTX_GLOBAL_GENERIC_INSULT_MALE; CJ's voice says CTX_PLY_GENERIC_INSULT_MALE
+        constexpr unsigned short kCrashGeneric = 68;  // CTX_GLOBAL_CRASH_GENERIC; CJ's CTX_PLY_CRASH_GENERIC, his "oh shit" lines
+        constexpr std::uintptr_t kSpeechNextPlayTime = 0xB61670;  // gta-reversed: gGlobalSpeechContextNextPlayTime, uint32 ms per context
+        constexpr std::uintptr_t kStopCurrentSpeech = 0x4E3FB0;   // CAEPedSpeechAudioEntity::StopCurrentSpeech
         constexpr int kTaskPrimary = 3;       // TASK_PRIMARY_PRIMARY, over CJ's own on-foot task
         constexpr unsigned short kAnimLooped = 0x2;           // ANIMATION_LOOPED
         constexpr unsigned short kAnimFinishAutoRemove = 0x8;  // gta-reversed: ANIMATION_IS_FINISH_AUTO_REMOVE
@@ -50,8 +53,9 @@ namespace AhShitRim::Scenes
             int                  seatFrames = 0;
             bool                 haveShout = false;  // shoutCount read once: a change after that is a shout
             std::uint16_t        shoutCount = 0;
-            bool                 haveSwear = false;  // likewise for swearCount
+            bool                 haveSwear = false;  // likewise for swearCount and ventCount
             std::uint16_t        swearCount = 0;
+            std::uint16_t        ventCount = 0;
         } state;
 
         float Seconds() { return CTimer::ms_fTimeStep * 0.02f; }  // San Andreas steps in 1/50 s
@@ -85,6 +89,16 @@ namespace AhShitRim::Scenes
             }
         }
 
+        // Has CJ say a line of a_context now. San Andreas waits RepeatTime (7 s, plus up to 1 s) before a
+        // context plays again and drops a line while he still speaks, so both are cleared first: each
+        // press is heard, cutting off the last line. Its phrase memory still keeps repeats apart.
+        void SayNow(CPlayerPed* a_ped, unsigned short a_context)
+        {
+            plugin::CallMethod<kStopCurrentSpeech, CAEPedSpeechAudioEntity*>(&a_ped->m_pedSpeech);
+            reinterpret_cast<std::uint32_t*>(kSpeechNextPlayTime)[a_context] = 0;
+            a_ped->Say(a_context, 0, 1.0f, true, true);
+        }
+
         void Begin(CPlayerPed* a_ped)
         {
             if (Vehicles::Driven(a_ped) || a_ped->m_pVehicle) {
@@ -113,16 +127,23 @@ namespace AhShitRim::Scenes
         state.shoutCount = a_input.shoutCount;
         state.haveShout = true;
 
-        // The swear key (v16): CJ's own insult, out of the window in a vehicle, with the finger on foot.
+        // The insult and vent keys (v16): CJ's own lines, also out of the window in a vehicle; an insult
+        // on foot comes with the finger.
         const bool wasted = (a_input.flags & Protocol::kInputWasted) != 0;
-        if (state.haveSwear && a_input.swearCount != state.swearCount && a_owned && !state.following && !wasted) {
-            a_ped->Say(kInsultMale, 0, 1.0f, true, true);
+        const bool canSpeak = a_owned && !state.following && !wasted;
+        if (state.haveSwear && a_input.swearCount != state.swearCount && canSpeak) {
+            SayNow(a_ped, kInsultMale);
             if (!Vehicles::Driven(a_ped) && !a_ped->m_pVehicle) {
                 PlayOnce(a_ped, kFuckU);
             }
-            Log("scenes: CJ swears");
+            Log("scenes: CJ insults");
+        }
+        if (state.haveSwear && a_input.ventCount != state.ventCount && canSpeak) {
+            SayNow(a_ped, kCrashGeneric);
+            Log("scenes: CJ vents");
         }
         state.swearCount = a_input.swearCount;
+        state.ventCount = a_input.ventCount;
         state.haveSwear = true;
 
         const bool follow = a_owned && (a_input.flags & Protocol::kInputScripted) != 0;
