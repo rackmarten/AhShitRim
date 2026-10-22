@@ -15,6 +15,7 @@
 #include "player/Arms.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
+#include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
@@ -374,9 +375,9 @@ namespace AhShitRim::PlayerSync
             }
         }
 
-        // San Andreas's vehicles where it has them, their parts posed, smoothed like CJ. A slot whose
-        // vehicle is gone reads with no flags and draws nothing.
-        void DrawVehicles()
+        // San Andreas's vehicles where it has them, their parts posed, smoothed like CJ, with their damage's
+        // smoke and fire (VehicleFx). A slot whose vehicle is gone reads with no flags and draws nothing.
+        void DrawVehicles(RE::PlayerCharacter* a_player, float a_delta)
         {
             const double now = NowMs();
             for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
@@ -385,6 +386,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -393,7 +395,9 @@ namespace AhShitRim::PlayerSync
                 }
                 Protocol::BodyState pose{};
                 if (state.vehicles[i].Sample(now, pose)) {
-                    ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+                    const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                    ModelView::Show(pose, feet);
+                    VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                 }
             }
         }
@@ -411,6 +415,7 @@ namespace AhShitRim::PlayerSync
             Activation::Clear();
             Shots::Clear();
             Projectiles::Clear();
+            VehicleFx::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -485,6 +490,7 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            VehicleFx::Clear();
             Activation::Clear();
             state.reanchoring = true;
             Vitals::OnReanchor();
@@ -637,7 +643,7 @@ namespace AhShitRim::PlayerSync
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
-            DrawVehicles();
+            DrawVehicles(a_player, a_delta);
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
