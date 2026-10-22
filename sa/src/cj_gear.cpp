@@ -506,7 +506,12 @@ namespace AhShitRim::CjGear
         if (!ours) {
             ours = CAnimManager::BlendAnimation(clump, state.hierarchy, 0x1 | (state.loop ? 0x2 : 0x4), 1000.0f);  // started, looped or held at its end
         }
+        // His partial animations (his face's talking and blinking) stay: the parachute's don't move his face, and with
+        // nothing on its bones it was pulled into a grin.
         for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            if (assoc != ours && (assoc->m_nFlags & 0x10) != 0) {  // ANIMATION_PARTIAL
+                continue;
+            }
             assoc->m_fBlendAmount = assoc == ours ? 1.0f : 0.0f;
             assoc->m_fBlendDelta = 0.0f;
         }

@@ -255,6 +255,15 @@ namespace AhShitRim::SkinModel
         return twins;
     }
 
+    // Whether a mesh is drawn one-sided: San Andreas's two-sided faces, nearly every triangle in a twin pair (a weapon's).
+    // A mesh with only a few twins (v19: the parachute's canopy) stays two-sided: drawn one-sided, its single faces went
+    // missing from behind.
+    inline bool OneSided(const Mesh& a_mesh)
+    {
+        const std::uint32_t triangles = a_mesh.indexCount / 3;
+        return triangles > 0 && Twins(a_mesh) * 2 * 10 >= triangles * 8;  // at least 80% of the triangles paired
+    }
+
     // Puts blobs back together from ModelChunk payloads (PerkeleRim's Model::Assembler).
     class Assembler
     {

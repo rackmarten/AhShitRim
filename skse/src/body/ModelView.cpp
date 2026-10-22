@@ -291,7 +291,7 @@ namespace AhShitRim::ModelView
             using F = RE::BSShaderProperty::EShaderPropertyFlag;
             // Both sides drawn: CJ is a closed mesh, so the far side is behind the near one anyway, and
             // a winding San Andreas and Skyrim read differently can't turn him inside out. A mesh of
-            // twins (a weapon's, SkinModel::Twins) gets one side only, as in San Andreas. A blended
+            // twins (a weapon's, SkinModel::OneSided) gets one side only, as in San Andreas. A blended
             // mesh (glass) doesn't write depth, so what's behind it still shows.
             shader->flags.set(F::kReceiveShadows);
             shader->flags.set(F::kZBufferTest);
@@ -439,12 +439,13 @@ namespace AhShitRim::ModelView
                     diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
                 }
                 const auto meshTwins = SkinModel::Twins(mesh);
+                const bool single = SkinModel::OneSided(mesh);
                 Shape      shape;
-                if (!MakeShape(*built, m, diffuse, meshTwins == 0, shape)) {
+                if (!MakeShape(*built, m, diffuse, !single, shape)) {
                     continue;
                 }
                 twins += meshTwins;
-                oneSided += meshTwins > 0 ? 1 : 0;
+                oneSided += single ? 1 : 0;
                 built->node->AttachChild(shape.shape.get(), true);
                 vertices += mesh.vertexCount;
                 triangles += mesh.indexCount / 3;

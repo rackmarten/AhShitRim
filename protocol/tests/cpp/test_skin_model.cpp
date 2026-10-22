@@ -182,4 +182,21 @@ TEST_CASE("triangles back to back over the same corners are twins, whatever thei
     REQUIRE(model);
     CHECK(SkinModel::Twins(model->meshes[0]) == 1);
     CHECK(SkinModel::Twins(model->meshes[1]) == 0);
+    // One pair among three triangles: still two-sided (the canopy's few twins hid its single faces from below).
+    CHECK_FALSE(SkinModel::OneSided(model->meshes[0]));
+    CHECK_FALSE(SkinModel::OneSided(model->meshes[1]));
+
+    // Every face doubled, as a weapon's: one-sided.
+    auto doubled = TwoMeshes();
+    auto& faces = doubled.meshes[0];
+    for (int i = 0; i < 3; i++) {
+        auto v = faces.vertices[i];
+        v.normal[2] = -1.0f;
+        faces.vertices.push_back(v);
+    }
+    faces.indices.insert(faces.indices.end(), { 3, 5, 4 });
+    const auto twoBlob = SkinModel::Serialize(doubled);
+    const auto twoModel = SkinModel::Parse(twoBlob.data(), twoBlob.size());
+    REQUIRE(twoModel);
+    CHECK(SkinModel::OneSided(twoModel->meshes[0]));
 }
