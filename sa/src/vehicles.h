@@ -15,6 +15,9 @@ class CVehicle;
 // - The pose: nothing is drawn while hidden, so each vehicle's PreRender (which turns and steers the
 //   wheels, a bike's forks and handlebars) runs here every frame, a bike gets its lean, and every
 //   part's frame goes to Skyrim in the vehicle's slot.
+// - Air control: the player's car steers kAirTurnGain times as hard in the air as San Andreas
+//   lets it, on the gas too, and the player's motorbike yaws with left/right (protocol/cpp/vehicle.h),
+//   pushed in Update after San Andreas's physics step.
 // Game thread only.
 namespace AhShitRim::Vehicles
 {

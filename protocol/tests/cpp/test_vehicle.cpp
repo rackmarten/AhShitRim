@@ -187,3 +187,75 @@ TEST_CASE("a vehicle model says so, and survives serialize and parse")
     bad[44] = 7;  // SkinModelHeader.kind: unknown
     CHECK_FALSE(SkinModel::Parse(bad.data(), bad.size()));
 }
+
+TEST_CASE("in the air the player's car is pushed half as hard again as San Andreas does, up to half as fast again")
+{
+    // At rest: San Andreas pushes once, AhShitRim half a push more, either way.
+    CHECK(ExtraAirPush(0.0f, -1.0f) == doctest::Approx(kAirTurnGain - 1.0f));
+    CHECK(ExtraAirPush(0.0f, 1.0f) == doctest::Approx(kAirTurnGain - 1.0f));
+    // Past San Andreas's cap that way, AhShitRim pushes alone, all of it.
+    CHECK(ExtraAirPush(-0.025f, 1.0f) == doctest::Approx(kAirTurnGain));
+    CHECK(ExtraAirPush(0.025f, -1.0f) == doctest::Approx(kAirTurnGain));
+    // Past AhShitRim's cap that way, nothing.
+    CHECK(ExtraAirPush(-0.04f, 1.0f) == 0.0f);
+    CHECK(ExtraAirPush(0.04f, -1.0f) == 0.0f);
+    // Against a spin, however fast, as San Andreas: both push.
+    CHECK(ExtraAirPush(0.2f, 1.0f) == doctest::Approx(kAirTurnGain - 1.0f));
+    CHECK(ExtraAirPush(-0.2f, -1.0f) == doctest::Approx(kAirTurnGain - 1.0f));
+    // No steering, no push.
+    CHECK(ExtraAirPush(0.0f, 0.0f) == 0.0f);
+}
+
+TEST_CASE("the handbrake makes left and right yaw; on the gas AhShitRim gives all of roll and pitch")
+{
+    const AirSteer steer{ 1.0f, -1.0f };
+    const auto     free = ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, false, false);
+    CHECK(free.yaw == 0.0f);
+    CHECK(free.roll > 0.0f);
+    CHECK(free.pitch > 0.0f);
+
+    const auto handbrake = ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, true, false);
+    CHECK(handbrake.yaw > 0.0f);
+    CHECK(handbrake.roll == 0.0f);
+    CHECK(handbrake.pitch > 0.0f);
+
+    // San Andreas pushes no roll or pitch on the gas: AhShitRim's are the whole of it.
+    const auto gas = ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, false, true);
+    CHECK(gas.yaw == 0.0f);
+    CHECK(gas.roll == doctest::Approx(kAirTurnGain));
+    CHECK(gas.pitch == doctest::Approx(kAirTurnGain));
+    CHECK(ExtraAirPushes(0.0f, 0.0f, 0.04f, steer, false, true).pitch == 0.0f);  // still up to kAirSpin
+
+    CHECK(ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, true, true).yaw > 0.0f);  // yaw still works on the gas
+}
+
+TEST_CASE("a bike yaws in the air with left and right, all of it AhShitRim's")
+{
+    CHECK(BikeAirYaw(0.0f, -1.0f) == doctest::Approx(kAirTurnGain));
+    CHECK(BikeAirYaw(0.0f, 1.0f) == doctest::Approx(kAirTurnGain));
+    CHECK(BikeAirYaw(0.025f, -1.0f) == doctest::Approx(kAirTurnGain));  // San Andreas's cap means nothing here
+    CHECK(BikeAirYaw(-0.04f, 1.0f) == 0.0f);                            // up to kAirSpin
+    CHECK(BikeAirYaw(0.04f, 1.0f) == doctest::Approx(kAirTurnGain));     // against a spin, always
+    CHECK(BikeAirYaw(0.0f, 0.0f) == 0.0f);
+}
+
+TEST_CASE("the mouse steers in the air only while the keys don't")
+{
+    const auto keys = AirSteering(-128, 0, true, 100.0f, 100.0f);
+    CHECK(keys.leftRight == doctest::Approx(-1.0f));
+    CHECK(keys.upDown == 0.0f);
+
+    const auto mouse = AirSteering(0, 0, true, 25.0f, -500.0f);
+    CHECK(mouse.leftRight == doctest::Approx(0.5f));
+    CHECK(mouse.upDown == doctest::Approx(-1.5f));
+
+    const auto off = AirSteering(0, 0, false, 25.0f, -500.0f);
+    CHECK(off.leftRight == 0.0f);
+    CHECK(off.upDown == 0.0f);
+}
+
+TEST_CASE("a push's force counts the turn mass up to 3000")
+{
+    CHECK(AirPushForce(0.0007f, 2000.0f) == doctest::Approx(1.4f));
+    CHECK(AirPushForce(0.0007f, 4000.0f) == doctest::Approx(2.1f));
+}

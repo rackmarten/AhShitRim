@@ -14,16 +14,20 @@
 #include <CAutomobile.h>
 #include <CBike.h>
 #include <CBmx.h>
+#include <CCamera.h>
 #include <CColPoint.h>
 #include <CModelInfo.h>
 #include <CMonsterTruck.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
+#include <CPad.h>
 #include <CQuadBike.h>
+#include <CStats.h>
 #include <CStreaming.h>
 #include <CTaskSimpleCarSetPedInAsDriver.h>
 #include <CTaskSimplePlayerOnFoot.h>
+#include <CTimer.h>
 #include <CVehicleModelInfo.h>
 #include <CWorld.h>
 #include <NodeName.h>
@@ -451,7 +455,58 @@ namespace AhShitRim::Vehicles
                 GetLink().WriteVehicle(static_cast<std::uint32_t>(a_index), s);
             }
         }
+
+        // Steering in the air, stronger than San Andreas's (protocol/cpp/vehicle.h), for the vehicle CJ
+        // drives with no wheel down, once a frame after San Andreas's own physics step: a car gets
+        // San Andreas's own pushes again, as many more as ExtraAirPushes says, under its conditions (not
+        // a helicopter or a plane); a motorbike yaws with left/right (BikeAirYaw), which San Andreas
+        // leaves out (a bicycle yaws by its rules already). Not a hook on ProcessAI: hooked, San Andreas
+        // stopped taking the keys in that vehicle altogether.
+        void AirControl(CVehicle* a_vehicle, CPlayerPed* a_ped)
+        {
+            if (CTimer::m_UserPause || CTimer::m_CodePause || a_vehicle->m_nStatus != STATUS_PLAYER || a_vehicle->m_pDriver != a_ped ||
+                a_ped->m_ePedState != PEDSTATE_DRIVING) {
+                return;
+            }
+            auto* pad = a_ped->GetPadFromPlayer();
+            if (!pad) {
+                return;
+            }
+            const auto    type = a_vehicle->m_nVehicleSubClass;
+            const CVector spin = a_vehicle->m_vecTurnSpeed;
+            const CVector right = a_vehicle->GetRight(), forward = a_vehicle->GetForward(), up = a_vehicle->GetUp();
+            const float   skill = 0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14);  // 14: driving skill
+            if (a_vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                if (type == VEHICLE_BMX || static_cast<CBike*>(a_vehicle)->m_nNumContactWheels != 0) {
+                    return;
+                }
+                const float steer = pad->GetSteeringLeftRight() / 128.0f;
+                if (const float push = Vehicle::BikeAirYaw(spin.Dot(up), steer); push != 0.0f) {
+                    const float force = Vehicle::AirPushForce(skill, a_vehicle->m_fTurnMass) * CTimer::ms_fTimeStep;
+                    a_vehicle->ApplyTurnForce(right * (steer * force * push), a_vehicle->m_vecCentreOfMass + forward);
+                }
+                return;
+            }
+            if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || type == VEHICLE_HELI || type == VEHICLE_PLANE ||
+                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0) {
+                return;
+            }
+            const auto& mouse = CPad::NewMouseControllerState;
+            const auto  steer = Vehicle::AirSteering(pad->GetSteeringLeftRight(), pad->GetSteeringUpDown(), CCamera::m_bUseMouse3rdPerson, mouse.x, mouse.y);
+            const auto  push = Vehicle::ExtraAirPushes(spin.Dot(up), spin.Dot(forward), spin.Dot(right), steer, pad->GetHandBrake() != 0, pad->GetAccelerate() != 0);
+            const float force = Vehicle::AirPushForce(type == VEHICLE_MTRUCK ? 0.0025f : skill, a_vehicle->m_fTurnMass) * CTimer::ms_fTimeStep;
+            if (push.yaw != 0.0f) {
+                a_vehicle->ApplyTurnForce(right * (steer.leftRight * force * push.yaw), a_vehicle->m_vecCentreOfMass + forward);
+            }
+            if (push.roll != 0.0f) {
+                a_vehicle->ApplyTurnForce(right * (steer.leftRight * force * push.roll), a_vehicle->m_vecCentreOfMass + up);
+            }
+            if (push.pitch != 0.0f) {
+                a_vehicle->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_vehicle->m_vecCentreOfMass + forward);
+            }
+        }
     }
+
 
     CVehicle* Driven(CPlayerPed* a_ped)
     {
@@ -653,6 +708,7 @@ namespace AhShitRim::Vehicles
             }
         }
         if (driven) {
+            AirControl(driven, a_ped);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
             // What the vehicle makes of the input and the ground, every 5 s while CJ drives.
             if (const std::uint64_t now = ::GetTickCount64(); now - state.drivenLogMs >= 5000) {
