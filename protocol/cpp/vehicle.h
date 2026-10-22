@@ -296,8 +296,8 @@ namespace AhShitRim::Vehicle
     // San Andreas's, radians per 1/50 s.
 
     inline constexpr float kSaAirSpin = 0.02f;  // San Andreas's cap: 1 rad/s, 57 degrees a second
-    inline constexpr float kAirTurnGain = 3.0f;
-    inline constexpr float kAirSpin = 0.06f;  // 172 degrees a second
+    inline constexpr float kAirTurnGain = 1.5f;
+    inline constexpr float kAirSpin = 0.03f;  // 86 degrees a second
 
     // Whether a push of a_steer (negative or positive) goes on about an axis the car turns about at
     // a_spin: only while it turns slower than a_cap the way it pushes.
@@ -353,8 +353,9 @@ namespace AhShitRim::Vehicle
     }
 
     // A bike in the air: San Andreas only leans it (left/right, and forward and back with up/down),
-    // nothing turns it flat. AhShitRim yaws the player's bike with left/right, handbrake or not, as
-    // hard as a car's yaw (kAirTurnGain pushes, up to kAirSpin); a_steer from the keys alone.
+    // nothing turns it flat (a bicycle has its own yaw). AhShitRim yaws the player's motorbike with
+    // left/right, handbrake or not, as hard as a car's yaw (kAirTurnGain pushes, up to kAirSpin);
+    // a_steer from the keys alone.
     constexpr float BikeAirYaw(float a_spinUp, float a_steer)
     {
         return ExtraAirPush(a_spinUp, a_steer, false);

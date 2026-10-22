@@ -466,13 +466,14 @@ namespace AhShitRim::Vehicles
             return done;
         }
 
-        // A bike in the air yaws with left/right (Vehicle::BikeAirYaw), pushed as a car's yaw is.
+        // A motorbike in the air yaws with left/right (Vehicle::BikeAirYaw), pushed as a car's yaw is.
+        // A bicycle (CBmx) yaws by San Andreas's own rules already.
         bool __fastcall BikeProcessAIHook(CBike* a_bike, void*, unsigned* a_flags)
         {
             const CVector spin = a_bike->m_vecTurnSpeed;
             const bool    done = g_bikeProcessAI.thiscall<bool>(a_bike, a_flags);
             auto*         ped = FindPlayerPed(0);
-            if (done || a_bike->m_nStatus != STATUS_PLAYER || !ped || a_bike->m_pDriver != ped || a_bike->m_nNumContactWheels != 0 ||
+            if (done || a_bike->m_nVehicleSubClass == VEHICLE_BMX || a_bike->m_nStatus != STATUS_PLAYER || !ped || a_bike->m_pDriver != ped || a_bike->m_nNumContactWheels != 0 ||
                 ped->m_ePedState == PEDSTATE_EXIT_CAR || ped->m_ePedState == PEDSTATE_DRAGGED_FROM_CAR || ped->m_ePedState == PEDSTATE_ARRESTED) {
                 return done;
             }
