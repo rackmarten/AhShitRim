@@ -7,12 +7,17 @@ namespace AhShitRim::Protocol
     struct ShotEvent;
 }
 
-// CJ's explosives and fire in Skyrim (protocol v15; the rules in protocol/cpp/explosives.h). San Andreas
-// sends each rocket, grenade, tear gas canister and Molotov CJ launches as a Projectile, and each puff of
-// the flamethrower as a flame Shot; this
+// CJ's explosives and fire in Skyrim (protocol v15, satchels and the heat seeker v17; the rules in
+// protocol/cpp/explosives.h). San Andreas sends each rocket, grenade, tear gas canister, Molotov and satchel
+// charge CJ launches as a Projectile, the detonator as one too, and each puff of the flamethrower as a flame
+// Shot; this
 //  - flies them under San Andreas's gravity, ray testing each step through Skyrim's Havok world as a bullet
 //    is: a rocket and a Molotov go off where they touch anything, a grenade and tear gas bounce until their
-//    fuse runs out; each kind's newest one is drawn with San Andreas's model,
+//    fuse runs out, a satchel sticks to what it lands on (an actor's nearest bone, which it then follows);
+//    each is drawn with San Andreas's model,
+//  - locks the heat seeker on to the dragon, horse, giant, mammoth or centurion CJ aims it at, with San
+//    Andreas's marker in the HUD, and steers its rocket to it,
+//  - blows every satchel up on the detonator,
 //  - blows a rocket or a grenade up as a vanilla fireball explosion (FireBallExp01, which does no damage of
 //    its own), hurting everyone in reach through Skyrim's own hit by Damage::ToSkyrim, throwing people
 //    (AIProcess::KnockExplosion) and opening locks close by (a crime where picking them would be one),
@@ -37,8 +42,10 @@ namespace AhShitRim::Projectiles
 
     // Every frame San Andreas has the player, before ModelView::EndFrame: the projectiles of a_handover,
     // relative to a_anchor, a_delta seconds on. a_cjBurning: CJ's feet while San Andreas has him on fire.
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning);
+    // a_cjWeapon: the weapon in his hands, a_aiming whether he aims it.
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
+        std::uint8_t a_cjWeapon, bool a_aiming);
 
-    // Back to Skyrim's own player: projectiles in flight are dropped and gas clouds cleared.
+    // Back to Skyrim's own player: projectiles in flight and satchels are dropped and gas clouds cleared.
     void Clear();
 }

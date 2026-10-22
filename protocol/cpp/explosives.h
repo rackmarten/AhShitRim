@@ -1,8 +1,9 @@
 // CJ's explosives and fire in Skyrim (v15), the game-free half: what each of San Andreas's projectiles
 // does (a rocket and a Molotov go off where they touch, a grenade and tear gas bounce until their fuse
 // runs out), their flight under San Andreas's gravity, the bounce, how hard a blast hits and throws people
-// by how far they stand, which locks it opens, the tear gas cloud and the flamethrower's cone. Header-only
-// and free of game types, so the protocol tests cover it.
+// by how far they stand, which locks it opens, the tear gas cloud and the flamethrower's cone; and (v17) a
+// satchel charge sticking to what it lands on, and the heat seeker's lock and steering. Header-only and free
+// of game types, so the protocol tests cover it.
 //
 // Units are Skyrim's (70 to the metre) and seconds; damage is in San Andreas's health points, which
 // Damage::ToSkyrim turns into Skyrim's as it does a bullet's.
@@ -12,6 +13,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 #include "body.h"
 #include "damage.h"
@@ -40,10 +43,11 @@ namespace AhShitRim::Explosives
     enum class Kind : std::uint8_t
     {
         None,
-        Rocket,   // the rocket launcher's and (unguided until #863) the heat seeker's
+        Rocket,   // the rocket launcher's and the heat seeker's
         Grenade,
         TearGas,
         Molotov,
+        Satchel,  // a satchel charge: sticks where it lands, goes off when the detonator says
     };
 
     constexpr Kind KindOf(std::uint8_t a_projectileType)
@@ -52,6 +56,7 @@ namespace AhShitRim::Explosives
         case Weapons::Grenade: return Kind::Grenade;
         case Weapons::TearGas: return Kind::TearGas;
         case Weapons::Molotov: return Kind::Molotov;
+        case Weapons::SatchelCharge: return Kind::Satchel;
         case kRocket:
         case kHeatSeeker: return Kind::Rocket;
         default: return Kind::None;
@@ -73,11 +78,15 @@ namespace AhShitRim::Explosives
     inline constexpr float kFriction = 0.7f;      // of the speed along it
     inline constexpr float kRestSpeed = 0.5f * kMeter;  // slower than this after a bounce, it lies still
     inline constexpr float kLifeMax = 20.0f;      // seconds: one that never went off is dropped then
+    inline constexpr float kNever = 1e9f;         // a satchel's fuse: it waits for the detonator
 
     // When a San Andreas projectile goes off by itself if it sent no fuse: a grenade's 2 s (gaProjectileInfo's
     // destroy time), tear gas starts its cloud as soon, a rocket gives up out of reach.
     constexpr float FuseSeconds(Kind a_kind, std::uint32_t a_fuseMs)
     {
+        if (a_kind == Kind::Satchel) {
+            return kNever;
+        }
         if (a_fuseMs > 0) {
             return static_cast<float>(a_fuseMs) / 1000.0f;
         }
@@ -93,6 +102,9 @@ namespace AhShitRim::Explosives
 
     // A rocket and a Molotov go off where they touch anything, a grenade and tear gas bounce.
     constexpr bool BurstsOnContact(Kind a_kind) { return a_kind == Kind::Rocket || a_kind == Kind::Molotov; }
+
+    // A satchel sticks to the first thing it touches, as San Andreas's does.
+    constexpr bool SticksOnContact(Kind a_kind) { return a_kind == Kind::Satchel; }
 
     struct Flight
     {
@@ -167,6 +179,19 @@ namespace AhShitRim::Explosives
         return { a_axis.x * s, a_axis.y * s, a_axis.z * s, std::cos(0.5f * a_angle) };
     }
 
+    // The shortest turn taking direction a_from to direction a_to (none for opposite ones).
+    inline Quat FromTo(const Vec3& a_from, const Vec3& a_to)
+    {
+        const float lf = Length(a_from), lt = Length(a_to);
+        if (!(lf > 1e-4f) || !(lt > 1e-4f)) {
+            return {};
+        }
+        const Vec3  u = Scale(a_from, 1.0f / lf), v = Scale(a_to, 1.0f / lt);
+        const Vec3  axis{ u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x };
+        const float s = Length(axis);
+        return s > 1e-6f ? AxisAngle(Scale(axis, 1.0f / s), std::atan2(s, Dot(u, v))) : Quat{};
+    }
+
     inline constexpr float kSpin = 2.0f * 6.28318531f;  // radians a second a thrown one tumbles head over heels
 
     // A thrown one in flight turns a_dt's worth of kSpin round the level axis across its path; a rocket and one
@@ -190,6 +215,51 @@ namespace AhShitRim::Explosives
         return { { q.x, q.y, q.z, q.w }, { t.x, t.y, t.z } };
     }
 
+    // ---- Sticking ----
+
+    // What a satchel stuck to, where it is now: a node's world transform as Skyrim keeps it (a point p on the
+    // node is at x * p.x + y * p.y + z * p.z, times scale, plus translate; x, y and z are its axes, its rotation's
+    // columns). A static's is where it touched, unturned.
+    struct Node
+    {
+        Vec3  x{ 1.0f, 0.0f, 0.0f };
+        Vec3  y{ 0.0f, 1.0f, 0.0f };
+        Vec3  z{ 0.0f, 0.0f, 1.0f };
+        Vec3  translate;
+        float scale = 1.0f;
+    };
+
+    // Where it sits on that node, and how it is turned there.
+    struct Stuck
+    {
+        Vec3 offset;
+        Quat turn;
+    };
+
+    inline Quat Inverse(const Quat& q) { return { -q.x, -q.y, -q.z, q.w }; }
+
+    inline Quat TurnOf(const Node& a_node)
+    {
+        return Body::FromAxes({ a_node.x.x, a_node.x.y, a_node.x.z }, { a_node.y.x, a_node.y.y, a_node.y.z });
+    }
+
+    // A satchel at a_at turned a_turn (both in the world) sticking to a_node.
+    inline Stuck StickTo(const Node& a_node, const Vec3& a_at, const Quat& a_turn)
+    {
+        const Vec3  d = Sub(a_at, a_node.translate);
+        const float s = a_node.scale > 1e-4f ? a_node.scale : 1.0f;
+        return { { Dot(d, a_node.x) / s, Dot(d, a_node.y) / s, Dot(d, a_node.z) / s }, Mul(Inverse(TurnOf(a_node)), a_turn) };
+    }
+
+    // Where a satchel stuck on a_node is in the world, and how it is turned, now that the node has moved.
+    inline Vec3 StuckAt(const Node& a_node, const Stuck& a_stuck)
+    {
+        const Vec3 o = a_stuck.offset;
+        return Add(a_node.translate, Scale(Add(Add(Scale(a_node.x, o.x), Scale(a_node.y, o.y)), Scale(a_node.z, o.z)), a_node.scale));
+    }
+
+    inline Quat StuckTurn(const Node& a_node, const Stuck& a_stuck) { return Mul(TurnOf(a_node), a_stuck.turn); }
+
     // ---- Blasts ----
 
     struct Blast
@@ -206,7 +276,8 @@ namespace AhShitRim::Explosives
     {
         switch (a_kind) {
         case Kind::Rocket: return { 7.0f * kMeter, 300.0f, 14.0f, true };
-        case Kind::Grenade: return { 6.0f * kMeter, 300.0f, 12.0f, true };
+        case Kind::Grenade:
+        case Kind::Satchel: return { 6.0f * kMeter, 300.0f, 12.0f, true };
         case Kind::Molotov: return { 2.5f * kMeter, 40.0f, 0.0f, false };
         default: return {};
         }
@@ -316,4 +387,93 @@ namespace AhShitRim::Explosives
         const float wide = (std::max)(along, 0.0f) * std::tan(kFlameHalfAngle * 3.14159265f / 180.0f) + a_radius;
         return across <= wide;
     }
+    // ---- The heat seeker ----
+
+    // San Andreas's heat seeker locks on to vehicles only. Skyrim's big ones stand in for them: dragons,
+    // horses and whoever rides one, giants, mammoths and dwarven centurions (not giant spiders, trolls,
+    // sabre cats or bears, which are no bigger than a car).
+    inline bool HeatSeekerLocks(std::string_view a_raceEditorId, bool a_dragonKeyword, bool a_mounted)
+    {
+        if (a_mounted || Damage::ClassOf(a_raceEditorId, a_dragonKeyword) == Damage::Class::Dragon) {
+            return true;
+        }
+        const auto race = Damage::Lower(a_raceEditorId);
+        const auto has = [&](const char* a_part) { return race.find(a_part) != std::string::npos; };
+        return has("horse") || has("mammoth") || has("centurion") || (has("giant") && !has("spider"));
+    }
+
+    inline constexpr float kHsReach = 250.0f;         // metres: San Andreas's aim line is this long
+    inline constexpr float kHsLockSeconds = 1.5f;     // a target held this long in sight is locked
+    inline constexpr float kHsLosEvery = 1.0f;        // seconds between line of sight tests, as San Andreas's
+    inline constexpr float kHsMarkerSize = 1.3f;      // metres: San Andreas's marker round the target
+    inline constexpr float kHsTurn = 2.5f;            // radians a second a locked rocket turns at most
+    inline constexpr float kHsProximity = 1.0f * kMeter;  // a locked rocket goes off this close to its target's body
+
+    // How good a target at a_at is for a heat seeker aimed from a_origin along a_dir (a unit vector), in
+    // metres, as CWeapon::EvaluateTargetForHeatSeekingMissile rates it: lower is better, and -1 when it is
+    // out of the cone (its distance off the aim line at least 1/1.2 of its distance) or out of reach. The
+    // target it already had rates 4 times better, so the lock doesn't flick between two.
+    inline float HsRating(const Vec3& a_origin, const Vec3& a_dir, const Vec3& a_at, bool a_current)
+    {
+        const Vec3  to = Sub(a_at, a_origin);
+        const float distance = Length(to);
+        if (!(distance > 1e-3f) || distance > kHsReach) {
+            return -1.0f;
+        }
+        const float along = std::clamp(Dot(to, a_dir), 0.0f, kHsReach);
+        const float off = Length(Sub(to, Scale(a_dir, along)));
+        if (off * 1.2f >= distance) {
+            return -1.0f;
+        }
+        const float rating = std::sqrt(distance) / 10.0f + off / distance;
+        return a_current ? rating * 0.25f : rating;
+    }
+
+    // The lock: the same target in sight kHsLockSeconds running; a new target or losing sight of it starts again.
+    struct HsLock
+    {
+        std::uint32_t target = 0;  // the actor's form id, 0 for none
+        float         held = 0.0f;
+
+        bool Locked() const { return target != 0 && held >= kHsLockSeconds; }
+    };
+
+    inline void Track(HsLock& a_lock, std::uint32_t a_target, bool a_inSight, float a_dt)
+    {
+        if (a_target == 0 || a_target != a_lock.target || !a_inSight) {
+            a_lock.target = a_inSight ? a_target : 0;
+            a_lock.held = 0.0f;
+            return;
+        }
+        a_lock.held += a_dt;
+    }
+
+    // A locked rocket's velocity after a_dt seconds steering from a_at towards a_target: it turns towards it at
+    // kHsTurn at most and keeps its speed.
+    inline Vec3 Steer(const Vec3& a_velocity, const Vec3& a_at, const Vec3& a_target, float a_dt)
+    {
+        const float speed = Length(a_velocity);
+        const Vec3  to = Sub(a_target, a_at);
+        const float distance = Length(to);
+        if (!(speed > 1e-3f) || !(distance > 1e-3f)) {
+            return a_velocity;
+        }
+        const Vec3  from = Scale(a_velocity, 1.0f / speed);
+        const Vec3  want = Scale(to, 1.0f / distance);
+        const float angle = std::acos(std::clamp(Dot(from, want), -1.0f, 1.0f));
+        const float turn = kHsTurn * a_dt;
+        if (angle <= turn) {
+            return Scale(want, speed);
+        }
+        // Turn by `turn` in the plane of from and want (straight behind: round the vertical).
+        Vec3 side = Sub(want, Scale(from, Dot(from, want)));
+        if (Length(side) < 1e-4f) {
+            side = Length(Vec3{ -from.y, from.x, 0.0f }) > 1e-4f ? Vec3{ -from.y, from.x, 0.0f } : Vec3{ 1.0f, 0.0f, 0.0f };
+        }
+        side = Scale(side, 1.0f / Length(side));
+        return Scale(Add(Scale(from, std::cos(turn)), Scale(side, std::sin(turn))), speed);
+    }
+
+    // Whether a locked rocket at a_at is close enough to go off at a body of a_radius whose middle is a_target.
+    inline bool NearTarget(const Vec3& a_at, const Vec3& a_target, float a_radius) { return Length(Sub(a_at, a_target)) <= a_radius + kHsProximity; }
 }

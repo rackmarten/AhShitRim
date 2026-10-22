@@ -643,7 +643,8 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
-            Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr);
+            Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
+                valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 

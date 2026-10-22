@@ -42,6 +42,7 @@ namespace AhShitRim::CjProjectiles
         constexpr std::uintptr_t kAddProjectile = 0x737C80;  // CProjectileInfo::AddProjectile (cdecl)
         constexpr std::uintptr_t kRemoveNotAdd = 0x737C00;   // CProjectileInfo::RemoveNotAdd (cdecl): one with no room to go, blown up where it is
         constexpr std::uintptr_t kUpdate = 0x738B20;         // CProjectileInfo::Update (cdecl): flies them, blows them up
+        constexpr std::uintptr_t kRemoveDetonator = 0x738860;  // CProjectileInfo::RemoveDetonatorProjectiles (cdecl): the detonator, from CWorld::UseDetonator
         constexpr std::uint32_t  kSlots = 32;                // gaProjectileInfo, CProjectileInfo::ms_apProjectile
         constexpr std::uintptr_t kExplosionAudio = 0xC888D0;     // CExplosion::m_ExplosionAudioEntity
         constexpr std::uintptr_t kAddExplosionAudio = 0x4DCBE0;  // CAEExplosionAudioEntity::AddAudioEvent (thiscall)
@@ -52,11 +53,13 @@ namespace AhShitRim::CjProjectiles
         SafetyHookInline g_addProjectile;
         SafetyHookInline g_removeNotAdd;
         SafetyHookInline g_update;
+        SafetyHookInline g_removeDetonator;
 
         // A rocket Skyrim flies keeps a stand-in in San Andreas's world, without collision, flown along the same
         // straight line, so the sound San Andreas tied to it (the launch and its roar) follows it and stops when
         // it goes off. A Molotov keeps one too, left where it was thrown and put where it burst at the end, to
-        // smash there with San Andreas's own bottle sound.
+        // smash there with San Andreas's own bottle sound. A satchel keeps one where it was thrown until the detonator
+        // or Skyrim says it's gone, so San Andreas knows CJ has satchels out (the detonator stays his).
         struct StandIn
         {
             std::uint32_t id = 0;
@@ -66,6 +69,7 @@ namespace AhShitRim::CjProjectiles
             CVector       velocity;  // metres a second
             std::uint32_t untilMs = 0;
             unsigned      handover = 0;
+            bool          satchel = false;  // kept through re-anchors: Skyrim's stays where it is
         };
 
         struct Model
@@ -181,13 +185,15 @@ namespace AhShitRim::CjProjectiles
             s.projectile = a_projectile;
             s.position = a_projectile->GetPosition();
             s.velocity = a_kind == Explosives::Kind::Rocket ? CVector(v.x, v.y, v.z) / Pose::kUnitsPerMeter : CVector(0.0f, 0.0f, 0.0f);
-            s.untilMs = CTimer::m_snTimeInMilliseconds + static_cast<std::uint32_t>(Explosives::FuseSeconds(a_kind, a_event.fuseMs) * 1000.0f) + kStandInGrace;
+            s.satchel = a_kind == Explosives::Kind::Satchel;
+            s.untilMs = s.satchel ? 0xFFFFFFFFu - 60000u
+                                  : CTimer::m_snTimeInMilliseconds + static_cast<std::uint32_t>(Explosives::FuseSeconds(a_kind, a_event.fuseMs) * 1000.0f) + kStandInGrace;
             s.handover = handover;
             a_projectile->bUsesCollision = false;
             a_projectile->bApplyGravity = false;
             a_projectile->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
             a_projectile->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-            gaProjectileInfo[a_slot].m_nDestroyTime = static_cast<int>(s.untilMs + 60000);
+            gaProjectileInfo[a_slot].m_nDestroyTime = s.satchel ? 0x7FFFFFFF : static_cast<int>(s.untilMs + 60000);
             state.standIns.push_back(s);
             return true;
         }
@@ -297,7 +303,8 @@ namespace AhShitRim::CjProjectiles
                 event.id = ++state.nextId;
                 Send(event, "launch");
                 const auto kind = Explosives::KindOf(a_type);
-                if ((kind == Explosives::Kind::Rocket || kind == Explosives::Kind::Molotov) && KeepStandIn(a_slot, projectile, event, kind)) {
+                if ((kind == Explosives::Kind::Rocket || kind == Explosives::Kind::Molotov || kind == Explosives::Kind::Satchel) &&
+                    KeepStandIn(a_slot, projectile, event, kind)) {
                     return;
                 }
             }
@@ -339,6 +346,28 @@ namespace AhShitRim::CjProjectiles
             }
         }
 
+        // The detonator: Skyrim blows CJ's satchels (they're its, stuck where they landed) and San Andreas drops their
+        // stand-ins first, so its own blows only what isn't CJ's.
+        void __cdecl RemoveDetonatorHook()
+        {
+            Protocol::ProjectileEvent event{};
+            event.weaponType = Weapons::Detonator;
+            CVector spawnFeet;
+            if (auto* cj = FindPlayerPed(0); cj && Frame(event, cj->GetPosition(), spawnFeet)) {
+                event.id = ++state.nextId;
+                Send(event, "detonation");
+            }
+            for (auto it = state.standIns.begin(); it != state.standIns.end();) {
+                if (it->satchel) {
+                    DropStandIn(*it);
+                    it = state.standIns.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            g_removeDetonator.call();
+        }
+
         SafetyHookInline Hook(std::uintptr_t a_address, void* a_detour, const char* a_name)
         {
             auto hook = safetyhook::create_inline(reinterpret_cast<void*>(a_address), a_detour);
@@ -352,6 +381,7 @@ namespace AhShitRim::CjProjectiles
         g_addProjectile = Hook(kAddProjectile, reinterpret_cast<void*>(&AddProjectileHook), "CProjectileInfo::AddProjectile");
         g_removeNotAdd = Hook(kRemoveNotAdd, reinterpret_cast<void*>(&RemoveNotAddHook), "CProjectileInfo::RemoveNotAdd");
         g_update = Hook(kUpdate, reinterpret_cast<void*>(&UpdateHook), "CProjectileInfo::Update");
+        g_removeDetonator = Hook(kRemoveDetonator, reinterpret_cast<void*>(&RemoveDetonatorHook), "CProjectileInfo::RemoveDetonatorProjectiles");
     }
 
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size)
@@ -364,7 +394,7 @@ namespace AhShitRim::CjProjectiles
         state.effects.push_back(effect);
     }
 
-    void Update(CPlayerPed* a_ped)
+    void Update(CPlayerPed* a_ped, bool a_owned)
     {
         CVector    spawnFeet;
         unsigned   handover = 0;
@@ -378,7 +408,7 @@ namespace AhShitRim::CjProjectiles
         }
         const float dt = CTimer::ms_fTimeStep / 50.0f;
         for (auto it = state.standIns.begin(); it != state.standIns.end();) {
-            const bool stale = it->handover != handover || CTimer::m_snTimeInMilliseconds > it->untilMs;
+            const bool stale = (it->satchel ? !a_owned : it->handover != handover) || CTimer::m_snTimeInMilliseconds > it->untilMs;
             if (stale || CProjectileInfo::ms_apProjectile[it->slot] != it->projectile) {
                 if (stale) {
                     DropStandIn(*it);

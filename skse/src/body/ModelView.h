@@ -18,6 +18,10 @@ namespace AhShitRim::ModelView
     // sends (those are odd). False when it is built already or doesn't build.
     bool AddModel(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob);
 
+    // Builds model a_of again under a_id (even, so never one San Andreas sends), to show it in two places in
+    // one frame (two satchels). False while a_of isn't built.
+    bool AddCopy(std::uint32_t a_of, std::uint32_t a_id);
+
     // Whether model a_model is built and ready to draw.
     bool Has(std::uint32_t a_model);
 
