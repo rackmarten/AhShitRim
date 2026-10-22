@@ -1,9 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
+
+#include "../ahshitrim_protocol.h"
 
 class CPlayerPed;
 class CVector;
+struct RpClump;
 struct RwMatrixTag;
 
 // CJ's body for Skyrim to draw (protocol v5).
@@ -33,4 +38,12 @@ namespace AhShitRim::CjBody
 
     // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call).
     std::uint32_t NowMs();
+
+    // Another skinned clump read the way CJ's is (v19: the parachute's canopy): its model as a SkinModel of kind
+    // a_kind, empty (logged) when it can't be read, and its bone count.
+    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount);
+
+    // That clump's bones as its skeleton has them now, relative to a_feet (San Andreas metres) as CJ's are, into
+    // a_out.bones; false when it has no skeleton or skin.
+    bool PoseSkinned(RpClump* a_clump, std::uint32_t a_boneCount, const CVector& a_feet, Protocol::BodyState& a_out);
 }

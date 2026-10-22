@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 18;
+    inline constexpr std::uint32_t kProtocolVersion = 19;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -58,11 +58,12 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kOffsetBodySlot = 640;                // v5
     inline constexpr std::uint32_t kOffsetVehicleSlots = 2560;           // v6: kVehicleMax BodySlots
     inline constexpr std::uint32_t kOffsetWeaponSlots = 10240;           // v12: kWeaponHandMax BodySlots
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 14080;      // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetGearSlot = 14080;              // v19: one BodySlot, the jetpack or the parachute on CJ
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 16000;      // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4208448;        // v5
-    inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's, the vehicles' and the weapons' models, the shots
-    inline constexpr std::uint32_t kMappingSize = 8402816;               // 4208448 + 64 + 4 MiB
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4210368;        // v5
+    inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's, the vehicles', the weapons' and the gear's models, the shots
+    inline constexpr std::uint32_t kMappingSize = 8404736;               // 4210368 + 64 + 4 MiB
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -124,7 +125,13 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonLeanBack = 0x80;     // v6: down arrow; on foot back, on a bike it leans back (wheelies)
     inline constexpr std::uint32_t kButtonHandbrake = 0x100;   // v8: in a vehicle, the handbrake (Space in both key layouts, also Right Ctrl in the classic one)
     inline constexpr std::uint32_t kButtonFire = 0x200;        // v12: left mouse; on foot it fires the weapon in CJ's hands (a melee weapon attacks)
-    inline constexpr std::uint32_t kButtonAim = 0x400;         // v12: right mouse; on foot it aims the weapon (San Andreas's lock-on, free aim and scopes)
+    inline constexpr std::uint32_t kButtonAim = 0x400;         // v12: right mouse; on foot it aims the weapon (San Andreas's lock-on, free aim and scopes); (v19) in a vehicle its second weapon
+    inline constexpr std::uint32_t kButtonLookLeft = 0x800;    // v19: Q, in a vehicle: look left; an aircraft's rudder left
+    inline constexpr std::uint32_t kButtonLookRight = 0x1000;  // v19: E, in a vehicle: look right; the rudder right
+    inline constexpr std::uint32_t kButtonTurretLeft = 0x2000;   // v19: numpad 4, in a vehicle: San Andreas's turret keys (its right stick)
+    inline constexpr std::uint32_t kButtonTurretRight = 0x4000;  // v19: numpad 6
+    inline constexpr std::uint32_t kButtonTurretUp = 0x8000;     // v19: numpad 8 or Page Up: the Hydra's nozzles back towards forward flight
+    inline constexpr std::uint32_t kButtonTurretDown = 0x10000;  // v19: numpad 2 or Page Down: the Hydra's nozzles down towards hovering
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState
@@ -139,7 +146,7 @@ namespace AhShitRim::Protocol
         std::uint32_t handover;    // counts handovers and re-anchors (v8: a cell change, fast travel); a new value puts CJ at anchor and drops older collision chunks and every vehicle
         float         heading;     // the Skyrim player's heading at that handover, Skyrim radians; CJ spawns facing it
         float         anchor[3];   // the Skyrim player's feet at that handover, Skyrim world units (v4)
-        std::uint16_t spawnModel;  // v6: San Andreas vehicle model id to spawn in front of CJ
+        std::uint16_t spawnModel;  // v6: San Andreas vehicle model id to spawn in front of CJ; (v19) 370 puts the jetpack on him, 371 gives him the parachute
         std::uint16_t spawnCount;  // v6: counts spawn requests; a new value spawns spawnModel
         std::uint16_t radioNext;   // v7: counts mouse wheel steps up; in a vehicle each one tunes the next station, on foot (v12) it switches to the next weapon
         std::uint16_t radioPrev;   // v7: counts wheel steps down, the previous station or (v12) the previous weapon
@@ -255,6 +262,8 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kBodyDriven = 0x2;   // BodyState.flags, vehicle slots (v6): CJ is in this vehicle
     inline constexpr std::uint32_t kBodyWrecked = 0x4;  // BodyState.flags, vehicle slots (v18): it blew up (San Andreas's STATUS_WRECKED)
     inline constexpr std::uint32_t kBodyBurning = 0x8;  // BodyState.flags, vehicle slots (v18): it burns: its engine (health under 250, about to blow up) or the wreck
+    inline constexpr std::uint32_t kBodyJetpack = 0x10;    // BodyState.flags, the gear slot (v19): the jetpack on CJ's back
+    inline constexpr std::uint32_t kBodyParachute = 0x20;  // BodyState.flags, the gear slot (v19): the parachute, open
 
     // One bone's skinning transform (v5): takes a vertex of the model (bind pose, Skyrim units) to
     // its place relative to CJ's feet (BodyState.feet), Skyrim axes and units:
@@ -270,7 +279,8 @@ namespace AhShitRim::Protocol
     // relative to where the handover put CJ's feet (InputState.anchor in Skyrim), the bones to
     // feet; Skyrim axes and units. A vehicle slot (v6) holds one too: feet is the vehicle's
     // position, the bones its parts (one per drawn part, each part's vertices on its own bone) and
-    // the camera is unused (zero).
+    // the camera is unused (zero). The gear slot (v19) holds the jetpack (its parts as a vehicle's) or the
+    // open parachute (skinned like CJ), relative to CJ's feet like his bones.
     struct BodyState
     {
         std::uint32_t frame;             // San Andreas frame counter, as PlayerState.frame
@@ -287,6 +297,8 @@ namespace AhShitRim::Protocol
         float         cameraUp[3];       // v14: the camera's up, a unit vector (its roll: the death camera's swing); zero for none
         float         health;            // v18, vehicle slots: San Andreas's vehicle health (1000 new, it smokes under 650 and burns under 250); 0 elsewhere
         float         engine[3];         // v18, vehicle slots: where its engine is (the engine dummy), relative to feet; zero elsewhere
+        std::uint64_t hiddenParts;       // v19: bit i set: bone i isn't drawn (a vehicle's damaged or whole version of a part, a helicopter's rotor
+                                         // standing or spinning); bones past 63 are always drawn
     };
 
     struct BodySlot
@@ -294,7 +306,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[28];
+        std::uint8_t  pad[20];
     };
 
     // ---- Rings (single producer, single consumer) ----
@@ -575,10 +587,11 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 28);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36);
     static_assert(offsetof(BodyState, cameraUp) == 64 + kBodyBoneMax * 28);
     static_assert(offsetof(BodyState, health) == 64 + kBodyBoneMax * 28 + 12);
     static_assert(offsetof(BodyState, engine) == 64 + kBodyBoneMax * 28 + 16);
+    static_assert(offsetof(BodyState, hiddenParts) == 64 + kBodyBoneMax * 28 + 28);
     static_assert(offsetof(BodyState, feet) == 24);
     static_assert(offsetof(BodyState, cameraFov) == 60);
     static_assert(offsetof(BodyState, bones) == 64);
@@ -610,7 +623,8 @@ namespace AhShitRim::Protocol
     static_assert(kOffsetVehicleSlots == kOffsetBodySlot + sizeof(BodySlot));
     static_assert(kOffsetWeaponSlots == kOffsetVehicleSlots + kVehicleMax * sizeof(BodySlot));
     static_assert(kOffsetWeaponSlots % 64 == 0);
-    static_assert(kOffsetRingToSanAndreas == kOffsetWeaponSlots + kWeaponHandMax * sizeof(BodySlot));
+    static_assert(kOffsetGearSlot == kOffsetWeaponSlots + kWeaponHandMax * sizeof(BodySlot));
+    static_assert(kOffsetRingToSanAndreas == kOffsetGearSlot + sizeof(BodySlot));
     static_assert(kOffsetRingToSanAndreas % 64 == 0);
     static_assert(kOffsetRingToSkyrim == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
     static_assert(kMappingSize == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);

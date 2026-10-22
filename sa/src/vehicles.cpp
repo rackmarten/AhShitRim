@@ -9,6 +9,7 @@
 #include "texture_decode.h"
 #include "vehicle.h"
 #include "vehicle_damage.h"
+#include "vehicle_kinds.h"
 
 #include <plugin.h>
 
@@ -17,9 +18,11 @@
 #include <CBmx.h>
 #include <CCamera.h>
 #include <CColPoint.h>
+#include <CHeli.h>
 #include <CModelInfo.h>
 #include <CMonsterTruck.h>
 #include <CPedIntelligence.h>
+#include <CPlane.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
 #include <CPad.h>
@@ -62,6 +65,8 @@ namespace AhShitRim::Vehicles
             bool                  failed = false;
             bool                  scorched = false;  // a wreck: its model was built again, scorched
             std::vector<RwFrame*> parts;  // each part's frame, in bone order
+            std::vector<RpAtomic*> atomics;  // and its atomic: whether San Andreas draws it (a damaged or whole version) is read every frame
+            std::vector<VehicleKinds::Spinner> spinners;  // a rotor's or a propeller's standing or spinning version
             std::string           name;
         };
 
@@ -160,7 +165,7 @@ namespace AhShitRim::Vehicles
         }
 
         // The first spot in front of CJ that will do, and the ground's height there.
-        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
+        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
         {
             const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
             const CVector chest = feet + CVector(0.0f, 0.0f, 1.0f);
@@ -172,7 +177,7 @@ namespace AhShitRim::Vehicles
                 for (int i = 0; i < Vehicle::kSamples; i++) {
                     ground.hit[i] = GroundAt(points[i], feet.z, ground.z[i]);
                 }
-                const auto z = Vehicle::GroundHeight(ground, feet.z);
+                const auto z = Vehicle::GroundHeight(ground, feet.z, a_maxUneven);
                 if (!z) {
                     continue;
                 }
@@ -188,15 +193,27 @@ namespace AhShitRim::Vehicles
             return false;
         }
 
+        VehicleKinds::Kind KindOf(CVehicleModelInfo* a_info, int a_model)
+        {
+            return VehicleKinds::FromSaType(a_info->m_nVehicleType, static_cast<std::uint16_t>(a_model));
+        }
+
+        // What CCheat::VehicleCheat makes for a model, by its type; nullptr for a kind that can't spawn
+        // (VehicleKinds::Traits: boats, trains, trailers, the radio-controlled ones).
         CVehicle* Create(CVehicleModelInfo* a_info, int a_model)
         {
+            if (!VehicleKinds::TraitsOf(KindOf(a_info, a_model)).spawnable) {
+                return nullptr;
+            }
             switch (a_info->m_nVehicleType) {
             case VEHICLE_AUTOMOBILE: return new CAutomobile(a_model, MISSION_VEHICLE, true);
             case VEHICLE_MTRUCK: return new CMonsterTruck(a_model, MISSION_VEHICLE);
             case VEHICLE_QUAD: return new CQuadBike(a_model, MISSION_VEHICLE);
+            case VEHICLE_HELI: return new CHeli(a_model, MISSION_VEHICLE);
+            case VEHICLE_PLANE: return new CPlane(a_model, MISSION_VEHICLE);
             case VEHICLE_BIKE: return new CBike(a_model, MISSION_VEHICLE);
             case VEHICLE_BMX: return new CBmx(a_model, MISSION_VEHICLE);
-            default: return nullptr;  // boats, aircraft and trains come later
+            default: return nullptr;
             }
         }
 
@@ -226,16 +243,18 @@ namespace AhShitRim::Vehicles
 
         // ---- The model ----
 
-        bool Drawn(RpAtomic* a_atomic)
+        std::string_view FrameName(RpAtomic* a_atomic)
         {
-            if ((RpAtomicGetFlags(a_atomic) & rpATOMICRENDER) == 0 || !a_atomic->geometry) {
-                return false;
-            }
-            const char*            raw = GetFrameNodeName(RpAtomicGetFrame(a_atomic));
-            const std::string_view name = raw ? raw : "";
-            // The low detail chassis and the damaged versions of parts aren't drawn up close.
-            return !name.ends_with("_vlo") && !name.ends_with("_dam");
+            const char* raw = GetFrameNodeName(RpAtomicGetFrame(a_atomic));
+            return raw ? raw : "";
         }
+
+        // A part Skyrim gets: any atomic with a geometry but the low detail chassis, which isn't drawn up
+        // close. A part's damaged and whole versions both go, and whether San Andreas draws one now
+        // (rpATOMICRENDER, CVehicle::SetComponentVisibility) is read every frame (hiddenParts, v19).
+        bool Usable(RpAtomic* a_atomic) { return a_atomic->geometry && !FrameName(a_atomic).ends_with("_vlo"); }
+
+        bool Drawn(RpAtomic* a_atomic) { return (RpAtomicGetFlags(a_atomic) & rpATOMICRENDER) != 0; }
 
         // The vehicle's drawn parts and their frames; its model blob in a_out.
         bool Build(int a_index, CVehicle* a_vehicle)
@@ -257,6 +276,8 @@ namespace AhShitRim::Vehicles
                     return a_atomic;
                 },
                 &atomics);
+            // The ones drawn now first, so a model with more parts than bones keeps those.
+            std::stable_partition(atomics.begin(), atomics.end(), [](RpAtomic* a_atomic) { return Drawn(a_atomic); });
 
             const CRGBA*                    table = CVehicleModelInfo::ms_vehicleColourTable;
             const auto                      colour = [&](unsigned char a_i) { return Vehicle::Rgb{ table[a_i].r, table[a_i].g, table[a_i].b }; };
@@ -272,9 +293,11 @@ namespace AhShitRim::Vehicles
             int                               skipped = 0, hidden = 0, baked = 0;
             std::uint32_t                     flipped = 0;
             slot.parts.clear();
+            slot.atomics.clear();
+            slot.spinners.clear();
             for (RpAtomic* atomic : atomics) {
                 RpGeometry* geometry = atomic->geometry;
-                if (!Drawn(atomic)) {
+                if (!Usable(atomic)) {
                     hidden++;
                     continue;
                 }
@@ -353,6 +376,8 @@ namespace AhShitRim::Vehicles
                     meshes.push_back(std::move(mesh));
                 }
                 slot.parts.push_back(frame);
+                slot.atomics.push_back(atomic);
+                slot.spinners.push_back(VehicleKinds::SpinnerOf(FrameName(atomic)));
                 model.boneIds.push_back(part);
             }
             if (slot.parts.empty()) {
@@ -376,7 +401,7 @@ namespace AhShitRim::Vehicles
             ModelSender::Set(ModelSender::kVehicleKey + a_index, slot.model, std::move(chunks), std::format("vehicle: the {}'s model", slot.name));
             slot.failed = false;
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            Log(std::format("vehicle: the {}'s {}model {:08X} read in {:.1f} ms: {} parts ({} with a scale or mirror baked in; {} atomics hidden, {} skipped), "
+            Log(std::format("vehicle: the {}'s {}model {:08X} read in {:.1f} ms: {} parts ({} with a scale or mirror baked in; {} atomics left out, {} skipped), "
                             "{} meshes, {} vertices, {} triangles ({} turned round), {} textures:{}; {} bytes in {} chunks",
                 slot.name, slot.scorched ? "scorched " : "", slot.model, ms, slot.parts.size(), baked, hidden, skipped, model.meshes.size(), vertices, triangles, flipped,
                 model.textures.size(), textureLog.empty() ? " none" : textureLog, blob.size(), chunkCount));
@@ -419,6 +444,17 @@ namespace AhShitRim::Vehicles
             return a_vehicle->GetPosition() + a_vehicle->GetRight() * p.x + a_vehicle->GetForward() * p.y + a_vehicle->GetUp() * p.z;
         }
 
+        // How fast its rotor or propeller turns (San Andreas's radians a step): a helicopter's m_fHeliRotorSpeed (the
+        // second wheel speed in the union), a plane's m_fPropSpeed (0x9C4, which plugin-sdk leaves unnamed); 0 for the rest.
+        float SpinOf(CVehicle* a_vehicle)
+        {
+            switch (a_vehicle->m_nVehicleSubClass) {
+            case VEHICLE_HELI: return static_cast<CAutomobile*>(a_vehicle)->m_fWheelSpeed[1];
+            case VEHICLE_PLANE: return *reinterpret_cast<const float*>(reinterpret_cast<const std::uint8_t*>(a_vehicle) + 0x9C4);
+            default: return 0.0f;
+            }
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -449,8 +485,12 @@ namespace AhShitRim::Vehicles
             s.feet[1] = d.y * Pose::kUnitsPerMeter;
             s.feet[2] = d.z * Pose::kUnitsPerMeter;
             s.cameraForward[1] = 1.0f;  // unused, but a unit vector like everywhere else
+            const float spin = SpinOf(a_vehicle);
             for (std::uint32_t i = 0; i < s.boneCount; i++) {
                 s.bones[i] = Body::ToBone(ToFrame(*RwFrameGetLTM(slot.parts[i])), Vec(at));
+                if (!Drawn(slot.atomics[i]) || !VehicleKinds::SpinnerShows(slot.spinners[i], spin)) {
+                    s.hiddenParts |= 1ull << i;
+                }
             }
             if (Body::Finite(s)) {
                 GetLink().WriteVehicle(static_cast<std::uint32_t>(a_index), s);
@@ -522,6 +562,15 @@ namespace AhShitRim::Vehicles
             return;
         }
         const auto name = NameOf(info, a_model);
+        const auto kind = KindOf(info, a_model);
+        const auto traits = VehicleKinds::TraitsOf(kind);
+        if (const auto listed = VehicleKinds::KindOf(static_cast<std::uint16_t>(a_model)); listed != kind) {
+            Log(std::format("vehicle: the {} is a {} to San Andreas but a {} in AhShitRim's table", name, VehicleKinds::NameOf(kind), VehicleKinds::NameOf(listed)));
+        }
+        if (!traits.spawnable) {
+            Log(std::format("vehicle: the {} is a {}, nothing spawned: {}", name, VehicleKinds::NameOf(kind), traits.refusal));
+            return;
+        }
         if (Driven(a_ped)) {
             Log(std::format("vehicle: CJ is in a vehicle, no {} spawned", name));
             return;
@@ -536,7 +585,7 @@ namespace AhShitRim::Vehicles
         Vehicle::Spot  spot;
         float          groundZ = 0.0f;
         int            tried = 0;
-        if (!FindSpot(a_ped, size, spot, groundZ, tried)) {
+        if (!FindSpot(a_ped, size, traits.maxUneven, spot, groundZ, tried)) {
             Log(std::format("vehicle: no flat, clear spot for the {} in front of CJ ({} tried), nothing spawned", name, tried));
             return;
         }
@@ -547,7 +596,7 @@ namespace AhShitRim::Vehicles
         }
         CVehicle* vehicle = Create(info, a_model);
         if (!vehicle) {
-            Log(std::format("vehicle: the {} is not a car or a bike, nothing spawned", name));
+            Log(std::format("vehicle: no way to make the {} (type {}), nothing spawned", name, static_cast<int>(info->m_nVehicleType)));
             return;
         }
         vehicle->SetPosn(CVector(spot.center.x, spot.center.y, groundZ - info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
@@ -567,8 +616,8 @@ namespace AhShitRim::Vehicles
         slot.spawned = ++state.spawns;
         slot.name = name;
         const CVector& at = vehicle->GetPosition();
-        Log(std::format("vehicle: {} spawned in slot {} at ({:.1f},{:.1f},{:.1f}), spot {} of {} tried, colours {}/{}", name, index, at.x, at.y, at.z,
-            tried, Vehicle::kRings * std::size(Vehicle::kTurns), vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor));
+        Log(std::format("vehicle: {} ({}) spawned in slot {} at ({:.1f},{:.1f},{:.1f}), spot {} of {} tried, colours {}/{}", name, VehicleKinds::NameOf(kind),
+            index, at.x, at.y, at.z, tried, Vehicle::kRings * std::size(Vehicle::kTurns), vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor));
     }
 
     bool Restore(CPlayerPed* a_ped, const CVector& a_cj, const Restoration& a_car)

@@ -103,9 +103,10 @@ namespace AhShitRim::Vehicle
     };
 
     // The height to put the vehicle at when the spot's ground will do: every sample on ground, the
-    // highest at most kMaxUneven over the lowest, and the middle of them at most kMaxStep from CJ's
-    // feet. Whether anything stands in the way is checked after (it needs that height).
-    inline std::optional<float> GroundHeight(const Ground& a_ground, float a_feetZ)
+    // highest at most a_maxUneven (kMaxUneven, or a kind's own: VehicleKinds::Traits) over the lowest, and the
+    // middle of them at most kMaxStep from CJ's feet. Whether anything stands in the way is checked after (it
+    // needs that height).
+    inline std::optional<float> GroundHeight(const Ground& a_ground, float a_feetZ, float a_maxUneven = kMaxUneven)
     {
         float low = 1e30f, high = -1e30f;
         for (int i = 0; i < kSamples; i++) {
@@ -118,7 +119,7 @@ namespace AhShitRim::Vehicle
         std::array<float, kSamples> sorted = a_ground.z;
         std::nth_element(sorted.begin(), sorted.begin() + kSamples / 2, sorted.end());
         const float middle = sorted[kSamples / 2];
-        if (high - low > kMaxUneven || std::abs(middle - a_feetZ) > kMaxStep) {
+        if (high - low > a_maxUneven || std::abs(middle - a_feetZ) > kMaxStep) {
             return std::nullopt;
         }
         return middle;

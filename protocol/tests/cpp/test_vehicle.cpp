@@ -88,6 +88,7 @@ TEST_CASE("a spot will do when its ground is all there, flat enough and near CJ'
     Ground rock = Flat(500.0f);
     rock.z[8] = 501.5f;  // a rock in the middle
     CHECK_FALSE(GroundHeight(rock, 500.0f).has_value());
+    CHECK(GroundHeight(rock, 500.0f, 1.5f).has_value());  // an aircraft's wider footprint takes more (VehicleKinds::Traits)
 
     Ground hole = Flat(500.0f);
     hole.hit[4] = false;

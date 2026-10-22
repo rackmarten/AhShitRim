@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "input.h"
@@ -10,6 +11,7 @@
 class CPlayerPed;
 class CVector;
 struct RpAtomic;
+struct RpClump;
 struct RwObject;
 
 // CJ's weapons for Skyrim (protocol v12). San Andreas keeps them: its slots, ammo, the weapon in his
@@ -47,5 +49,9 @@ namespace AhShitRim::CjWeapons
     // A weapon model's instance (a_object: its clump or atomic, a thrown weapon's or a rocket's) as a SkinModel
     // of kind kSkinModelWeapon for Skyrim, its drawn parts as bones in a_parts' order, built as the weapon in
     // his hand is (CjProjectiles draws the projectiles with it). Empty when it has nothing to draw.
-    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts);
+    // a_name names it for the logs and Skyrim (v19: the jetpack's), the weapon's model name when empty.
+    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts, std::string_view a_name = {});
+
+    // A clump's drawn parts in the order BuildModel makes them bones (v19: a new instance of a model already sent).
+    std::vector<RpAtomic*> PartsOf(RpClump* a_clump);
 }

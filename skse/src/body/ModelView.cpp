@@ -52,6 +52,7 @@ namespace AhShitRim::ModelView
             bool                             shown = false;
             std::uint64_t                    shownFrame = 0;  // State::frame of the last Show
             std::vector<Protocol::BodyBone>  posed;           // the bones its buffers hold: a parked vehicle isn't skinned again
+            std::uint64_t                    posedHidden = 0;  // and the parts they hid (v19)
         };
 
         struct State
@@ -546,13 +547,16 @@ namespace AhShitRim::ModelView
             SKSE::log::info("model view: {} {:08X} attached under {}", built->model.name, built->id, scene->name.c_str());
         }
 
-        // Skinned again only when the bones moved: a parked vehicle costs nothing.
+        // Skinned again only when the bones moved or a part showed or hid: a parked vehicle costs nothing.
+        // A hidden part (v19: a damaged part's whole version, a rotor standing or spinning) collapses onto its joint.
         const std::size_t boneBytes = a_pose.boneCount * sizeof(Protocol::BodyBone);
-        if (built->posed.size() != a_pose.boneCount || std::memcmp(built->posed.data(), a_pose.bones, boneBytes) != 0) {
+        if (built->posed.size() != a_pose.boneCount || built->posedHidden != a_pose.hiddenParts ||
+            std::memcmp(built->posed.data(), a_pose.bones, boneBytes) != 0) {
             built->posed.assign(a_pose.bones, a_pose.bones + a_pose.boneCount);
+            built->posedHidden = a_pose.hiddenParts;
             state.bones.resize(a_pose.boneCount);
             for (std::uint32_t i = 0; i < a_pose.boneCount; i++) {
-                state.bones[i] = Body::ToMatrix(a_pose.bones[i]);
+                state.bones[i] = Body::Hidden(a_pose.hiddenParts, i) ? Body::Collapsed(a_pose.bones[i]) : Body::ToMatrix(a_pose.bones[i]);
             }
             for (auto& shape : built->shapes) {
                 const auto& mesh = built->model.meshes[shape.mesh];

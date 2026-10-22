@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_gear.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
@@ -13,6 +14,7 @@
 #include "pose.h"
 #include "scenes.h"
 #include "vitals.h"
+#include "vehicle_kinds.h"
 #include "vehicles.h"
 #include "window.h"
 
@@ -342,6 +344,7 @@ namespace AhShitRim::Runner
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
                 state.carPending = false;
+                CjGear::Reset(a_ped);
                 Vehicles::Clear(a_ped);
                 ChunkWorld::Begin(a_input.handover, a_input.anchor);
                 PlaceCj(a_ped, a_input.heading);
@@ -363,7 +366,11 @@ namespace AhShitRim::Runner
             // A spawn key pressed in Skyrim. The first value read only seeds the count, so a San
             // Andreas that started after Skyrim doesn't spawn the last vehicle asked for again.
             if (state.haveSpawn && a_input.spawnCount != state.spawnCount && owned && a_input.spawnModel) {
-                Vehicles::Spawn(a_ped, a_input.spawnModel);
+                if (VehicleKinds::IsGear(a_input.spawnModel)) {
+                    CjGear::Give(a_ped, a_input.spawnModel);  // v19: the jetpack or the parachute
+                } else {
+                    Vehicles::Spawn(a_ped, a_input.spawnModel);
+                }
             }
             state.spawnCount = a_input.spawnCount;
             state.haveSpawn = true;
@@ -389,9 +396,12 @@ namespace AhShitRim::Runner
                 s.RightShoulder1 = pad.rightShoulder1;
                 s.ShockButtonL = pad.shockButtonL;
                 s.m_bPedWalk = pad.pedWalk;
-                s.ButtonCircle = pad.buttonCircle;  // fire (a melee weapon attacks); the right shoulder aims
-                s.RightShoulder2 = presses.next ? 255 : 0;  // the wheel: next weapon
-                s.LeftShoulder2 = presses.prev ? 255 : 0;   // the previous one
+                s.ButtonCircle = pad.buttonCircle;  // fire (a melee weapon attacks); the right shoulder aims; in a vehicle (v19) its guns
+                s.LeftShoulder1 = pad.leftShoulder1;  // v19, in a vehicle: its second weapon
+                s.RightShoulder2 = presses.next || pad.rightShoulder2 ? 255 : 0;  // the wheel: next weapon; in a vehicle (v19) look right
+                s.LeftShoulder2 = presses.prev || pad.leftShoulder2 ? 255 : 0;    // the previous one; look left
+                s.RightStickX = pad.rightStickX;  // v19, in a vehicle: the turret keys
+                s.RightStickY = pad.rightStickY;
             }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
@@ -470,6 +480,7 @@ namespace AhShitRim::Runner
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            CjGear::Update(ped, state.owned && !state.wasted && !Scenes::Following(), state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjProjectiles::Update(ped, state.owned);
             ModelSender::Pump();

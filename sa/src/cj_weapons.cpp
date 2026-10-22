@@ -259,7 +259,7 @@ namespace AhShitRim::CjWeapons
 
         // The clump's drawn parts, in the order they become bones. The flash is San Andreas's own effect
         // (Skyrim gets a light), and an atomic San Andreas isn't drawing isn't a part.
-        std::vector<RpAtomic*> PartsOf(RpClump* a_clump)
+        std::vector<RpAtomic*> DrawnParts(RpClump* a_clump)
         {
             std::vector<RpAtomic*> all;
             RpClumpForAllAtomics(
@@ -284,10 +284,10 @@ namespace AhShitRim::CjWeapons
             return parts;
         }
 
-        bool Build(CPlayerPed* a_ped, eWeaponType a_type, const std::vector<RpAtomic*>& a_parts, Cache& a_out)
+        bool Build(CPlayerPed* a_ped, eWeaponType a_type, const std::vector<RpAtomic*>& a_parts, Cache& a_out, std::string_view a_name = {})
         {
             const auto start = std::chrono::steady_clock::now();
-            const auto name = std::string(Weapons::ModelName(static_cast<std::uint8_t>(a_type)));
+            const auto name = std::string(a_name.empty() ? Weapons::ModelName(static_cast<std::uint8_t>(a_type)) : a_name);
             SkinModel::ModelIn model;
             model.name = name.substr(0, 31);
             model.kind = Protocol::kSkinModelWeapon;
@@ -507,7 +507,7 @@ namespace AhShitRim::CjWeapons
             // sent if it is a weapon not seen before.
             const bool twin = info->m_nFlags.bTwinPistol != 0;
             if (clump != state.clump || modelIndex != state.modelIndex || twin != state.sentTwin) {
-                const auto atomics = PartsOf(clump);
+                const auto atomics = DrawnParts(clump);
                 auto&      cache = state.cache[modelIndex];
                 if (cache.blob.empty() && !cache.failed) {
                     cache.failed = !Build(a_ped, type, atomics, cache);
@@ -599,19 +599,21 @@ namespace AhShitRim::CjWeapons
         }
     }
 
-    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts)
+    std::vector<RpAtomic*> PartsOf(RpClump* a_clump) { return a_clump ? DrawnParts(a_clump) : std::vector<RpAtomic*>{}; }
+
+    std::vector<std::uint8_t> BuildModel(RwObject* a_object, std::uint8_t a_type, std::vector<RpAtomic*>& a_parts, std::string_view a_name)
     {
         a_parts.clear();
         if (!a_object) {
             return {};
         }
         if (RwObjectGetType(a_object) == rpCLUMP) {
-            a_parts = PartsOf(reinterpret_cast<RpClump*>(a_object));
+            a_parts = DrawnParts(reinterpret_cast<RpClump*>(a_object));
         } else if (RwObjectGetType(a_object) == rpATOMIC) {
             a_parts.push_back(reinterpret_cast<RpAtomic*>(a_object));
         }
         Cache cache;
-        if (a_parts.empty() || !Build(nullptr, static_cast<eWeaponType>(a_type), a_parts, cache)) {
+        if (a_parts.empty() || !Build(nullptr, static_cast<eWeaponType>(a_type), a_parts, cache, a_name)) {
             return {};
         }
         return std::move(cache.blob);

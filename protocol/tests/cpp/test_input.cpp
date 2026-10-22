@@ -32,8 +32,9 @@ TEST_CASE("keys that stay with Skyrim never reach San Andreas")
     CHECK(ActionFromScanCode(kDikM) == Action::None);
     CHECK(ActionFromScanCode(kDikGrave) == Action::None);
     CHECK(ActionFromScanCode(kDikF10) == Action::None);
-    CHECK(ActionFromScanCode(kDikE) == Action::None);  // E activates on Skyrim's side
-    CHECK(ActionFromScanCode(kDikE, KeyLayout::Classic) == Action::None);
+    // E activates on Skyrim's side on foot, so Skyrim only passes it on in a vehicle (v19: look right).
+    CHECK(ActionFromScanCode(kDikE) == Action::LookRight);
+    CHECK(ActionFromScanCode(kDikE, KeyLayout::Classic) == Action::LookRight);
 }
 
 TEST_CASE("the builder turns held keys into axes and buttons")
@@ -358,20 +359,85 @@ TEST_CASE("the mouse buttons fire and aim on foot, and let go with everything el
     CHECK(b.Build(5, true, true).buttons == 0);
 }
 
-TEST_CASE("fire and aim reach San Andreas's circle and right shoulder on foot, and only on foot")
+TEST_CASE("fire and aim reach San Andreas's circle and right shoulder on foot, and a vehicle's two weapons in one")
 {
     Protocol::InputState in{};
     in.buttons = Protocol::kButtonFire | Protocol::kButtonAim;
     auto pad = ToPad(in);
     CHECK(pad.buttonCircle == 255);
     CHECK(pad.rightShoulder1 == 255);
+    CHECK(pad.leftShoulder1 == 0);
 
     pad = ToPad(in, true);  // in a vehicle the right shoulder is the handbrake, which is its own button
-    CHECK(pad.buttonCircle == 0);
+    CHECK(pad.buttonCircle == 255);   // v19: the vehicle's guns (CPad::GetCarGunFired's 1)
+    CHECK(pad.leftShoulder1 == 255);  // and its second weapon (GetCarGunFired's 2)
     CHECK(pad.rightShoulder1 == 0);
     in.buttons = Protocol::kButtonHandbrake;
     CHECK(ToPad(in, true).rightShoulder1 == 255);
     CHECK(ToPad(in, false).rightShoulder1 == 0);
+}
+
+TEST_CASE("in a vehicle Q and E look left and right and the numpad is the right stick")
+{
+    CHECK(ActionFromScanCode(kDikQ) == Action::LookLeft);
+    CHECK(ActionFromScanCode(kDikNumpad4) == Action::TurretLeft);
+    CHECK(ActionFromScanCode(kDikNumpad6) == Action::TurretRight);
+    CHECK(ActionFromScanCode(kDikNumpad8) == Action::TurretUp);
+    CHECK(ActionFromScanCode(kDikPageUp) == Action::TurretUp);
+    CHECK(ActionFromScanCode(kDikNumpad2) == Action::TurretDown);
+    CHECK(ActionFromScanCode(kDikPageDown) == Action::TurretDown);
+
+    Builder b;
+    b.SetKey(kDikQ, true);
+    b.SetKey(kDikNumpad8, true);
+    b.SetKey(kDikNumpad6, true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.buttons == (Protocol::kButtonLookLeft | Protocol::kButtonTurretUp | Protocol::kButtonTurretRight));
+    auto pad = ToPad(in, true);
+    CHECK(pad.leftShoulder2 == 255);   // a plane's rudder left
+    CHECK(pad.rightShoulder2 == 0);
+    CHECK(pad.rightStickY == -128);    // numpad 8 is the stick up
+    CHECK(pad.rightStickX == 128);
+    pad = ToPad(in, false);  // on foot none of them do anything
+    CHECK(pad.leftShoulder2 == 0);
+    CHECK(pad.rightStickX == 0);
+    CHECK(pad.rightStickY == 0);
+
+    b.SetKey(kDikQ, false);
+    b.SetKey(kDikNumpad8, false);
+    b.SetKey(kDikNumpad6, false);
+    b.SetKey(kDikE, true);
+    b.SetKey(kDikPageDown, true);
+    b.SetKey(kDikNumpad4, true);
+    pad = ToPad(b.Build(2, true, true), true);
+    CHECK(pad.rightShoulder2 == 255);
+    CHECK(pad.rightStickY == 128);
+    CHECK(pad.rightStickX == -128);
+    b.SetKey(kDikNumpad2, true);  // Page Down and numpad 2 together are still the stick down
+    CHECK(ToPad(b.Build(3, true, true), true).rightStickY == 128);
+}
+
+TEST_CASE("' spawns the dev pick, once per press, and nothing without one")
+{
+    Builder b;
+    b.SetKey(kDikApostrophe, true);
+    CHECK(b.Build(1, true, true).spawnCount == 0);  // no pick yet
+    b.SetKey(kDikApostrophe, false);
+    b.SetDevModel(520);
+    CHECK(b.DevModel() == 520);
+    b.SetKey(kDikApostrophe, true);
+    b.SetKey(kDikApostrophe, true);  // key repeat
+    auto s = b.Build(2, true, true);
+    CHECK(s.spawnModel == 520);
+    CHECK(s.spawnCount == 1);
+    b.SetKey(kDikApostrophe, false);
+    b.SetDevModel(370);  // the jetpack goes the same way
+    b.SetKey(kDikApostrophe, true);
+    s = b.Build(3, true, true);
+    CHECK(s.spawnModel == 370);
+    CHECK(s.spawnCount == 2);
+    CHECK(ActionFromScanCode(kDikApostrophe) == Action::None);
+    CHECK(ActionFromScanCode(kDikSemicolon) == Action::None);
 }
 
 TEST_CASE("the debug key is = and nothing else maps to it")

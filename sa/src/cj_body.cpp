@@ -279,36 +279,38 @@ namespace AhShitRim::CjBody
 
         RwFrame* FrameOf(RpAtomic* a_atomic) { return static_cast<RwFrame*>(a_atomic->object.object.parent); }
 
-        // Reads CJ's model from his clump; false (logged) when it can't.
-        bool Build(CPlayerPed* a_ped)
+        // A skinned clump's model as a SkinModel of kind a_kind, its bones the skin's; empty (logged, a_what names it) when
+        // it can't be read.
+        std::vector<std::uint8_t> ReadSkinned(RpClump* a_clump, const std::string& a_what, const std::string& a_name, std::uint32_t a_kind,
+            std::uint32_t& a_boneCount, RpGeometry** a_geometry = nullptr)
         {
-            const auto start = std::chrono::steady_clock::now();
-            auto*      clump = a_ped->m_pRwClump;
-            int        atomics = 0;
-            RpAtomic*  atomic = clump ? SkinnedAtomic(clump, &atomics) : nullptr;
-            RpGeometry* geometry = atomic ? atomic->geometry : nullptr;
-            RpHAnimHierarchy* hierarchy = clump ? GetAnimHierarchyFromSkinClump(clump) : nullptr;
-            state.geometry = geometry;
-            state.signature = Signature(geometry);
-            state.failed = true;
+            const auto        start = std::chrono::steady_clock::now();
+            int               atomics = 0;
+            RpAtomic*         atomic = a_clump ? SkinnedAtomic(a_clump, &atomics) : nullptr;
+            RpGeometry*       geometry = atomic ? atomic->geometry : nullptr;
+            RpHAnimHierarchy* hierarchy = a_clump ? GetAnimHierarchyFromSkinClump(a_clump) : nullptr;
+            if (a_geometry) {
+                *a_geometry = geometry;
+            }
             if (!geometry || !hierarchy) {
-                Log(std::format("body: CJ has no skinned geometry ({} atomics) or no skeleton, nothing to draw in Skyrim", atomics));
-                return false;
+                Log(std::format("body: {} has no skinned geometry ({} atomics) or no skeleton, nothing to draw in Skyrim", a_what, atomics));
+                return {};
             }
             RpSkin* skin = RpSkinGeometryGetSkin(geometry);
             if ((geometry->flags & rpGEOMETRYNATIVE) != 0 || !geometry->morphTarget || !geometry->morphTarget[0].verts || !geometry->triangles) {
-                Log(std::format("body: CJ's geometry has no vertex data in memory (flags 0x{:X})", geometry->flags));
-                return false;
+                Log(std::format("body: {}'s geometry has no vertex data in memory (flags 0x{:X})", a_what, geometry->flags));
+                return {};
             }
             const std::uint32_t bones = (std::min)(RpSkinGetNumBones(skin), static_cast<RwUInt32>(hierarchy->numNodes));
             if (bones == 0 || bones > Protocol::kBodyBoneMax) {
-                Log(std::format("body: CJ's skin has {} bones and his skeleton {}; at most {} are supported", RpSkinGetNumBones(skin),
+                Log(std::format("body: {}'s skin has {} bones and its skeleton {}; at most {} are supported", a_what, RpSkinGetNumBones(skin),
                     hierarchy->numNodes, Protocol::kBodyBoneMax));
-                return false;
+                return {};
             }
 
             SkinModel::ModelIn model;
-            model.name = "CJ";
+            model.name = a_name.substr(0, 31);
+            model.kind = a_kind;
             for (std::uint32_t i = 0; i < bones; i++) {
                 model.boneIds.push_back(static_cast<std::uint32_t>(hierarchy->pNodeInfo[i].nodeID));
             }
@@ -332,7 +334,7 @@ namespace AhShitRim::CjBody
                         std::string why;
                         auto        read = RwTextures::Read(texture, why);
                         if (read.rgba.empty()) {
-                            Log(std::format("body: texture {} of CJ left white: {}", static_cast<const char*>(texture->name), why));
+                            Log(std::format("body: texture {} of {} left white: {}", static_cast<const char*>(texture->name), a_what, why));
                             out.texture = -1;
                         } else {
                             textureLog += std::format(" {} {}x{}", static_cast<const char*>(texture->name), read.width, read.height);
@@ -366,9 +368,31 @@ namespace AhShitRim::CjBody
                 vertices += static_cast<std::uint32_t>(mesh.vertices.size());
                 triangles += static_cast<std::uint32_t>(mesh.indices.size() / 3);
             }
-            const auto blob = SkinModel::Serialize(model);
+            auto blob = SkinModel::Serialize(model);
             if (blob.size() > Protocol::kModelSizeMax || !SkinModel::Parse(blob.data(), blob.size())) {
-                Log(std::format("body: CJ's model ({} bytes, {} meshes) would not load in Skyrim, not sent", blob.size(), model.meshes.size()));
+                Log(std::format("body: {}'s model ({} bytes, {} meshes) would not load in Skyrim, not sent", a_what, blob.size(), model.meshes.size()));
+                return {};
+            }
+            a_boneCount = bones;
+            const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+            Log(std::format("body: {}'s model read in {:.1f} ms: {} meshes, {} vertices, {} triangles ({} turned round, {} dropped, "
+                            "{} vertices without weight, {} weights on bones past the skeleton), {} bones ({} space), {} textures:{}; {} bytes",
+                a_what, ms, model.meshes.size(), vertices, triangles, stats.flipped, stats.dropped, stats.unweighted, stats.foreignBones, bones,
+                (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) ? "local" : "world", model.textures.size(),
+                textureLog.empty() ? " none" : textureLog, blob.size()));
+            return blob;
+        }
+
+        // Reads CJ's model from his clump; false (logged) when it can't.
+        bool Build(CPlayerPed* a_ped)
+        {
+            RpGeometry*   geometry = nullptr;
+            std::uint32_t bones = 0;
+            state.failed = true;
+            const auto blob = ReadSkinned(a_ped->m_pRwClump, "CJ", "CJ", Protocol::kSkinModelBody, bones, &geometry);
+            state.geometry = geometry;
+            state.signature = Signature(geometry);
+            if (blob.empty()) {
                 return false;
             }
             state.model = static_cast<std::uint32_t>(::GetTickCount64()) | 1;  // new for every build, also across restarts
@@ -377,12 +401,7 @@ namespace AhShitRim::CjBody
             const auto chunkCount = chunks.size();
             ModelSender::Set(ModelSender::kBodyKey, state.model, std::move(chunks), "body: CJ's model");
             state.failed = false;
-            const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            Log(std::format("body: CJ's model {:08X} read in {:.1f} ms: {} meshes, {} vertices, {} triangles ({} turned round, {} dropped, "
-                            "{} vertices without weight, {} weights on bones past the skeleton), {} bones ({} space), {} textures:{}; {} bytes in {} chunks",
-                state.model, ms, model.meshes.size(), vertices, triangles, stats.flipped, stats.dropped, stats.unweighted, stats.foreignBones, bones,
-                (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) ? "local" : "world", model.textures.size(),
-                textureLog.empty() ? " none" : textureLog, blob.size(), chunkCount));
+            Log(std::format("body: CJ's model is {:08X}, {} chunks", state.model, chunkCount));
             return true;
         }
 
@@ -427,6 +446,34 @@ namespace AhShitRim::CjBody
             RwMatrix world;
             RwMatrixMultiply(&world, &a_out, atomicLtm);
             a_out = world;
+        }
+        return true;
+    }
+
+    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount)
+    {
+        return ReadSkinned(a_clump, "the " + a_name, a_name, a_kind, a_boneCount);
+    }
+
+    bool PoseSkinned(RpClump* a_clump, std::uint32_t a_boneCount, const CVector& a_feet, Protocol::BodyState& a_out)
+    {
+        auto*             atomic = a_clump ? SkinnedAtomic(a_clump) : nullptr;
+        RpHAnimHierarchy* hierarchy = a_clump ? GetAnimHierarchyFromSkinClump(a_clump) : nullptr;
+        RpSkin*           skin = atomic ? RpSkinGeometryGetSkin(atomic->geometry) : nullptr;
+        if (!hierarchy || !skin || a_boneCount > Protocol::kBodyBoneMax) {
+            return false;
+        }
+        const RwMatrix* matrices = RpHAnimHierarchyGetMatrixArray(hierarchy);
+        const RwMatrix* skinToBone = RpSkinGetSkinToBoneMatrices(skin);
+        const RwMatrix* atomicLtm = RwFrameGetLTM(FrameOf(atomic));
+        if (!matrices || !skinToBone || !atomicLtm) {
+            return false;
+        }
+        const bool local = (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) != 0;
+        const auto atomicFrame = ToFrame(*atomicLtm);
+        a_out.boneCount = a_boneCount;
+        for (std::uint32_t i = 0; i < a_boneCount; i++) {
+            a_out.bones[i] = Body::ToBone(Body::SkinToWorld(ToFrame(skinToBone[i]), ToFrame(matrices[i]), atomicFrame, local), Vec(a_feet));
         }
         return true;
     }

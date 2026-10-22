@@ -12,8 +12,8 @@ Both games, MSVC and the scripts are here, so build and test locally instead of 
 
 - Run `scripts/*.ps1` from the PowerShell tool, or `pwsh -NoProfile -File scripts/<name>.ps1` from Git Bash. They set up the MSVC dev shell themselves; `cmake` isn't on PATH outside them.
 - `scripts/build.ps1` builds both plugins, `scripts/test.ps1` runs the game-free tests, `scripts/logs.ps1` tails both plugin logs. Long builds go in the background.
-- `scripts/restart-games.ps1` is the whole in-game loop (close, build, deploy, start both, wait for "link up"). `-NoBuild` deploys whatever was built last instead. `scripts/fake-skyrim.ps1` and `scripts/fake-weapons.ps1` check a running San Andreas without Skyrim.
-- You may close Skyrim and San Andreas whenever a deploy or test needs it; say so in your reply. Never run `fake_skyrim` or `fake_weapons` while Skyrim is running: both write the input slot and fight over the handover.
+- `scripts/restart-games.ps1` is the whole in-game loop (close, build, deploy, start both, wait for "link up"). `-NoBuild` deploys whatever was built last instead. `scripts/fake-skyrim.ps1`, `scripts/fake-weapons.ps1` and `scripts/fake-vehicles.ps1` check a running San Andreas without Skyrim.
+- You may close Skyrim and San Andreas whenever a deploy or test needs it; say so in your reply. Never run `fake_skyrim`, `fake_weapons` or `fake_vehicles` while Skyrim is running: they write the input slot and fight over the handover.
 - Dev and test keys stay off Skyrim's default binds (F9 is quick load; `/` is the HUD demo). Check the README's keys table first.
 - Another session may be using the main checkout. Work in a git worktree of your own, and don't switch branches or commit in someone else's.
 - Files are LF (`.gitattributes`). Edit them with the editor tools; PowerShell's `Set-Content` and Python's default text mode on Windows write CRLF.

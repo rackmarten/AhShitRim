@@ -21,7 +21,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | F10 | F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
 | F11 | F11 | Screenshot with the HUDs on it, to `Screenshots` next to `Start AhShitRim.bat` (also while Skyrim has the player) | Same |
 | W / S | W / S | Walk forwards / back | Accelerate / brake, then reverse |
-| Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps) |
+| Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps); pitch an aircraft |
 | A / D, arrows left / right | A / D, arrows left / right | Walk left / right | Steer |
 | Mouse | Mouse | Look around | Look around |
 | Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
@@ -30,21 +30,26 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
-| H | **Caps Lock or H** | | Horn |
-| E | E | Activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome") | |
+| H | **Caps Lock or H** | | Horn; a plane's landing gear |
+| Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome") | Look left / right; an aircraft's rudder |
+| Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Hydra's nozzles between hovering and forward flight |
 | Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air | Skyrim's shout, no gesture |
 | ] | ] | Spawn a Sandking | |
 | [ | [ | Spawn a ZR-350 | |
 | `\` | `\` | Spawn a Sanchez dirt bike | |
+| `;` | `;` | Dev key: pick the next vehicle for `'` (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute); the help box names it. `[Debug] Vehicles=` in `AhShitRim.ini` sets your own list of model ids, `[Debug] VehicleKeys=0` turns both keys off; they go once cheats exist | Same |
+| `'` | `'` | Dev key: spawn the pick (the jetpack goes on CJ's back, the parachute into his hands). Boats, trains, trailers and RC vehicles are refused, and the help box says why | |
 | Mouse wheel | Mouse wheel | Next or previous weapon (San Andreas's slots) | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) |
-| Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | |
-| Left mouse button | Left mouse button | Fire (a melee weapon attacks) | |
+| Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | The vehicle's second weapon (the Hunter's rockets) |
+| Left mouse button | Left mouse button | Fire (a melee weapon attacks); with the parachute in the air, open it | The vehicle's weapon: the Hunter's guns, the Hydra's missiles, the Rhino's cannon (its turret follows the camera) |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
 | Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Same |
 | `=` | `=` | Dev key: give CJ San Andreas's next weapon set (1 to 3, the gear they leave out, then each melee weapon and gift one at a time). Off with `[Debug]` `WeaponKey=0` in `AhShitRim.ini`; it goes once cheats exist | Same |
 | `/` | `/` | Dev key: show San Andreas's next text style (mission title, wasted, busted, mission passed, help, subtitles, fade, letterbox, wanted stars, radio station, off) | Same |
 
-A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
+A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Any of San Andreas's land and air vehicles can come: bikes and bicycles, quads, monster trucks, the Rhino, helicopters and planes. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. With the parachute in his hands CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute, and it's used up once he lands.
+
+**The Hydra is experimental.** Skyrim's cell streaming keeps up with it over land (measured with `[Debug] StreamTest=87`: 3.4 km from Riverwood in 39 s at a steady 60 fps, no frame over 50 ms), but Skyrim only has collision for its land about a second ahead at that speed (88 m; 175 m out never was), so flying low and fast you can outrun the ground San Andreas builds and fly through hills. Out over the Sea of Ghosts, past the north coast, Skyrim dropped to about 5 fps. Fly high, or slow down to land. Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
 
 CJ stays the player when the game moves it: through a load door (on foot only), into an interior and back out, by fast travel or a script. San Andreas rebuilds his ground where the player arrives and holds him there until it's in. Fast travelling in a vehicle leaves the vehicle behind.
 

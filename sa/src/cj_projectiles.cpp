@@ -13,8 +13,11 @@
 #include <plugin.h>
 
 #include <CAudioEngine.h>
+#include <CAutomobile.h>
 #include <CCamera.h>
+#include <CExplosion.h>
 #include <CFireManager.h>
+#include <CPlayerPed.h>
 #include <CProjectile.h>
 #include <CProjectileInfo.h>
 #include <CTimer.h>
@@ -49,11 +52,16 @@ namespace AhShitRim::CjProjectiles
         constexpr int            kAeExplosion = 0x81;            // AE_EXPLOSION
         constexpr std::uintptr_t kReportObjectDestruction = 0x506ED0;  // CAudioEngine::ReportObjectDestruction (thiscall): a Molotov's bottle smashing
         constexpr std::uint32_t  kStandInGrace = 2000;  // ms a rocket's stand-in outlives its fuse if Skyrim never says it went off
+        constexpr std::uintptr_t kAddExplosion = 0x736A50;  // CExplosion::AddExplosion (cdecl): the Rhino's shell goes off through it (CAutomobile::TankControl)
+        constexpr int            kModelRhino = 432;
+        constexpr int            kCarMiscC = 20;            // CAR_MISC_C: the Rhino's muzzle, where TankControl fires from
+        constexpr float          kShellSpeed = 200.0f;      // metres a second: San Andreas's shell is a line test, Skyrim's flies this fast (60 m in 0.3 s)
 
         SafetyHookInline g_addProjectile;
         SafetyHookInline g_removeNotAdd;
         SafetyHookInline g_update;
         SafetyHookInline g_removeDetonator;
+        SafetyHookInline g_addExplosion;
 
         // A rocket Skyrim flies keeps a stand-in in San Andreas's world, without collision, flown along the same
         // straight line, so the sound San Andreas tied to it (the launch and its roar) follows it and stops when
@@ -92,6 +100,16 @@ namespace AhShitRim::CjProjectiles
         } state;
 
         bool IsCj(const void* a_entity) { return a_entity && a_entity == FindPlayerPed(0); }
+
+        // The vehicle CJ drives, whose rockets and missiles are his too (the Hunter's, the Hydra's: CVehicle::FireUnguidedMissile
+        // and FireHeatSeakingMissile make them with the vehicle as their creator).
+        CVehicle* CjsVehicle()
+        {
+            auto* cj = FindPlayerPed(0);
+            return cj && cj->bInVehicle ? cj->m_pVehicle : nullptr;
+        }
+
+        bool IsCjsOwn(const void* a_entity) { return IsCj(a_entity) || (a_entity && a_entity == CjsVehicle()); }
 
         Body::RwRows ToRows(const RwMatrix& a_m)
         {
@@ -314,7 +332,7 @@ namespace AhShitRim::CjProjectiles
         bool __cdecl AddProjectileHook(CEntity* a_creator, eWeaponType a_type, CVector a_at, float a_force, CVector* a_dir, CEntity* a_victim)
         {
             const auto type = static_cast<std::uint8_t>(a_type);
-            if (!IsCj(a_creator) || Explosives::KindOf(type) == Explosives::Kind::None) {
+            if (!IsCjsOwn(a_creator) || Explosives::KindOf(type) == Explosives::Kind::None) {
                 return g_addProjectile.call<bool>(a_creator, a_type, a_at, a_force, a_dir, a_victim);
             }
             bool was[kSlots];
@@ -333,7 +351,7 @@ namespace AhShitRim::CjProjectiles
         void __cdecl RemoveNotAddHook(CEntity* a_creator, eWeaponType a_type, CVector a_at)
         {
             const auto type = static_cast<std::uint8_t>(a_type);
-            if (!IsCj(a_creator) || Explosives::KindOf(type) == Explosives::Kind::None) {
+            if (!IsCjsOwn(a_creator) || Explosives::KindOf(type) == Explosives::Kind::None) {
                 g_removeNotAdd.call(a_creator, a_type, a_at);
                 return;
             }
@@ -368,6 +386,44 @@ namespace AhShitRim::CjProjectiles
             g_removeDetonator.call();
         }
 
+        // The Rhino's shell (v19): CAutomobile::TankControl tests a line 60 m out from its muzzle and sets off
+        // EXPLOSION_TANK_FIRE where it hits, or at its end. San Andreas's world has only the ground in it, so the shell
+        // goes to Skyrim instead, as a rocket without a model, fast, from the muzzle towards that point: it goes off on
+        // whatever is in the way there, or at the point (its fuse). Skyrim's Effect brings San Andreas's blast sound back.
+        bool __cdecl AddExplosionHook(CEntity* a_victim, CEntity* a_creator, eExplosionType a_type, CVector a_at, unsigned int a_time,
+            unsigned char a_sound, float a_shake, unsigned char a_visible)
+        {
+            CVehicle* tank = CjsVehicle();
+            if (a_type != EXPLOSION_TANK_FIRE || !IsCj(a_creator) || !tank || tank->m_nModelIndex != kModelRhino) {
+                return g_addExplosion.call<bool>(a_victim, a_creator, a_type, a_at, a_time, a_sound, a_shake, a_visible);
+            }
+            CVector muzzle = tank->GetPosition() + tank->GetUp() * 1.5f;
+            if (RwFrame* frame = static_cast<CAutomobile*>(tank)->m_aCarNodes[kCarMiscC]) {
+                const RwMatrix* ltm = RwFrameGetLTM(frame);
+                muzzle = CVector(ltm->pos.x, ltm->pos.y, ltm->pos.z);
+            }
+            CVector     along = a_at - muzzle;
+            float       length = along.Magnitude();
+            if (length < 1.0f) {
+                along = tank->GetForward();
+                length = 60.0f;
+            } else {
+                along /= length;
+            }
+            Protocol::ProjectileEvent event{};
+            event.weaponType = Explosives::kRocket;
+            CVector spawnFeet;
+            if (Frame(event, muzzle, spawnFeet)) {
+                event.velocity[0] = along.x * kShellSpeed * Pose::kUnitsPerMeter;
+                event.velocity[1] = along.y * kShellSpeed * Pose::kUnitsPerMeter;
+                event.velocity[2] = along.z * kShellSpeed * Pose::kUnitsPerMeter;
+                event.fuseMs = static_cast<std::uint32_t>(length / kShellSpeed * 1000.0f) + 1;
+                event.id = ++state.nextId;
+                Send(event, "Rhino shell");
+            }
+            return true;
+        }
+
         SafetyHookInline Hook(std::uintptr_t a_address, void* a_detour, const char* a_name)
         {
             auto hook = safetyhook::create_inline(reinterpret_cast<void*>(a_address), a_detour);
@@ -382,6 +438,7 @@ namespace AhShitRim::CjProjectiles
         g_removeNotAdd = Hook(kRemoveNotAdd, reinterpret_cast<void*>(&RemoveNotAddHook), "CProjectileInfo::RemoveNotAdd");
         g_update = Hook(kUpdate, reinterpret_cast<void*>(&UpdateHook), "CProjectileInfo::Update");
         g_removeDetonator = Hook(kRemoveDetonator, reinterpret_cast<void*>(&RemoveDetonatorHook), "CProjectileInfo::RemoveDetonatorProjectiles");
+        g_addExplosion = Hook(kAddExplosion, reinterpret_cast<void*>(&AddExplosionHook), "CExplosion::AddExplosion");
     }
 
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size)

@@ -279,9 +279,23 @@ TEST_CASE("a new handover frees every slot")
 
 TEST_CASE("San Andreas keeps every chunk Skyrim still remembers")
 {
-    // Skyrim forgets chunks more than 3 from the player and from a point at most 3 chunks ahead.
+    // Skyrim forgets chunks more than kForgetRadius from the player and from a point at most kMaxAheadChunks ahead.
     // Anything San Andreas drops (past kKeepRadius from CJ, who is where the player is) must be
     // forgotten by Skyrim, or it would never be sent again.
-    constexpr int kSkyrimForget = 3, kSkyrimMaxAhead = 3;
-    CHECK(kKeepRadius > kSkyrimForget + kSkyrimMaxAhead);
+    CHECK(kKeepRadius > kForgetRadius + kMaxAheadChunks);
+}
+
+TEST_CASE("the point ahead goes 2 s out, at most as far as San Andreas keeps what Skyrim sampled there")
+{
+    using namespace AhShitRim::Ground;
+    CHECK(kMaxAheadChunks >= 6);  // a Hydra's 87 m/s
+
+    auto a = Ahead(700.0f, 0.0f);  // 10 m/s
+    CHECK(a[0] == doctest::Approx(1400.0f));
+    CHECK(a[1] == doctest::Approx(0.0f));
+    a = Ahead(0.0f, -100000.0f);  // far too fast: capped
+    CHECK(a[0] == doctest::Approx(0.0f));
+    CHECK(a[1] == doctest::Approx(-6.0f * AhShitRim::Protocol::kCollisionChunkUnits));
+    a = Ahead(0.0f, 0.0f);
+    CHECK(a[0] == 0.0f);
 }

@@ -7,6 +7,7 @@
 #include "body.h"
 #include "camera.h"
 #include "collision/CollisionSampler.h"
+#include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
@@ -20,6 +21,7 @@
 #include "player/Vitals.h"
 #include "pose.h"
 #include "scene.h"
+#include "vehicle_kinds.h"
 #include "weapons.h"
 
 namespace AhShitRim::PlayerSync
@@ -54,6 +56,9 @@ namespace AhShitRim::PlayerSync
             Input::Builder input;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
+            VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
+            bool           devKeys = true;      // [Debug] VehicleKeys
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
             RE::NiAVObject* culledRoot[2] = {};   // third- and first-person roots this culled
             std::vector<RE::NiPointer<RE::BSGeometry>> culledShapes;  // and their shapes
@@ -285,6 +290,7 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            state.gear.Reset();
         }
 
         constexpr float kCameraShakeMax = 0.5f;  // radians Skyrim's camera may be off its own axes and still count as a shake
@@ -421,6 +427,26 @@ namespace AhShitRim::PlayerSync
             }
         }
 
+        // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed.
+        void DrawGear()
+        {
+            const double        now = NowMs();
+            Protocol::BodyState gear{};
+            if (LinkService::Get().ReadGear(gear)) {
+                if ((gear.flags & Protocol::kBodyValid) == 0 || gear.handover != state.handover) {
+                    state.gear.Reset();
+                    return;
+                }
+                if (gear.boneCount <= Protocol::kBodyBoneMax && Body::Finite(gear)) {
+                    state.gear.Push(gear, now);
+                }
+            }
+            Protocol::BodyState pose{};
+            if (state.gear.Sample(now, pose)) {
+                ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+            }
+        }
+
         void Release(const char* a_reason)
         {
             if (!state.owned) {
@@ -509,6 +535,7 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            state.gear.Reset();
             VehicleFx::Clear();
             Activation::Clear();
             state.reanchoring = true;
@@ -549,6 +576,10 @@ namespace AhShitRim::PlayerSync
             a_player->data.angle.x = a_pose.viewPitch;
             if (auto* controller = a_player->GetCharController()) {
                 controller->SetLinearVelocityImpl(RE::hkVector4(0.0f, 0.0f, 0.0f, 0.0f));
+                // San Andreas works out CJ's falls (Vitals takes them off the player); the player itself never falls, so
+                // Skyrim's own fall damage on landing (a jetpack, a parachute, a jump off a bike) would come on top.
+                controller->fallStartHeight = state.lastPlaced.z;
+                controller->fallTime = 0.0f;
             }
 
             // CJ crouching: Skyrim sneaks. As in PerkeleRim, the actor state and the animation graph
@@ -663,6 +694,7 @@ namespace AhShitRim::PlayerSync
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles(a_player, a_delta);
+            DrawGear();
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
@@ -691,8 +723,9 @@ namespace AhShitRim::PlayerSync
         void TryResume(RE::PlayerCharacter* a_player)
         {
             auto* ui = RE::UI::GetSingleton();
-            if (!LinkService::Get().IsUp() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell()) {
-                return;
+            if (!LinkService::Get().IsUp() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell() ||
+                StreamTest::Running()) {
+                return;  // the stream test moves the player first; CJ comes back after it
             }
             state.resumePending = false;
             state.carRequest = state.resume.car;
@@ -722,6 +755,9 @@ namespace AhShitRim::PlayerSync
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
                     TryResume(a_player);
+                }
+                if (!state.owned) {
+                    StreamTest::Update(a_player, a_delta);
                 }
                 Arms::Update();
                 Protocol::PlayerState pose{};
@@ -850,7 +886,7 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
-                    if (code == Input::kDikE && state.owned) {
+                    if (code == Input::kDikE && state.owned && !InVehicle()) {
                         if (button->IsDown() && !MenuHasInput()) {
                             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                                 Activation::Activate(player);  // what CJ faces, through Skyrim's own activation
@@ -862,6 +898,23 @@ namespace AhShitRim::PlayerSync
                         if (button->IsDown() && !MenuHasInput()) {
                             Arms::DebugKey();  // the dev key: San Andreas's next weapon set
                         }
+                        continue;
+                    }
+                    if (code == Input::kDikSemicolon && state.owned && state.devKeys) {
+                        if (button->IsDown() && !MenuHasInput()) {
+                            NextDevPick();  // the dev key: the next vehicle ' spawns
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikApostrophe && state.owned && state.devKeys && button->IsDown() && !MenuHasInput() &&
+                        !VehicleKinds::Spawnable(state.input.DevModel())) {
+                        const auto model = state.input.DevModel();
+                        SaHud::ShowHelp(std::string(VehicleKinds::TraitsOf(VehicleKinds::KindOf(model)).refusal), 4.0f);
+                        SKSE::log::info("player sync: the dev key would spawn {}, which can't come: {}", VehicleKinds::Label(model),
+                            VehicleKinds::TraitsOf(VehicleKinds::KindOf(model)).refusal);
+                        continue;
+                    }
+                    if (code == Input::kDikApostrophe && !state.devKeys) {
                         continue;
                     }
                     if (code == Input::kDikSlash && state.owned) {
@@ -881,6 +934,24 @@ namespace AhShitRim::PlayerSync
             }
 
         private:
+            // Whether CJ drives or rides (the last pose says): E then is San Andreas's look right, not Skyrim's activate.
+            static bool InVehicle()
+            {
+                Protocol::PlayerState pose{};
+                return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0;
+            }
+
+            static void NextDevPick()
+            {
+                const auto model = state.devPicker.Next();
+                state.input.SetDevModel(model);
+                const bool can = VehicleKinds::Spawnable(model);
+                SaHud::ShowHelp(can ? std::format("Dev pick: {}. ' spawns it", VehicleKinds::Label(model))
+                                    : std::format("Dev pick: {}, which can't spawn", VehicleKinds::Label(model)),
+                    4.0f);
+                SKSE::log::info("player sync: dev pick {}", VehicleKinds::Label(model));
+            }
+
             static void Toggle()
             {
                 if (state.owned) {
@@ -962,6 +1033,14 @@ namespace AhShitRim::PlayerSync
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
             Ini::kPath);
+        const auto devKeys = Ini::Value("Debug", "VehicleKeys");
+        state.devKeys = devKeys.empty() || devKeys != "0";
+        const auto devList = Ini::Value("Debug", "Vehicles");
+        state.devPicker.SetModels(VehicleKinds::ParseModels(devList));
+        state.input.SetDevModel(state.devKeys ? state.devPicker.Current() : 0);
+        SKSE::log::info("player sync: the dev vehicle keys (; picks, ' spawns) are {} ([Debug] VehicleKeys={}), {} picks{} ([Debug] Vehicles={}), the first {}",
+            state.devKeys ? "on" : "off", devKeys.empty() ? "unset" : devKeys, state.devPicker.Count(), devList.empty() ? " built in" : "",
+            devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
         Arms::OnDataLoaded();
         Shots::OnDataLoaded();
         Projectiles::OnDataLoaded();

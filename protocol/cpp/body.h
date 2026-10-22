@@ -142,6 +142,20 @@ namespace AhShitRim::Body
         return out;
     }
 
+    // Whether bone a_bone is hidden by a_mask (BodyState.hiddenParts, v19). Bones past 63 always show.
+    constexpr bool Hidden(std::uint64_t a_mask, std::uint32_t a_bone) { return a_bone < 64 && ((a_mask >> a_bone) & 1) != 0; }
+
+    // A hidden bone's matrix: every vertex on it goes to its joint, so its triangles have no area and nothing
+    // of it is drawn (a vehicle's parts each hang on one bone alone).
+    inline Matrix34 Collapsed(const Protocol::BodyBone& a_bone)
+    {
+        Matrix34 out;
+        out.m[0][3] = a_bone.translation[0];
+        out.m[1][3] = a_bone.translation[1];
+        out.m[2][3] = a_bone.translation[2];
+        return out;
+    }
+
     // A model vertex posed by its bones (a_bones indexed by SkinVertex.bones): the weighted sum of
     // where each bone takes it, normal turned the same way. A vertex without weight stays put.
     inline void Skin(const Matrix34* a_bones, std::uint32_t a_boneCount, const Protocol::SkinVertex& a_vertex, Vec3& a_position, Vec3& a_normal)
