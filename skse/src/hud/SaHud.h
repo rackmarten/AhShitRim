@@ -6,7 +6,7 @@
 //
 // While San Andreas has the player: the HUD top right as San Andreas lays it out (clock on Skyrim's
 // game time, weapon icon, armour bar hidden at 0, health bar on the Skyrim player's health, money
-// on their gold, wanted stars once there is a wanted level), and Skyrim's compass, attribute bars
+// on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), and Skyrim's compass, attribute bars
 // and crosshair hidden. The text styles below show whenever something asks for them.
 namespace AhShitRim::Protocol
 {
@@ -45,6 +45,18 @@ namespace AhShitRim::SaHud
     void SetWantedLevel(int a_stars);             // 0..6; 0 shows none
     void SetArmor(float a_fraction);              // 0..1 of the armour bar; 0 hides it
     void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
+
+    // San Andreas's standard menu top left (Ammu-Nation, #830), as long as it's called every frame: a title and
+    // rows of a name and a price.
+    struct MenuRow
+    {
+        std::string name;
+        std::string price;
+        bool        highlighted = false;
+        bool        available = true;  // dark grey when not (too dear, or full)
+        bool        owned = false;     // green: more of what CJ has
+    };
+    void ShowMenu(std::string a_title, std::vector<MenuRow> a_rows);
     void ClearText();                             // every text style, the fade and the bars off
 
     // The dev key (/ while San Andreas has the player): shows the next text style in turn.

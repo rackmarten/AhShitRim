@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "../ahshitrim_protocol.h"
+
 // CJ's weapons on Skyrim's side (protocol v12). San Andreas keeps them; this
 //  - draws the weapon model in CJ's hand (two for a twin pistol) from the weapon slots, smoothed like CJ,
 //    and the flash of each shot (MuzzleFlash),
@@ -14,10 +16,6 @@ namespace AhShitRim::Cosave
     struct Arms;
 }
 
-namespace AhShitRim::Protocol
-{
-    struct PlayerState;
-}
 
 namespace AhShitRim::Arms
 {
@@ -27,6 +25,13 @@ namespace AhShitRim::Arms
     void Update();
 
     bool DebugKeyEnabled();
+
+    // A weapon CJ bought or earned (#830), a_rounds with it (or only the rounds, for one he has): given on top of
+    // San Andreas's loadout once it has the one it was sent, or kept in the saved loadout while the link is down.
+    void Give(std::uint8_t a_type, std::uint32_t a_rounds);
+
+    // CJ's weapons as Skyrim last saw them (San Andreas's, or the save's until it has them).
+    const Protocol::WeaponEntry (&Loadout())[Protocol::kWeaponSlotCount];
     void DebugKey();  // gives the next set or weapon
 
     // Every frame San Andreas has the player: the weapons in CJ's hands where San Andreas has them, relative

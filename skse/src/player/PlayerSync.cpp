@@ -15,9 +15,12 @@
 #include "input.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
+#include "player/AmmuNation.h"
 #include "player/Arms.h"
 #include "player/CheatCodes.h"
 #include "player/People.h"
+#include "player/GunRewards.h"
+#include "player/Looting.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
@@ -71,6 +74,7 @@ namespace AhShitRim::PlayerSync
             bool           haveCameraOffset = false;
             bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
+            bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -153,7 +157,8 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             const bool wasted = state.owned && Vitals::IsWasted();  // the player is dying: CJ stands still
-            auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted, a_paused);
+            // In Ammu-Nation the keys are the shop's: CJ stands still.
+            auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted && !AmmuNation::IsOpen(), a_paused);
             if (state.owned && Vitals::IsDown()) {
                 input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
             }
@@ -461,6 +466,7 @@ namespace AhShitRim::PlayerSync
             Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
             CollisionSampler::Stop();
             Activation::Clear();
+            AmmuNation::Close();
             Shots::Clear();
             Projectiles::Clear();
             VehicleFx::Clear();
@@ -543,6 +549,7 @@ namespace AhShitRim::PlayerSync
             VehicleFx::Clear();
             People::Clear();
             Activation::Clear();
+            AmmuNation::Close();
             state.reanchoring = true;
             Vitals::OnReanchor();
             AnchorAt(a_player);
@@ -744,7 +751,15 @@ namespace AhShitRim::PlayerSync
                 }
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
-            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene);
+            // Ammu-Nation: open until CJ leaves it (or walks off, or Skyrim takes the player over, or he dies).
+            if (AmmuNation::IsOpen() && (scene || Vitals::IsWasted())) {
+                AmmuNation::Close();
+            }
+            if (AmmuNation::IsOpen() && !MenuHasInput()) {
+                const auto actions = state.input.Build(0, true, true);
+                AmmuNation::Update(a_player, { actions.moveY, actions.buttons, std::exchange(state.shopActivate, false) }, a_delta, valid ? &pose : nullptr);
+            }
+            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
@@ -755,6 +770,7 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
+            Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !Vitals::IsWasted() && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
                 valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
@@ -817,6 +833,7 @@ namespace AhShitRim::PlayerSync
                 }
                 Arms::Update();
                 CheatCodes::Update();
+                GunRewards::Update();
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -884,7 +901,7 @@ namespace AhShitRim::PlayerSync
                 bool changed = false;
                 for (auto* e = a_event ? *a_event : nullptr; e; e = e->next) {
                     if (auto* move = e->AsMouseMoveEvent()) {
-                        if (MenuHasInput()) {
+                        if (MenuHasInput() || AmmuNation::IsOpen()) {
                             continue;  // moves the menu's cursor, not San Andreas's camera
                         }
                         state.input.AddMouse(move->mouseInputX, move->mouseInputY);
@@ -897,19 +914,20 @@ namespace AhShitRim::PlayerSync
                             continue;
                         }
                         const auto id = button->GetIDCode();
+                        const bool forCj = !MenuHasInput() && !AmmuNation::IsOpen();  // CJ's to use: no menu or shop has the input
                         if (id == RE::BSWin32MouseDevice::Key::kLeftButton) {
-                            state.input.SetFire(button->IsPressed() && !MenuHasInput());  // fires the weapon on foot
+                            state.input.SetFire(button->IsPressed() && forCj);  // fires the weapon on foot
                             changed = true;
                         } else if (id == RE::BSWin32MouseDevice::Key::kRightButton) {
-                            state.input.SetAim(button->IsPressed() && !MenuHasInput());
+                            state.input.SetAim(button->IsPressed() && forCj);
                             changed = true;
                         } else if (id == RE::BSWin32MouseDevice::Key::kMiddleButton) {
                             // The swear key: CJ swears to himself, San Andreas plays it.
-                            if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                            if (button->IsDown() && forCj && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
                                 state.input.AddSwear();
                                 changed = true;
                             }
-                        } else if (button->IsDown() && !MenuHasInput() &&
+                        } else if (button->IsDown() && forCj &&
                                    (id == RE::BSWin32MouseDevice::Key::kWheelUp || id == RE::BSWin32MouseDevice::Key::kWheelDown)) {
                             state.input.AddWheel(id == RE::BSWin32MouseDevice::Key::kWheelUp);  // the radio in a vehicle, the weapons on foot
                             changed = true;
@@ -939,7 +957,7 @@ namespace AhShitRim::PlayerSync
                     }
                     if (code == Input::kDikX && state.owned) {
                         // The insult key: CJ insults whoever's about, San Andreas plays it.
-                        if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                        if (button->IsDown() && !MenuHasInput() && !AmmuNation::IsOpen() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
                             state.input.AddInsult();
                             changed = true;
                         }
@@ -947,8 +965,10 @@ namespace AhShitRim::PlayerSync
                     }
                     if (code == Input::kDikE && state.owned && !InVehicle()) {
                         if (button->IsDown() && !MenuHasInput()) {
-                            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                                Activation::Activate(player);  // what CJ faces, through Skyrim's own activation
+                            if (AmmuNation::IsOpen()) {
+                                state.shopActivate = true;  // buys, in the shop
+                            } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                                Activation::Activate(player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
                             }
                         }
                         continue;
@@ -982,8 +1002,8 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
-                    // A spawn key typed into the console or a menu spawns nothing.
-                    state.input.SetKey(code, button->IsPressed(), !MenuHasInput());
+                    // A spawn key typed into the console or a menu (or the shop) spawns nothing.
+                    state.input.SetKey(code, button->IsPressed(), !MenuHasInput() && !AmmuNation::IsOpen());
                     changed = true;
                 }
                 if (changed && state.owned) {
@@ -1038,6 +1058,7 @@ namespace AhShitRim::PlayerSync
                 bool pauses = false;
                 if (state.owned && a_event) {
                     if (a_event->opening) {
+                        Looting::OnMenuOpening(a_event->menuName.c_str());  // no inventory, barter or container menu as CJ
                         auto* ui = RE::UI::GetSingleton();
                         auto  menu = ui ? ui->GetMenu(a_event->menuName) : nullptr;
                         pauses = menu && menu->PausesGame();
@@ -1098,6 +1119,7 @@ namespace AhShitRim::PlayerSync
         Shots::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
+        GunRewards::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -1114,6 +1136,7 @@ namespace AhShitRim::PlayerSync
     {
         state.wasThirdPerson = false;  // the loaded save has its own camera
         state.resumePending = false;
+        GunRewards::OnGameLoad();
         Release("game loading");
         CheatCodes::OnGameLoad();
     }

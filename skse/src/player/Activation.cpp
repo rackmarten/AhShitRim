@@ -2,6 +2,8 @@
 
 #include "activate.h"
 #include "hud/SaHud.h"
+#include "player/AmmuNation.h"
+#include "player/Looting.h"
 
 namespace AhShitRim::Activation
 {
@@ -186,7 +188,8 @@ namespace AhShitRim::Activation
             }
             auto* ref = refs[picked->index];
             if (InSight(a_player, ref, origin, dir, picked->distance)) {
-                if (auto prompt = PromptOf(ref); !prompt.empty()) {
+                auto shop = AmmuNation::PromptFor(ref);
+                if (auto prompt = shop.empty() ? PromptOf(ref) : std::move(shop); !prompt.empty()) {
                     state.target = ref->GetHandle();
                     state.prompt = std::move(prompt);
                     break;
@@ -206,15 +209,18 @@ namespace AhShitRim::Activation
         SaHud::ShowPrompt(state.prompt);
     }
 
-    bool Activate(RE::PlayerCharacter* a_player)
+    bool Activate(RE::PlayerCharacter* a_player, Input::KeyLayout a_layout)
     {
         const auto ref = state.target.get();
         if (!ref) {
             return false;
         }
+        state.target = {};
+        if (AmmuNation::Open(ref.get(), a_layout) || Looting::Activate(a_player, ref.get())) {
+            return true;
+        }
         SKSE::log::info("activation: {:08X} activated by the player ({})", ref->GetFormID(), state.prompt);
         ref->ActivateRef(a_player, 0, nullptr, 1, false);
-        state.target = {};
         return true;
     }
 

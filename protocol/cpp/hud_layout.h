@@ -307,6 +307,43 @@ namespace AhShitRim::HudLayout
     inline Rect LetterboxTop(const Screen& a_screen) { return { 0.0f, 0.0f, a_screen.width, kLetterboxHeight / kHeight * a_screen.height }; }
     inline Rect LetterboxBottom(const Screen& a_screen) { return { 0.0f, a_screen.height - kLetterboxHeight / kHeight * a_screen.height, a_screen.width, a_screen.height }; }
 
+    // ---- San Andreas's standard menu (CMenuSystem::DisplayStandardMenu), for Ammu-Nation (#830) ----
+
+    // A dark window top left, under the help box, its title on top, then a row every 16 units in Subtitles at
+    // 0.52 x 1.0 with a drop shadow: the name on the left, the price on the right. The highlighted row is light
+    // blue, the others night blue, and rows CJ can't buy now dark grey; one he has (more ammo) green.
+    inline constexpr Colour kNightBlue{ 74, 90, 107, 255 };   // HUD_COLOUR_NIGHT_BLUE
+    inline constexpr Colour kMenuWindow{ 0, 0, 0, 190 };
+    inline constexpr float  kMenuX = 29.0f;
+    inline constexpr float  kMenuY = 150.0f;
+    inline constexpr float  kMenuNameWidth = 150.0f;
+    inline constexpr float  kMenuPriceWidth = 60.0f;
+    inline constexpr float  kMenuRowHeight = 16.0f;
+    inline constexpr float  kMenuFirstRow = 26.0f;  // under the title
+
+    inline Rect MenuWindow(const Screen& a_screen, std::size_t a_rows)
+    {
+        return Box(a_screen, kMenuX, kMenuY, kMenuNameWidth + kMenuPriceWidth + 20.0f, kMenuFirstRow + 6.0f + kMenuRowHeight * static_cast<float>(a_rows),
+            Edge::Start, Edge::Start);
+    }
+
+    inline constexpr TextStyle kMenuTitle{ HudFont::Style::Menu, 0.6f, 1.0f, true, 1, HudFont::Align::Left, kMenuX + 10.0f, kMenuY + 5.0f, Edge::Start,
+        Edge::Start, false, 0.0f, kLightGray };
+
+    // Row a_row's name (a_price false) or price.
+    inline TextStyle MenuRow(std::size_t a_row, bool a_price)
+    {
+        TextStyle style{ HudFont::Style::Subtitles, 0.52f, 1.0f, true, 1, a_price ? HudFont::Align::Right : HudFont::Align::Left,
+            kMenuX + 10.0f + (a_price ? kMenuNameWidth + kMenuPriceWidth : 0.0f), kMenuY + kMenuFirstRow + kMenuRowHeight * static_cast<float>(a_row),
+            Edge::Start, Edge::Start, false, 0.0f, kNightBlue };
+        return style;
+    }
+
+    inline Colour MenuRowColour(bool a_highlighted, bool a_available, bool a_owned)
+    {
+        return a_highlighted ? kLightBlue : !a_available ? kDarkGray : a_owned ? kGreen : kNightBlue;
+    }
+
     // ---- What the HUD says ----
 
     // Skyrim's hour of the day (0..24) as San Andreas's clock, "HH:MM".
