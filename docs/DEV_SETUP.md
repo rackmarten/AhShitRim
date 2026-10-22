@@ -136,6 +136,27 @@ AHSR_SA_PATH=/path/to/san-andreas scripts/test.sh   # also read a real install's
 CXX=clang++ scripts/test.sh                      # clang instead (on a fresh build directory)
 ```
 
+### Building on Linux with msvc-wine
+
+An experiment: both plugins and the whole doctest suite (the link's tests too) built on Linux with the real MSVC running under Wine ([mstorsjo/msvc-wine](https://github.com/mstorsjo/msvc-wine)), so a Linux box can check what otherwise needs the Windows CI. Tried on a Debian 13 VM (10 cores, 16 GB, Wine 10).
+
+```bash
+scripts/wine/setup-msvc-wine.sh     # once: apt packages (sudo), MSVC + Windows SDK into ~/msvc, vcpkg into ~/vcpkg
+scripts/wine/build.sh               # SKSE plugin, San Andreas plugin, then the tests under Wine
+scripts/wine/build.sh tests         # any of: skse sa tests
+```
+
+Downloading MSVC accepts Microsoft's Visual Studio licence, and the toolchain stays on that machine. The setup script installs the newest Visual Studio 2026 toolset (14.51, what `windows-latest` builds with); `MSVC_VERSION=17.14` gets 14.44 instead. `build.sh` uses Ninja for both plugins (the Visual Studio generator needs MSBuild), vcpkg with an overlay `x64-windows-static-md` triplet that chainloads `scripts/wine/msvc-wine.cmake`, and runs DirectXTK's shader batch file under Wine's `cmd` (`scripts/wine/bin/`). It refuses to start while someone holds the machine's GPU for a game stream (a file in `$XDG_RUNTIME_DIR/cue-gpu/holders`, `BUSY_DIR` to change it, `FORCE=1` to skip), and prints each target's time and the outputs' machine type and exports at the end.
+
+What happened:
+
+- Not yet measured end to end, so no verdict yet. A run from an empty vcpkg cache built the vcpkg ports in about 5 minutes (DirectXTK 3.4 of them, its shaders through Wine's `cmd` work) and compiled all of CommonLibSSE and the SKSE plugin's sources in about 15 more at `-j 5`, then stopped at the `lib.exe` hang below. The San Andreas plugin and the tests haven't been reached yet.
+
+Known gaps:
+
+- CommonLibSSE's `lib.exe` call never starts: CMake on a Linux host puts all its objects on one command line, over Windows' 32767 characters, and msvc-wine's wrapper then waits on its output pipes forever (no CPU, no progress, every time). `scripts/wine/msvc-wine.cmake` now forces Ninja response files outside vcpkg's port builds; that is untested yet. Forcing them in the port builds too broke DirectXTK's.
+- Compiling with every core (`-j 10`) on 16 GB once crashed `c2.dll` (an `int3`) partway through CommonLibSSE, most likely out of memory, so `build.sh` defaults to half the cores (`JOBS` overrides). If a compile crashes, run it again; ninja carries on where it stopped.
+
 Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<commit>` with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`, and `AhShitRim-release-<commit>` with the player release zip.
 
 To try a PR in game, either:
