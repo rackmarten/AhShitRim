@@ -21,7 +21,6 @@
 #include <CPlayerPed.h>
 #include <CStreaming.h>
 #include <CTaskSimpleJetpack.h>
-#include <CTaskSimpleRunNamedAnim.h>
 #include <CTimer.h>
 #include <CWorld.h>
 #include <common.h>
@@ -39,6 +38,7 @@ namespace AhShitRim::CjGear
 {
     namespace
     {
+        constexpr int kMoveIdle = 3;               // ANIM_ID_IDLE
         constexpr int kTaskPrimary = 3;            // TASK_PRIMARY_PRIMARY, over CJ's own on-foot task (where the jetpack cheat puts its task)
         constexpr int kJetpackModel = 370;         // MODEL_JETPACK
         constexpr std::uintptr_t kJetpackCtor = 0x67B4E0;  // CTaskSimpleJetPack::CTaskSimpleJetPack(const CVector*, float, int, CEntity*) (thiscall)
@@ -61,8 +61,10 @@ namespace AhShitRim::CjGear
         struct State
         {
             Parachute::State chute;
-            CTask*           anim = nullptr;   // the named animation task this put in his primary slot
-            std::string      playing;          // its animation
+            std::string      playing;          // CJ's parachute.ifp animation now, empty for none (HoldCjAnim)
+            bool             loop = false;
+            CAnimBlendHierarchy* hierarchy = nullptr;  // its hierarchy, once found
+            std::string      found;            // the animation hierarchy is
             RpClump*         canopy = nullptr; // the PARACHUTE model's instance, animated here
             std::string      canopyPlaying;
             int              canopyModel = -1;
@@ -243,6 +245,17 @@ namespace AhShitRim::CjGear
 
         bool HoldsChute(CPlayerPed* a_ped) { return a_ped->m_aWeapons[a_ped->m_nSelectedWepSlot].m_eWeaponType == WEAPONTYPE_PARACHUTE; }
 
+        // Whether he carries it at all: San Andreas's script takes it out for him when he falls with it.
+        bool CarriesChute(CPlayerPed* a_ped)
+        {
+            for (const auto& weapon : a_ped->m_aWeapons) {
+                if (weapon.m_eWeaponType == WEAPONTYPE_PARACHUTE) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         float HeightAboveGround(const CVector& a_feet)
         {
             CColPoint point;
@@ -253,28 +266,22 @@ namespace AhShitRim::CjGear
             return a_feet.z - point.m_vecPoint.z;
         }
 
-        // CJ's animation for the phase, as the script's TASK_PLAY_ANIM: a named animation of parachute.ifp in his primary
-        // slot, which San Andreas's fall doesn't interrupt. A new one only when it changes.
+        // CJ's animation for the phase (parachute.ifp's). The script played it as a task, but hidden San Andreas's own fall
+        // (its in-air reaction) kept blending its flailing fall over a task's: so it is only asked for here, and HoldCjAnim
+        // gives it all of his pose right before his animations update, every other animation none.
         void PlayOnCj(CPlayerPed* a_ped, std::string_view a_anim, bool a_loop)
         {
-            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
-            if (a_anim.empty()) {
-                if (state.anim && tasks.m_aPrimaryTasks[kTaskPrimary] == state.anim) {
-                    tasks.SetTask(nullptr, kTaskPrimary, false);
+            if (a_anim.empty() && !state.playing.empty() && a_ped && a_ped->m_pRwClump) {
+                // Over: the parachute's animation fades out and his own idle in; San Andreas's tasks take it from there.
+                for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(a_ped->m_pRwClump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+                    if (assoc->m_pHierarchy == state.hierarchy) {
+                        assoc->m_fBlendDelta = -8.0f;
+                    }
                 }
-                state.anim = nullptr;
-                state.playing.clear();
-                return;
+                CAnimManager::BlendAnimation(a_ped->m_pRwClump, a_ped->m_nAnimGroup, kMoveIdle, 8.0f);
             }
-            if (state.playing == a_anim && state.anim && tasks.m_aPrimaryTasks[kTaskPrimary] == state.anim) {
-                return;
-            }
-            const std::string name(a_anim);
-            const int         flags = 0x1 | (a_loop ? 0x2 : 0x4);  // started, looped or held on its last frame
-            auto*             task = new CTaskSimpleRunNamedAnim(name.c_str(), "parachute", flags, 4.0f, -1, true, false, false, !a_loop);
-            tasks.SetTask(task, kTaskPrimary, false);
-            state.anim = task;
-            state.playing = name;
+            state.playing = std::string(a_anim);
+            state.loop = a_loop;
         }
 
         // The canopy's instance, its animation blending set up.
@@ -356,7 +363,7 @@ namespace AhShitRim::CjGear
             keys.pitch = -pad.LeftStickY / 128.0f;
             keys.open = pad.ButtonCircle && !old.ButtonCircle;
             Parachute::Around around;
-            around.holdsChute = HoldsChute(a_ped);
+            around.holdsChute = CarriesChute(a_ped);
             around.standing = a_ped->bIsStanding;
             // In a vehicle is bInVehicle alone: m_pVehicle stays on the last one he got out of.
             around.free = a_free && !a_ped->bInVehicle && !Jetpack(a_ped);
@@ -368,6 +375,9 @@ namespace AhShitRim::CjGear
             const float dt = CTimer::m_UserPause ? 0.0f : CTimer::ms_fTimeStep / 50.0f;
             state.chute = Parachute::Step(state.chute, around, keys, dt);
             const auto phase = state.chute.phase;
+            if (before == Parachute::Phase::Off && phase == Parachute::Phase::Freefall && !HoldsChute(a_ped)) {
+                a_ped->SetCurrentWeapon(WEAPONTYPE_PARACHUTE);  // into his hands for the skydive, as the script does
+            }
             if (phase != before) {
                 Log(std::format("gear: parachute {} -> {} ({:.0f} m up, falling {:.1f} m/s)", static_cast<int>(before), static_cast<int>(phase), around.height, around.fall));
             }
@@ -464,6 +474,41 @@ namespace AhShitRim::CjGear
         const bool    shown = UpdateParachute(a_ped, a_free, feet, spawnFeet, a_handover, a_frame) || UpdateJetpack(a_ped, feet, spawnFeet, a_handover, a_frame);
         if (!shown) {
             Clear();
+        }
+    }
+
+    void HoldCjAnim(CPlayerPed* a_ped)
+    {
+        RpClump* clump = a_ped ? a_ped->m_pRwClump : nullptr;
+        if (state.playing.empty() || !clump) {
+            return;
+        }
+        CAnimBlock* block = ParachuteBlock();
+        if (!block) {
+            return;
+        }
+        if (state.found != state.playing) {
+            state.found = state.playing;
+            state.hierarchy = CAnimManager::GetAnimation(state.playing.c_str(), block);
+            if (!state.hierarchy) {
+                Log(std::format("gear: parachute.ifp has no {}", state.playing));
+            }
+        }
+        if (!state.hierarchy) {
+            return;
+        }
+        CAnimBlendAssociation* ours = nullptr;
+        for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            if (assoc->m_pHierarchy == state.hierarchy) {
+                ours = assoc;
+            }
+        }
+        if (!ours) {
+            ours = CAnimManager::BlendAnimation(clump, state.hierarchy, 0x1 | (state.loop ? 0x2 : 0x4), 1000.0f);  // started, looped or held at its end
+        }
+        for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            assoc->m_fBlendAmount = assoc == ours ? 1.0f : 0.0f;
+            assoc->m_fBlendDelta = 0.0f;
         }
     }
 

@@ -200,6 +200,7 @@ namespace AhShitRim::VehicleKinds
     // San Andreas's: CAutomobile::m_fHeliRotorSpeed, CPlane::m_fPropSpeed, radians a 1/50 s step.
 
     inline constexpr float kSpinBlur = 0.1f;  // turning faster, the blurred disc shows (the rotor is a blur before it lifts, at 0.22)
+    inline constexpr std::uint8_t kSpinnerAlpha = 110;  // the disc's alpha at most: see-through, as San Andreas fades it in
 
     enum class Spinner : std::uint8_t
     {

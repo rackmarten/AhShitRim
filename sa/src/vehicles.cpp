@@ -253,7 +253,7 @@ namespace AhShitRim::Vehicles
         // A part Skyrim gets: any atomic with a geometry but the low detail chassis, which isn't drawn up
         // close. A part's damaged and whole versions both go, and whether San Andreas draws one now
         // (rpATOMICRENDER, CVehicle::SetComponentVisibility) is read every frame (hiddenParts, v19).
-        bool Usable(RpAtomic* a_atomic) { return a_atomic->geometry && !FrameName(a_atomic).ends_with("_vlo"); }
+        bool Usable(RpAtomic* a_atomic) { return a_atomic->geometry && FrameName(a_atomic).find("_vlo") == std::string_view::npos; }  // also the Stuntplane's chassis_vlo2
 
         bool Drawn(RpAtomic* a_atomic) { return (RpAtomicGetFlags(a_atomic) & rpATOMICRENDER) != 0; }
 
@@ -345,8 +345,13 @@ namespace AhShitRim::Vehicles
                             byRaster[texture->raster] = out.texture;
                         }
                     }
+                    // A spinning rotor's or propeller's disc: San Andreas fades it in by the material's alpha when it draws it
+                    // (SetComponentAtomicAlpha), so it is see-through, never solid.
+                    if (VehicleKinds::SpinnerOf(FrameName(atomic)) == VehicleKinds::Spinner::Moving) {
+                        out.color[3] = (std::min)(out.color[3], VehicleKinds::kSpinnerAlpha);
+                    }
                     if (out.color[3] < 255) {
-                        out.flags |= Protocol::kSkinMeshBlend;  // glass
+                        out.flags |= Protocol::kSkinMeshBlend;  // glass, a spinning disc
                     } else if (out.texture >= 0 && TextureDecode::HasAlpha(model.textures[out.texture].rgba)) {
                         out.flags |= Protocol::kSkinMeshCutout;
                     }

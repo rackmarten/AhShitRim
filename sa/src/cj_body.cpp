@@ -1,5 +1,6 @@
 #include "cj_body.h"
 
+#include "cj_gear.h"
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
@@ -229,6 +230,7 @@ namespace AhShitRim::CjBody
                 a_entity->bDontUpdateHierarchy = false;
                 auto* clump = a_entity->m_pRwClump;
                 if (clump && a_entity->m_pRwObject->type == rpCLUMP && RpAnimBlendClumpGetFirstAssociation(clump)) {
+                    CjGear::HoldCjAnim(static_cast<CPlayerPed*>(a_entity));  // a skydive's pose, if he is in one
                     RpAnimBlendClumpUpdateAnimations(clump, CTimer::ms_fTimeStep / 50.0f, true);
                 }
                 return;

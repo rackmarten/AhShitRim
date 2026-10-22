@@ -25,6 +25,10 @@ namespace AhShitRim::CjGear
     // a skydive ends otherwise. a_spawn and a_lift as for CjBody::Update.
     void Update(CPlayerPed* a_ped, bool a_free, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame);
 
+    // Right before CJ's animations update (CjBody's UpdateAnim hook): during a skydive his parachute.ifp animation takes
+    // all of his pose, San Andreas's own fall none.
+    void HoldCjAnim(CPlayerPed* a_ped);
+
     // A new handover or a re-anchor: a skydive in progress ends where it is (the jetpack stays on).
     void Reset(CPlayerPed* a_ped);
 }

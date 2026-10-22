@@ -73,6 +73,40 @@ namespace
         });
     }
 
+    // AHSHITRIM_DUMP=<folder>: a model as Skyrim would draw it (skinned by a_body, hidden parts left out) into
+    // <folder>/<a_name>.obj, Skyrim units relative to the handover spot, to look at what a pose does.
+    void Dump(const Received& a_received, const Protocol::BodyState& a_body, const char* a_name)
+    {
+        const char* folder = std::getenv("AHSHITRIM_DUMP");
+        const auto  model = folder ? a_received.Model(a_body.model) : std::nullopt;
+        if (!model || a_body.boneCount != model->boneIds.size()) {
+            return;
+        }
+        std::vector<Body::Matrix34> bones;
+        for (std::uint32_t i = 0; i < a_body.boneCount; i++) {
+            bones.push_back(Body::Hidden(a_body.hiddenParts, i) ? Body::Collapsed(a_body.bones[i]) : Body::ToMatrix(a_body.bones[i]));
+        }
+        const std::string path = std::string(folder) + "/" + a_name + ".obj";
+        FILE*             out = std::fopen(path.c_str(), "w");
+        if (!out) {
+            return;
+        }
+        std::uint32_t base = 1;
+        for (const auto& mesh : model->meshes) {
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                Body::Vec3 v, n;
+                Body::Skin(bones.data(), a_body.boneCount, mesh.Vertex(i), v, n);
+                std::fprintf(out, "v %.1f %.1f %.1f\n", v.x + a_body.feet[0], v.y + a_body.feet[1], v.z + a_body.feet[2]);
+            }
+            for (std::uint32_t t = 0; t + 2 < mesh.indexCount; t += 3) {
+                std::fprintf(out, "f %u %u %u\n", base + mesh.Index(t), base + mesh.Index(t + 1), base + mesh.Index(t + 2));
+            }
+            base += mesh.vertexCount;
+        }
+        std::fclose(out);
+        std::printf("dumped %s\n", path.c_str());
+    }
+
     int Bits(std::uint64_t a_mask)
     {
         int n = 0;
@@ -363,11 +397,18 @@ int main()
             fastest = (std::max)(fastest, -player().velocity[2] * Pose::kMetersPerUnit);
             return false;
         });
+        {
+            Protocol::BodyState cjBody{};
+            link.ReadBody(cjBody);
+            Dump(received, cjBody, "skydive_cj");
+        }
         input.SetFire(true);
         wait(0.3);
         input.SetFire(false);
         bool  canopy = false;
         float floatFall = 0.0f;
+        bool  dumped = false;
+        const auto opened = ms();
         const bool landed = run(60.0, [&] {
             Protocol::BodyState g{};
             if (link.ReadGear(g) && (g.flags & Protocol::kBodyParachute) && received.Model(g.model)) {
@@ -376,6 +417,13 @@ int main()
             const auto p = player();
             if (canopy && !(p.flags & Protocol::kPlayerGrounded)) {
                 floatFall = -p.velocity[2] * Pose::kMetersPerUnit;
+            }
+            if (canopy && !dumped && ms() - opened > 3000) {
+                dumped = true;
+                Protocol::BodyState cjBody{};
+                link.ReadBody(cjBody);
+                Dump(received, cjBody, "float_cj");
+                Dump(received, g, "float_canopy");
             }
             return canopy && (p.flags & Protocol::kPlayerGrounded) != 0;
         });

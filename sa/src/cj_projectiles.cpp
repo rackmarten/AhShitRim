@@ -421,6 +421,11 @@ namespace AhShitRim::CjProjectiles
                 event.id = ++state.nextId;
                 Send(event, "Rhino shell");
             }
+            // San Andreas's own shot goes off the moment it fires (a line test), so its bang is heard as the cannon fires:
+            // the same explosion sound at the muzzle, and the shake; Skyrim's blast where the shell lands brings the second.
+            const auto add = reinterpret_cast<void(__thiscall*)(void*, int, CVector*, float)>(kAddExplosionAudio);
+            add(reinterpret_cast<void*>(kExplosionAudio), kAeExplosion, &muzzle, 0.0f);
+            TheCamera.CamShake(0.4f, muzzle.x, muzzle.y, muzzle.z);
             return true;
         }
 

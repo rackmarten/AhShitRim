@@ -55,7 +55,7 @@ namespace AhShitRim::Parachute
     // What CJ is doing this frame, as San Andreas sees it.
     struct Around
     {
-        bool  holdsChute = false;  // the parachute is the weapon in his hands
+        bool  holdsChute = false;  // he carries the parachute (it comes into his hands when the skydive starts, as the script takes it out)
         bool  standing = false;    // San Andreas has him on something (CPed::bIsStanding)
         bool  free = true;         // on foot and his own: not in a vehicle, on the jetpack, in a scene or Wasted
         float fall = 0.0f;         // metres a second downwards (negative going up)
