@@ -1,10 +1,27 @@
 name: build
 
-# Windows minutes bill double on a private repo, so only PRs, main and manual runs.
+# Windows minutes bill double on a private repo, so: PRs that touch more than docs (the Windows
+# build only once they're out of draft), main only when a cache key's inputs change, and manual runs.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  # A PR can only restore caches saved on its own ref or on main, so main still builds when the
+  # vcpkg or plugin_sa cache keys would change. A new MSVC toolset on the runner changes the
+  # plugin_sa key too: run the workflow by hand on main then.
   push:
     branches: [main]
+    paths:
+      - 'skse/vcpkg.json'
+      - 'skse/vcpkg-configuration.json'
+      - 'protocol/vcpkg.json'
+      - 'protocol/vcpkg-configuration.json'
+      - 'sa/cmake/plugin_sa.cmake'
+      - 'sa/extern/plugin-sdk'
+      - 'skse/extern/CommonLibSSE-NG'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +32,8 @@ jobs:
   # The game-free doctest cases on Linux (scripts/test.sh): a quick check next to the Windows build.
   # The link's tests need Windows and run in the build job's scripts/test.ps1.
   protocol-tests-linux:
+    # main's runs are only there to save the Windows caches.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +45,8 @@ jobs:
         run: ./scripts/test.sh
 
   build:
+    # A draft PR gets only the Linux tests; marking it ready for review runs this.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: windows-latest
     env:
       # vcpkg's binary archives in a known place, so actions/cache can carry them between runs.
