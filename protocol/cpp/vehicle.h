@@ -352,6 +352,14 @@ namespace AhShitRim::Vehicle
         return p;
     }
 
+    // A bike in the air: San Andreas only leans it (left/right, and forward and back with up/down),
+    // nothing turns it flat. AhShitRim yaws the player's bike with left/right, handbrake or not, as
+    // hard as a car's yaw (kAirTurnGain pushes, up to kAirSpin); a_steer from the keys alone.
+    constexpr float BikeAirYaw(float a_spinUp, float a_steer)
+    {
+        return ExtraAirPush(a_spinUp, a_steer, false);
+    }
+
     // One San Andreas push's force per 1/50 s: a_perMass (0.0007 times the driving skill's modifier,
     // a monster truck 0.0025) times the turn mass, counted up to 3000.
     constexpr float AirPushForce(float a_perMass, float a_turnMass)

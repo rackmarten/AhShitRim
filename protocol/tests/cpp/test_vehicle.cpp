@@ -229,6 +229,16 @@ TEST_CASE("the handbrake makes left and right yaw; on the gas AhShitRim gives al
     CHECK(ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, true, true).yaw > 0.0f);  // yaw still works on the gas
 }
 
+TEST_CASE("a bike yaws in the air with left and right, all of it AhShitRim's")
+{
+    CHECK(BikeAirYaw(0.0f, -1.0f) == doctest::Approx(kAirTurnGain));
+    CHECK(BikeAirYaw(0.0f, 1.0f) == doctest::Approx(kAirTurnGain));
+    CHECK(BikeAirYaw(0.03f, -1.0f) == doctest::Approx(kAirTurnGain));  // San Andreas's cap means nothing here
+    CHECK(BikeAirYaw(-0.07f, 1.0f) == 0.0f);                           // up to kAirSpin
+    CHECK(BikeAirYaw(0.07f, 1.0f) == doctest::Approx(kAirTurnGain));    // against a spin, always
+    CHECK(BikeAirYaw(0.0f, 0.0f) == 0.0f);
+}
+
 TEST_CASE("the mouse steers in the air only while the keys don't")
 {
     const auto keys = AirSteering(-128, 0, true, 100.0f, 100.0f);

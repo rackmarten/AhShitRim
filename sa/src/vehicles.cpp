@@ -54,8 +54,10 @@ namespace AhShitRim::Vehicles
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
 
-        constexpr std::uintptr_t kProcessAI = 0x6B4800;  // CAutomobile::ProcessAI(uint32& extraHandlingFlags) (thiscall)
+        constexpr std::uintptr_t kProcessAI = 0x6B4800;      // CAutomobile::ProcessAI(uint32& extraHandlingFlags) (thiscall)
+        constexpr std::uintptr_t kBikeProcessAI = 0x6BC930;  // CBike::ProcessAI(uint32& extraHandlingFlags) (thiscall)
         SafetyHookInline         g_processAI;
+        SafetyHookInline         g_bikeProcessAI;
 
         struct Slot
         {
@@ -463,12 +465,37 @@ namespace AhShitRim::Vehicles
             }
             return done;
         }
+
+        // A bike in the air yaws with left/right (Vehicle::BikeAirYaw), pushed as a car's yaw is.
+        bool __fastcall BikeProcessAIHook(CBike* a_bike, void*, unsigned* a_flags)
+        {
+            const CVector spin = a_bike->m_vecTurnSpeed;
+            const bool    done = g_bikeProcessAI.thiscall<bool>(a_bike, a_flags);
+            auto*         ped = FindPlayerPed(0);
+            if (done || a_bike->m_nStatus != STATUS_PLAYER || !ped || a_bike->m_pDriver != ped || a_bike->m_nNumContactWheels != 0 ||
+                ped->m_ePedState == PEDSTATE_EXIT_CAR || ped->m_ePedState == PEDSTATE_DRAGGED_FROM_CAR || ped->m_ePedState == PEDSTATE_ARRESTED) {
+                return done;
+            }
+            auto* pad = ped->GetPadFromPlayer();
+            if (!pad) {
+                return done;
+            }
+            const float steer = pad->GetSteeringLeftRight() / 128.0f;
+            const float push = Vehicle::BikeAirYaw(spin.Dot(a_bike->GetUp()), steer);
+            if (push != 0.0f) {
+                const float force = Vehicle::AirPushForce(0.0007f * CStats::GetFatAndMuscleModifier(STAT_MOD_14), a_bike->m_fTurnMass) * CTimer::ms_fTimeStep;
+                a_bike->ApplyTurnForce(a_bike->GetRight() * (steer * force * push), a_bike->m_vecCentreOfMass + a_bike->GetForward());
+            }
+            return done;
+        }
     }
 
     void Install()
     {
         g_processAI = safetyhook::create_inline(reinterpret_cast<void*>(kProcessAI), reinterpret_cast<void*>(&ProcessAIHook));
         Log(g_processAI ? "vehicle: CAutomobile::ProcessAI hooked, cars steer harder in the air" : "vehicle: could not hook CAutomobile::ProcessAI");
+        g_bikeProcessAI = safetyhook::create_inline(reinterpret_cast<void*>(kBikeProcessAI), reinterpret_cast<void*>(&BikeProcessAIHook));
+        Log(g_bikeProcessAI ? "vehicle: CBike::ProcessAI hooked, bikes yaw in the air" : "vehicle: could not hook CBike::ProcessAI");
     }
 
     CVehicle* Driven(CPlayerPed* a_ped)
