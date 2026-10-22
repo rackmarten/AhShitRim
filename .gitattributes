@@ -7,3 +7,5 @@
 *.jpg binary
 *.xwm binary
 *.wav binary
+# A bash stand-in for a batch file, run on Linux
+scripts/wine/bin/*.cmd eol=lf

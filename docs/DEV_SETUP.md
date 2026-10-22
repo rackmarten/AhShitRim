@@ -126,6 +126,14 @@ Each Windows run builds both plugins on a GitHub `windows-latest` runner (Visual
 
 Next to it, a `protocol-tests-linux` job on `ubuntu-latest` runs `scripts/test.sh` (below) in a couple of minutes, so a broken test shows up long before the Windows build finishes.
 
+Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<commit>` with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`, and `AhShitRim-release-<commit>` with the player release zip.
+
+To try a PR in game, either:
+
+- build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1`), or
+- install its release zip (the `AhShitRim-release-<commit>` artifact) as a player would, following [INSTALL.md](INSTALL.md), or
+- download its artifact (`gh run download <run-id>`), put the files where a local build would (`AhShitRim.dll`/`.pdb` in `skse/build/release/`, `AhShitRim.asi`/`.map` in `sa/build/Release/`) and run `scripts/deploy-local.ps1`, which also writes `AhShitRim.ini`.
+
 ### Protocol tests on Linux
 
 The game-free doctest cases also build natively on Linux with gcc or clang, through the `linux-tests` preset in `protocol/CMakePresets.json` (Ninja, Debug). It needs no vcpkg: CMake downloads a pinned doctest release itself (`AHSR_FETCH_DOCTEST`). The link (`link.cpp`, `test_link.cpp`, `fake_skyrim`) is Windows' shared memory and is left out, and so are the launcher's Pester tests. You need CMake 3.21 or later, Ninja and a C++23 compiler (gcc 13 or clang 18 do; on Ubuntu 24.04, `sudo apt install cmake ninja-build g++`). Then:
@@ -136,13 +144,35 @@ AHSR_SA_PATH=/path/to/san-andreas scripts/test.sh   # also read a real install's
 CXX=clang++ scripts/test.sh                      # clang instead (on a fresh build directory)
 ```
 
-Each run uploads two artifacts (the run's page, under Artifacts): `AhShitRim-<commit>` with `AhShitRim.dll` + `.pdb` and `AhShitRim.asi` + `.map`, and `AhShitRim-release-<commit>` with the player release zip.
+### Building on Linux with msvc-wine
 
-To try a PR in game, either:
+Both plugins and the whole doctest suite (the link's tests too) build on Linux with the real MSVC running under Wine ([mstorsjo/msvc-wine](https://github.com/mstorsjo/msvc-wine)), so a Linux box can check what otherwise needs the Windows CI. Tried on a Debian 13 VM (`arcade`: 10 cores, 16 GB, Wine 10).
 
-- build it: `git fetch && git switch <branch>`, then `scripts/build.ps1` and `scripts/deploy-local.ps1` (or `scripts/restart-games.ps1`), or
-- install its release zip (the `AhShitRim-release-<commit>` artifact) as a player would, following [INSTALL.md](INSTALL.md), or
-- download its artifact (`gh run download <run-id>`), put the files where a local build would (`AhShitRim.dll`/`.pdb` in `skse/build/release/`, `AhShitRim.asi`/`.map` in `sa/build/Release/`) and run `scripts/deploy-local.ps1`, which also writes `AhShitRim.ini`.
+```bash
+scripts/wine/setup-msvc-wine.sh     # once: apt packages (sudo), MSVC + Windows SDK into ~/msvc, vcpkg into ~/vcpkg
+scripts/wine/build.sh               # SKSE plugin, San Andreas plugin, then the tests under Wine
+scripts/wine/build.sh tests         # any of: skse sa tests
+```
+
+Downloading MSVC accepts Microsoft's Visual Studio licence, and the toolchain stays on that machine. The setup script installs the newest Visual Studio 2026 toolset (14.51, what `windows-latest` builds with); `MSVC_VERSION=17.14` gets 14.44 instead. `build.sh` uses Ninja for both plugins (the Visual Studio generator needs MSBuild), vcpkg with an overlay `x64-windows-static-md` triplet that chainloads `scripts/wine/msvc-wine.cmake`, and runs DirectXTK's shader batch file under Wine's `cmd` (`scripts/wine/bin/`). `lib` and `link` go through `scripts/wine/long-args.sh`, which moves a command line too long for Windows into a response file with its paths rewritten for Wine, and the tests find the debug CRT DLLs through `WINEPATH`. It refuses to start while someone holds the machine's GPU for a game stream (a file in `$XDG_RUNTIME_DIR/cue-gpu/holders`, `BUSY_DIR` to change it, `FORCE=1` to skip), and prints each target's time and the outputs' machine type and exports at the end.
+
+What happened (2026-10-23, MSVC 14.51, `-j 5`):
+
+| Run | SKSE | San Andreas | Tests | Total |
+| --- | --- | --- | --- | --- |
+| Cold: fresh clone, empty vcpkg binary cache | ~22 min (vcpkg ports ~5, CommonLibSSE most of the rest) | ~3 min | ~1 min | ~26 min |
+| Nothing changed | 13 s | 2 s | 7 s | 22 s |
+| `protocol/ahshitrim_protocol.h` touched | 34 s | 29 s | 28 s | ~1.5 min |
+
+- The SKSE DLL is the same size as CI's build of the same code (1,184,256 bytes), x64, with `SKSEPlugin_Load`, `SKSEPlugin_Query` and `SKSEPlugin_Version` exported. The ASI is x86 and 512 bytes smaller than CI's (1,254,400 against 1,254,912; Ninja's flags against the Visual Studio generator's). All doctest cases pass under Wine, the link's included. Neither binary has been tried in game yet.
+- So it's a go for a self-hosted runner that keeps its build folders: a typical PR is a minute or two instead of the Windows runner's 7 to 10 (billed double).
+
+Known gaps:
+
+- `cl.exe` under Wine sometimes spins forever on one file (100% of a core, no output): once in four full builds, on a plugin-sdk file that compiled fine in the other runs. Killing that `cl.exe` and running `build.sh` again finishes the build. A runner needs a job timeout and `wineserver -k` (with this `WINEPREFIX`) before a retry.
+- Compiling with every core (`-j 10`) on 16 GB once crashed `c2.dll` (an `int3`) partway through CommonLibSSE, most likely out of memory, so `build.sh` defaults to half the cores (`JOBS` overrides). If a compile crashes, run it again; ninja carries on where it stopped.
+- Fixed along the way: CommonLibSSE's `lib.exe` call never started, because CMake on a Linux host puts all ~520 objects on one command line, over Windows' 32767 characters, and msvc-wine's wrapper then waits on its pipes forever (`long-args.sh` now). Forcing Ninja response files instead broke every compile (msvc-wine never rewrites the `/home/...` paths inside them). Then `lib.exe` couldn't open its 300th object (`LNK1104`): Wine holds a few file descriptors per mapped object, past the soft limit of 1024, so `build.sh` raises it.
+- The launcher's Pester tests (`scripts/test.ps1`) and `scripts/package.ps1` don't run here; they need PowerShell on Windows.
 
 ## How the builds work
 
