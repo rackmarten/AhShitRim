@@ -365,6 +365,6 @@ namespace AhShitRim::Vehicle
     // a monster truck 0.0025) times the turn mass, counted up to 3000.
     constexpr float AirPushForce(float a_perMass, float a_turnMass)
     {
-        return a_perMass * std::min(a_turnMass, 3000.0f);
+        return a_perMass * (std::min)(a_turnMass, 3000.0f);
     }
 }
