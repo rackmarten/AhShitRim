@@ -475,7 +475,7 @@ namespace AhShitRim::Runner
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
-            CjProjectiles::Update(ped);
+            CjProjectiles::Update(ped, state.owned);
             ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.

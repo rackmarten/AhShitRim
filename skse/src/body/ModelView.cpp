@@ -502,6 +502,20 @@ namespace AhShitRim::ModelView
         return Find(a_id) != nullptr;
     }
 
+    bool AddCopy(std::uint32_t a_of, std::uint32_t a_id)
+    {
+        if (state.models.contains(a_id)) {
+            return Find(a_id) != nullptr;
+        }
+        const auto* of = Find(a_of);
+        if (!of) {
+            return false;
+        }
+        const auto blob = of->blob;
+        Build(a_id, blob);
+        return Find(a_id) != nullptr;
+    }
+
     bool Has(std::uint32_t a_model)
     {
         return Find(a_model) != nullptr;

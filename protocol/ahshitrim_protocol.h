@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 16;
+    inline constexpr std::uint32_t kProtocolVersion = 17;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -387,11 +387,13 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kProjectilePartMax = 2;  // parts of a projectile's model sent with it
 
     // Payload of a Projectile message (v15): San Andreas launched it (CProjectileInfo::AddProjectile) and
-    // dropped its own; Skyrim flies it, draws it and blows it up.
+    // dropped its own; Skyrim flies it, draws it and blows it up. From v17 a satchel charge (39) goes the same
+    // way and sticks where it lands, and weaponType 40 (the detonator) is no projectile but CJ pressing it:
+    // Skyrim blows every satchel he has out (only handover and id count).
     struct ProjectileEvent
     {
         std::uint32_t handover;     // InputState.handover the origin belongs to
-        std::uint8_t  weaponType;   // San Andreas's projectile type: 16 grenade, 17 tear gas, 18 Molotov, 19 rocket, 20 heat seeker
+        std::uint8_t  weaponType;   // San Andreas's projectile type: 16 grenade, 17 tear gas, 18 Molotov, 19 rocket, 20 heat seeker, 39 satchel; 40 detonation
         std::uint8_t  flags;        // kProjectileBurst
         std::uint8_t  partCount;    // parts of its model in parts, 0 when it has none to draw
         std::uint8_t  reserved0;
@@ -418,7 +420,7 @@ namespace AhShitRim::Protocol
     {
         std::uint32_t handover;    // InputState.handover `at` belongs to
         std::uint8_t  kind;        // EffectKind
-        std::uint8_t  weaponType;  // the projectile type it came from (16 grenade .. 20 heat seeker), 0 for none
+        std::uint8_t  weaponType;  // the projectile type it came from (16 grenade .. 20 heat seeker, 39 satchel), 0 for none
         std::uint16_t reserved0;
         std::uint32_t projectile;  // ProjectileEvent.id, ProjectileGone only
         float         at[3];       // relative to InputState.anchor, Skyrim units

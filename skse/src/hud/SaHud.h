@@ -33,6 +33,7 @@ namespace AhShitRim::SaHud
     void Update(float a_delta, bool a_owned, bool a_menu);
 
     // The text styles; a_seconds is how long each stays before it fades.
+    void MarkTarget(const RE::NiPoint3& a_at, bool a_locked);  // the heat seeker's marker on what it locks on to (world point), as long as it's called every frame
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();

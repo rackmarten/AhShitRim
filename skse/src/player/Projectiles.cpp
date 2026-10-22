@@ -1,6 +1,7 @@
 #include "player/Projectiles.h"
 
 #include "body/ModelView.h"
+#include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
 #include "player/Shots.h"
@@ -31,6 +32,7 @@ namespace AhShitRim::Projectiles
         constexpr float       kBurnEvery = 1.0f;    // seconds between setting one actor burning again
         constexpr float       kActorRadiusMin = 20.0f;
         constexpr int         kLogged = 12;
+        constexpr std::uint32_t kCopyBase = 0xA5C00000;  // + 2 per copy of a projectile's model: even, never San Andreas's
 
         // Vanilla forms (Skyrim.esm).
         constexpr RE::FormID kBlastExplosion = 0x000439C0;    // FireBallExp01: the fireball's blast, no damage of its own
@@ -51,6 +53,14 @@ namespace AhShitRim::Projectiles
             float                                                        fuse = 0.0f;
             bool                                                         resting = false;
             std::uint32_t                                                id = 0;  // San Andreas's, for the Effect that says it's over
+            std::uint8_t                                                 weapon = 0;  // what it counts as (the launcher for a rocket)
+            std::uint32_t                                                target = 0;  // a locked heat seeker's target, a form id
+            const void*                                                  place = nullptr;  // the interior or worldspace it is in
+            bool                                                         stuck = false;   // a satchel that landed
+            RE::NiPointer<RE::NiAVObject>                                root;  // the 3D of what it stuck to, none for the land
+            RE::NiPointer<RE::NiAVObject>                                node;  // and the node on it it follows
+            RE::ObjectRefHandle                                          on;
+            Stuck                                                        stuckOn;
             std::uint32_t                                                model = 0;
             std::uint32_t                                                partCount = 0;
             std::array<Protocol::BodyBone, Protocol::kProjectilePartMax> parts{};
@@ -97,6 +107,13 @@ namespace AhShitRim::Projectiles
             RE::SpellItem*                         flamesSpell = nullptr;
             int                                    logged = 0;
             unsigned                               stale = 0;
+            HsLock                                 lock;       // the heat seeker's, while CJ aims it
+            float                                  unaimed = 0.0f;  // seconds since CJ last aimed the heat seeker
+            float                                  losTick = 0.0f;
+            bool                                   inSight = false;
+            std::uint8_t                           cjWeapon = 0;
+            std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> copies;  // (model, nth shown) to its copy's id
+            std::uint32_t                          copyCount = 0;
         } state;
 
         double NowSeconds()
@@ -146,7 +163,18 @@ namespace AhShitRim::Projectiles
         {
             std::uint32_t handover = 0;
             RE::NiPoint3  anchor;
+            const void*   place = nullptr;
         } frame;
+
+        // Where the player is: its interior cell, or the worldspace outside. A projectile left behind in another is dropped.
+        const void* PlaceOf(RE::PlayerCharacter* a_player)
+        {
+            auto* cell = a_player->GetParentCell();
+            if (cell && cell->IsInteriorCell()) {
+                return cell;
+            }
+            return a_player->GetWorldspace();
+        }
 
         // A vanilla explosion made again without its sounds: San Andreas's own play instead.
         RE::BGSExplosion* Silent(RE::BGSExplosion* a_vanilla)
@@ -373,12 +401,13 @@ namespace AhShitRim::Projectiles
 
         void GoOff(RE::PlayerCharacter* a_player, const Projectile& a_p, const RE::NiPoint3& a_at)
         {
-            const auto weapon = WeaponOf(a_p.type);
+            const auto weapon = a_p.weapon ? a_p.weapon : WeaponOf(a_p.type);
             switch (a_p.kind) {
             case Kind::Rocket:
             case Kind::Grenade:
+            case Kind::Satchel:
                 {
-                    Tell(Protocol::EffectKind::Explosion, frame.handover, frame.anchor, a_at, a_p.type);
+                    Tell(Protocol::EffectKind::Explosion, frame.handover, frame.anchor, a_at, a_p.type, a_p.id);
                     auto explosion = Place(a_player, state.blast, a_at);
                     Explode(a_player, a_p.kind, weapon, a_at);
                     OpenLocks(a_player, a_p.kind, a_at, explosion.get().get());
@@ -421,8 +450,9 @@ namespace AhShitRim::Projectiles
 
         struct Contact
         {
-            bool         hit = false;
-            RE::Actor*   actor = nullptr;
+            bool               hit = false;
+            RE::Actor*         actor = nullptr;
+            RE::TESObjectREFR* ref = nullptr;  // what it touched, none for the land
             RE::NiPoint3 at;
             RE::NiPoint3 normal;
         };
@@ -482,6 +512,7 @@ namespace AhShitRim::Projectiles
                 }
                 contact.hit = true;
                 contact.actor = actor;
+                contact.ref = ref;
                 contact.at = a_from + dir * distance;
                 contact.normal = RE::NiPoint3(output.normal.quad.m128_f32[0], output.normal.quad.m128_f32[1], output.normal.quad.m128_f32[2]);
                 if (contact.normal.Unitize() < 1e-3f || actor) {
@@ -492,13 +523,178 @@ namespace AhShitRim::Projectiles
             return contact;
         }
 
+        // ---- Sticking ----
+
+        Explosives::Node NodeOf(const RE::NiTransform& a_world)
+        {
+            const auto&      m = a_world.rotate.entry;
+            Explosives::Node node;
+            node.x = { m[0][0], m[1][0], m[2][0] };
+            node.y = { m[0][1], m[1][1], m[2][1] };
+            node.z = { m[0][2], m[1][2], m[2][2] };
+            node.translate = V(a_world.translate);
+            node.scale = a_world.scale;
+            return node;
+        }
+
+        // The node of a_root nearest a_at: a bone of an actor's skeleton (a mammoth's spine, a horse's flank).
+        RE::NiAVObject* NearestNode(RE::NiAVObject* a_root, const RE::NiPoint3& a_at)
+        {
+            RE::NiAVObject* best = a_root;
+            float           bestDistance = a_root ? a_root->world.translate.GetDistance(a_at) : 0.0f;
+            RE::BSVisit::TraverseScenegraphObjects(a_root, [&](RE::NiAVObject* a_object) {
+                const std::string_view name = a_object->name.c_str() ? a_object->name.c_str() : "";
+                if (a_object->AsNode() && name.find("Camera") == std::string_view::npos) {
+                    const float distance = a_object->world.translate.GetDistance(a_at);
+                    if (distance < bestDistance) {
+                        best = a_object;
+                        bestDistance = distance;
+                    }
+                }
+                return RE::BSVisit::BSVisitControl::kContinue;
+            });
+            return best;
+        }
+
+        // A satchel landing on a_contact sticks there: on an actor to its nearest bone, on anything else with 3D
+        // (a cart, a door, a rock) to that, on the land where it is.
+        void Stick(Projectile& a_p, const Contact& a_contact)
+        {
+            const RE::NiPoint3 at = a_contact.at + a_contact.normal * 2.0f;
+            a_p.stuck = true;
+            a_p.body.position = V(at);
+            a_p.body.velocity = {};
+            auto* root = a_contact.ref ? a_contact.ref->Get3D() : nullptr;
+            auto* node = a_contact.actor ? NearestNode(root, at) : root;
+            if (node) {
+                a_p.root.reset(root);
+                a_p.node.reset(node);
+                a_p.on = a_contact.ref->GetHandle();
+                a_p.stuckOn = StickTo(NodeOf(node->world), V(at), a_p.turn);
+            }
+            Log(std::format("satchel stuck to {}{}", a_contact.ref ? a_contact.ref->GetDisplayFullName() : "the land",
+                node ? std::format(" at {}", node->name.c_str() ? node->name.c_str() : "") : ""));
+        }
+
+        // A stuck satchel goes where its node goes; once that's unloaded it stays where it was.
+        void Follow(Projectile& a_p)
+        {
+            if (!a_p.node) {
+                return;
+            }
+            auto ref = a_p.on.get();
+            if (!ref || ref->Get3D() != a_p.root.get()) {
+                a_p.node.reset();
+                a_p.root.reset();
+                return;
+            }
+            const auto node = NodeOf(a_p.node->world);
+            a_p.body.position = StuckAt(node, a_p.stuckOn);
+            a_p.turn = StuckTurn(node, a_p.stuckOn);
+        }
+
+        // ---- The heat seeker ----
+
+        RE::NiPoint3 Middle(RE::Actor* a_actor)
+        {
+            const auto feet = a_actor->GetPosition();
+            return { feet.x, feet.y, feet.z + 0.5f * a_actor->GetHeight() };
+        }
+
+        bool Lockable(RE::Actor* a_actor)
+        {
+            auto*       race = a_actor->GetRace();
+            const char* id = race ? race->GetFormEditorID() : nullptr;
+            return HeatSeekerLocks(id ? id : "", race && race->HasKeywordString("ActorTypeDragon"), a_actor->IsOnMount());
+        }
+
+        constexpr float kLockKept = 0.3f;  // seconds the lock outlasts the aim, for a launch that comes in after it
+
+        // While CJ aims the heat seeker: the best target through Skyrim's camera as San Andreas rates them, in sight
+        // (tested every kHsLosEvery), locked once held kHsLockSeconds, and marked in the HUD.
+        void LockOn(RE::PlayerCharacter* a_player, bool a_aiming, float a_dt)
+        {
+            state.unaimed = a_aiming ? 0.0f : state.unaimed + a_dt;
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            auto* root = camera ? camera->cameraRoot.get() : nullptr;
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!a_aiming) {
+                if (state.unaimed > kLockKept) {
+                    state.lock = {};
+                }
+                return;
+            }
+            if (!root || !lists) {
+                state.lock = {};
+                return;
+            }
+            // The camera node San Andreas's camera is put on (PlayerSync): +Y forward, as camera.h has it.
+            const auto&        world = root->world;
+            const RE::NiPoint3 eye = world.translate;
+            const Vec3         look{ world.rotate.entry[0][1], world.rotate.entry[1][1], world.rotate.entry[2][1] };
+            const Vec3         eyeM = Scale(V(eye), 1.0f / kMeter);
+            if (static bool logged = false; !logged) {
+                logged = true;
+                SKSE::log::info("explosives: the heat seeker aims from ({:.0f},{:.0f},{:.0f}) along ({:.2f},{:.2f},{:.2f})", eye.x, eye.y, eye.z, look.x, look.y, look.z);
+            }
+            RE::Actor*         best = nullptr;
+            float              bestRating = 0.0f;
+            for (auto& handle : lists->highActorHandles) {
+                auto  ptr = handle.get();
+                auto* actor = ptr.get();
+                if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || !Lockable(actor)) {
+                    continue;
+                }
+                const float rating = HsRating(eyeM, look, Scale(V(Middle(actor)), 1.0f / kMeter), actor->GetFormID() == state.lock.target);
+                if (rating >= 0.0f && (!best || rating < bestRating)) {
+                    best = actor;
+                    bestRating = rating;
+                }
+            }
+            const std::uint32_t target = best ? best->GetFormID() : 0;
+            state.losTick += a_dt;
+            if (best && (target != state.lock.target || state.losTick >= kHsLosEvery)) {
+                state.losTick = 0.0f;
+                const auto contact = Segment(a_player, eye, Middle(best));
+                state.inSight = !contact.hit || contact.actor == best || (contact.actor && Lockable(contact.actor));
+            }
+            const bool locked = state.lock.Locked();
+            Track(state.lock, target, best && state.inSight, a_dt);
+            if (best && state.lock.target == target) {
+                SaHud::MarkTarget(Middle(best), state.lock.Locked());
+            }
+            if (state.lock.Locked() && !locked) {
+                Log(std::format("heat seeker locked on to {}", best->GetDisplayFullName()));
+            }
+        }
+
+        // A locked heat seeker steers for its target a_dt seconds on and goes off close by it (true then); one whose
+        // target is gone flies on straight.
+        bool Home(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt)
+        {
+            auto* actor = RE::TESForm::LookupByID<RE::Actor>(a_p.target);
+            if (!actor || actor->IsDead() || !actor->Is3DLoaded()) {
+                a_p.target = 0;
+                return false;
+            }
+            const auto middle = V(Middle(actor));
+            if (NearTarget(a_p.body.position, middle, RadiusOf(actor))) {
+                GoOff(a_player, a_p, Ni(a_p.body.position));
+                return true;
+            }
+            const Vec3 before = a_p.body.velocity;
+            a_p.body.velocity = Steer(before, a_p.body.position, middle, a_dt);
+            a_p.turn = Mul(FromTo(before, a_p.body.velocity), a_p.turn);
+            return false;
+        }
+
         bool FlyOn(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt);
 
         // One projectile a_dt seconds on; false once it is gone (San Andreas told, for a rocket's stand-in).
         bool Fly(RE::PlayerCharacter* a_player, Projectile& a_p, float a_dt)
         {
-            const bool flying = FlyOn(a_player, a_p, a_dt);
-            if (!flying && (a_p.kind == Kind::Rocket || a_p.kind == Kind::Molotov)) {
+            const bool flying = a_p.place == frame.place && FlyOn(a_player, a_p, a_dt);
+            if (!flying && (a_p.kind == Kind::Rocket || a_p.kind == Kind::Molotov || a_p.kind == Kind::Satchel)) {
                 Tell(Protocol::EffectKind::ProjectileGone, frame.handover, frame.anchor, Ni(a_p.body.position), a_p.type, a_p.id);
             }
             return flying;
@@ -513,10 +709,20 @@ namespace AhShitRim::Projectiles
                 }
                 return false;
             }
+            if (a_p.stuck) {
+                Follow(a_p);
+                return true;
+            }
+            if (a_p.kind == Kind::Satchel && a_p.age >= kLifeMax) {
+                return false;  // thrown off a cliff into nothing: it never lands
+            }
             float left = a_dt;
             while (!a_p.resting && left > 0.0f) {
                 const float  h = (std::min)(left, kStepMax);
                 left -= h;
+                if (a_p.target && Home(a_player, a_p, h)) {
+                    return false;
+                }
                 const Flight next = Step(a_p.body, a_p.kind, h);
                 const auto   contact = Segment(a_player, Ni(a_p.body.position), Ni(next.position));
                 if (!contact.hit) {
@@ -526,6 +732,10 @@ namespace AhShitRim::Projectiles
                 if (BurstsOnContact(a_p.kind)) {
                     GoOff(a_player, a_p, contact.at + contact.normal * 5.0f);
                     return false;
+                }
+                if (SticksOnContact(a_p.kind)) {
+                    Stick(a_p, contact);
+                    return true;
                 }
                 a_p.body.position = V(contact.at + contact.normal * 2.0f);
                 a_p.body.velocity = Bounce(next.velocity, V(contact.normal));
@@ -538,16 +748,30 @@ namespace AhShitRim::Projectiles
             return true;
         }
 
+        // The id to show the a_nth (from 0) projectile drawn with a_model this frame by: the model, then copies of it.
+        std::uint32_t CopyOf(std::uint32_t a_model, std::uint32_t a_nth)
+        {
+            if (a_nth == 0) {
+                return a_model;
+            }
+            auto& id = state.copies[{ a_model, a_nth }];
+            if (!id) {
+                id = kCopyBase + 2 * ++state.copyCount;
+            }
+            return ModelView::AddCopy(a_model, id) ? id : 0;
+        }
+
         void Draw(const std::deque<Projectile>& a_flights)
         {
-            std::set<std::uint32_t> shown;  // ModelView draws one of each model: the newest
+            std::map<std::uint32_t, std::uint32_t> shown;  // by model: how many are drawn with it so far
             for (auto it = a_flights.rbegin(); it != a_flights.rend(); ++it) {
-                if (!it->model || !it->partCount || !shown.insert(it->model).second) {
+                const auto model = it->model && it->partCount ? CopyOf(it->model, shown[it->model]++) : 0;
+                if (!model) {
                     continue;
                 }
                 Protocol::BodyState pose{};
                 pose.flags = Protocol::kBodyValid;
-                pose.model = it->model;
+                pose.model = model;
                 pose.boneCount = it->partCount;
                 for (std::uint32_t i = 0; i < it->partCount; ++i) {
                     pose.bones[i] = PartBone(it->turn, it->parts[i]);
@@ -556,11 +780,40 @@ namespace AhShitRim::Projectiles
             }
         }
 
+        // The detonator: every satchel CJ has out goes off where it is.
+        void Detonate(RE::PlayerCharacter* a_player)
+        {
+            int blown = 0;
+            for (auto it = state.flights.begin(); it != state.flights.end();) {
+                if (it->kind != Kind::Satchel) {
+                    ++it;
+                    continue;
+                }
+                const auto p = *it;
+                it = state.flights.erase(it);
+                GoOff(a_player, p, Ni(p.body.position));
+                blown++;
+            }
+            Log(std::format("the detonator blew {} satchels", blown));
+        }
+
         void Launch(RE::PlayerCharacter* a_player, const Protocol::ProjectileEvent& a_event, const RE::NiPoint3& a_anchor)
         {
+            if (a_event.weaponType == Weapons::Detonator) {
+                Detonate(a_player);
+                return;
+            }
             Projectile p;
             p.type = a_event.weaponType;
             p.kind = KindOf(p.type);
+            p.weapon = WeaponOf(p.type);
+            p.place = frame.place;
+            if (p.kind == Kind::Rocket && state.cjWeapon == Weapons::RocketLauncherHs) {
+                // San Andreas fires a plain rocket from the heat seeker without a lock of its own (it locks on to
+                // vehicles only): Skyrim's lock steers it.
+                p.weapon = Weapons::RocketLauncherHs;
+                p.target = state.lock.Locked() ? state.lock.target : 0;
+            }
             const RE::NiPoint3 at = a_anchor + RE::NiPoint3(a_event.origin[0], a_event.origin[1], a_event.origin[2]);
             if (p.kind == Kind::None || !std::isfinite(at.x + at.y + at.z)) {
                 return;
@@ -579,7 +832,8 @@ namespace AhShitRim::Projectiles
             for (std::uint32_t i = 0; i < p.partCount; ++i) {
                 p.parts[i] = a_event.parts[i];
             }
-            Log(std::format("projectile {} launched at {:.0f} units a second, fuse {:.1f} s", p.type, Length(p.body.velocity), p.fuse));
+            Log(std::format("projectile {} launched at {:.0f} units a second, fuse {:.1f} s{}", p.type, Length(p.body.velocity), p.fuse,
+                p.target ? std::format(", locked on to {:08X}", p.target) : ""));
             if (state.flights.size() >= kFlightMax) {
                 Tell(Protocol::EffectKind::ProjectileGone, frame.handover, frame.anchor, Ni(state.flights.front().body.position), state.flights.front().type,
                     state.flights.front().id);
@@ -726,10 +980,13 @@ namespace AhShitRim::Projectiles
         });
     }
 
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning)
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
+        std::uint8_t a_cjWeapon, bool a_aiming)
     {
         frame.handover = a_handover;
         frame.anchor = a_anchor;
+        frame.place = PlaceOf(a_player);
+        state.cjWeapon = a_cjWeapon;
         auto queue = std::move(state.queue);
         state.queue.clear();
         for (const auto& event : queue) {
@@ -740,6 +997,7 @@ namespace AhShitRim::Projectiles
             Launch(a_player, event, a_anchor);
         }
         const float dt = std::clamp(a_delta, 0.0f, 0.25f);
+        LockOn(a_player, a_aiming && a_cjWeapon == Weapons::RocketLauncherHs, dt);
         for (auto it = state.flights.begin(); it != state.flights.end();) {
             it = Fly(a_player, *it, dt) ? it + 1 : state.flights.erase(it);
         }
@@ -760,7 +1018,13 @@ namespace AhShitRim::Projectiles
     void Clear()
     {
         state.queue.clear();
+        for (const auto& p : state.flights) {
+            if (p.kind == Kind::Satchel) {
+                Tell(Protocol::EffectKind::ProjectileGone, frame.handover, frame.anchor, Ni(p.body.position), p.type, p.id);  // San Andreas drops its stand-in
+            }
+        }
         state.flights.clear();
+        state.lock = {};
         for (auto& gas : state.gases) {
             Remove(gas.cloud);
         }

@@ -14,7 +14,8 @@ TEST_CASE("San Andreas's projectile types")
     CHECK(KindOf(Weapons::Molotov) == Kind::Molotov);
     CHECK(KindOf(kRocket) == Kind::Rocket);
     CHECK(KindOf(kHeatSeeker) == Kind::Rocket);
-    CHECK(KindOf(Weapons::SatchelCharge) == Kind::None);  // #863
+    CHECK(KindOf(Weapons::SatchelCharge) == Kind::Satchel);
+    CHECK(WeaponOf(Weapons::SatchelCharge) == Weapons::SatchelCharge);
     CHECK(KindOf(Weapons::Pistol) == Kind::None);
     CHECK(WeaponOf(kRocket) == Weapons::RocketLauncher);
     CHECK(WeaponOf(kHeatSeeker) == Weapons::RocketLauncherHs);
@@ -201,4 +202,167 @@ TEST_CASE("who stands in a Molotov's fire")
     CHECK(InFire(patch, { kFirePatchRadius + 15.0f, 0.0f, 10.0f }, 20.0f));  // its capsule's edge in the flames
     CHECK_FALSE(InFire(patch, { 2.0f * kMeter, 0.0f, 0.0f }, 20.0f));
     CHECK_FALSE(InFire(patch, { 0.0f, 0.0f, 3.0f * kMeter }, 20.0f));  // on a ledge above it
+}
+
+TEST_CASE("a satchel sticks, waits for the detonator and blows like a grenade")
+{
+    CHECK(SticksOnContact(Kind::Satchel));
+    CHECK_FALSE(SticksOnContact(Kind::Grenade));
+    CHECK_FALSE(BurstsOnContact(Kind::Satchel));
+    CHECK(Falls(Kind::Satchel));
+    CHECK(FuseSeconds(Kind::Satchel, 0) >= kNever);
+    CHECK(FuseSeconds(Kind::Satchel, 2000) >= kNever);  // San Andreas's own destroy time doesn't count
+    CHECK(BlastOf(Kind::Satchel).radius == doctest::Approx(BlastOf(Kind::Grenade).radius));
+    CHECK(BlastOf(Kind::Satchel).opensLocks);
+    CHECK(OpensLock(Kind::Satchel, 1.0f * kMeter, true, false));
+}
+
+namespace
+{
+    void CheckNear(const Vec3& a, const Vec3& b, float eps = 0.001f)
+    {
+        CHECK(a.x == doctest::Approx(b.x).epsilon(eps));
+        CHECK(a.y == doctest::Approx(b.y).epsilon(eps));
+        CHECK(a.z == doctest::Approx(b.z).epsilon(eps));
+    }
+
+    // a_node turned a_angle radians round Z.
+    Node Turned(float a_angle, const Vec3& a_at, float a_scale = 1.0f)
+    {
+        const float c = std::cos(a_angle), s = std::sin(a_angle);
+        Node        n;
+        n.x = { c, s, 0.0f };
+        n.y = { -s, c, 0.0f };
+        n.translate = a_at;
+        n.scale = a_scale;
+        return n;
+    }
+}
+
+TEST_CASE("a satchel stuck on a node stays where it was on it")
+{
+    // Stuck to a mammoth's spine where it touched.
+    const Node  spine = Turned(0.3f, { 1000.0f, 2000.0f, 300.0f }, 1.5f);
+    const Vec3  at{ 1040.0f, 2010.0f, 360.0f };
+    const Quat  turn = AxisAngle({ 0.0f, 0.0f, 1.0f }, 0.5f);
+    const Stuck stuck = StickTo(spine, at, turn);
+    CheckNear(StuckAt(spine, stuck), at);  // right where it touched until the node moves
+    const Vec3 forward = Rotate(StuckTurn(spine, stuck), { 0.0f, 1.0f, 0.0f });
+    CheckNear(forward, Rotate(turn, { 0.0f, 1.0f, 0.0f }));
+
+    // The mammoth walks 5 m on: the satchel goes with it.
+    Node moved = spine;
+    moved.translate = Add(spine.translate, { 5.0f * kMeter, 0.0f, 0.0f });
+    CheckNear(StuckAt(moved, stuck), Add(at, { 5.0f * kMeter, 0.0f, 0.0f }));
+
+    // It turns half round where it stands: the satchel is on its other side, turned with it.
+    const Node back = Turned(0.3f + 3.14159265f, spine.translate, 1.5f);
+    const Vec3 offset = Sub(at, spine.translate);
+    CheckNear(StuckAt(back, stuck), { spine.translate.x - offset.x, spine.translate.y - offset.y, at.z });
+    CheckNear(Rotate(StuckTurn(back, stuck), { 0.0f, 1.0f, 0.0f }), Scale(Rotate(turn, { 0.0f, 1.0f, 0.0f }), -1.0f) );
+}
+
+TEST_CASE("a satchel stuck on a static stays put")
+{
+    Node wall;
+    wall.translate = { 10.0f, 20.0f, 30.0f };
+    const Vec3  at{ 10.0f, 20.0f, 30.0f };
+    const Stuck stuck = StickTo(wall, at, {});
+    CheckNear(StuckAt(wall, stuck), at);
+    CheckNear(stuck.offset, {});
+}
+
+TEST_CASE("the heat seeker locks on to the big ones")
+{
+    CHECK(HeatSeekerLocks("DragonRace", true, false));
+    CHECK(HeatSeekerLocks("UndeadDragonRace", false, false));
+    CHECK(HeatSeekerLocks("HorseRace", false, false));
+    CHECK(HeatSeekerLocks("NordRace", false, true));  // riding one
+    CHECK(HeatSeekerLocks("GiantRace", false, false));
+    CHECK(HeatSeekerLocks("MammothRace", false, false));
+    CHECK(HeatSeekerLocks("DwarvenCenturionRace", false, false));
+    CHECK_FALSE(HeatSeekerLocks("NordRace", false, false));
+    CHECK_FALSE(HeatSeekerLocks("TrollRace", false, false));
+    CHECK_FALSE(HeatSeekerLocks("SabreCatRace", false, false));
+    CHECK_FALSE(HeatSeekerLocks("BearBlackRace", false, false));
+    CHECK_FALSE(HeatSeekerLocks("FrostbiteSpiderRaceGiant", false, false));
+    CHECK_FALSE(HeatSeekerLocks("DragonPriestRace", false, false));
+}
+
+TEST_CASE("the heat seeker rates targets as San Andreas does")
+{
+    const Vec3 origin{};
+    const Vec3 ahead{ 0.0f, 1.0f, 0.0f };
+    // Straight ahead: only the distance counts.
+    CHECK(HsRating(origin, ahead, { 0.0f, 100.0f, 0.0f }, false) == doctest::Approx(1.0f));
+    // Nearer and on the line beats farther; off the line costs.
+    CHECK(HsRating(origin, ahead, { 0.0f, 25.0f, 0.0f }, false) < HsRating(origin, ahead, { 0.0f, 100.0f, 0.0f }, false));
+    CHECK(HsRating(origin, ahead, { 20.0f, 100.0f, 0.0f }, false) > HsRating(origin, ahead, { 0.0f, 100.0f, 0.0f }, false));
+    // Out of the cone, behind, or out of reach: not a target.
+    CHECK(HsRating(origin, ahead, { 100.0f, 50.0f, 0.0f }, false) < 0.0f);
+    CHECK(HsRating(origin, ahead, { 0.0f, -50.0f, 0.0f }, false) < 0.0f);
+    CHECK(HsRating(origin, ahead, { 0.0f, kHsReach + 1.0f, 0.0f }, false) < 0.0f);
+    // The one it has rates four times better.
+    CHECK(HsRating(origin, ahead, { 0.0f, 100.0f, 0.0f }, true) == doctest::Approx(0.25f));
+}
+
+TEST_CASE("the lock takes 1.5 s on one target in sight")
+{
+    HsLock lock;
+    Track(lock, 7, true, 0.1f);
+    CHECK(lock.target == 7);
+    CHECK_FALSE(lock.Locked());
+    for (int i = 0; i < 16; ++i) {
+        Track(lock, 7, true, 0.1f);
+    }
+    CHECK(lock.Locked());
+    Track(lock, 9, true, 0.1f);  // another target: start again
+    CHECK(lock.target == 9);
+    CHECK_FALSE(lock.Locked());
+    for (int i = 0; i < 20; ++i) {
+        Track(lock, 9, true, 0.1f);
+    }
+    CHECK(lock.Locked());
+    Track(lock, 9, false, 0.1f);  // out of sight: lost
+    CHECK(lock.target == 0);
+    CHECK_FALSE(lock.Locked());
+    Track(lock, 0, true, 0.1f);
+    CHECK_FALSE(lock.Locked());
+}
+
+TEST_CASE("a locked rocket turns towards its target at its turn rate and keeps its speed")
+{
+    const float speed = kRocketSpeed;
+    const Vec3  v{ 0.0f, speed, 0.0f };
+    // Target to the right, 90 degrees off: one 0.1 s step turns it kHsTurn * 0.1.
+    const Vec3  turned = Steer(v, {}, { 1000.0f, 0.0f, 0.0f }, 0.1f);
+    CHECK(Length(turned) == doctest::Approx(speed));
+    CHECK(std::atan2(turned.x, turned.y) == doctest::Approx(kHsTurn * 0.1f));
+    // Nearly on it already: straight at it.
+    const Vec3 on = Steer(v, {}, { 1.0f, 1000.0f, 0.0f }, 0.1f);
+    CHECK(on.x / on.y == doctest::Approx(1.0f / 1000.0f));
+    // Straight behind it still turns.
+    const Vec3 back = Steer(v, {}, { 0.0f, -1000.0f, 0.0f }, 0.1f);
+    CHECK(Length(back) == doctest::Approx(speed));
+    CHECK(back.y < speed);
+    // Flown in steps after a dragon flying across, it closes in and comes near enough to go off.
+    Flight rocket{ {}, v };
+    Vec3   dragon{ 30.0f * kMeter, 60.0f * kMeter, 20.0f * kMeter };
+    const Vec3 dragonVelocity{ -10.0f * kMeter, 0.0f, 0.0f };
+    bool   reached = false;
+    for (int i = 0; i < 300 && !reached; ++i) {
+        const float dt = 1.0f / 60.0f;
+        rocket.velocity = Steer(rocket.velocity, rocket.position, dragon, dt);
+        rocket = Step(rocket, Kind::Rocket, dt);
+        dragon = Add(dragon, Scale(dragonVelocity, dt));
+        reached = NearTarget(rocket.position, dragon, 3.0f * kMeter);
+    }
+    CHECK(reached);
+}
+
+TEST_CASE("a steered rocket's model turns with it")
+{
+    const Vec3 a{ 0.0f, 10.0f, 0.0f }, b{ 10.0f, 0.0f, 0.0f };
+    CheckNear(Rotate(FromTo(a, b), { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });
+    CheckNear(Rotate(FromTo(a, a), { 0.0f, 1.0f, 0.0f }), { 0.0f, 1.0f, 0.0f });
 }

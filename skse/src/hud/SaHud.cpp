@@ -6,6 +6,7 @@
 #include "img.h"
 #include "link/LinkService.h"
 #include "txd.h"
+#include "explosives.h"
 #include "weapons.h"
 
 #include <array>
@@ -111,6 +112,10 @@ namespace AhShitRim::SaHud
             bool             loggedScreen = false;
             WeaponHud        weapon;
             std::uint32_t    siteM16 = 0, siteRocket = 0, sniperCrosshair = 0, cameraCrosshair = 0;  // texture ids
+            std::uint32_t    target256 = 0;  // particle.txd's: the heat seeker's lock-on marker
+            bool             mark = false;   // a marker to draw, set again every frame (MarkTarget)
+            RE::NiPoint3     markAt;
+            bool             markLocked = false;
             std::array<std::uint32_t, 64> icons{};  // by weapon type
         } state;
 
@@ -226,6 +231,27 @@ namespace AhShitRim::SaHud
                 break;
             default: break;
             }
+        }
+
+        // The heat seeker's marker round its target (CWeaponEffects::MarkTarget's): San Andreas's target256 over
+        // where the target shows through Skyrim's camera, kHsMarkerSize across there (no smaller than the rocket
+        // sight's quarter), white and see-through while it locks on, red once locked.
+        void DrawMark(Frame& a_frame)
+        {
+            auto* camera = RE::Main::WorldRootCamera();
+            if (!state.mark || !state.target256 || !camera) {
+                return;
+            }
+            const auto& screen = a_frame.screen;
+            float       x = 0.0f, y = 0.0f, z = 0.0f, topX = 0.0f, topY = 0.0f;
+            const RE::NiPoint3 top = state.markAt + RE::NiPoint3(0.0f, 0.0f, 0.5f * Explosives::kHsMarkerSize * Explosives::kMeter);
+            if (!camera->WorldPtToScreenPt3(state.markAt, x, y, z, 1e-5f) || !camera->WorldPtToScreenPt3(top, topX, topY, z, 1e-5f)) {
+                return;
+            }
+            const float cx = x * screen.width, cy = (1.0f - y) * screen.height;
+            const float half = (std::max)(std::abs(topY - y) * screen.height, 24.0f * screen.unitY);
+            const std::uint32_t colour = state.markLocked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
+            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, colour });
         }
 
         // The top right HUD, from the Skyrim player.
@@ -394,6 +420,8 @@ namespace AhShitRim::SaHud
         };
         state.siteM16 = add(Txd::Find(hud, "siteM16"));
         state.siteRocket = add(Txd::Find(hud, "siterocket"));
+        const auto particleData = ReadFile(sa / "models" / "particle.txd");
+        state.target256 = add(Txd::Find(Txd::Read(particleData.data(), particleData.size(), &skipped), "target256"));
 
         // The weapons' icons and scopes are in each weapon's own dictionary in gta3.img.
         std::ifstream      archive(sa / "models" / "gta3.img", std::ios::binary);
@@ -426,8 +454,9 @@ namespace AhShitRim::SaHud
         }
         Overlay::SetImages(std::move(images));
         state.loaded = true;
-        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}{}",
+        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}, lock-on marker {}{}",
             sa.string(), fonts.size(), hud.size(), icons, missing, state.sniperCrosshair != 0, state.cameraCrosshair != 0, state.siteRocket != 0, state.siteM16 != 0,
+            state.target256 != 0,
             directory ? "" : "; gta3.img did not read, the weapon icon stays the fist");
     }
 
@@ -460,7 +489,9 @@ namespace AhShitRim::SaHud
         if (a_owned && !a_menu && player) {
             DrawHud(frame, player);
             DrawScope(frame);
+            DrawMark(frame);
         }
+        state.mark = false;
         DrawText(frame);
         Overlay::Submit(std::move(frame.quads));
     }
@@ -487,6 +518,13 @@ namespace AhShitRim::SaHud
             const auto& entry = a_pose->loadout[(std::min)(static_cast<std::uint32_t>(a_pose->weaponSlot), Protocol::kWeaponSlotCount - 1)];
             w.ammo = Weapons::AmmoText(entry.ammo, entry.clip, a_pose->ammoStyle);
         }
+    }
+
+    void MarkTarget(const RE::NiPoint3& a_at, bool a_locked)
+    {
+        state.mark = true;
+        state.markAt = a_at;
+        state.markLocked = a_locked;
     }
 
     void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }

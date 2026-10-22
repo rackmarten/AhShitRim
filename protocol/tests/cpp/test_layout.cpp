@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v16 constants")
+TEST_CASE("protocol v17 constants")
 {
-    CHECK(kProtocolVersion == 16);
+    CHECK(kProtocolVersion == 17);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);

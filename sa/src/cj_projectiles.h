@@ -24,5 +24,7 @@ namespace AhShitRim::CjProjectiles
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size);
 
     // Once a frame after CjWeapons::Update: the effects Skyrim sent, and the rockets' stand-ins moved on.
-    void Update(CPlayerPed* a_ped);
+    // a_owned: whether Skyrim has handed CJ the player; without it the satchels' stand-ins go (Skyrim drops
+    // its satchels on F10, and a Skyrim that went away or started again has none).
+    void Update(CPlayerPed* a_ped, bool a_owned);
 }
