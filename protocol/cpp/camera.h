@@ -96,6 +96,47 @@ namespace AhShitRim::Camera
         Multiply(fromT, a_skyrim, out);
     }
 
+    // Skyrim's own axes in an OffsetOf: the signed axis permutation nearest it, without the small turn
+    // it may also carry (a camera shake, or a camera mod following the player's head through a hit or
+    // a stagger). False when a_offset is more than a_maxAngle radians from those axes, a real turn
+    // rather than a shake; out is then left as it was.
+    inline bool AxesOf(const Matrix& a_offset, float a_maxAngle, Matrix& out)
+    {
+        Matrix axes{};
+        bool   rowTaken[3]{}, colTaken[3]{};
+        for (int n = 0; n < 3; n++) {
+            int   row = 0, col = 0;
+            float best = -1.0f;
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) {
+                    if (!rowTaken[r] && !colTaken[c] && std::abs(a_offset[r][c]) > best) {
+                        best = std::abs(a_offset[r][c]);
+                        row = r;
+                        col = c;
+                    }
+                }
+            }
+            rowTaken[row] = colTaken[col] = true;
+            axes[row][col] = a_offset[row][col] < 0.0f ? -1.0f : 1.0f;
+        }
+        // The turn between them: the trace of axes' transpose times a_offset is 1 + 2 cos(angle).
+        float trace = 0.0f;
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                trace += axes[r][c] * a_offset[r][c];
+            }
+        }
+        if (trace < 1.0f + 2.0f * std::cos(a_maxAngle)) {
+            return false;
+        }
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                out[r][c] = axes[r][c];
+            }
+        }
+        return true;
+    }
+
     // A view turned to (a_heading, a_pitch, a_roll) with an OffsetOf on top.
     inline void Apply(const Matrix& a_offset, float a_heading, float a_pitch, float a_roll, Matrix& out)
     {
