@@ -1,12 +1,18 @@
 #include "player/VehicleFx.h"
 
+#include "Ini.h"
 #include "body/ModelView.h"
 #include "player/Projectiles.h"
 #include "smoke_model.h"
+#include "txd.h"
 #include "vehicle_damage.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
+#include <optional>
 
 namespace AhShitRim::VehicleFx
 {
@@ -29,12 +35,16 @@ namespace AhShitRim::VehicleFx
             float             fire = 0.0f;   // and of fire
             SmokeModel::Trail black;
             std::uint32_t     frame = 0;
+            RE::NiPoint3      engine;  // where the engine was last frame, for its speed
+            bool              moved = false;
         };
 
         struct State
         {
-            Slot slots[Protocol::kVehicleMax];
-            bool smokeFailed = false;
+            Slot                                slots[Protocol::kVehicleMax];
+            bool                                smokeFailed = false;
+            bool                                spriteRead = false;
+            std::optional<SkinModel::TextureIn> sprite;
         } state;
 
         const char* ModelOf(Effect a_effect) { return a_effect == Effect::Fire ? kFireModel : kWhiteSmokeModel; }
@@ -51,6 +61,27 @@ namespace AhShitRim::VehicleFx
             }
         }
 
+        // San Andreas's black smoke sprite, read once from the player's own install (never written anywhere).
+        const SkinModel::TextureIn* Sprite()
+        {
+            if (!state.spriteRead) {
+                state.spriteRead = true;
+                const std::filesystem::path sa = Ini::Value("SanAndreas", "Path");
+                const auto                  path = sa / "models" / "effectsPC.txd";
+                std::ifstream               file(path, std::ios::binary);
+                const std::vector<std::uint8_t> data = file ? std::vector<std::uint8_t>(std::istreambuf_iterator<char>(file), {}) : std::vector<std::uint8_t>{};
+                const auto                  textures = Txd::Read(data.data(), data.size());
+                if (const auto* found = Txd::Find(textures, SmokeModel::kTextureName)) {
+                    state.sprite = SkinModel::TextureIn{ found->width, found->height, found->rgba };
+                    SKSE::log::info("vehicle fx: the black smoke is San Andreas's {} ({}x{}) from {}", SmokeModel::kTextureName, found->width, found->height,
+                        path.string());
+                } else {
+                    SKSE::log::warn("vehicle fx: no {} in {} ({} bytes), no black smoke will show", SmokeModel::kTextureName, path.string(), data.size());
+                }
+            }
+            return state.sprite ? &*state.sprite : nullptr;
+        }
+
         // The black smoke's model for slot a_slot, built the first time it is needed.
         bool EnsureSmoke(std::uint32_t a_slot)
         {
@@ -58,30 +89,34 @@ namespace AhShitRim::VehicleFx
             if (ModelView::Has(id)) {
                 return true;
             }
-            if (state.smokeFailed) {
+            const auto* sprite = state.smokeFailed ? nullptr : Sprite();
+            if (!sprite) {
                 return false;
             }
-            if (!ModelView::AddModel(id, SkinModel::Serialize(SmokeModel::Build()))) {
+            if (!ModelView::AddModel(id, SkinModel::Serialize(SmokeModel::Build(*sprite)))) {
                 state.smokeFailed = true;
                 SKSE::log::warn("vehicle fx: the black smoke model did not build, no black smoke will show");
                 return false;
             }
-            SKSE::log::info("vehicle fx: the black smoke model for slot {} built ({} puffs)", a_slot, SmokeModel::kBones);
+            SKSE::log::info("vehicle fx: the black smoke model for slot {} built ({} sprites)", a_slot, SmokeModel::kBones);
             return true;
         }
 
-        // The slot's black smoke, a trail of puffs in the world drawn around the vehicle's position.
+        // The slot's black smoke: its sprites in the world drawn around the vehicle's position, facing the camera.
         void DrawBlack(std::uint32_t a_index, Slot& a_slot, const RE::NiPoint3& a_origin)
         {
-            if (a_slot.black.Empty() || !EnsureSmoke(a_index)) {
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            auto* root = camera ? camera->cameraRoot.get() : nullptr;
+            if (a_slot.black.Empty() || !root || !EnsureSmoke(a_index)) {
                 return;
             }
+            const auto&         eye = root->world.translate;
             Protocol::BodyState pose{};
             pose.frame = ++a_slot.frame;
             pose.flags = Protocol::kBodyValid;
             pose.model = kSmokeModelId + a_index * 2;
             pose.cameraForward[1] = 1.0f;
-            a_slot.black.Pose({ a_origin.x, a_origin.y, a_origin.z }, pose);
+            a_slot.black.Pose({ a_origin.x, a_origin.y, a_origin.z }, { eye.x, eye.y, eye.z }, pose);
             ModelView::Show(pose, a_origin);
         }
 
@@ -111,6 +146,7 @@ namespace AhShitRim::VehicleFx
         if (!a_pose) {
             slot.stage = Stage::Fine;
             slot.black.Clear();
+            slot.moved = false;
             return;
         }
         const Stage stage = StageOf(a_pose->flags, a_pose->health);
@@ -133,7 +169,19 @@ namespace AhShitRim::VehicleFx
         } else if (stage == Stage::Wreck && (a_pose->flags & Protocol::kBodyBurning)) {
             Puff(a_player, kWreckFire, slot.fire, a_feet + RE::NiPoint3(0.0f, 0.0f, kWreckFireLift));
         }
-        slot.black.Step(dt, black, { engine.x, engine.y, engine.z });
+        // San Andreas's own black smoke, at its own rate for the strength (full through the fire), carried
+        // along at the vehicle's speed as SetVelAdd does.
+        const float rate = !black ? 0.0f : stage == Stage::Smoke ? SmokeModel::RateAt(level) : SmokeModel::kRateMax;
+        RE::NiPoint3 carry;
+        if (slot.moved && dt > 0.0f) {
+            carry = (engine - slot.engine) / dt;
+            if (carry.Length() > 60.0f * SmokeModel::kMeter) {
+                carry = {};  // a jump (a re-anchor), not a speed
+            }
+        }
+        slot.engine = engine;
+        slot.moved = true;
+        slot.black.Step(dt, rate, { engine.x, engine.y, engine.z }, { carry.x, carry.y, carry.z });
         DrawBlack(a_slot, slot, a_feet);
     }
 
