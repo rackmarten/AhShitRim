@@ -26,8 +26,64 @@ namespace AhShitRim::VoiceLines
 
     // clang-format off
     // --- picks (scripts/voice-picker/apply.mjs) ---
-    inline constexpr std::array<Line, 0> kInsult{};
-    inline constexpr std::array<Line, 0> kSwear{};
+    inline constexpr std::array kInsult{
+        Line{ 690, 7 },  // AG ARRESTED
+        Line{ 690, 15 },  // AG CRASH_CAR
+        Line{ 690, 18 },  // AG CRASH_CAR
+        Line{ 690, 28 },  // AG CRASH_GENERIC
+        Line{ 690, 29 },  // AG CRASH_GENERIC
+        Line{ 690, 38 },  // AG FIGHT
+        Line{ 691, 16 },  // AG2 CRASH_CAR
+        Line{ 691, 17 },  // AG2 CRASH_CAR
+        Line{ 692, 16 },  // AR CRASH_CAR
+        Line{ 692, 25 },  // AR CRASH_CAR
+        Line{ 692, 27 },  // AR CRASH_GENERIC
+        Line{ 692, 32 },  // AR CRASH_GENERIC
+        Line{ 693, 29 },  // AR2 CRASH_GENERIC
+        Line{ 693, 131 },  // AR2 SOLICIT_PRO_NO
+        Line{ 694, 78 },  // CD CRASH_CAR
+        Line{ 694, 84 },  // CD CRASH_GENERIC
+        Line{ 694, 86 },  // CD CRASH_GENERIC
+        Line{ 695, 94 },  // CD2 FIGHT
+        Line{ 698, 78 },  // CG CRASH_CAR
+        Line{ 699, 68 },  // CG2 CRASH_CAR
+        Line{ 699, 72 },  // CG2 CRASH_CAR
+        Line{ 699, 73 },  // CG2 CRASH_CAR
+        Line{ 699, 80 },  // CG2 CRASH_GENERIC
+        Line{ 700, 24 },  // CR ARRESTED
+        Line{ 700, 84 },  // CR CRASH_GENERIC
+        Line{ 704, 28 },  // PR CRASH_CAR
+        Line{ 704, 36 },  // PR CRASH_GENERIC
+        Line{ 705, 6 },  // PR2 ARRESTED
+        Line{ 705, 24 },  // PR2 CRASH_CAR
+        Line{ 706, 30 },  // WG CRASH_GENERIC
+        Line{ 707, 24 },  // WG2 CRASH_CAR
+        Line{ 708, 23 },  // WR ARRESTED
+        Line{ 708, 25 },  // WR ARRESTED
+        Line{ 708, 42 },  // WR CRASH_CAR
+    };
+    inline constexpr std::array kSwear{
+        Line{ 692, 19 },  // AR CRASH_CAR
+        Line{ 692, 21 },  // AR CRASH_CAR
+        Line{ 693, 15 },  // AR2 CRASH_CAR
+        Line{ 693, 20 },  // AR2 CRASH_CAR
+        Line{ 693, 21 },  // AR2 CRASH_CAR
+        Line{ 695, 77 },  // CD2 CRASH_GENERIC
+        Line{ 700, 77 },  // CR CRASH_CAR
+        Line{ 700, 81 },  // CR CRASH_GENERIC
+        Line{ 700, 82 },  // CR CRASH_GENERIC
+        Line{ 701, 76 },  // CR2 CRASH_CAR
+        Line{ 701, 84 },  // CR2 CRASH_CAR
+        Line{ 701, 89 },  // CR2 CRASH_GENERIC
+        Line{ 704, 25 },  // PR CRASH_CAR
+        Line{ 704, 34 },  // PR CRASH_GENERIC
+        Line{ 705, 23 },  // PR2 CRASH_CAR
+        Line{ 705, 26 },  // PR2 CRASH_CAR
+        Line{ 705, 27 },  // PR2 CRASH_CAR
+        Line{ 705, 29 },  // PR2 CRASH_GENERIC
+        Line{ 705, 30 },  // PR2 CRASH_GENERIC
+        Line{ 705, 31 },  // PR2 CRASH_GENERIC
+    };
     // --- end of picks ---
     // clang-format on
 
