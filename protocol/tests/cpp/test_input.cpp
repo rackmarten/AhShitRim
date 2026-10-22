@@ -231,6 +231,18 @@ TEST_CASE("each wheel step counts a radio retune, also while a menu has the inpu
     CHECK(s.radioPrev == 1);
 }
 
+TEST_CASE("each swear press counts, also while a menu has the input, and picks the next bleeped line")
+{
+    Builder b;
+    CHECK(b.Build(1, true, true).swearCount == 0);
+    b.AddSwear();
+    b.AddSwear();
+    CHECK(b.Build(2, true, true).swearCount == 2);
+    CHECK(b.Build(3, true, false).swearCount == 2);  // the count carries over; San Andreas decides what a change means
+    CHECK(std::string(SwearSubtitle(1)) != SwearSubtitle(2));
+    CHECK(std::string(SwearSubtitle(0)) == SwearSubtitle(5));  // round the lines in turn
+}
+
 TEST_CASE("the ini picks the classic layout by name, anything else is modern")
 {
     CHECK(ParseKeyLayout("Classic") == KeyLayout::Classic);

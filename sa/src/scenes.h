@@ -15,6 +15,7 @@ namespace AhShitRim::Protocol
 //   he left it. When Skyrim gives the player back he goes on from there.
 // - Talking: with kInputFace CJ stands still and turns to the one he talks to.
 // - Shouting: a new InputState.shoutCount plays SHOVE_PARTIAL over whatever he does, with an angry face.
+// - Swearing (v16): a new InputState.swearCount has CJ say an insult, and give the finger on foot.
 // Game thread only.
 namespace AhShitRim::Scenes
 {

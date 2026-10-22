@@ -30,6 +30,8 @@ namespace AhShitRim::Scenes
         constexpr int kSeatIdle = 150;        // ANIM_DEFAULT_SEAT_IDLE
         constexpr int kShovePartial = 164;    // ANIM_DEFAULT_SHOVE_PARTIAL: a push, Fus Ro Dah
         constexpr int kFaceAnger = 157;       // ANIM_DEFAULT_FACANGER_0
+        constexpr int kFuckU = 144;           // ANIM_ID_FUCKU: the finger, as CTaskSimpleShakeFist plays it
+        constexpr unsigned short kInsultMale = 110;  // CTX_GLOBAL_GENERIC_INSULT_MALE; CJ's voice says CTX_PLY_GENERIC_INSULT_MALE
         constexpr int kTaskPrimary = 3;       // TASK_PRIMARY_PRIMARY, over CJ's own on-foot task
         constexpr unsigned short kAnimLooped = 0x2;           // ANIMATION_LOOPED
         constexpr unsigned short kAnimFinishAutoRemove = 0x8;  // gta-reversed: ANIMATION_IS_FINISH_AUTO_REMOVE
@@ -48,6 +50,8 @@ namespace AhShitRim::Scenes
             int                  seatFrames = 0;
             bool                 haveShout = false;  // shoutCount read once: a change after that is a shout
             std::uint16_t        shoutCount = 0;
+            bool                 haveSwear = false;  // likewise for swearCount
+            std::uint16_t        swearCount = 0;
         } state;
 
         float Seconds() { return CTimer::ms_fTimeStep * 0.02f; }  // San Andreas steps in 1/50 s
@@ -108,6 +112,18 @@ namespace AhShitRim::Scenes
         }
         state.shoutCount = a_input.shoutCount;
         state.haveShout = true;
+
+        // The swear key (v16): CJ's own insult, out of the window in a vehicle, with the finger on foot.
+        const bool wasted = (a_input.flags & Protocol::kInputWasted) != 0;
+        if (state.haveSwear && a_input.swearCount != state.swearCount && a_owned && !state.following && !wasted) {
+            a_ped->Say(kInsultMale, 0, 1.0f, true, true);
+            if (!Vehicles::Driven(a_ped) && !a_ped->m_pVehicle) {
+                PlayOnce(a_ped, kFuckU);
+            }
+            Log("scenes: CJ swears");
+        }
+        state.swearCount = a_input.swearCount;
+        state.haveSwear = true;
 
         const bool follow = a_owned && (a_input.flags & Protocol::kInputScripted) != 0;
         if (follow && !state.following) {

@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 15;
+    inline constexpr std::uint32_t kProtocolVersion = 16;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -147,7 +147,7 @@ namespace AhShitRim::Protocol
         float         sceneHeading;    // v9, kInputScripted: the player's heading; kInputFace: the heading CJ turns to (Skyrim radians)
         std::uint16_t shoutCount;      // v9: counts shouts the player let out; a new value plays CJ's gesture
         std::uint16_t carModel;        // v11: San Andreas vehicle model id to put CJ in once the ground is in (a loaded save's car), 0 = none; only read with a new handover
-        std::uint16_t reserved2;
+        std::uint16_t swearCount;      // v16: counts presses of the swear key; a new value has CJ insult and gesture
         std::uint8_t  carColours[4];   // v11: the car's four colour table indices
         std::uint16_t reserved0;
         float         carOffset[3];    // v11: the car relative to the anchor, Skyrim units
@@ -516,6 +516,7 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, sceneHeading) == 76);
     static_assert(offsetof(InputState, shoutCount) == 80);
     static_assert(offsetof(InputState, carModel) == 82);
+    static_assert(offsetof(InputState, swearCount) == 84);
     static_assert(offsetof(InputState, carColours) == 86);
     static_assert(offsetof(InputState, carOffset) == 92);
     static_assert(offsetof(InputState, carHeading) == 104);

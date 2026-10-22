@@ -783,6 +783,13 @@ namespace AhShitRim::PlayerSync
                         } else if (id == RE::BSWin32MouseDevice::Key::kRightButton) {
                             state.input.SetAim(button->IsPressed() && !MenuHasInput());
                             changed = true;
+                        } else if (id == RE::BSWin32MouseDevice::Key::kMiddleButton) {
+                            // The swear key: CJ insults whoever's about (San Andreas plays it), bleeped here.
+                            if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                                state.input.AddSwear();
+                                SaHud::ShowSubtitle(Input::SwearSubtitle(state.input.SwearCount()), 2.5f);
+                                changed = true;
+                            }
                         } else if (button->IsDown() && !MenuHasInput() &&
                                    (id == RE::BSWin32MouseDevice::Key::kWheelUp || id == RE::BSWin32MouseDevice::Key::kWheelDown)) {
                             state.input.AddWheel(id == RE::BSWin32MouseDevice::Key::kWheelUp);  // the radio in a vehicle, the weapons on foot
