@@ -46,6 +46,10 @@ namespace AhShitRim::Projectiles
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
         std::uint8_t a_cjWeapon, bool a_aiming);
 
+    // A vehicle blew up in San Andreas at a_at (v18): the fireball, twice a rocket's, hurting and throwing
+    // Skyrim's people as a rocket does, further out, and CJ when a_hurtCj. San Andreas plays its sound.
+    void VehicleBlast(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, bool a_hurtCj);
+
     // Back to Skyrim's own player: projectiles in flight and satchels are dropped and gas clouds cleared.
     void Clear();
 }
