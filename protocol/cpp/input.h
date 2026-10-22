@@ -33,6 +33,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikM = 0x32;
     inline constexpr std::uint32_t kDikSlash = 0x35;
     inline constexpr std::uint32_t kDikF10 = 0x44;
+    inline constexpr std::uint32_t kDikF11 = 0x57;  // a screenshot with everything on screen
     inline constexpr std::uint32_t kDikEquals = 0x0D;  // the debug key: gives CJ San Andreas's next weapon set
 
     inline constexpr std::uint32_t kDikW = 0x11;

@@ -5,13 +5,21 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 
+#include <ShlObj.h>
+#include <wincodec.h>
+
 #include <CommonStates.h>
+#include <ScreenGrab.h>
 #include <SpriteBatch.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <ctime>
+#include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 
@@ -33,6 +41,9 @@ namespace AhShitRim::Overlay
         std::vector<Image>                    pendingImages;
         bool                                  imagesPending = false;
         std::atomic<std::uint32_t>            screenWidth{ 0 }, screenHeight{ 0 };
+        std::atomic<bool>                     screenshotWanted{ false };
+        std::atomic<bool>                     screenshotSaved{ false };
+        std::string                           screenshotFolder;  // under the lock
 
         // Present only.
         struct Texture
@@ -263,9 +274,83 @@ namespace AhShitRim::Overlay
             batch->End();
         }
 
+        // 2026-10-22_16-46-44.png (_2, _3 for more in the same second) in a_folder: a relative one under
+        // the folder SkyrimSE.exe is in, Documents\My Games\AhShitRim\Screenshots when it's empty (as
+        // PerkeleRim names and keeps its own). Empty when there's no folder to put it in.
+        std::filesystem::path ScreenshotPath(const std::string& a_folder)
+        {
+            std::filesystem::path folder(a_folder);
+            if (a_folder.empty()) {
+                PWSTR documents = nullptr;
+                if (FAILED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents))) {
+                    CoTaskMemFree(documents);
+                    return {};
+                }
+                folder = std::filesystem::path(documents) / "My Games" / "AhShitRim" / "Screenshots";
+                CoTaskMemFree(documents);
+            } else if (folder.is_relative()) {
+                wchar_t exe[MAX_PATH]{};
+                GetModuleFileNameW(nullptr, exe, MAX_PATH);
+                folder = std::filesystem::path(exe).parent_path() / folder;
+            }
+            std::error_code error;
+            std::filesystem::create_directories(folder, error);
+            const auto now = std::time(nullptr);
+            std::tm    local{};
+            localtime_s(&local, &now);
+            const auto name = std::format("{:04}-{:02}-{:02}_{:02}-{:02}-{:02}", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min,
+                local.tm_sec);
+            auto path = folder / (name + ".png");
+            for (int i = 2; std::filesystem::exists(path, error); i++) {
+                path = folder / std::format("{}_{}.png", name, i);
+            }
+            return path;
+        }
+
+        // The finished back buffer, written as it is about to be shown. WIC encodes it here on the
+        // render thread, so the frame it's taken on comes a little late.
+        void Capture(IDXGISwapChain* a_swapChain)
+        {
+            ComPtr<ID3D11Device>        captureDevice;
+            ComPtr<ID3D11DeviceContext> captureContext;
+            ComPtr<ID3D11Texture2D>     back;
+            if (FAILED(a_swapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(captureDevice.GetAddressOf()))) ||
+                FAILED(a_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(back.GetAddressOf())))) {
+                spdlog::warn("overlay: screenshot not taken, no back buffer");
+                return;
+            }
+            captureDevice->GetImmediateContext(&captureContext);
+            std::string folder;
+            {
+                std::scoped_lock guard(lock);
+                folder = screenshotFolder;
+            }
+            const auto path = ScreenshotPath(folder);
+            if (path.empty()) {
+                spdlog::warn("overlay: screenshot not taken, no Documents folder");
+                return;
+            }
+            // WIC needs COM on this thread; Skyrim may have it already, in its own mode.
+            const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            // 24-bit: the back buffer's alpha is whatever Skyrim left in it.
+            const HRESULT saved = DirectX::SaveWICTextureToFile(captureContext.Get(), back.Get(), GUID_ContainerFormatPng, path.c_str(), &GUID_WICPixelFormat24bppBGR);
+            if (SUCCEEDED(com)) {
+                CoUninitialize();
+            }
+            if (SUCCEEDED(saved)) {
+                screenshotSaved = true;
+                spdlog::info("overlay: screenshot saved as {}", path.string());
+            } else {
+                spdlog::warn("overlay: screenshot {} not saved (HRESULT {:08X})", path.string(), static_cast<std::uint32_t>(saved));
+            }
+        }
+
         HRESULT STDMETHODCALLTYPE Present(IDXGISwapChain* a_swapChain, UINT a_syncInterval, UINT a_flags)
         {
             Draw(a_swapChain);
+            if (screenshotWanted.exchange(false)) {
+                Capture(a_swapChain);
+            }
             return original(a_swapChain, a_syncInterval, a_flags);
         }
     }
@@ -308,5 +393,19 @@ namespace AhShitRim::Overlay
         a_width = static_cast<float>(screenWidth.load());
         a_height = static_cast<float>(screenHeight.load());
         return a_width > 0.0f && a_height > 0.0f;
+    }
+
+    void Screenshot(std::string a_folder)
+    {
+        {
+            std::scoped_lock guard(lock);
+            screenshotFolder = std::move(a_folder);
+        }
+        screenshotWanted = true;
+    }
+
+    bool ScreenshotSaved()
+    {
+        return screenshotSaved.exchange(false);
     }
 }
