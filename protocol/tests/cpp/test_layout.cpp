@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v15 constants")
+TEST_CASE("protocol v16 constants")
 {
-    CHECK(kProtocolVersion == 15);
+    CHECK(kProtocolVersion == 16);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
@@ -115,6 +115,8 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, sceneHeading) == 76);
     CHECK(offsetof(InputState, shoutCount) == 80);
     CHECK(offsetof(InputState, carModel) == 82);
+    CHECK(offsetof(InputState, insultCount) == 84);
+    CHECK(offsetof(InputState, swearCount) == 90);
     CHECK(offsetof(InputState, carColours) == 86);
     CHECK(offsetof(InputState, carOffset) == 92);
     CHECK(offsetof(InputState, carHeading) == 104);

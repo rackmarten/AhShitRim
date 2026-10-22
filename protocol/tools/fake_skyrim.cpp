@@ -7,7 +7,7 @@
 // and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
 // CJ in it and turned its wheels. A re-anchor in the ZR-350 (fast travel, far off and far below)
 // takes CJ out and removes the vehicles, holds him until ground comes there, and he walks on it.
-// Scenes (v9) there: CJ turns to a speaker, gestures at a shout, follows a walking Skyrim player,
+// Scenes (v9) there: CJ turns to a speaker, gestures at a shout and a swear (v16), follows a walking Skyrim player,
 // sits where it sits and walks on when it lets go. Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
 // (launch-sa.ps1).
 //
@@ -474,6 +474,24 @@ int main(int argc, char** argv)
     });
     std::printf("scenes: shouting, a bone moved up to %.2f m from standing\n", gestured * Pose::kMetersPerUnit);
     failed += !(gestured * Pose::kMetersPerUnit > 0.05f);
+
+    // Swearing (v16): the finger moves his arm too.
+    run(1.5, [&] { return false; });
+    link.ReadBody(still);
+    input.AddInsult();
+    float fingered = 0.0f;
+    run(1.5, [&] {
+        if (link.ReadBody(gesture) && gesture.boneCount == still.boneCount) {
+            for (std::uint32_t i = 0; i < gesture.boneCount; i++) {
+                for (int k = 0; k < 3; k++) {
+                    fingered = (std::max)(fingered, std::abs(gesture.bones[i].translation[k] - still.bones[i].translation[k]));
+                }
+            }
+        }
+        return false;
+    });
+    std::printf("scenes: swearing, a bone moved up to %.2f m from standing\n", fingered * Pose::kMetersPerUnit);
+    failed += !(fingered * Pose::kMetersPerUnit > 0.05f);
 
     // Following Skyrim's player in a scene: it walks east at 1.5 m/s, then sits, then CJ has it back.
     Protocol::PlayerState from{};

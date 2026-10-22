@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CJ Voice Picker</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6a66; --line: #e3e1db;
+    --accent: #2f6f3e; --accent-soft: #e2efe4; --swear: #a3462a; --swear-soft: #f6e4dd; --play: #1d1d1b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #1f1f1c; --text: #ecebe6; --muted: #9a9890; --line: #33322e;
+      --accent: #7fc78f; --accent-soft: #233a28; --swear: #ee9b80; --swear-soft: #3d2620; --play: #ecebe6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  header, main { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 24px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { margin: 0 0 10px; color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .controls input[type=search] { flex: 1 1 220px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+  .mood { display: inline-flex; gap: 4px; align-items: center; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); cursor: pointer; user-select: none; font-size: 13px; }
+  .mood input { margin: 0; }
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin: 0 0 8px; }
+  summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+  summary .n { color: var(--muted); font-size: 13px; }
+  summary .picked { margin-left: auto; font-size: 13px; color: var(--accent); }
+  .lines { padding: 0 14px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+  .row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
+  .row.playing { border-color: var(--play); }
+  .row button.play { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; flex: none; }
+  .row .label { flex: 1; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .row .label small { color: var(--muted); }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 5px; padding: 2px 7px; font: 600 12px system-ui; cursor: pointer; }
+  .chip.x.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chip.m.on { background: var(--swear-soft); color: var(--swear); border-color: var(--swear); }
+  footer { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
+  footer .count { font-variant-numeric: tabular-nums; }
+  footer button { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+  footer button.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CJ voice picker</h1>
+  <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key. Your picks are kept in this browser; download them when you're done.</p>
+  <p>In AhShitRim CJ is always in the <b>CR</b> mood (no wanted level, no mission just passed), so the game on its own only plays the CR lines. Your picks play whatever the mood.</p>
+  <div class="controls">
+    <input type="search" id="search" placeholder="Filter contexts (insult, crash, fight…)">
+    <span id="moods"></span>
+  </div>
+</header>
+<main id="list"></main>
+<footer>
+  <span class="count" id="count"></span>
+  <button id="only">Show picked only</button>
+  <button id="clear">Clear picks</button>
+  <button class="primary" id="download">Download voice-picks.json</button>
+</footer>
+<script>
+const data = /*DATA*/null;
+const moodNames = {
+  AG: 'angry, gang', AR: 'angry (wanted 2-3)', CD: 'calm, well dressed', CF: 'calm, fat', CG: 'calm, gang',
+  CR: 'calm (AhShitRim)', PG: 'panicked, gang', PR: 'panicked (wanted 4+)', WG: 'winning, gang', WR: 'winning (mission passed)',
+};
+const store = (() => { try { return JSON.parse(localStorage.getItem('cj-voice-picks')) || {}; } catch { return {}; } })();
+const picks = { x: new Set(store.x || []), m: new Set(store.m || []) };
+const save = () => { try { localStorage.setItem('cj-voice-picks', JSON.stringify({ x: [...picks.x], m: [...picks.m] })); } catch {} };
+let moodsOn = new Set(Object.keys(moodNames));
+let onlyPicked = false;
+
+const moodsEl = document.getElementById('moods');
+for (const [code, name] of Object.entries(moodNames)) {
+  const l = document.createElement('label');
+  l.className = 'mood';
+  l.title = name;
+  l.innerHTML = `<input type="checkbox" checked> ${code}`;
+  l.querySelector('input').onchange = e => { e.target.checked ? moodsOn.add(code) : moodsOn.delete(code); filter(); };
+  moodsEl.append(l);
+}
+
+const player = new Audio();
+let playingRow = null;
+function play(row, key) {
+  if (playingRow) playingRow.classList.remove('playing');
+  if (playingRow === row && !player.paused) { player.pause(); playingRow = null; return; }
+  player.src = `wav/${key.replace(':', '_')}.wav`;
+  player.play();
+  playingRow = row;
+  row.classList.add('playing');
+}
+player.onended = () => { if (playingRow) playingRow.classList.remove('playing'); playingRow = null; };
+
+const list = document.getElementById('list');
+const sections = [];
+for (const ctx of data.contexts) {
+  const lines = [];
+  ctx.ranges.forEach((r, v) => {
+    if (!r) return;
+    for (let s = r[0]; s <= r[1]; s++) lines.push({ voice: data.voices[v], bank: data.firstBank + v, sound: s });
+  });
+  if (!lines.length) continue;
+  const det = document.createElement('details');
+  det.innerHTML = `<summary><b>${ctx.name}</b><span class="n">${lines.length} lines</span><span class="picked"></span></summary><div class="lines"></div>`;
+  const grid = det.querySelector('.lines');
+  const rows = lines.map(line => {
+    const key = `${line.bank}:${line.sound}`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<button class="play" title="Play">▶</button><span class="label">${line.voice} #${line.sound} <small>${data.seconds[key] ?? '?'} s</small></span><button class="chip x">X</button><button class="chip m">MMB</button>`;
+    row.querySelector('.play').onclick = () => play(row, key);
+    for (const which of ['x', 'm']) {
+      const chip = row.querySelector('.chip.' + which);
+      chip.classList.toggle('on', picks[which].has(key));
+      chip.onclick = () => {
+        picks[which].has(key) ? picks[which].delete(key) : picks[which].add(key);
+        chip.classList.toggle('on', picks[which].has(key));
+        save(); counts();
+      };
+    }
+    grid.append(row);
+    return { row, key, mood: line.voice.slice(0, 2) };
+  });
+  list.append(det);
+  sections.push({ ctx, det, rows });
+}
+
+function counts() {
+  document.getElementById('count').textContent = `X: ${picks.x.size} · MMB: ${picks.m.size}`;
+  for (const s of sections) {
+    const n = s.rows.filter(r => picks.x.has(r.key) || picks.m.has(r.key)).length;
+    s.det.querySelector('.picked').textContent = n ? `${n} picked` : '';
+  }
+}
+function filter() {
+  const q = document.getElementById('search').value.trim().toLowerCase().replace(/\s+/g, '_');
+  for (const s of sections) {
+    let shown = 0;
+    for (const r of s.rows) {
+      const ok = moodsOn.has(r.mood) && (!onlyPicked || picks.x.has(r.key) || picks.m.has(r.key));
+      r.row.classList.toggle('hidden', !ok);
+      shown += ok;
+    }
+    s.det.classList.toggle('hidden', !shown || (q && !s.ctx.name.toLowerCase().includes(q)));
+  }
+}
+document.getElementById('search').oninput = filter;
+document.getElementById('only').onclick = e => {
+  onlyPicked = !onlyPicked;
+  e.target.textContent = onlyPicked ? 'Show all' : 'Show picked only';
+  if (onlyPicked) sections.forEach(s => s.det.open = true);
+  filter();
+};
+document.getElementById('clear').onclick = () => {
+  if (!confirm('Clear every pick?')) return;
+  picks.x.clear(); picks.m.clear(); save();
+  document.querySelectorAll('.chip.on').forEach(c => c.classList.remove('on'));
+  counts(); filter();
+};
+document.getElementById('download').onclick = () => {
+  const describe = key => {
+    const [bank, sound] = key.split(':').map(Number);
+    const voice = data.voices[bank - data.firstBank];
+    const ctx = data.contexts.find(c => { const r = c.ranges[bank - data.firstBank]; return r && sound >= r[0] && sound <= r[1]; });
+    return { bank, sound, voice, context: ctx ? ctx.name : '?' };
+  };
+  const out = { insult: [...picks.x].map(describe), swear: [...picks.m].map(describe) };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));
+  a.download = 'voice-picks.json';
+  a.click();
+};
+counts();
+</script>
+</body>
+</html>

@@ -19,7 +19,9 @@ TEST_CASE("GTA's keyboard layout maps to CJ's actions")
     CHECK(ActionFromScanCode(kDikRight) == Action::Right);
     CHECK(ActionFromScanCode(kDikLeftShift) == Action::Sprint);
     CHECK(ActionFromScanCode(kDikSpace) == Action::Jump);
-    CHECK(ActionFromScanCode(kDikC) == Action::Crouch);
+    CHECK(ActionFromScanCode(kDikLeftCtrl) == Action::Crouch);
+    CHECK(ActionFromScanCode(kDikC) == Action::None);  // C crouches only in the classic layout
+    CHECK(ActionFromScanCode(kDikX) == Action::None);  // the insult key, counted on Skyrim's side
     CHECK(ActionFromScanCode(kDikLeftAlt) == Action::Walk);
 }
 
@@ -54,7 +56,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
 
     b.SetKey(kDikS, true);  // forwards and back cancel
     b.SetKey(kDikSpace, true);
-    b.SetKey(kDikC, true);
+    b.SetKey(kDikLeftCtrl, true);
     b.SetKey(kDikLeftAlt, true);
     s = b.Build(9, true, true);
     CHECK(s.moveY == 0.0f);
@@ -231,6 +233,21 @@ TEST_CASE("each wheel step counts a radio retune, also while a menu has the inpu
     CHECK(s.radioPrev == 1);
 }
 
+TEST_CASE("each insult and swear press counts on its own, also while a menu has the input")
+{
+    Builder b;
+    CHECK(b.Build(1, true, true).insultCount == 0);
+    b.AddInsult();
+    b.AddInsult();
+    b.AddSwear();
+    auto s = b.Build(2, true, true);
+    CHECK(s.insultCount == 2);
+    CHECK(s.swearCount == 1);
+    s = b.Build(3, true, false);  // the counts carry over; San Andreas decides what a change means
+    CHECK(s.insultCount == 2);
+    CHECK(s.swearCount == 1);
+}
+
 TEST_CASE("the ini picks the classic layout by name, anything else is modern")
 {
     CHECK(ParseKeyLayout("Classic") == KeyLayout::Classic);
@@ -251,9 +268,10 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     CHECK(ActionFromScanCode(kDikRightCtrl, classic) == Action::Jump);
     CHECK(ActionFromScanCode(kDikCapsLock, classic) == Action::Horn);
     CHECK(ActionFromScanCode(kDikH, classic) == Action::Horn);
+    CHECK(ActionFromScanCode(kDikC, classic) == Action::Crouch);  // San Andreas's own crouch key
+    CHECK(ActionFromScanCode(kDikLeftCtrl, classic) == Action::None);
     // Everything else as in the modern layout.
     CHECK(ActionFromScanCode(kDikW, classic) == Action::Forward);
-    CHECK(ActionFromScanCode(kDikC, classic) == Action::Crouch);
     CHECK(ActionFromScanCode(kDikLeftAlt, classic) == Action::Walk);
     CHECK(ActionFromScanCode(kDikF, classic) == Action::EnterExit);
     CHECK(ActionFromScanCode(kDikReturn, classic) == Action::EnterExit);
