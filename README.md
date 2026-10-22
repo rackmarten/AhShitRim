@@ -19,6 +19,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Key (modern) | Key (classic) | On foot | In a vehicle |
 |---|---|---|---|
 | F10 | F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
+| F11 | F11 | Screenshot with the HUDs on it, to `Screenshots` next to `Start AhShitRim.bat` (also while Skyrim has the player) | Same |
 | W / S | W / S | Walk forwards / back | Accelerate / brake, then reverse |
 | Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps) |
 | A / D, arrows left / right | A / D, arrows left / right | Walk left / right | Steer |

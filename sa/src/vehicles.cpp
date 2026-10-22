@@ -8,6 +8,7 @@
 #include "skin_model.h"
 #include "texture_decode.h"
 #include "vehicle.h"
+#include "vehicle_damage.h"
 
 #include <plugin.h>
 
@@ -55,6 +56,7 @@ namespace AhShitRim::Vehicles
             std::uint64_t         spawned = 0;  // spawn order: the oldest goes first
             std::uint32_t         model = 0;    // the model's id once built
             bool                  failed = false;
+            bool                  scorched = false;  // a wreck: its model was built again, scorched
             std::vector<RwFrame*> parts;  // each part's frame, in bone order
             std::string           name;
         };
@@ -285,8 +287,11 @@ namespace AhShitRim::Vehicles
                     const RpMaterial*   material = geometry->matList.materials[m];
                     RwTexture*          texture = material->texture;
                     SkinBuild::Material out;
-                    const auto          rgb = Vehicle::MaterialColour({ material->color.red, material->color.green, material->color.blue },
+                    auto                rgb = Vehicle::MaterialColour({ material->color.red, material->color.green, material->color.blue },
                                  texture && texture == CVehicleModelInfo::ms_pLightsTexture, colours);
+                    if (slot.scorched) {
+                        rgb = VehicleDamage::Scorch(rgb);
+                    }
                     out.color[0] = rgb.r;
                     out.color[1] = rgb.g;
                     out.color[2] = rgb.b;
@@ -367,9 +372,9 @@ namespace AhShitRim::Vehicles
             ModelSender::Set(ModelSender::kVehicleKey + a_index, slot.model, std::move(chunks), std::format("vehicle: the {}'s model", slot.name));
             slot.failed = false;
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-            Log(std::format("vehicle: the {}'s model {:08X} read in {:.1f} ms: {} parts ({} with a scale or mirror baked in; {} atomics hidden, {} skipped), "
+            Log(std::format("vehicle: the {}'s {}model {:08X} read in {:.1f} ms: {} parts ({} with a scale or mirror baked in; {} atomics hidden, {} skipped), "
                             "{} meshes, {} vertices, {} triangles ({} turned round), {} textures:{}; {} bytes in {} chunks",
-                slot.name, slot.model, ms, slot.parts.size(), baked, hidden, skipped, model.meshes.size(), vertices, triangles, flipped,
+                slot.name, slot.scorched ? "scorched " : "", slot.model, ms, slot.parts.size(), baked, hidden, skipped, model.meshes.size(), vertices, triangles, flipped,
                 model.textures.size(), textureLog.empty() ? " none" : textureLog, blob.size(), chunkCount));
             return true;
         }
@@ -394,6 +399,22 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        bool Wrecked(CVehicle* a_vehicle) { return a_vehicle->m_nStatus == STATUS_WRECKED; }
+
+        // Where the engine smokes and burns from, in the world: San Andreas's engine dummy, where it puts its
+        // overheat_car and fire_car, or the bonnet for a model without one.
+        CVector EngineAt(CVehicle* a_vehicle)
+        {
+            auto* info = InfoOf(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pVehicleStruct || !info->m_pColModel) {
+                return a_vehicle->GetPosition();
+            }
+            const CVector& dummy = info->m_pVehicleStruct->m_avDummyPos[7];  // DUMMY_ENGINE
+            const auto&    box = info->m_pColModel->m_boundBox;
+            const auto     p = VehicleDamage::EnginePoint(Vec(dummy), Vec(box.m_vecMin), Vec(box.m_vecMax));
+            return a_vehicle->GetPosition() + a_vehicle->GetRight() * p.x + a_vehicle->GetForward() * p.y + a_vehicle->GetUp() * p.z;
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -401,6 +422,20 @@ namespace AhShitRim::Vehicles
             Protocol::BodyState s{};
             s.frame = a_frame;
             s.flags = Protocol::kBodyValid | (a_driven ? Protocol::kBodyDriven : 0);
+            // Its damage stage (v18): the engine on fire, as ProcessCarOnFireAndExplode tells, or San
+            // Andreas's own fire on the wreck.
+            const bool wrecked = Wrecked(a_vehicle);
+            if (wrecked) {
+                s.flags |= Protocol::kBodyWrecked;
+            }
+            if (VehicleDamage::EngineBurns(a_vehicle->m_fHealth, wrecked, a_vehicle->bIsDrowning) || (wrecked && a_vehicle->m_pFire)) {
+                s.flags |= Protocol::kBodyBurning;
+            }
+            s.health = a_vehicle->m_fHealth;
+            const CVector engine = (EngineAt(a_vehicle) - at) * Pose::kUnitsPerMeter;
+            s.engine[0] = engine.x;
+            s.engine[1] = engine.y;
+            s.engine[2] = engine.z;
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
@@ -631,6 +666,13 @@ namespace AhShitRim::Vehicles
             }
             Pose(vehicle);
             Slot& slot = state.slots[i];
+            if (Wrecked(vehicle) && !slot.scorched) {
+                // Blown up: San Andreas draws the wreck scorched, and has taken off what flew away (a wheel).
+                Log(std::format("vehicle: the {} in slot {} blew up, its model built again scorched", slot.name, i));
+                slot.scorched = true;
+                slot.model = 0;
+                slot.failed = false;
+            }
             if (!slot.model && !slot.failed) {
                 Build(i, vehicle);  // after its first PreRender, so the wheels sit where they belong
             }

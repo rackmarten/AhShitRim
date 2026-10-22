@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 17;
+    inline constexpr std::uint32_t kProtocolVersion = 18;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -253,6 +253,8 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::uint32_t kBodyValid = 0x1;    // BodyState.flags: the bones and camera are set
     inline constexpr std::uint32_t kBodyDriven = 0x2;   // BodyState.flags, vehicle slots (v6): CJ is in this vehicle
+    inline constexpr std::uint32_t kBodyWrecked = 0x4;  // BodyState.flags, vehicle slots (v18): it blew up (San Andreas's STATUS_WRECKED)
+    inline constexpr std::uint32_t kBodyBurning = 0x8;  // BodyState.flags, vehicle slots (v18): it burns: its engine (health under 250, about to blow up) or the wreck
 
     // One bone's skinning transform (v5): takes a vertex of the model (bind pose, Skyrim units) to
     // its place relative to CJ's feet (BodyState.feet), Skyrim axes and units:
@@ -283,6 +285,8 @@ namespace AhShitRim::Protocol
         float         cameraFov;         // degrees, horizontal for a 4:3 screen: Skyrim's own fov convention
         BodyBone      bones[kBodyBoneMax];
         float         cameraUp[3];       // v14: the camera's up, a unit vector (its roll: the death camera's swing); zero for none
+        float         health;            // v18, vehicle slots: San Andreas's vehicle health (1000 new, it smokes under 650 and burns under 250); 0 elsewhere
+        float         engine[3];         // v18, vehicle slots: where its engine is (the engine dummy), relative to feet; zero elsewhere
     };
 
     struct BodySlot
@@ -290,7 +294,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[44];
+        std::uint8_t  pad[28];
     };
 
     // ---- Rings (single producer, single consumer) ----
@@ -571,8 +575,10 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 12);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 28);
     static_assert(offsetof(BodyState, cameraUp) == 64 + kBodyBoneMax * 28);
+    static_assert(offsetof(BodyState, health) == 64 + kBodyBoneMax * 28 + 12);
+    static_assert(offsetof(BodyState, engine) == 64 + kBodyBoneMax * 28 + 16);
     static_assert(offsetof(BodyState, feet) == 24);
     static_assert(offsetof(BodyState, cameraFov) == 60);
     static_assert(offsetof(BodyState, bones) == 64);
