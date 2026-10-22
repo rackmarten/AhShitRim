@@ -4,7 +4,7 @@
 //
 // San Andreas does the damage (its vehicles run in the hidden San Andreas); its particles are never drawn, so
 // the vehicle slot carries the health, the wrecked and burning flags and the engine's place, and Skyrim puts
-// its own vanilla smoke and fire there. The thresholds are San Andreas's own (gta-reversed):
+// vanilla white smoke and fire there, and black smoke of our own (smoke_model.h). The thresholds are San Andreas's own (gta-reversed):
 //  - CVehicle::AddDamagedVehicleParticles: "overheat_car" smoke from the engine dummy while the health is
 //    under 650 and not under 250, thicker and darker as it drops (its SetConstTime: 1 - (health - 250) / 400),
 //  - CAutomobile::ProcessCarOnFireAndExplode: under 250 (not wrecked, not drowning) "fire_car" at the engine
@@ -93,27 +93,32 @@ namespace AhShitRim::VehicleDamage
 
     enum class Effect : std::uint8_t
     {
-        LightSmoke,  // vanilla chimney smoke
-        DarkSmoke,   // the same smoke, tinted near black
+        WhiteSmoke,  // vanilla chimney smoke
         Fire,        // vanilla small fire
     };
-
-    inline constexpr float kDarkTint = 0.12f;  // the dark smoke's colour: the chimney smoke's times this
 
     // One of Skyrim's temporary effects, spawned every `every` seconds at the same spot for `life` seconds,
     // so the smoke trails behind a moving vehicle as San Andreas's does.
     struct Puff
     {
-        Effect effect = Effect::LightSmoke;
+        Effect effect = Effect::WhiteSmoke;
         float  scale = 1.0f;
         float  every = 0.5f;
         float  life = 2.0f;
     };
 
-    inline constexpr float kDarkFrom = 0.5f;  // smoke this thick or more is dark
+    inline constexpr float kDarkFrom = 0.5f;  // smoke this thick or more is black (from 450 health)
 
-    // The engine's smoke at a_level (SmokeLevel), as San Andreas's stages before the fire: white and thin at
-    // first, then (from kDarkFrom) near black and twice as thick: puffs twice as often, each 1.4 times the size.
+    // San Andreas's stages before the fire: white smoke, then all at once black (SmokeModel's, made here, as
+    // Skyrim's smoke can't be turned black). The black smoke goes on through the fire and while a wreck burns.
+    inline bool WhiteSmoke(Stage a_stage, float a_level) { return a_stage == Stage::Smoke && a_level < kDarkFrom; }
+
+    inline bool BlackSmoke(Stage a_stage, float a_level, bool a_burning)
+    {
+        return (a_stage == Stage::Smoke && a_level >= kDarkFrom) || a_stage == Stage::Fire || (a_stage == Stage::Wreck && a_burning);
+    }
+
+    // The white smoke at a_level (SmokeLevel): thicker and more often as the health drops.
     inline Puff SmokePuff(float a_level)
     {
         const float level = std::clamp(a_level, 0.0f, 1.0f);
@@ -121,18 +126,13 @@ namespace AhShitRim::VehicleDamage
         puff.scale = 0.4f + 0.6f * level;
         puff.every = 0.5f - 0.3f * level;
         puff.life = 2.5f;
-        if (level >= kDarkFrom) {
-            puff.effect = Effect::DarkSmoke;
-            puff.scale *= 1.4f;
-            puff.every *= 0.5f;
-        }
         return puff;
     }
 
-    // The engine's fire (its dark smoke goes on beside it), and a burning wreck's (bigger, from its middle):
-    // twice the size of the small fire Skyrim puts on CJ, so it shows from a distance.
-    inline constexpr Puff kEngineFire{ Effect::Fire, 1.6f, 0.2f, 0.5f };
-    inline constexpr Puff kWreckFire{ Effect::Fire, 3.2f, 0.2f, 0.6f };
+    // The engine's fire, and a burning wreck's (bigger, from its middle): big enough to see from a distance,
+    // four and six times the small fire Skyrim puts on a burning CJ.
+    inline constexpr Puff kEngineFire{ Effect::Fire, 3.2f, 0.2f, 0.5f };
+    inline constexpr Puff kWreckFire{ Effect::Fire, 4.8f, 0.2f, 0.6f };
 
     // ---- The blow-up ----
 

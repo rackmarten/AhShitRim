@@ -38,24 +38,34 @@ TEST_CASE("vehicle damage: a slot's stage")
     CHECK(StageOf(valid, 200.0f) == Stage::Fine);  // under 250 without San Andreas's fire: nothing of ours
 }
 
-TEST_CASE("vehicle damage: smoke grows thicker, darker and more often")
+TEST_CASE("vehicle damage: white smoke, then all at once black, through the fire and a burning wreck")
+{
+    const float white = kDarkFrom - 0.001f;
+    CHECK(WhiteSmoke(Stage::Smoke, white));
+    CHECK_FALSE(BlackSmoke(Stage::Smoke, white, false));
+    CHECK_FALSE(WhiteSmoke(Stage::Smoke, kDarkFrom));
+    CHECK(BlackSmoke(Stage::Smoke, kDarkFrom, false));
+    CHECK(SmokeLevel(450.0f) >= kDarkFrom);  // black from 450 health
+    CHECK(SmokeLevel(451.0f) < kDarkFrom);
+    CHECK(BlackSmoke(Stage::Fire, 0.0f, true));
+    CHECK_FALSE(WhiteSmoke(Stage::Fire, 0.0f));
+    CHECK(BlackSmoke(Stage::Wreck, 0.0f, true));
+    CHECK_FALSE(BlackSmoke(Stage::Wreck, 0.0f, false));
+    CHECK_FALSE(BlackSmoke(Stage::Fine, 0.0f, false));
+    CHECK_FALSE(WhiteSmoke(Stage::Fine, 0.0f));
+}
+
+TEST_CASE("vehicle damage: white smoke grows thicker and more often; the fire is big")
 {
     const Puff thin = SmokePuff(0.1f);
-    const Puff thick = SmokePuff(0.9f);
-    CHECK(thin.effect == Effect::LightSmoke);
-    CHECK(thick.effect == Effect::DarkSmoke);
-    CHECK(SmokePuff(kDarkFrom).effect == Effect::DarkSmoke);
+    const Puff thick = SmokePuff(0.45f);
+    CHECK(thin.effect == Effect::WhiteSmoke);
     CHECK(thick.scale > thin.scale);
     CHECK(thick.every < thin.every);
-    // The dark smoke is twice as thick as the white just under it: twice as often, bigger.
-    const Puff white = SmokePuff(kDarkFrom - 0.001f);
-    const Puff dark = SmokePuff(kDarkFrom);
-    CHECK(white.effect == Effect::LightSmoke);
-    CHECK(dark.every == doctest::Approx(white.every * 0.5f).epsilon(0.01));
-    CHECK(dark.scale > white.scale * 1.3f);
-    CHECK(kEngineFire.scale >= 1.6f);
     CHECK(thin.every > 0.0f);
     CHECK(SmokePuff(5.0f).scale == doctest::Approx(SmokePuff(1.0f).scale));
+    CHECK(kEngineFire.effect == Effect::Fire);
+    CHECK(kEngineFire.scale >= 3.0f);
     CHECK(kWreckFire.scale > kEngineFire.scale);
 }
 
