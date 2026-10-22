@@ -41,6 +41,11 @@ for sub in skse/extern/CommonLibSSE-NG sa/extern/plugin-sdk; do
     [ -e "$REPO/$sub/.git" ] || git -C "$REPO" submodule update --init --recursive "$sub"
 done
 
+# Wine holds a few file descriptors per object file lib.exe maps, so CommonLibSSE's ~520 objects
+# run past the usual soft limit of 1024 ("LNK1104: cannot open file"). Raised before the
+# wineserver starts, which keeps the limit it was started with.
+ulimit -n "$(ulimit -Hn)"
+
 # One wineserver for the whole build instead of one per compiler call.
 wineserver --persistent=300 2>/dev/null || true
 
@@ -74,11 +79,15 @@ build_sa() {
 }
 
 # The same as scripts/test.ps1's "tests" preset (Debug, vcpkg's doctest), with ctest running the
-# .exe under Wine.
+# .exe under Wine. A Debug .exe needs the debug CRT (msvcp140d.dll, ucrtbased.dll and the rest),
+# which Wine doesn't have: WINEPATH points it at MSVC's and the Windows SDK's copies.
 build_tests() {
     cmake -S "$REPO/protocol" -B "$REPO/protocol/build/wine-tests" -G Ninja -DCMAKE_BUILD_TYPE=Debug "${vcpkg_args[@]}"
     cmake --build "$REPO/protocol/build/wine-tests" -j "$JOBS"
-    ctest --test-dir "$REPO/protocol/build/wine-tests" --output-on-failure
+    local crt ucrt
+    crt=$(ls -d "$MSVC_DIR"/VC/Redist/MSVC/*/debug_nonredist/x64/Microsoft.VC*.DebugCRT | tail -n 1)
+    ucrt=$(ls -d "$MSVC_DIR/Windows Kits/10/bin/"*/x64/ucrt | tail -n 1)
+    WINEPATH="z:$crt;z:$ucrt" ctest --test-dir "$REPO/protocol/build/wine-tests" --output-on-failure
 }
 
 for t in "${targets[@]}"; do

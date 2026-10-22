@@ -29,8 +29,6 @@ endif()
 # msvc-wine's wrappers set INCLUDE, LIB and the Wine paths themselves.
 set(CMAKE_C_COMPILER "${_bin}/cl")
 set(CMAKE_CXX_COMPILER "${_bin}/cl")
-set(CMAKE_LINKER "${_bin}/link")
-set(CMAKE_AR "${_bin}/lib")
 set(CMAKE_RC_COMPILER "${_bin}/rc")
 set(CMAKE_MT "${_bin}/mt")
 
@@ -39,10 +37,16 @@ set(CMAKE_CROSSCOMPILING_EMULATOR wine)
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 
-# CMake on a Linux host puts every object on the command line, and a big library's (CommonLibSSE's
-# lib.exe call) is over Windows' 32767 characters: Wine then never starts the tool and msvc-wine's
-# wrapper waits on its output forever. Response files keep the command lines short. Not for vcpkg's
-# port builds: with it DirectXTK's failed.
-if(NOT DEFINED VCPKG_TARGET_ARCHITECTURE)
-    set(CMAKE_NINJA_FORCE_RESPONSE_FILE ON CACHE BOOL "")
-endif()
+# lib and link go through long-args.sh, which moves a command line too long for Windows into a
+# response file with its paths rewritten for Wine. CMAKE_AR and CMAKE_LINKER take one program, so
+# each gets a two-line wrapper in the build directory. (CMAKE_NINJA_FORCE_RESPONSE_FILE doesn't
+# work: msvc-wine never rewrites the -I/home/... paths inside a compile's response file.)
+set(_wrap_dir "${CMAKE_BINARY_DIR}/msvc-wine-${MSVC_WINE_ARCH}")
+foreach(_tool lib link)
+    file(CONFIGURE OUTPUT "${_wrap_dir}/${_tool}"
+        CONTENT "#!/bin/sh\nexec \"${CMAKE_CURRENT_LIST_DIR}/long-args.sh\" \"${_bin}/${_tool}\" \"$@\"\n"
+        @ONLY)
+    file(CHMOD "${_wrap_dir}/${_tool}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endforeach()
+set(CMAKE_AR "${_wrap_dir}/lib")
+set(CMAKE_LINKER "${_wrap_dir}/link")
