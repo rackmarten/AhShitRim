@@ -16,7 +16,7 @@ class CVehicle;
 //   wheels, a bike's forks and handlebars) runs here every frame, a bike gets its lean, and every
 //   part's frame goes to Skyrim in the vehicle's slot.
 // - Air control: the player's car steers kAirTurnGain times as hard in the air as San Andreas
-//   lets it (protocol/cpp/vehicle.h), through a hook on CAutomobile::ProcessAI.
+//   lets it, on the gas too (protocol/cpp/vehicle.h), through a hook on CAutomobile::ProcessAI.
 // Game thread only.
 namespace AhShitRim::Vehicles
 {

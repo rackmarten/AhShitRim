@@ -206,7 +206,7 @@ TEST_CASE("in the air the player's car is pushed three times as hard as San Andr
     CHECK(ExtraAirPush(0.0f, 0.0f) == 0.0f);
 }
 
-TEST_CASE("the handbrake makes left and right yaw, the gas stops roll and pitch")
+TEST_CASE("the handbrake makes left and right yaw; on the gas AhShitRim gives all of roll and pitch")
 {
     const AirSteer steer{ 1.0f, -1.0f };
     const auto     free = ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, false, false);
@@ -219,10 +219,12 @@ TEST_CASE("the handbrake makes left and right yaw, the gas stops roll and pitch"
     CHECK(handbrake.roll == 0.0f);
     CHECK(handbrake.pitch > 0.0f);
 
+    // San Andreas pushes no roll or pitch on the gas: AhShitRim's are the whole of it.
     const auto gas = ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, false, true);
     CHECK(gas.yaw == 0.0f);
-    CHECK(gas.roll == 0.0f);
-    CHECK(gas.pitch == 0.0f);
+    CHECK(gas.roll == doctest::Approx(kAirTurnGain));
+    CHECK(gas.pitch == doctest::Approx(kAirTurnGain));
+    CHECK(ExtraAirPushes(0.0f, 0.0f, 0.07f, steer, false, true).pitch == 0.0f);  // still up to kAirSpin
 
     CHECK(ExtraAirPushes(0.0f, 0.0f, 0.0f, steer, true, true).yaw > 0.0f);  // yaw still works on the gas
 }

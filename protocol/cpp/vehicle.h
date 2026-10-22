@@ -291,8 +291,9 @@ namespace AhShitRim::Vehicle
     // handbrake and left/right yaw it, left/right alone roll it, up/down pitch it, roll and pitch
     // only off the gas. Each push goes on only while the car turns slower than kSaAirSpin that way,
     // so it barely moves a car that left a slope already turning. AhShitRim pushes the player's car
-    // kAirTurnGain times as hard, up to kAirSpin: the ASI adds what San Andreas's own push didn't.
-    // Turn speeds are San Andreas's, radians per 1/50 s.
+    // kAirTurnGain times as hard, up to kAirSpin, and rolls and pitches it on the gas too (people
+    // keep W held over a jump): the ASI adds what San Andreas's own push didn't. Turn speeds are
+    // San Andreas's, radians per 1/50 s.
 
     inline constexpr float kSaAirSpin = 0.02f;  // San Andreas's cap: 1 rad/s, 57 degrees a second
     inline constexpr float kAirTurnGain = 3.0f;
@@ -306,10 +307,11 @@ namespace AhShitRim::Vehicle
     }
 
     // The push AhShitRim adds about one axis, in San Andreas's own pushes: kAirTurnGain of them up to
-    // kAirSpin, less the one San Andreas gave below kSaAirSpin.
-    constexpr float ExtraAirPush(float a_spin, float a_steer)
+    // kAirSpin, less the one San Andreas gave below kSaAirSpin (none when a_saPushes is false: the gas
+    // stopped it).
+    constexpr float ExtraAirPush(float a_spin, float a_steer, bool a_saPushes = true)
     {
-        return (AirPushes(a_spin, a_steer, kAirSpin) ? kAirTurnGain : 0.0f) - (AirPushes(a_spin, a_steer, kSaAirSpin) ? 1.0f : 0.0f);
+        return (AirPushes(a_spin, a_steer, kAirSpin) ? kAirTurnGain : 0.0f) - (a_saPushes && AirPushes(a_spin, a_steer, kSaAirSpin) ? 1.0f : 0.0f);
     }
 
     // San Andreas's steering in the air (-1..1 each): the keys, or with the mouse steering in the
@@ -331,7 +333,7 @@ namespace AhShitRim::Vehicle
     }
 
     // The extra pushes about the car's up (yaw), forward (roll) and right (pitch) axes, given how
-    // fast it turns about each.
+    // fast it turns about each. a_gas: San Andreas pushed no roll or pitch, so all of it is added.
     struct AirPush
     {
         float yaw = 0.0f;
@@ -343,12 +345,10 @@ namespace AhShitRim::Vehicle
         AirPush p;
         if (a_handbrake) {
             p.yaw = ExtraAirPush(a_spinUp, a_steer.leftRight);
-        } else if (!a_gas) {
-            p.roll = ExtraAirPush(a_spinForward, a_steer.leftRight);
+        } else {
+            p.roll = ExtraAirPush(a_spinForward, a_steer.leftRight, !a_gas);
         }
-        if (!a_gas) {
-            p.pitch = ExtraAirPush(a_spinRight, a_steer.upDown);
-        }
+        p.pitch = ExtraAirPush(a_spinRight, a_steer.upDown, !a_gas);
         return p;
     }
 
