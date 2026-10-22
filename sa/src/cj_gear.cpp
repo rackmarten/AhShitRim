@@ -358,7 +358,8 @@ namespace AhShitRim::CjGear
             Parachute::Around around;
             around.holdsChute = HoldsChute(a_ped);
             around.standing = a_ped->bIsStanding;
-            around.free = a_free && !a_ped->bInVehicle && !a_ped->m_pVehicle && !Jetpack(a_ped);
+            // In a vehicle is bInVehicle alone: m_pVehicle stays on the last one he got out of.
+            around.free = a_free && !a_ped->bInVehicle && !Jetpack(a_ped);
             around.fall = -a_ped->m_vecMoveSpeed.z * 50.0f;
             // The line down is only tested when it can matter: he could start a skydive, or he is in one.
             const bool mayStart = around.holdsChute && !around.standing && around.fall >= Parachute::kStartFall;

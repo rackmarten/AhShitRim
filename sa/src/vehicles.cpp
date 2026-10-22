@@ -67,6 +67,7 @@ namespace AhShitRim::Vehicles
             std::vector<RwFrame*> parts;  // each part's frame, in bone order
             std::vector<RpAtomic*> atomics;  // and its atomic: whether San Andreas draws it (a damaged or whole version) is read every frame
             std::vector<VehicleKinds::Spinner> spinners;  // a rotor's or a propeller's standing or spinning version
+            std::vector<VehicleKinds::ExtraWheel> extras;  // the Rhino's road wheels between its front and back ones
             std::string           name;
         };
 
@@ -292,7 +293,10 @@ namespace AhShitRim::Vehicles
             std::string                       textureLog;
             int                               skipped = 0, hidden = 0, baked = 0;
             std::uint32_t                     flipped = 0;
+            std::vector<SkinModel::MeshIn>    wheelMeshes[2];  // the left and right front wheels', for the Rhino's road wheels
+            int                               wheelParts[4] = { -1, -1, -1, -1 };  // its lf, lb, rf, rb wheels' parts
             slot.parts.clear();
+            slot.extras.clear();
             slot.atomics.clear();
             slot.spinners.clear();
             for (RpAtomic* atomic : atomics) {
@@ -372,6 +376,12 @@ namespace AhShitRim::Vehicles
                 const auto bake = Vehicle::Bake(ToFrame(*RwFrameGetLTM(frame)));
                 baked += !Vehicle::IsIdentity(bake);
                 Vehicle::BakeMeshes(partMeshes, bake);
+                if (const int wheel = VehicleKinds::RoadWheelOf(FrameName(atomic)); wheel >= 0 && VehicleKinds::HasRoadWheels(a_vehicle->m_nModelIndex)) {
+                    wheelParts[wheel] = static_cast<int>(part);
+                    if (wheel == 0 || wheel == 2) {
+                        wheelMeshes[wheel / 2] = partMeshes;
+                    }
+                }
                 for (auto& mesh : partMeshes) {
                     meshes.push_back(std::move(mesh));
                 }
@@ -383,6 +393,25 @@ namespace AhShitRim::Vehicles
             if (slot.parts.empty()) {
                 Log(std::format("vehicle: the {} has no part to draw ({} atomics, {} hidden, {} skipped)", slot.name, atomics.size(), hidden, skipped));
                 return false;
+            }
+            // The Rhino's road wheels: San Andreas hides the middle wheel parts and draws its front wheel again along each
+            // side when it renders the tank (CAutomobile::Render), which never runs hidden. Each is a copy of that side's
+            // front wheel, a part of its own, put between the front and back wheels every frame.
+            for (const auto& extra : VehicleKinds::RoadWheels(wheelParts, static_cast<int>(slot.parts.size()))) {
+                if (extra.part >= static_cast<int>(Protocol::kBodyBoneMax)) {
+                    break;
+                }
+                for (auto mesh : wheelMeshes[extra.front == wheelParts[0] ? 0 : 1]) {
+                    for (auto& v : mesh.vertices) {
+                        v.bones[0] = static_cast<std::uint8_t>(extra.part);
+                    }
+                    meshes.push_back(std::move(mesh));
+                }
+                slot.parts.push_back(slot.parts[extra.front]);
+                slot.atomics.push_back(slot.atomics[extra.front]);
+                slot.spinners.push_back(VehicleKinds::Spinner::None);
+                model.boneIds.push_back(static_cast<std::uint32_t>(extra.part));
+                slot.extras.push_back(extra);
             }
             model.meshes = Vehicle::Merge(std::move(meshes));
             std::uint32_t vertices = 0, triangles = 0;
@@ -491,6 +520,12 @@ namespace AhShitRim::Vehicles
                 if (!Drawn(slot.atomics[i]) || !VehicleKinds::SpinnerShows(slot.spinners[i], spin)) {
                     s.hiddenParts |= 1ull << i;
                 }
+            }
+            for (const auto& extra : slot.extras) {
+                auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
+                const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));
+                rows.pos = VehicleKinds::Between(rows.pos, back.pos, extra.along);
+                s.bones[extra.part] = Body::ToBone(rows, Vec(at));
             }
             if (Body::Finite(s)) {
                 GetLink().WriteVehicle(static_cast<std::uint32_t>(a_index), s);

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <set>
@@ -296,6 +297,22 @@ int main()
         input.SetKey(Input::kDikW, false);
         std::printf("HYDRA: forward flight at %.1f m/s on %s; firing sent %zu projectiles\n", fastest, forwardKey, received.projectiles.size());
         failed += !(in && hovered && fastest > 30.0f && !received.projectiles.empty());
+        // AHSHITRIM_LONG_FLIGHT=<seconds>: fly on that long (nozzles forward, a slow turn) to load San Andreas's ground
+        // and its pools, as a long flight in game does; the log's ground lines show the pools.
+        if (const char* longFlight = std::getenv("AHSHITRIM_LONG_FLIGHT"); longFlight && std::atof(longFlight) > 0.0) {
+            input.SetKey(Input::kDikW, true);
+            input.SetKey(Input::kDikNumpad8, true);
+            input.SetKey(Input::kDikA, true);
+            float far = 0.0f;
+            run(std::atof(longFlight), [&] {
+                const auto p = player();
+                far = (std::max)(far, std::hypot(p.offset[0], p.offset[1]) * Pose::kMetersPerUnit);
+                return !link.IsUp();
+            });
+            input.ReleaseAll();
+            std::printf("HYDRA: long flight of %s s, up to %.0f m out, link %s\n", longFlight, far, link.IsUp() ? "up" : "DOWN");
+            failed += !link.IsUp();
+        }
         fresh();
     }
 
@@ -317,8 +334,15 @@ int main()
         fresh();
     }
 
-    // The jetpack: up on it (the sprint key is San Andreas's accelerate), drawn in the gear slot.
+    // The jetpack: up on it (the sprint key is San Andreas's accelerate), drawn in the gear slot. First on and off a BMX that
+    // stays parked: San Andreas keeps it as CJ's last vehicle, which once kept the parachute from ever opening.
     {
+        Protocol::BodyState parked{};
+        if (spawn(481, "BMX", parked) >= 0 && board("BMX")) {
+            press(Input::kDikF);
+            run(6.0, [&] { return !inVehicle(); });
+            wait(1.0);
+        }
         input.SetDevModel(VehicleKinds::kJetpack);
         press(Input::kDikApostrophe);
         wait(1.0);

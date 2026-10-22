@@ -239,6 +239,60 @@ namespace AhShitRim::VehicleKinds
         return a_spinner == Spinner::None || (a_spinner == Spinner::Moving) == blurred;
     }
 
+    // ---- The Rhino's road wheels ----
+    //
+    // The Rhino's model has six wheel frames, but San Andreas hides the middle pair and draws the front wheel again four
+    // times along each side between the front and back ones when it renders the tank (CAutomobile::Render; its eight extra
+    // suspension lines are theirs). Skyrim gets those as parts of their own, copies of that side's front wheel, put evenly
+    // between the front and back wheels every frame.
+
+    inline constexpr int kRoadWheelsPerSide = 4;
+
+    constexpr bool HasRoadWheels(int a_model) { return a_model == 432; }
+
+    // 0 lf, 1 lb, 2 rf, 3 rb for the wheel frames the road wheels go between (the dummies San Andreas puts the wheel on),
+    // -1 for any other frame.
+    constexpr int RoadWheelOf(std::string_view a_frame)
+    {
+        if (a_frame == "wheel_lf_dummy") return 0;
+        if (a_frame == "wheel_lb_dummy") return 1;
+        if (a_frame == "wheel_rf_dummy") return 2;
+        if (a_frame == "wheel_rb_dummy") return 3;
+        return -1;
+    }
+
+    struct ExtraWheel
+    {
+        int   part = 0;      // its own part (bone)
+        int   front = 0;     // the parts it goes between
+        int   back = 0;
+        float along = 0.0f;  // how far from front to back, 0..1
+    };
+
+    // The road wheels for a model whose wheel frames are the parts a_wheels (lf, lb, rf, rb; -1 for one it lacks), numbered
+    // from a_firstPart on: four a side, the left side first; none for a side without both its wheels.
+    inline std::vector<ExtraWheel> RoadWheels(const int (&a_wheels)[4], int a_firstPart)
+    {
+        std::vector<ExtraWheel> out;
+        for (int side = 0; side < 2; side++) {
+            const int front = a_wheels[side * 2], back = a_wheels[side * 2 + 1];
+            if (front < 0 || back < 0) {
+                continue;
+            }
+            for (int k = 1; k <= kRoadWheelsPerSide; k++) {
+                out.push_back({ a_firstPart + static_cast<int>(out.size()), front, back, static_cast<float>(k) / (kRoadWheelsPerSide + 1) });
+            }
+        }
+        return out;
+    }
+
+    // A point a_along of the way from a_from to a_to.
+    template <class V>
+    constexpr V Between(const V& a_from, const V& a_to, float a_along)
+    {
+        return { a_from.x + (a_to.x - a_from.x) * a_along, a_from.y + (a_to.y - a_from.y) * a_along, a_from.z + (a_to.z - a_from.z) * a_along };
+    }
+
     // ---- The dev path ----
     //
     // Skyrim's dev keys pick from these and spawn the pick by model id (a model id from AhShitRim.ini's [Debug]

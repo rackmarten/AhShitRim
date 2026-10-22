@@ -101,8 +101,20 @@ namespace
         }
         MEMORY_BASIC_INFORMATION mbi{};
         ::VirtualQuery(record->ExceptionAddress, &mbi, sizeof(mbi));
-        Log(std::format("crash: exception 0x{:08X} at 0x{:08X} (access {} 0x{:08X}, page protect 0x{:X} state 0x{:X}), ecx 0x{:08X}; exe addresses on the stack:{}",
-            record->ExceptionCode, reinterpret_cast<std::uintptr_t>(record->ExceptionAddress),
+        // The module the fault is in, and where in it.
+        HMODULE where = nullptr;
+        wchar_t whereName[MAX_PATH]{};
+        std::string module = "no module";
+        if (::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(record->ExceptionAddress), &where) &&
+            ::GetModuleFileNameW(where, whereName, MAX_PATH)) {
+            const std::wstring path(whereName);
+            const auto         name = path.substr(path.find_last_of(L"\\/") + 1);
+            module = std::format("{}+0x{:X}", std::string(name.begin(), name.end()),
+                reinterpret_cast<std::uintptr_t>(record->ExceptionAddress) - reinterpret_cast<std::uintptr_t>(where));
+        }
+        Log(std::format("crash: exception 0x{:08X} at 0x{:08X} ({}; access {} 0x{:08X}, page protect 0x{:X} state 0x{:X}), ecx 0x{:08X}; exe addresses on the stack:{}",
+            record->ExceptionCode, reinterpret_cast<std::uintptr_t>(record->ExceptionAddress), module,
             record->NumberParameters > 0 ? record->ExceptionInformation[0] : 0, record->NumberParameters > 1 ? record->ExceptionInformation[1] : 0,
             mbi.Protect, mbi.State, a_info->ContextRecord->Ecx, stack));
         return EXCEPTION_CONTINUE_SEARCH;

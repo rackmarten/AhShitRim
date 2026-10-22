@@ -191,3 +191,36 @@ TEST_CASE("vehicle kinds: the dev picker and its list")
     CHECK(Label(600) == "model 600 (car)");
     CHECK(Label(430) == "model 430 (boat)");
 }
+
+TEST_CASE("vehicle kinds: the Rhino's road wheels")
+{
+    CHECK(HasRoadWheels(432));
+    CHECK_FALSE(HasRoadWheels(495));
+    CHECK(RoadWheelOf("wheel_lf_dummy") == 0);
+    CHECK(RoadWheelOf("wheel_rb_dummy") == 3);
+    CHECK(RoadWheelOf("wheel_lm_dummy") == -1);  // the middle pair San Andreas hides
+    CHECK(RoadWheelOf("chassis") == -1);
+
+    const int wheels[4] = { 3, 4, 5, 6 };
+    const auto extra = RoadWheels(wheels, 10);
+    REQUIRE(extra.size() == 8);
+    CHECK(extra[0].part == 10);
+    CHECK(extra[0].front == 3);
+    CHECK(extra[0].back == 4);
+    CHECK(extra[0].along == doctest::Approx(0.2f));
+    CHECK(extra[3].along == doctest::Approx(0.8f));
+    CHECK(extra[4].front == 5);
+    CHECK(extra[4].back == 6);
+    CHECK(extra[7].part == 17);
+
+    const int noRight[4] = { 3, 4, -1, 6 };
+    CHECK(RoadWheels(noRight, 10).size() == 4);
+
+    struct P
+    {
+        float x, y, z;
+    };
+    const P mid = Between(P{ 0.0f, 2.0f, 1.0f }, P{ 0.0f, -2.0f, 0.0f }, 0.25f);
+    CHECK(mid.y == doctest::Approx(1.0f));
+    CHECK(mid.z == doctest::Approx(0.75f));
+}

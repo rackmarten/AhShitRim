@@ -20,6 +20,7 @@
 #include <CModelInfo.h>
 #include <CPad.h>
 #include <CPlayerPed.h>
+#include <CPools.h>
 #include <CTimer.h>
 #include <CWorld.h>
 
@@ -28,6 +29,7 @@
 #include <cmath>
 #include <deque>
 #include <format>
+#include <string>
 #include <vector>
 
 namespace AhShitRim::ChunkWorld
@@ -55,7 +57,7 @@ namespace AhShitRim::ChunkWorld
         {
             int        model = -1;
             CBuilding* building = nullptr;
-            CColModel* col = nullptr;
+            CColModel* col = nullptr;  // the borrowed model's own collision model, filled with each chunk the slot gets
             bool       inWorld = false;
         };
 
@@ -104,11 +106,13 @@ namespace AhShitRim::ChunkWorld
             }
         }
 
-        CColModel* MakeColModel(const Ground::Mesh& a_mesh)
+        // a_col filled with a chunk's mesh, whatever it held before (its volumes freed first).
+        void FillColModel(CColModel* a_col, const Ground::Mesh& a_mesh)
         {
             const int vertices = static_cast<int>(a_mesh.vertices.size() / 3);
             const int triangles = static_cast<int>(a_mesh.triangles.size() / 3);
-            auto*     col = new CColModel();
+            auto*     col = a_col;
+            col->RemoveCollisionVolumes();
             col->AllocateData(0, 0, 0, vertices, triangles, false);
             auto* data = col->m_pColData;
             for (int v = 0; v < vertices; ++v) {
@@ -132,7 +136,6 @@ namespace AhShitRim::ChunkWorld
             col->m_boundSphere.m_vecCenter = center;
             col->m_boundSphere.m_fRadius = (max - center).Magnitude();
             col->m_nColSlot = 0;
-            return col;
         }
 
         void Build(const Ground::Chunk& a_chunk)
@@ -164,11 +167,23 @@ namespace AhShitRim::ChunkWorld
                 slot.building->bDontStream = true;
                 slot.building->m_nAreaCode = 0;
             }
+            // San Andreas's pool of collision models (10150) is all but full of the emptied map's own, a few left: a
+            // slot fills its borrowed model's own collision model with each chunk rather than taking one from the pool
+            // per chunk (past about 90 chunks the pool ran out and San Andreas crashed on a long flight).
+            auto* info = CModelInfo::GetModelInfo(slot.model);
+            if (!slot.col) {
+                slot.col = info->m_pColModel;
+                if (!slot.col) {
+                    slot.col = new CColModel();
+                    if (!slot.col) {
+                        Log(std::format("ground: San Andreas's collision models are all taken, chunk ({},{}) not built", key.x, key.y));
+                        return;
+                    }
+                    info->SetColModel(slot.col, true);
+                }
+            }
             TakeOut(slot);
-            CColModel* old = slot.col;
-            slot.col = MakeColModel(mesh);
-            CModelInfo::GetModelInfo(slot.model)->SetColModel(slot.col, false);
-            delete old;  // frees its triangle planes too
+            FillColModel(slot.col, mesh);  // its triangle planes are freed with its volumes
             slot.building->SetPosn(CVector(mesh.position.x, mesh.position.y, mesh.position.z));
             CWorld::Add(slot.building);
             slot.inWorld = true;
@@ -435,8 +450,12 @@ namespace AhShitRim::ChunkWorld
         const std::uint64_t now = ::GetTickCount64();
         if (now - state.statMs >= 5000) {
             if (state.built || state.distant || state.stale) {
-                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale; {} chunks around CJ",
-                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.book.Count()));
+                // San Andreas's pools the chunks draw on: a full one returns nothing, and its users crash.
+                const auto used = [](auto* a_pool) { return a_pool ? std::format("{}/{}", a_pool->GetNoOfUsedSpaces(), a_pool->m_nSize) : std::string("?"); };
+                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale; {} chunks around CJ; "
+                                "pools: col models {}, buildings {}",
+                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.book.Count(), used(CPools::ms_pColModelPool),
+                    used(CPools::ms_pBuildingPool)));
             }
             state.statMs = now;
             state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = 0;
