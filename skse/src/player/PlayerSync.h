@@ -2,7 +2,7 @@
 
 // Hands the Skyrim player to San Andreas and back (F10), as in PerkeleRim. While San Andreas owns
 // the player:
-//  - keyboard and mouse go to San Andreas as an InputState (WASD, mouse look, sprint, jump, C crouch,
+//  - keyboard and mouse go to San Andreas as an InputState (WASD, mouse look, sprint, jump, crouch,
 //    Alt walk, in the modern or classic layout of AhShitRim.ini's [Input] KeyLayout), and Skyrim's
 //    own movement, look, sneak, jump, attack, activate and camera controls refuse; Escape, Tab, M and
 //    the console stay Skyrim's, and E activates what CJ faces (Activation);

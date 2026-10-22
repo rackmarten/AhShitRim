@@ -4,11 +4,13 @@
 // Keyboard events carry DirectInput scan codes (DIK_*). San Andreas gets actions, not keys, in one of
 // two layouts (AhShitRim.ini, [Input] KeyLayout):
 // - Modern (the default): WASD (or the arrows) move, Left Shift sprints (mashed, San Andreas's faster
-//   sprint), Space jumps, C crouches, Left Alt walks, F or Enter gets in and out of a vehicle. In a
-//   vehicle Space is the handbrake and H the horn.
+//   sprint), Space jumps, Left Ctrl crouches, Left Alt walks, F or Enter gets in and out of a vehicle.
+//   In a vehicle Space is the handbrake and H the horn.
 // - Classic, San Andreas's own PC defaults (gta-reversed's InitDefaultControlConfiguration): Space
-//   sprints, Left Shift or Right Ctrl jumps, the rest as above. In a vehicle Space or Right Ctrl is
-//   the handbrake and Caps Lock or H the horn.
+//   sprints, Left Shift or Right Ctrl jumps, C crouches, the rest as above. In a vehicle Space or
+//   Right Ctrl is the handbrake and Caps Lock or H the horn.
+// In both, X has CJ insult whoever's about and the middle mouse button has him swear to himself
+// (v16); Skyrim counts those itself.
 // In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a
 // Sandking, a ZR-350 and a Sanchez. The mouse: the left button fires and the right one aims on foot,
 // and the wheel switches weapons on foot and tunes the radio in a vehicle. Everything else stays with
@@ -53,7 +55,8 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikBackslash = 0x2B;
     inline constexpr std::uint32_t kDikE = 0x12;  // activates what CJ faces, on Skyrim's side
     inline constexpr std::uint32_t kDikRightCtrl = 0x9D;
-    inline constexpr std::uint32_t kDikLeftCtrl = 0x1D;  // the vent key (v16): CJ swears to himself
+    inline constexpr std::uint32_t kDikLeftCtrl = 0x1D;
+    inline constexpr std::uint32_t kDikX = 0x2D;  // the insult key (v16): CJ insults whoever's about, on Skyrim's side
     inline constexpr std::uint32_t kDikCapsLock = 0x3A;
 
     enum class KeyLayout : std::uint8_t
@@ -123,6 +126,8 @@ namespace AhShitRim::Input
             case kDikLeftShift:
             case kDikRightCtrl: return Action::Jump;
             case kDikCapsLock: return Action::Horn;
+            case kDikC: return Action::Crouch;
+            case kDikLeftCtrl: return Action::None;
             default: break;
             }
         }
@@ -137,7 +142,7 @@ namespace AhShitRim::Input
         case kDikRight: return Action::Right;
         case kDikLeftShift: return Action::Sprint;
         case kDikSpace: return Action::Jump;
-        case kDikC: return Action::Crouch;
+        case kDikLeftCtrl: return Action::Crouch;
         case kDikLeftAlt: return Action::Walk;
         case kDikF:
         case kDikReturn: return Action::EnterExit;
@@ -204,8 +209,8 @@ namespace AhShitRim::Input
             (a_up ? _radioNext : _radioPrev)++;
         }
 
-        // The insult key (v16), the middle mouse button: each press has CJ insult whoever's about, and
-        // give the finger on foot. The vent key, Left Ctrl: each press has him swear to himself.
+        // The insult key (v16), X: each press has CJ insult whoever's about, and give the finger on foot.
+        // The vent key, the middle mouse button: each press has him swear to himself.
         void AddSwear() { _swearCount++; }
         void AddVent() { _ventCount++; }
 

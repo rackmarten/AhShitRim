@@ -26,7 +26,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
 | Space | **Left Shift or Right Ctrl** | Jump | |
 | Space | **Space or Right Ctrl** | | Handbrake |
-| C | C | Crouch (Skyrim sneaks) | |
+| Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
 | H | **Caps Lock or H** | | Horn |
@@ -38,8 +38,8 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Mouse wheel | Mouse wheel | Next or previous weapon (San Andreas's slots) | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) |
 | Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | |
 | Left mouse button | Left mouse button | Fire (a melee weapon attacks) | |
-| Middle mouse button | Middle mouse button | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
-| Left Ctrl | Left Ctrl | Vent: CJ swears to himself ("oh shit") | Same |
+| X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
+| Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Same |
 | `=` | `=` | Dev key: give CJ San Andreas's next weapon set (1 to 3, the gear they leave out, then each melee weapon and gift one at a time). Off with `[Debug]` `WeaponKey=0` in `AhShitRim.ini`; it goes once cheats exist | Same |
 | `/` | `/` | Dev key: show San Andreas's next text style (mission title, wasted, busted, mission passed, help, subtitles, fade, letterbox, wanted stars, radio station, off) | Same |
 

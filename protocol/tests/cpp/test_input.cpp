@@ -19,7 +19,9 @@ TEST_CASE("GTA's keyboard layout maps to CJ's actions")
     CHECK(ActionFromScanCode(kDikRight) == Action::Right);
     CHECK(ActionFromScanCode(kDikLeftShift) == Action::Sprint);
     CHECK(ActionFromScanCode(kDikSpace) == Action::Jump);
-    CHECK(ActionFromScanCode(kDikC) == Action::Crouch);
+    CHECK(ActionFromScanCode(kDikLeftCtrl) == Action::Crouch);
+    CHECK(ActionFromScanCode(kDikC) == Action::None);  // C crouches only in the classic layout
+    CHECK(ActionFromScanCode(kDikX) == Action::None);  // the insult key, counted on Skyrim's side
     CHECK(ActionFromScanCode(kDikLeftAlt) == Action::Walk);
 }
 
@@ -54,7 +56,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
 
     b.SetKey(kDikS, true);  // forwards and back cancel
     b.SetKey(kDikSpace, true);
-    b.SetKey(kDikC, true);
+    b.SetKey(kDikLeftCtrl, true);
     b.SetKey(kDikLeftAlt, true);
     s = b.Build(9, true, true);
     CHECK(s.moveY == 0.0f);
@@ -266,9 +268,10 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     CHECK(ActionFromScanCode(kDikRightCtrl, classic) == Action::Jump);
     CHECK(ActionFromScanCode(kDikCapsLock, classic) == Action::Horn);
     CHECK(ActionFromScanCode(kDikH, classic) == Action::Horn);
+    CHECK(ActionFromScanCode(kDikC, classic) == Action::Crouch);  // San Andreas's own crouch key
+    CHECK(ActionFromScanCode(kDikLeftCtrl, classic) == Action::None);
     // Everything else as in the modern layout.
     CHECK(ActionFromScanCode(kDikW, classic) == Action::Forward);
-    CHECK(ActionFromScanCode(kDikC, classic) == Action::Crouch);
     CHECK(ActionFromScanCode(kDikLeftAlt, classic) == Action::Walk);
     CHECK(ActionFromScanCode(kDikF, classic) == Action::EnterExit);
     CHECK(ActionFromScanCode(kDikReturn, classic) == Action::EnterExit);
