@@ -25,6 +25,8 @@ namespace AhShitRim::Protocol
 //    and sets whoever it catches or stands in it burning (the Flames spell, cast by the player),
 //  - lets tear gas out as a gas cloud (DA13PustuleGasCloud, harmless itself) that chokes everyone in it,
 //  - shoots the Flames spell's flames from the nozzle for the flamethrower and burns everyone in its cone,
+//  - chokes everyone in the spray can's cone as tear gas does, and puts out whoever and whatever burns in
+//    the extinguisher's (the afterburn, fire spells, the Molotovs' oil),
 //  - and hurts CJ too when he is caught in his own (Vitals::Hurt),
 //  - tells San Andreas what happened (Effect messages) so its own sounds play: its explosion, a rocket's
 //    roar until it goes off, its fire's crackle where a Molotov burns (where CJ catches fire, as he does
@@ -37,7 +39,7 @@ namespace AhShitRim::Projectiles
     // The ring brought a Projectile message: kept until the next Update.
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size);
 
-    // A flamethrower puff (a Shot of kind kShotFlame), relative to a_anchor.
+    // A flamethrower, spray can or extinguisher puff (a Shot of kind kShotFlame), relative to a_anchor.
     void Flame(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor);
 
     // Every frame San Andreas has the player, before ModelView::EndFrame: the projectiles of a_handover,

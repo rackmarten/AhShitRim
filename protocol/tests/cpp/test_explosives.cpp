@@ -149,6 +149,44 @@ TEST_CASE("tear gas and the flamethrower reach who they should")
     CHECK(InFlame(nozzle, north, range, { 15.0f, 0.0f, 100.0f }, 20.0f));                      // touching the nozzle
 }
 
+TEST_CASE("the spray can and the extinguisher are cones of their own")
+{
+    CHECK(ConeOf(Weapons::Flamethrower) == Cone::Flame);
+    CHECK(ConeOf(Weapons::Spraycan) == Cone::Spray);
+    CHECK(ConeOf(Weapons::Extinguisher) == Cone::Hose);
+    CHECK(ConeOf(Weapons::Molotov) == Cone::None);
+
+    CHECK(ConeRange(Cone::Spray, 0.0f) == kSprayRangeMin);  // San Andreas didn't say
+    CHECK(ConeRange(Cone::Spray, 50.0f * kMeter) == kSprayRangeMax);
+    CHECK(ConeRange(Cone::Hose, 5.0f * kMeter) == doctest::Approx(5.0f * kMeter));
+    CHECK(ConeRange(Cone::Flame, NAN) == kFlameRangeMin);
+    CHECK(kSprayRangeMax < kHoseRangeMax);
+
+    const Vec3  nozzle{ 0.0f, 0.0f, 100.0f };
+    const Vec3  north{ 0.0f, 1.0f, 0.0f };
+    const float spray = ConeRange(Cone::Spray, 3.0f * kMeter);
+    // The spray can is wider than the flamethrower, but short.
+    const Vec3 aside{ 0.6f * kMeter, 2.0f * kMeter, 100.0f };
+    CHECK(InCone(nozzle, north, spray, aside, 0.0f, HalfAngle(Cone::Spray)));
+    CHECK_FALSE(InCone(nozzle, north, spray, aside, 0.0f, HalfAngle(Cone::Flame)));
+    CHECK_FALSE(InCone(nozzle, north, spray, { 0.0f, 5.0f * kMeter, 100.0f }, 20.0f, HalfAngle(Cone::Spray)));
+
+    // The extinguisher aimed down at a Molotov's patch puts it out, one beside it too, not one behind CJ or far off.
+    const float hose = ConeRange(Cone::Hose, 6.0f * kMeter);
+    Vec3        down{ 0.0f, 3.0f, -1.0f };
+    down = Scale(down, 1.0f / Length(down));
+    const Vec3 patch{ 0.0f, 300.0f, 0.0f };  // where that aim meets the ground
+    CHECK(PutsOut(nozzle, down, hose, patch));
+    CHECK(PutsOut(nozzle, down, hose, Add(patch, Vec3{ kFireInner, 0.0f, 0.0f })));
+    CHECK_FALSE(PutsOut(nozzle, down, hose, { 0.0f, -2.0f * kMeter, 0.0f }));
+    CHECK_FALSE(PutsOut(nozzle, down, hose, { 0.0f, 20.0f * kMeter, 0.0f }));
+    CHECK_FALSE(PutsOut(nozzle, north, hose, { 4.0f * kMeter, 3.0f * kMeter, 0.0f }));
+
+    // San Andreas's own fires go out round the axis, wider further out.
+    CHECK(HoseRadius(0.0f) == kFirePatchRadius);
+    CHECK(HoseRadius(4.0f * kMeter) > HoseRadius(1.0f * kMeter));
+}
+
 TEST_CASE("a projectile's parts are drawn where it is, turned with it")
 {
     const Quat quarter = AxisAngle({ 0.0f, 0.0f, 1.0f }, 1.5707963f);  // a quarter turn left round Z

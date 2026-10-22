@@ -376,9 +376,15 @@ namespace AhShitRim::Explosives
     inline constexpr float kFlameRangeMin = 2.0f * kMeter;  // a puff whose range San Andreas didn't say reaches this far
     inline constexpr float kFlameRangeMax = 8.0f * kMeter;
 
-    // Whether a body of a_radius at a_point is in the cone from a_origin along a_dir (a unit vector) reaching
-    // a_range: within kFlameHalfAngle of its axis, or a_radius of it near the nozzle.
-    inline bool InFlame(const Vec3& a_origin, const Vec3& a_dir, float a_range, const Vec3& a_point, float a_radius)
+    // How far from its axis a cone of a_halfAngle degrees reaches a_along from its nozzle.
+    inline float ConeWidth(float a_along, float a_halfAngle)
+    {
+        return (std::max)(a_along, 0.0f) * std::tan(a_halfAngle * 3.14159265f / 180.0f);
+    }
+
+    // Whether a body of a_radius at a_point is in the cone of a_halfAngle degrees from a_origin along a_dir (a
+    // unit vector) reaching a_range: within a_halfAngle of its axis, or a_radius of it near the nozzle.
+    inline bool InCone(const Vec3& a_origin, const Vec3& a_dir, float a_range, const Vec3& a_point, float a_radius, float a_halfAngle)
     {
         const Vec3  to = Sub(a_point, a_origin);
         const float along = Dot(to, a_dir);
@@ -386,9 +392,75 @@ namespace AhShitRim::Explosives
             return false;
         }
         const float across = Length(Sub(to, Scale(a_dir, along)));
-        const float wide = (std::max)(along, 0.0f) * std::tan(kFlameHalfAngle * 3.14159265f / 180.0f) + a_radius;
-        return across <= wide;
+        return across <= ConeWidth(along, a_halfAngle) + a_radius;
     }
+
+    inline bool InFlame(const Vec3& a_origin, const Vec3& a_dir, float a_range, const Vec3& a_point, float a_radius)
+    {
+        return InCone(a_origin, a_dir, a_range, a_point, a_radius, kFlameHalfAngle);
+    }
+
+    // ---- The spray can and the fire extinguisher ----
+
+    // San Andreas sends both as flame shots too (kShotFlame, told apart by the shot's weapon type), each a
+    // cone from the nozzle like the flamethrower's: the spray can's short and wide, choking and staggering
+    // whoever it catches as tear gas does; the extinguisher's long, putting out whoever and whatever burns in it.
+    enum class Cone
+    {
+        None,
+        Flame,
+        Spray,
+        Hose,
+    };
+
+    constexpr Cone ConeOf(std::uint8_t a_weaponType)
+    {
+        switch (a_weaponType) {
+        case Weapons::Flamethrower: return Cone::Flame;
+        case Weapons::Spraycan: return Cone::Spray;
+        case Weapons::Extinguisher: return Cone::Hose;
+        default: return Cone::None;
+        }
+    }
+
+    inline constexpr float kSprayHalfAngle = 20.0f;         // degrees
+    inline constexpr float kSprayRangeMin = 1.0f * kMeter;
+    inline constexpr float kSprayRangeMax = 3.0f * kMeter;
+    inline constexpr float kSprayPerSecond = 10.0f;         // San Andreas health points a second, the tear gas's
+    inline constexpr float kSprayCough = kGasCough;         // seconds between one actor's coughs (a stagger)
+    inline constexpr float kHoseHalfAngle = 15.0f;          // degrees
+    inline constexpr float kHoseRangeMin = 2.0f * kMeter;
+    inline constexpr float kHoseRangeMax = 8.0f * kMeter;
+
+    constexpr float HalfAngle(Cone a_cone)
+    {
+        return a_cone == Cone::Spray ? kSprayHalfAngle : a_cone == Cone::Hose ? kHoseHalfAngle : kFlameHalfAngle;
+    }
+
+    // How far a puff reaches: San Andreas's weapon range, kept to the cone's own (its minimum when San Andreas
+    // didn't say).
+    inline float ConeRange(Cone a_cone, float a_range)
+    {
+        const float range = std::isfinite(a_range) ? a_range : 0.0f;
+        switch (a_cone) {
+        case Cone::Spray: return std::clamp(range, kSprayRangeMin, kSprayRangeMax);
+        case Cone::Hose: return std::clamp(range, kHoseRangeMin, kHoseRangeMax);
+        default: return std::clamp(range, kFlameRangeMin, kFlameRangeMax);
+        }
+    }
+
+    // Whether the extinguisher from a_origin along a_dir reaching a_range puts out a fire on the ground at
+    // a_fire (a Molotov's patch): its patch, burning up to knee height, touches the cone.
+    inline bool PutsOut(const Vec3& a_origin, const Vec3& a_dir, float a_range, const Vec3& a_fire)
+    {
+        const Vec3 flames{ a_fire.x, a_fire.y, a_fire.z + 0.3f * kMeter };
+        return InCone(a_origin, a_dir, a_range, flames, kFirePatchRadius, kHoseHalfAngle);
+    }
+
+    // San Andreas puts its own fires out round points along the extinguisher's axis (CFireManager::
+    // ExtinguishPoint): how far apart, and how wide round the point a_along from the nozzle (Skyrim units).
+    inline constexpr float kHoseStep = 1.0f * kMeter;
+    inline float HoseRadius(float a_along) { return ConeWidth(a_along, kHoseHalfAngle) + kFirePatchRadius; }
     // ---- The heat seeker ----
 
     // San Andreas's heat seeker locks on to vehicles only. Skyrim's big ones stand in for them: dragons,
