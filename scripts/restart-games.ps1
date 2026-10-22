@@ -1,15 +1,16 @@
 <#
 .SYNOPSIS
-    The whole in-game test loop in one command: closes both games, optionally builds, deploys,
-    starts San Andreas hidden (launch-sa.ps1), then starts Skyrim through SKSE and waits until both
-    sides log "link up". Killing the games discards anything unsaved in them.
+    The whole in-game test loop in one command: closes both games, builds this checkout (quick when
+    nothing changed), deploys, starts San Andreas hidden (launch-sa.ps1), then starts Skyrim through
+    SKSE and waits until both sides log "link up". Killing the games discards anything unsaved in them.
 .EXAMPLE
-    scripts/restart-games.ps1                # deploy what's built and restart
-    scripts/restart-games.ps1 -Build         # build first
+    scripts/restart-games.ps1                # build, deploy and restart
+    scripts/restart-games.ps1 -NoBuild       # deploy what was built last, as it is
     scripts/restart-games.ps1 -SaVisible     # San Andreas in a small window instead of minimized
 #>
 param(
-    [switch] $Build,
+    [switch] $NoBuild,
+    [switch] $Build,  # the default now; kept so older commands still work
     [switch] $SaVisible,
     [int] $LinkTimeoutSeconds = 180
 )
@@ -19,7 +20,8 @@ $config = Get-LocalConfig
 $skyrim = Get-RequiredSetting $config 'SkyrimPath'
 $sa = Get-RequiredSetting $config 'SaPath'
 
-if ($Build) { & "$PSScriptRoot/build.ps1" }
+# Always built unless asked not to: deploying the last build silently put old plugins back after a pull.
+if (-not $NoBuild) { & "$PSScriptRoot/build.ps1" }
 
 $running = Get-Process gta_sa, SkyrimSE, skse64_loader -ErrorAction SilentlyContinue
 if ($running) {

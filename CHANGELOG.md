@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `scripts/restart-games.ps1` builds every time (quick when nothing changed); `-NoBuild` deploys the last build as before. Without `-Build` it used to put a stale build back after a pull. `-Build` still works.
 - Crouch is Left Ctrl in the modern key layout, next to Shift's sprint and Space's jump (was C). The classic layout keeps San Andreas's C.
 - Wasted plays as in San Andreas (protocol v14): no slow motion and no grey wash any more. CJ falls dead on his front, and a moment later the camera cuts to San Andreas's own death camera, rising over him looking straight down and rolling left and right (Skyrim's camera now takes San Andreas's roll), and "Wasted" comes up just after. After 3 s the screen fades to black over 3 s, the text with it. In a vehicle he stays in his seat under the same camera. Waking at the temple fades in over 2 s with no "Wasted" left on screen, CJ back on his feet, and, as San Andreas clears the wanted level, the bounty of the holds whose people were fighting you cleared and every fight with you over
 - CI keeps plugin-sdk's built `plugin_sa.lib` between runs (keyed on the plugin-sdk commit, `sa/cmake/plugin_sa.cmake` and the MSVC toolset), and `sa/CMakeLists.txt` links a prebuilt one when `PLUGIN_SA_LIB` names it (`scripts/build.ps1 -PluginSaCache`), so the San Andreas build no longer compiles plugin-sdk every run. Local builds are unchanged.
