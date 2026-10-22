@@ -175,6 +175,35 @@ TEST_CASE("in a dialogue Skyrim's turn to the speaker stays out of the camera")
         }
     }
 }
+TEST_CASE("Skyrim's camera shake stays out of the camera, its own axes stay in")
+{
+    // Skyrim's camera node: its own axes (a quarter turn about the view, as a signed permutation)
+    // on the player's heading and pitch, shaken by a hit.
+    const Camera::Matrix axes = { { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f }, { -1.0f, 0.0f, 0.0f } };
+    Camera::Matrix shake, shaken, plain, built, offset, kept, posed, expected;
+    Camera::Basis(0.08f, -0.12f, 0.15f, shake);
+    Camera::Multiply(axes, shake, shaken);
+    Camera::Basis(1.0f, 0.2f, 0.0f, plain);
+    Camera::Multiply(plain, shaken, built);
+    Camera::OffsetOf(built, 1.0f, 0.2f, offset);
+    REQUIRE(Camera::AxesOf(offset, 0.5f, kept));
+    Camera::Apply(kept, 2.0f, -0.1f, 0.3f, posed);
+    Camera::Basis(2.0f, -0.1f, 0.3f, plain);
+    Camera::Multiply(plain, axes, expected);
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            CHECK(kept[r][c] == axes[r][c]);
+            CHECK(posed[r][c] == doctest::Approx(expected[r][c]).epsilon(1e-5));
+        }
+    }
+
+    // A turn bigger than a shake (a camera mod following a ragdoll's head) isn't taken for the axes.
+    Camera::Basis(0.7f, 0.0f, 0.0f, shake);
+    Camera::Multiply(axes, shake, offset);
+    CHECK_FALSE(Camera::AxesOf(offset, 0.5f, kept));
+    CHECK(kept[0][2] == 1.0f);  // left as it was
+}
+
 TEST_CASE("a view's forward and up give back its heading, pitch and roll, straight down too")
 {
     constexpr float kHalfPi = 1.5707963f;

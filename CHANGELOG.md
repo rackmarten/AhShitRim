@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A hard hit on the player (a power attack) shook the view while CJ had the player: the camera took over whatever turn Skyrim's own camera had on top of the player's angles each frame, and a camera shake or Improved Camera following the hidden player's head through a stagger is such a turn. Only Skyrim's own camera axes are kept now (`Camera::AxesOf`); San Andreas's shake from a blast close by still plays.
 - San Andreas crashed after the runner's 5 s stats once the vehicles came in: `CPed::ShoulderBoneRotation` is a static cdecl function that plugin-sdk calls as a member, which left the stack 4 bytes off and a register of CJ's frame code wrong. It is called with its real convention now.
 - The floating origin moving (1 km from the handover spot, never reached in game before) stopped a fast car dead and rolled it: the wheels' last contact points stayed behind in world space. They move with the vehicle now, and `scripts/fake-skyrim.ps1` drives 1.3 km through an origin move.
 - A bike leaned twice as far as CJ in turns: San Andreas's `PreRender` already leans the parts, and the lean was put on the root as well.
