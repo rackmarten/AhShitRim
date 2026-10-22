@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "collision/CollisionSampler.h"
 #include "cosave.h"
+#include "hud/Overlay.h"
 #include "hud/SaHud.h"
 #include "input.h"
 #include "link/LinkService.h"
@@ -720,6 +721,9 @@ namespace AhShitRim::PlayerSync
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
+                if (Overlay::ScreenshotSaved()) {
+                    SaHud::ShowHelp("Screenshot saved", 3.0f);
+                }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
             }
@@ -822,6 +826,13 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikF10) {
                         if (button->IsDown()) {
                             Toggle();
+                        }
+                        continue;
+                    }
+                    if (code == Input::kDikF11) {
+                        // A screenshot of what's on screen, San Andreas's HUD and Skyrim's own included.
+                        if (button->IsDown()) {
+                            Overlay::Screenshot(Ini::Value("Screenshots", "Dir"));  // the launcher's Screenshots folder
                         }
                         continue;
                     }

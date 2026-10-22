@@ -1,7 +1,8 @@
 #pragma once
 
 // AhShitRim.ini next to the plugin (Skyrim runs in its own folder), written by
-// scripts/deploy-local.ps1: [SanAndreas] Path, [Input] KeyLayout.
+// scripts/deploy-local.ps1: [SanAndreas] Path, [Input] KeyLayout; the launcher also writes
+// [Screenshots] Dir.
 namespace AhShitRim::Ini
 {
     inline constexpr const char* kPath = "Data/SKSE/Plugins/AhShitRim.ini";
