@@ -15,6 +15,7 @@
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/Arms.h"
+#include "player/People.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
@@ -461,6 +462,7 @@ namespace AhShitRim::PlayerSync
             Shots::Clear();
             Projectiles::Clear();
             VehicleFx::Clear();
+            People::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -537,6 +539,7 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            People::Clear();
             Activation::Clear();
             state.reanchoring = true;
             Vitals::OnReanchor();
@@ -702,6 +705,7 @@ namespace AhShitRim::PlayerSync
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
                 valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
+            People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -1043,6 +1047,7 @@ namespace AhShitRim::PlayerSync
             devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
         Arms::OnDataLoaded();
         Shots::OnDataLoaded();
+        People::OnDataLoaded();
         Projectiles::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);

@@ -69,7 +69,7 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 
 - **CJ** on foot, with San Andreas's movement and animations.
 - **Cars and bikes**: San Andreas's vehicle physics on Skyrim's roads, and running people over.
-- **Guns**: Skyrim's people reacting like San Andreas's peds.
+- **Guns**: San Andreas's weapons in CJ's hands, hurting Skyrim's people, who react like San Andreas's peds: a civilian CJ points a gun at cowers, gunfire sends them running and the guards after him, and they run from the chainsaw (done).
 - **Cheat codes**: type them in Skyrim as usual, spawn a car and go.
 - **Quests**: complete Skyrim's quests as CJ. Anything that needs spells or lockpicking hands the player back to Skyrim.
 - **Wanted level**: stars from the hold's bounty and the crimes CJ commits. More stars, more guards, and from 3 stars they chase CJ on horseback. Lose them by staying out of sight, or pay the guard.
