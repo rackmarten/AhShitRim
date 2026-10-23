@@ -311,11 +311,13 @@ namespace AhShitRim::Wanted
     }
 
     // The force each star level keeps up: how many pursuers of ours at once, the seconds between one spawning and the
-    // next, and how many of them are of each kind besides plain guards. 1 star is Skyrim's own guards only.
+    // next, the breather after they're all dead (from the last one down to the next spawning), and how many of them are
+    // of each kind besides plain guards. 1 star is Skyrim's own guards only.
     struct Force
     {
         int   total = 0;
         float cooldown = 0.0f;
+        float breather = 0.0f;
         std::array<int, kUnitCount> most{};  // by Unit; Guard's is unused (the rest of total)
     };
 
@@ -323,13 +325,14 @@ namespace AhShitRim::Wanted
 
     constexpr Force ForceFor(int a_stars)
     {
-        //                               guard rider captain wizard soldier dragon giant mammoth
+        // The breather is short enough that the next ones are there before CJ, unseen, loses a star (kArriveSeconds).
+        //                                          guard rider captain wizard soldier dragon giant mammoth
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 2: return { 5, 8.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
-        case 3: return { 7, 6.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
-        case 4: return { 9, 5.0f, { 0, 2, 1, 1, 0, 0, 0, 0 } };
-        case 5: return { 11, 4.0f, { 0, 3, 1, 2, 3, 1, 0, 0 } };
-        case 6: return { kForceCap, 3.0f, { 0, 2, 1, 2, 2, 1, 2, 1 } };
+        case 2: return { 5, 6.0f, 10.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+        case 3: return { 7, 5.0f, 9.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
+        case 4: return { 9, 4.0f, 8.0f, { 0, 3, 1, 1, 0, 0, 0, 0 } };
+        case 5: return { 11, 3.0f, 7.0f, { 0, 3, 1, 2, 3, 1, 0, 0 } };
+        case 6: return { kForceCap, 2.5f, 6.0f, { 0, 2, 1, 2, 2, 1, 2, 1 } };
         default: return {};
         }
     }
@@ -384,8 +387,13 @@ namespace AhShitRim::Wanted
         return Unit::Guard;
     }
 
-    // When the next of ours spawns: one per cooldown while fewer than the force are alive. Killing them all buys a
-    // breather of another cooldown on top, so CJ can get away (onto a bike) before the next wave.
+    inline constexpr float kFirstSpawn = 1.5f;     // seconds from the stars calling for a force to its first one spawning
+    inline constexpr float kRetrySeconds = 1.0f;   // a spawn with no spot is tried again this soon
+    inline constexpr float kArriveSeconds = 4.0f;  // about how long one spawned takes to come into sight of CJ
+
+    // When the next of ours spawns: the first soon after the stars call for them, then one per cooldown while fewer
+    // than the force are alive. Killing them all buys the force's breather, so CJ can get away (onto a bike) before
+    // the next wave; but the next wave is there before he loses a star just for nobody being left to see him.
     class Director
     {
     public:
@@ -394,14 +402,18 @@ namespace AhShitRim::Wanted
         {
             const Force force = ForceFor(a_stars);
             if (force.total == 0) {
-                _timer = 0.0f;
-                _had = false;
+                Reset();
                 return false;
             }
+            if (!_active) {
+                _active = true;
+                _timer = force.cooldown - kFirstSpawn;
+            }
             if (_had && a_alive == 0) {
-                _timer = -force.cooldown;  // wiped out: a breather
+                _timer = force.cooldown - force.breather;  // wiped out: a breather
             }
             _had = a_alive > 0;
+            _cooldown = force.cooldown;
             _timer += a_delta;
             if (a_alive < (std::min)(force.total, kForceCap) && _timer >= force.cooldown) {
                 _timer = 0.0f;
@@ -411,20 +423,23 @@ namespace AhShitRim::Wanted
         }
 
         // A spawn that didn't come off (no spot): try again soon.
-        void Retry() { _timer = (std::max)(_timer, ForceFor(kMaxStars).cooldown * 0.75f); }
+        void Retry() { _timer = (std::max)(_timer, _cooldown - kRetrySeconds); }
 
         void Reset()
         {
             _timer = 0.0f;
             _had = false;
+            _active = false;
         }
 
     private:
         float _timer = 0.0f;
+        float _cooldown = 0.0f;
         bool  _had = false;
+        bool  _active = false;  // the stars called for a force last frame
     };
 
-    // Where ours spawn: on the ground 1200 to 2800 units from CJ, never in view. The camera stands about kCameraBack
+    // Where ours spawn: on the ground 1200 to 2800 units (15 to 40 m) from CJ, never in view. The camera stands about kCameraBack
     // behind CJ along its heading (San Andreas's, which the player's follows) and sees a cone of kViewHalfAngle either
     // side of it (a wide screen's, and some), and anything within kViewNear of it.
     inline constexpr float kSpawnNear = 1200.0f;
@@ -452,12 +467,15 @@ namespace AhShitRim::Wanted
     }
 
     // The a_try-th spot to try round CJ at a_cj, looking along a_heading: behind him first, then further round to
-    // either side, near and far in turn. Out of view whichever (the turns stop short of the cone).
+    // either side, near, middling and far in turn (eight turns and three distances: 24 spots before one comes again,
+    // so a city's walls and terraces don't turn every try down). Out of view whichever (the turns stop short of the cone).
     inline Point SpawnSpot(Point a_cj, float a_heading, int a_try, float a_distance = 0.0f)
     {
-        constexpr float kTurns[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, 1.7f, -1.7f, 0.3f };
-        const float     turn = kTurns[static_cast<std::size_t>(a_try) % std::size(kTurns)];
-        const float     distance = a_distance > 0.0f ? a_distance : (a_try % 2 == 0 ? kSpawnNear + 400.0f : kSpawnFar - 400.0f);
+        constexpr float kTurns[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, 1.6f, -1.6f, 0.3f };
+        constexpr float kDistances[] = { kSpawnNear + 100.0f, (kSpawnNear + kSpawnFar) * 0.5f, kSpawnFar - 300.0f };
+        const auto      index = static_cast<std::size_t>(a_try < 0 ? 0 : a_try);
+        const float     turn = kTurns[index % std::size(kTurns)];
+        const float     distance = a_distance > 0.0f ? a_distance : kDistances[index % std::size(kDistances)];
         const float     away = a_heading + 3.14159265f + turn;  // behind
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }

@@ -35,7 +35,7 @@ namespace AhShitRim::Police
         constexpr float      kBarracksRange = 6000.0f;  // the city's barracks this close: half the reinforcements come out of there
         constexpr float      kDragonHeat = 400.0f;   // bringing down the guards' dragon, San Andreas's helicopter
         constexpr float      kChasedAfterRise = 6.0f;  // seconds at least between CJ's chased line on a star gained and the last one
-        constexpr int        kSpawnTries = 4;        // spots tried per spawn
+        constexpr int        kSpawnTries = 6;        // spots tried per spawn
         constexpr RE::FormID kXMarker = 0x0000003B;  // XMarker: probes the ground for a spawn spot
 
         // MoveTo_Impl, which CommonLib keeps private: TESObjectREFR::MoveTo with a position of our own.
@@ -56,6 +56,7 @@ namespace AhShitRim::Police
             float               retarget = 0.0f;  // seconds since its target was last checked
             bool                mounted = false;
             bool                fighting = false;
+            bool                offLogged = false;  // logged a rider found off his horse
         };
 
         // A pursuer spawned for the pursuit that is no longer needed: taken out a step a frame (the rider, then his
@@ -116,6 +117,7 @@ namespace AhShitRim::Police
             RE::NiPoint3             blowFrom;        // where the last hit on the player came from (anyone's), and when
             std::chrono::steady_clock::time_point blowAt;
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
+            std::vector<std::pair<RE::TESRace*, bool>> mountedRaces;  // races ours ride with, and whether they had mounted combat
         } state;
 
         void Show(int a_stars, bool a_flashing = false)
@@ -275,6 +277,43 @@ namespace AhShitRim::Police
             });
         }
 
+        // ---- Riders ----
+
+        // Skyrim's AI gets a rider off his horse as his fight starts unless his race allows mounted combat (Dawnguard's
+        // race flag, off for the playable races): it's switched on for our riders' races, and their horses', while ours
+        // ride, and put back as they leave. Base forms changed at runtime aren't saved, so a crash leaves nothing behind.
+        void AllowMountedCombat(RE::TESObjectREFR* a_ref)
+        {
+            auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
+            auto* race = actor ? actor->GetRace() : nullptr;
+            if (!race) {
+                return;
+            }
+            for (const auto& [known, had] : state.mountedRaces) {
+                if (known == race) {
+                    return;
+                }
+            }
+            const bool had = race->data.flags2.all(RE::RACE_DATA::Flag2::kAllowMountedCombat);
+            state.mountedRaces.emplace_back(race, had);
+            race->data.flags2.set(RE::RACE_DATA::Flag2::kAllowMountedCombat);
+            const char* id = race->GetFormEditorID();
+            SKSE::log::info("police: {} ({:08X}) may fight mounted while ours ride{}", id && *id ? id : "a race", race->GetFormID(), had ? " (it already could)" : "");
+        }
+
+        void RestoreMountedCombat()
+        {
+            for (const auto& [race, had] : state.mountedRaces) {
+                if (!had) {
+                    race->data.flags2.reset(RE::RACE_DATA::Flag2::kAllowMountedCombat);
+                }
+            }
+            if (!state.mountedRaces.empty()) {
+                SKSE::log::info("police: {} race(s) back to Skyrim's mounted combat", state.mountedRaces.size());
+            }
+            state.mountedRaces.clear();
+        }
+
         // ---- Ours leaving ----
 
         // Everyone spawned stops fighting and leaves: SweepLeaving takes them out once the player can't see them.
@@ -282,6 +321,7 @@ namespace AhShitRim::Police
         {
             state.clearOut = state.clearOut || a_clearOut;
             state.director.Reset();
+            RestoreMountedCombat();
             if (state.spawned.empty()) {
                 return;
             }
@@ -554,7 +594,9 @@ namespace AhShitRim::Police
                 }
                 s.age += a_delta;
                 if (horse && !s.mounted && s.age >= kMountAfter) {
-                    // An NPC activating a horse gets on it, as followers do.
+                    // An NPC activating a horse gets on it, as followers do; his race and the horse's may fight mounted.
+                    AllowMountedCombat(actor);
+                    AllowMountedCombat(horse.get());
                     s.mounted = true;
                     const bool took = horse->ActivateRef(actor, 0, nullptr, 0, false);
                     SKSE::log::info("police: rider {:08X} gets on horse {:08X} ({})", actor->GetFormID(), horse->GetFormID(), took ? "activated" : "the horse refused");
@@ -569,6 +611,10 @@ namespace AhShitRim::Police
                 s.retarget += a_delta;
                 if (s.fighting && s.retarget >= kRetargetEvery) {
                     s.retarget = 0.0f;
+                    if (horse && s.mounted && !s.offLogged && !actor->IsOnMount()) {
+                        s.offLogged = true;  // Skyrim's AI got him off after all (or he never got on)
+                        SKSE::log::info("police: rider {:08X} fights on foot, his horse {:08X} left behind", actor->GetFormID(), horse->GetFormID());
+                    }
                     if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
                         SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());
                         actor->StopCombat();
@@ -1011,6 +1057,7 @@ namespace AhShitRim::Police
     void OnRelease()
     {
         state.owned = false;
+        RestoreMountedCombat();
         if (state.sequence.Running()) {
             state.sequence.Cancel();
             SKSE::log::info("police: Busted ended with the handover");
@@ -1036,6 +1083,7 @@ namespace AhShitRim::Police
     {
         state.spawned.clear();  // the save's own references now
         state.leaving.clear();
+        RestoreMountedCombat();
         state.director.Reset();
         state.settle = kSettle;
         state.clearOut = false;

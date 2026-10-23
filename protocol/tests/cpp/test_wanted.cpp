@@ -207,6 +207,8 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
         const auto next = ForceFor(stars + 1);
         CHECK(next.total > now.total);
         CHECK(next.cooldown < now.cooldown);
+        CHECK(next.breather < now.breather);  // a shorter gap the more stars
+        CHECK(now.breather > now.cooldown);
         int special = 0;
         for (const int n : now.most) {
             special += n;
@@ -286,20 +288,84 @@ TEST_CASE("the director spawns one per cooldown up to the force, and gives a bre
         t += 0.1f;
     }
     CHECK(alive == force.total);  // and no more
-    CHECK(first == doctest::Approx(force.cooldown).epsilon(0.05));
-    // All killed: the next one waits two cooldowns.
+    CHECK(first == doctest::Approx(kFirstSpawn).epsilon(0.1));  // the first comes soon after the stars
+    // All killed: the next one waits the breather.
     int   spawned = 0;
     float wait = 0.0f;
     while (spawned == 0 && wait < 60.0f) {
         spawned += d.Tick(0.1f, 3, 0) ? 1 : 0;
         wait += 0.1f;
     }
-    CHECK(wait == doctest::Approx(2.0f * force.cooldown).epsilon(0.05));
+    CHECK(wait == doctest::Approx(force.breather).epsilon(0.05));
+    // Then one per cooldown again, the breather only after a wipe-out.
+    int   more = 1;
+    float again = 0.0f;
+    while (more < 3 && again < 60.0f) {
+        more += d.Tick(0.1f, 3, more) ? 1 : 0;
+        again += 0.1f;
+    }
+    CHECK(again == doctest::Approx(2.0f * force.cooldown).epsilon(0.05));
     // 1 star: nothing of ours.
     Director none;
     for (int i = 0; i < 1000; i++) {
         CHECK_FALSE(none.Tick(0.1f, 1, 0));
     }
+}
+
+TEST_CASE("wiped out, the next wave comes before CJ loses a star just for nobody being left to see him")
+{
+    for (int stars = 2; stars <= kMaxStars; stars++) {
+        const auto force = ForceFor(stars);
+        CAPTURE(stars);
+        CHECK(force.breather + kArriveSeconds < kFlashAfter + LoseSeconds(stars));
+    }
+    // Played out at 2 stars: everyone dead, CJ standing where he was, the next one spawns while the stars still show.
+    Pursuit pursuit;
+    pursuit.Restore(HeatFor(2), 0.0f);
+    Director d;
+    int   alive = 1;
+    float t = 0.0f;
+    while (alive > 0 && t < 30.0f) {
+        d.Tick(0.1f, pursuit.Stars(), alive);
+        alive = 0;  // all killed at once
+        t += 0.1f;
+    }
+    bool came = false;
+    for (float s = 0.0f; s < 30.0f && !came; s += 0.1f) {
+        came = d.Tick(0.1f, pursuit.Stars(), 0);
+        pursuit.Tick(0.1f, false, false);
+    }
+    CHECK(came);
+    CHECK(pursuit.Stars() == 2);
+}
+
+TEST_CASE("a spawn with no spot is tried again within a second or so, not a whole cooldown later")
+{
+    Director d;
+    float t = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && t < 30.0f) {
+        t += 0.1f;
+    }
+    d.Retry();
+    float wait = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && wait < 30.0f) {
+        wait += 0.1f;
+    }
+    CHECK(wait <= kRetrySeconds + 0.15f);
+}
+
+TEST_CASE("the director starts over once the stars are gone")
+{
+    Director d;
+    for (int i = 0; i < 100; i++) {
+        d.Tick(0.1f, 4, 2);
+    }
+    CHECK_FALSE(d.Tick(0.1f, 0, 2));
+    float t = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && t < 30.0f) {
+        t += 0.1f;
+    }
+    CHECK(t == doctest::Approx(kFirstSpawn).epsilon(0.15));
 }
 
 TEST_CASE("never in view: behind the camera is hidden, in front isn't")
@@ -312,13 +378,25 @@ TEST_CASE("never in view: behind the camera is hidden, in front isn't")
     CHECK(InView(camera, north, { 300.0f, 0.0f }));         // close by
     CHECK_FALSE(InView(camera, north, { 0.0f, -2000.0f })); // behind
     CHECK_FALSE(InView(camera, north, { 2000.0f, -500.0f }));  // off to the side, a little behind
-    for (int i = 0; i < 8; i++) {
+    float nearest = kSpawnFar, furthest = 0.0f;
+    for (int i = 0; i < 24; i++) {
         const Point at = SpawnSpot(cj, north, i);
         const float distance = std::hypot(at.x - cj.x, at.y - cj.y);
         CHECK(distance >= kSpawnNear);
         CHECK(distance <= kSpawnFar);
         CHECK_FALSE(InView(camera, north, at));
+        nearest = (std::min)(nearest, distance);
+        furthest = (std::max)(furthest, distance);
+        for (int j = 0; j < i; j++) {  // 24 different spots before one comes again
+            const Point other = SpawnSpot(cj, north, j);
+            CHECK(std::hypot(at.x - other.x, at.y - other.y) > 1.0f);
+        }
     }
+    CHECK(furthest - nearest > 1000.0f);  // near, middling and far
+    CHECK(SpawnSpot(cj, north, 24).x == doctest::Approx(SpawnSpot(cj, north, 0).x));
+    // 15 to 40 m, in Skyrim units (70 a metre).
+    CHECK(kSpawnNear >= 15.0f * 70.0f);
+    CHECK(kSpawnFar <= 40.0f * 70.0f);
     // Facing east, behind is west.
     const Point west = SpawnSpot(cj, 1.5707963f, 0);
     CHECK(west.x < -kSpawnNear);
