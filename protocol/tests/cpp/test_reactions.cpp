@@ -1,4 +1,7 @@
+#include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -172,6 +175,100 @@ TEST_CASE("lines about the magic: one at a time, not the same person over and ov
     CHECK_FALSE(c.Due(1, kCommentGap * 3.0));  // the first again, too soon for them
     CHECK(c.Due(1, kCommentRepeat));
     CHECK(c.Due(3, kCommentRepeat));
+}
+
+TEST_CASE("every line has a voice, every pool has lines for its speakers")
+{
+    // Every voice type is in the table once, and every line has a voice file for at least one of them.
+    for (std::size_t i = 0; i < std::size(kVoiceTypes); ++i) {
+        CHECK(VoiceBit(kVoiceTypes[i]) == 1ull << i);
+    }
+    CHECK(std::size(kVoiceTypes) <= 64);
+    CHECK(VoiceBit(0) == 0);
+    CHECK(VoiceBit(0x0001B560) == 0);  // FemaleSoldier: no line here has her voice
+    for (auto moment : { Moment::GuardHears, Moment::GuardAimedAt, Moment::Loud, Moment::CivilianAimedAt, Moment::CivilianHears }) {
+        for (const auto& line : LinesFor(moment, Weapons::Flamethrower)) {
+            CHECK(line.info != 0);
+            CHECK(line.voices != 0);
+            CHECK((line.voices & ~Voice::kAny) == 0);
+        }
+    }
+
+    // The guards' voices have several lines for each moment, the loud ones included.
+    for (auto voice : { Voice::MaleGuard, Voice::FemaleNord, Voice::MaleNordCommander }) {
+        for (auto moment : { Moment::GuardHears, Moment::GuardAimedAt, Moment::Loud }) {
+            int fits = 0;
+            for (const auto& line : LinesFor(moment, Weapons::Pistol)) {
+                fits += (line.voices & voice) != 0;
+            }
+            CHECK(fits >= 3);
+        }
+    }
+    // A civilian of every common voice has more than one line when aimed at and when it hears a shout.
+    for (auto voice : { Voice::MaleNord, Voice::FemaleCommoner, Voice::MaleDrunk, Voice::FemaleOldKindly, Voice::MaleKhajiit }) {
+        int aimed = 0, loud = 0, fire = 0;
+        for (const auto& line : LinesFor(Moment::CivilianAimedAt, Weapons::Pistol)) {
+            aimed += (line.voices & voice) != 0;
+        }
+        for (const auto& line : LinesFor(Moment::Loud, Weapons::Minigun)) {
+            loud += (line.voices & voice) != 0;
+        }
+        for (const auto& line : LinesFor(Moment::CivilianAimedAt, Weapons::Flamethrower)) {
+            fire += (line.voices & voice) != 0;
+        }
+        CHECK(aimed >= 3);
+        CHECK(loud >= 2);
+        CHECK(fire > aimed);  // the flamethrower adds the fire remarks
+    }
+    // The guards' own lines stay theirs.
+    CHECK(LinesFor(Moment::GuardAimedAt, Weapons::Flamethrower).size() == std::size(kGuardAimedAt));
+}
+
+TEST_CASE("the loud weapons are a shout")
+{
+    CHECK(IsLoud(Weapons::Minigun));
+    CHECK(IsLoud(Weapons::RocketLauncher));
+    CHECK(IsLoud(Weapons::RocketLauncherHs));
+    CHECK_FALSE(IsLoud(Weapons::Pistol));
+    CHECK_FALSE(IsLoud(Weapons::Ak47));
+    CHECK_FALSE(IsLoud(Weapons::Flamethrower));
+}
+
+TEST_CASE("picking a line: in the speaker's voice, every one before any comes again")
+{
+    const std::vector<Line> lines{ { 10, 0b011 }, { 11, 0b001 }, { 12, 0b001 }, { 13, 0b010 }, { 11, 0b001 } };
+    Comments                c;
+    CHECK(c.Pick(1, 0, lines, 0) == 0);      // a voice no line has
+    CHECK(c.Pick(1, 0b100, lines, 0) == 0);
+
+    // Voice 0b001 has 10, 11 and 12 (11 twice in the pool, once in the round): three different ones, whatever
+    // the dice say, then a new round.
+    std::vector<std::uint32_t> heard;
+    double                     now = 0.0;
+    for (int i = 0; i < 3; ++i) {
+        const auto id = c.Pick(1, 0b001, lines, 0);
+        CHECK(id != 13);
+        CHECK(std::find(heard.begin(), heard.end(), id) == heard.end());
+        heard.push_back(id);
+        c.Said(1, now, id);
+        now += kCommentRepeat;
+    }
+    const auto again = c.Pick(1, 0b001, lines, 0);
+    CHECK(again != heard.back());  // a new round, but not straight away the line just said
+    c.Said(1, now, again);
+
+    // Someone else has their own round, and avoids the line said last by anyone when it can.
+    const auto other = c.Pick(2, 0b001, lines, 0);
+    CHECK(other != again);
+    for (std::uint32_t r = 0; r < 8; ++r) {
+        CHECK(c.Pick(2, 0b001, lines, r) != again);
+    }
+
+    // With one line in their voice, it is said every time.
+    const std::vector<Line> one{ Line{ 13, 0b010 } };
+    CHECK(c.Pick(3, 0b010, one, 5) == 13);
+    c.Said(3, now, 13);
+    CHECK(c.Pick(3, 0b010, one, 5) == 13);
 }
 
 TEST_CASE("shots counted across the counter's wrap")
