@@ -32,6 +32,7 @@ namespace AhShitRim::Police
         constexpr float      kDragonHeat = 400.0f;   // bringing down the guards' dragon, San Andreas's helicopter
         constexpr float      kChasedAfterRise = 6.0f;  // seconds at least between CJ's chased line on a star gained and the last one
         constexpr int        kSpawnTries = 4;        // spots tried per spawn
+        constexpr RE::FormID kXMarker = 0x0000003B;  // XMarker: probes the ground for a spawn spot
 
         // MoveTo_Impl, which CommonLib keeps private: TESObjectREFR::MoveTo with a position of our own.
         void MoveToSpot(RE::TESObjectREFR* a_ref, const RE::ObjectRefHandle& a_target, RE::TESObjectCELL* a_cell, RE::TESWorldSpace* a_world,
@@ -53,12 +54,13 @@ namespace AhShitRim::Police
         };
 
         // A pursuer spawned for the pursuit that is no longer needed: taken out a step a frame (the rider, then his
-        // horse, each disabled and then deleted), once the player can't see it. All at once, in a fight, crashed.
+        // horse), once the player can't see it. Actors are only disabled: deleting them (SetDelete) left dangling ones in
+        // Skyrim's AI that crashed a load, and all at once in a fight crashed too. The ground probes are deleted.
         struct Leaving
         {
             RE::ObjectRefHandle actor;
             RE::ObjectRefHandle horse;
-            int                 step = 0;  // 0 disable the actor, 1 delete it, 2 disable the horse, 3 delete it
+            int                 step = 0;  // 0 disable the actor, 1 delete it if it's no actor, 2 disable the horse, 3 (nothing)
         };
 
         // Where walking out of a barracks door puts the player: the door's own teleport.
@@ -313,8 +315,8 @@ namespace AhShitRim::Police
                 if (ref) {
                     if (it->step % 2 == 0) {
                         ref->Disable();
-                    } else {
-                        ref->SetDelete(true);
+                    } else if (!ref->As<RE::Actor>()) {
+                        ref->SetDelete(true);  // a ground probe
                     }
                 }
                 if (++it->step >= 4) {
@@ -421,34 +423,51 @@ namespace AhShitRim::Police
 
         Wanted::Point Flat(const RE::NiPoint3& a_at) { return { a_at.x, a_at.y }; }
 
-        // One of a_base at a_at (on the nearest navmesh when a_snap), or nothing when the spot turns out in view or on a
-        // tower or a ledge (it then leaves at once).
-        RE::TESObjectREFR* Place(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, bool a_snap, bool a_anyHeight)
+        // A new reference of a_base at a_at, as it is.
+        RE::NiPointer<RE::TESObjectREFR> Create(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at)
         {
             auto* data = RE::TESDataHandler::GetSingleton();
             auto* cell = a_player->GetParentCell();
             if (!data || !a_base || !cell) {
+                return {};
+            }
+            return data
+                ->CreateReferenceAtLocation(a_base, a_at, RE::NiPoint3(0.0f, 0.0f, a_player->GetAngleZ()), cell, a_player->GetWorldspace(), nullptr, nullptr,
+                    RE::ObjectRefHandle(), false, true)
+                .get();
+        }
+
+        // The nearest navmesh to a_at, found with a marker (it has no AI, so it can go at once; an actor created only to be
+        // taken out again left a dangling one in Skyrim's AI that crashed the next load).
+        bool GroundAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, RE::NiPoint3& a_out)
+        {
+            auto marker = Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), a_at);
+            if (!marker) {
+                return false;
+            }
+            const bool found = marker->MoveToNearestNavmesh();
+            a_out = marker->GetPosition();
+            state.leaving.push_back({ marker->CreateRefHandle(), {}, 0 });
+            return found;
+        }
+
+        // One of a_base at a_at (on the nearest navmesh when a_snap), or nothing when the spot turns out in view or on a
+        // tower or a ledge: those are found out before anything is made there.
+        RE::TESObjectREFR* Place(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, bool a_snap, bool a_anyHeight)
+        {
+            const auto   feet = a_player->GetPosition();
+            RE::NiPoint3 at = a_at;
+            if (a_snap && !GroundAt(a_player, a_at, at)) {
+                SKSE::log::info("police: a spawn spot given up (no navmesh)");
                 return nullptr;
             }
-            const auto feet = a_player->GetPosition();
-            const auto handle = data->CreateReferenceAtLocation(a_base, a_at, RE::NiPoint3(0.0f, 0.0f, a_player->GetAngleZ()), cell, a_player->GetWorldspace(),
-                nullptr, nullptr, RE::ObjectRefHandle(), false, true);
-            auto ref = handle.get();
-            if (!ref) {
-                return nullptr;
-            }
-            if (a_snap) {
-                ref->MoveToNearestNavmesh();
-            }
-            const auto at = ref->GetPosition();
             const bool tooHigh = !a_anyHeight && std::abs(at.z - feet.z) > kSpawnRise;
             const bool seen = Wanted::InView(Wanted::CameraOf(Flat(feet), a_player->GetAngleZ()), a_player->GetAngleZ(), Flat(at));
             if (tooHigh || seen) {
                 SKSE::log::info("police: a spawn spot given up ({})", tooHigh ? "a tower or a ledge" : "in view");
-                state.leaving.push_back({ ref->CreateRefHandle(), {}, 0 });
                 return nullptr;
             }
-            return ref.get();
+            return Create(a_player, a_base, at).get();
         }
 
         // Where the next of ours comes from: half of them out of the city's barracks when it's close and out of view,
