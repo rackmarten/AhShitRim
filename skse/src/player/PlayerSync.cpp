@@ -868,7 +868,7 @@ namespace AhShitRim::PlayerSync
 
         // Skyrim's own handlers refuse while San Andreas has the player, but for its movement and
         // activate keys while the player sits: those stand it up again. In a dialogue the activate
-        // key (and Space) skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
+        // key skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
         template <int N>
         struct BlockHook
         {
@@ -876,11 +876,6 @@ namespace AhShitRim::PlayerSync
             {
                 const bool standUp = (N == kMovementHook || N == kActivateHook) && state.control == Scene::Control::Seated;
                 const bool talking = N == kActivateHook && Conversation::DialogueOpen();
-                // Space there too: the activate handler takes it as its own key.
-                auto* button = talking && a_event ? a_event->AsButtonEvent() : nullptr;
-                if (state.owned && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard && button->GetIDCode() == Input::kDikSpace) {
-                    return true;
-                }
                 return (!state.owned || standUp || talking) && original(a_handler, a_event);
             }
             static inline REL::Relocation<decltype(thunk)> original;

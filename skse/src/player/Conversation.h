@@ -10,7 +10,7 @@
 // greets when it opens and says goodbye when it closes. Skyrim's subtitles, in or out of a dialogue,
 // are drawn in San Andreas's subtitle style instead of Skyrim's, whatever Skyrim's subtitle settings,
 // up and down when Skyrim's HUD would show and hide them. The topic list stays Skyrim's dialogue menu;
-// Skyrim's activate key, the left mouse button and Space skip the speaker's line.
+// Skyrim's activate key and the left mouse button skip the speaker's line.
 namespace AhShitRim::Conversation
 {
     void Install();  // hooks the HUD's messages for its subtitles; call at SKSE load
