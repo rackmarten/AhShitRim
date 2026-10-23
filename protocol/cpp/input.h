@@ -29,7 +29,8 @@
 namespace AhShitRim::Input
 {
     // Scan codes Skyrim keeps for itself while San Andreas has the player: Escape and Tab open its
-    // menus, M its map, ~ the console, F10 hands the player back.
+    // menus (the map is in Tab's, as San Andreas's is in its pause menu), ~ the console, F10 hands the
+    // player back. M is Skyrim's map key, and (v20) only a letter of the cheat codes here.
     inline constexpr std::uint32_t kDikEscape = 0x01;
     inline constexpr std::uint32_t kDikTab = 0x0F;
     inline constexpr std::uint32_t kDikGrave = 0x29;
@@ -67,10 +68,15 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikApostrophe = 0x28;   // v19: the dev key that spawns the pick
     inline constexpr std::uint32_t kDikNumpad8 = 0x48;
     inline constexpr std::uint32_t kDikNumpad4 = 0x4B;
+    inline constexpr std::uint32_t kDikNumpad5 = 0x4C;  // v20: the hydraulics (LOWRIDER) bounce with the numpad's arrows
     inline constexpr std::uint32_t kDikNumpad6 = 0x4D;
     inline constexpr std::uint32_t kDikNumpad2 = 0x50;
     inline constexpr std::uint32_t kDikPageUp = 0xC9;
     inline constexpr std::uint32_t kDikPageDown = 0xD1;
+
+    // Whether a key still opens one of Skyrim's menus while San Andreas has the player: Escape, Tab and the
+    // console. Not M (v20): codes such as UZUMYMW have it in the middle.
+    constexpr bool OpensSkyrimMenu(std::uint32_t a_dik) { return a_dik == kDikEscape || a_dik == kDikTab || a_dik == kDikGrave; }
 
     enum class KeyLayout : std::uint8_t
     {
@@ -134,6 +140,7 @@ namespace AhShitRim::Input
         TurretRight,
         TurretUp,
         TurretDown,
+        Hydraulics,   // v20, numpad 5: in a vehicle only, San Andreas's R3
     };
 
     // DirectInput scan code -> the action it drives in San Andreas, None for keys San Andreas doesn't get.
@@ -169,6 +176,7 @@ namespace AhShitRim::Input
         case kDikQ: return Action::LookLeft;
         case kDikE: return Action::LookRight;
         case kDikNumpad4: return Action::TurretLeft;
+        case kDikNumpad5: return Action::Hydraulics;
         case kDikNumpad6: return Action::TurretRight;
         case kDikNumpad8:
         case kDikPageUp: return Action::TurretUp;
@@ -210,6 +218,15 @@ namespace AhShitRim::Input
                 _keys[a_dik >> 6] |= bit;
             } else {
                 _keys[a_dik >> 6] &= ~bit;
+            }
+        }
+
+        // A spawn request that comes from no key (v20: a cheat typed in Skyrim), as a spawn key's press.
+        void RequestSpawn(std::uint16_t a_model)
+        {
+            if (a_model) {
+                _spawnModel = a_model;
+                _spawnCount++;
             }
         }
 
@@ -292,6 +309,7 @@ namespace AhShitRim::Input
             if (Held(Action::TurretRight)) s.buttons |= Protocol::kButtonTurretRight;
             if (Held(Action::TurretUp)) s.buttons |= Protocol::kButtonTurretUp;
             if (Held(Action::TurretDown)) s.buttons |= Protocol::kButtonTurretDown;
+            if (Held(Action::Hydraulics)) s.buttons |= Protocol::kButtonHydraulics;
             if (_fire) s.buttons |= Protocol::kButtonFire;
             if (_aim) s.buttons |= Protocol::kButtonAim;
             for (std::uint32_t dik = 0; dik < 256; ++dik) {
@@ -352,6 +370,7 @@ namespace AhShitRim::Input
         std::int16_t rightShoulder2 = 0;  // in a vehicle (v19): look right
         std::int16_t rightStickX = 0;     // in a vehicle (v19): the turret keys, left negative
         std::int16_t rightStickY = 0;     // in a vehicle (v19): the turret keys, up (numpad 8) negative
+        std::int16_t shockButtonR = 0;    // in a vehicle (v20): numpad 5, the hydraulics' jump
     };
 
     constexpr std::int16_t Stick(float a_value)
@@ -387,6 +406,7 @@ namespace AhShitRim::Input
             };
             p.rightStickX = axis(Protocol::kButtonTurretLeft, Protocol::kButtonTurretRight);
             p.rightStickY = axis(Protocol::kButtonTurretUp, Protocol::kButtonTurretDown);
+            p.shockButtonR = held(Protocol::kButtonHydraulics);
             return p;
         }
         p.leftStickY = Stick(-(a_input.moveY + lean));  // clamped: W and the up arrow together are still full

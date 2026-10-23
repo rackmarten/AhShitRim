@@ -44,6 +44,10 @@ namespace AhShitRim::Vitals
     bool IsDown();
     bool HasDeathCamera();
 
+    // BAGUVIX (v20, CheatCodes): while on, nothing San Andreas or Skyrim does takes the player's health or CJ's armour, the
+    // health bar stays full, and being hit doesn't train Block, Light Armor or Heavy Armor.
+    void SetInvincible(bool a_on);
+
     // CJ's armour in San Andreas's points (0..100), part of the save.
     float Armor();
     void  SetArmor(float a_armor);

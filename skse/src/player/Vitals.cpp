@@ -32,7 +32,40 @@ namespace AhShitRim::Vitals
             std::vector<RE::TESFaction*> hunters;  // the crime factions of those fighting the player as it fell
             float                      unboundAge = 100.0f;
             bool                       unbound = false;
+            bool                       invincible = false;  // BAGUVIX
+            bool                       skillsFrozen = false;  // the hit-trained skills' progress when BAGUVIX went on was noted
+            float                      frozenXp[3] = {};      // kHitSkills' xp then
         } state;
+
+        // The skills being hit trains (Skyrim's own), held where they were while BAGUVIX is on: hits that do nothing
+        // shouldn't level the player up.
+        using Skill = RE::PlayerCharacter::PlayerSkills::Data::Skill;
+        constexpr Skill kHitSkills[] = { Skill::kBlock, Skill::kLightArmor, Skill::kHeavyArmor };
+
+        void HoldHitSkills(RE::PlayerCharacter* a_player)
+        {
+            auto* skills = a_player->GetInfoRuntimeData().skills;
+            auto* data = skills ? skills->data : nullptr;
+            if (!data) {
+                static bool logged = false;
+                if (!std::exchange(logged, true)) {
+                    SKSE::log::warn("vitals: no player skills to hold for BAGUVIX");
+                }
+                return;
+            }
+            for (std::size_t i = 0; i < std::size(kHitSkills); ++i) {
+                auto& skill = data->skills[kHitSkills[i]];
+                if (!state.skillsFrozen) {
+                    state.frozenXp[i] = skill.xp;
+                    SKSE::log::info("vitals: BAGUVIX holds skill {} at level {:.0f}, {:.1f} of {:.1f} xp", static_cast<int>(kHitSkills[i]), skill.level, skill.xp,
+                        skill.levelThreshold);
+                } else if (skill.xp > state.frozenXp[i]) {
+                    SKSE::log::info("vitals: BAGUVIX took back {:.2f} xp of skill {} (level {:.0f})", skill.xp - state.frozenXp[i], static_cast<int>(kHitSkills[i]), skill.level);
+                    skill.xp = state.frozenXp[i];
+                }
+            }
+            state.skillsFrozen = true;
+        }
 
         bool UnboundRunning(float a_seconds)
         {
@@ -226,7 +259,7 @@ namespace AhShitRim::Vitals
 
     void Hurt(RE::PlayerCharacter* a_player, float a_damage)
     {
-        if (a_player && a_damage > 0.0f && !state.sequence.Running()) {
+        if (a_player && a_damage > 0.0f && !state.sequence.Running() && !state.invincible) {
             Apply(a_player, a_damage);
         }
     }
@@ -276,6 +309,20 @@ namespace AhShitRim::Vitals
             Run(a_player, seconds, a_cjDrawn);
             return state.sequence.Running();
         }
+        if (state.invincible) {
+            // BAGUVIX: San Andreas's damage is dropped, and whatever Skyrim's people did to the player this frame undone.
+            auto*       values = a_player->AsActorValueOwner();
+            const float max = MaxHealth(a_player);
+            if (const float now = values->GetActorValue(RE::ActorValue::kHealth); now < max) {
+                values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
+            }
+            if (Bleeding(a_player)) {
+                a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
+            }
+            HoldHitSkills(a_player);
+            SaHud::SetArmor(state.armor / Health::kSaFullHealth);
+            return false;
+        }
         if (damage > 0.0f) {
             Apply(a_player, damage);
         }
@@ -292,6 +339,15 @@ namespace AhShitRim::Vitals
     bool IsDown() { return state.sequence.Running() && state.frame.down; }
 
     bool HasDeathCamera() { return state.sequence.Running() && state.frame.camera; }
+
+    void SetInvincible(bool a_on)
+    {
+        if (a_on != state.invincible) {
+            state.invincible = a_on;
+            state.skillsFrozen = false;
+            SKSE::log::info("vitals: the player {}", a_on ? "takes no damage (BAGUVIX)" : "takes damage again");
+        }
+    }
 
     float Armor() { return state.armor; }
 

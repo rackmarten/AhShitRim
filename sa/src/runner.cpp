@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_cheats.h"
 #include "cj_gear.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
@@ -402,6 +403,7 @@ namespace AhShitRim::Runner
                 s.LeftShoulder2 = presses.prev || pad.leftShoulder2 ? 255 : 0;    // the previous one; look left
                 s.RightStickX = pad.rightStickX;  // v19, in a vehicle: the turret keys
                 s.RightStickY = pad.rightStickY;
+                s.ShockButtonR = pad.shockButtonR;  // v20, in a vehicle: the hydraulics' jump
             }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
@@ -470,6 +472,7 @@ namespace AhShitRim::Runner
                 wanted->m_nWantedLevel = 0;
             }
             ChunkWorld::Receive();
+            CjCheats::Update(ped);
             ChunkWorld::Update(ped, state.spawn, Scenes::Following());
             Scenes::Update(ped, state.spawn);
             if (state.carPending && state.owned && ChunkWorld::Ready() && ++state.carReadyFrames >= 20) {  // the chunks around him too

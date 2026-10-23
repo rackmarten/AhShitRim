@@ -6,6 +6,7 @@
 #include "body/ModelView.h"
 #include "body.h"
 #include "camera.h"
+#include "cheats.h"
 #include "collision/CollisionSampler.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
@@ -15,6 +16,7 @@
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/Arms.h"
+#include "player/CheatCodes.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
@@ -629,6 +631,56 @@ namespace AhShitRim::PlayerSync
             return control;
         }
 
+        // Whether CJ drives or rides (the last pose says): E then is San Andreas's look right, not Skyrim's activate.
+        bool InVehicle()
+        {
+            Protocol::PlayerState pose{};
+            return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0;
+        }
+
+        // A cheat's vehicle, jetpack or parachute (CheatCodes), asked for as a spawn key asks. Returns why not, or nothing.
+        std::string CheatSpawn(std::uint16_t a_model)
+        {
+            if (!VehicleKinds::Spawnable(a_model)) {
+                return std::string(VehicleKinds::TraitsOf(VehicleKinds::KindOf(a_model)).refusal);
+            }
+            if (!VehicleKinds::IsGear(a_model) && InVehicle()) {
+                return "Get out of the vehicle first";  // San Andreas spawns vehicles for CJ on foot
+            }
+            state.input.RequestSpawn(a_model);
+            Publish();
+            return {};
+        }
+
+        // The model of the vehicle CJ is in (the last pose says), 0 on foot.
+        std::uint16_t CjVehicle()
+        {
+            Protocol::PlayerState pose{};
+            return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0 ? pose.vehicleModel : 0;
+        }
+
+        // Whether the vehicle CJ drives has San Andreas's hydraulics (its slot says so, v20).
+        bool CjHydraulics()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                    vehicle.handover == state.handover) {
+                    return (vehicle.flags & Protocol::kBodyHydraulics) != 0;
+                }
+            }
+            return false;
+        }
+
+        // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes).
+        void TypeCheat(std::uint32_t a_dik)
+        {
+            if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && Cheats::LetterOf(a_dik)) {
+                static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
+                CheatCodes::Key(a_dik, world);
+            }
+        }
+
         // Skyrim's own Shout key fires the shout from the player, which stands where CJ does and
         // looks where San Andreas's camera looks; San Andreas plays CJ's gesture when it goes off.
         void WatchShout(RE::PlayerCharacter* a_player)
@@ -764,6 +816,7 @@ namespace AhShitRim::PlayerSync
                     StreamTest::Update(a_player, a_delta);
                 }
                 Arms::Update();
+                CheatCodes::Update();
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -807,17 +860,15 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Only Escape, Tab, M and the console open Skyrim's menus while San Andreas has the player.
+        // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
+        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
         struct MenuOpenHook
         {
             static bool thunk(RE::MenuOpenHandler* a_handler, RE::InputEvent* a_event)
             {
                 if (state.owned && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
-                    if (auto* button = a_event->AsButtonEvent()) {
-                        const auto key = button->GetIDCode();
-                        if (key != Input::kDikEscape && key != Input::kDikTab && key != Input::kDikM && key != Input::kDikGrave) {
-                            return false;
-                        }
+                    if (auto* button = a_event->AsButtonEvent(); button && !Input::OpensSkyrimMenu(button->GetIDCode())) {
+                        return false;
                     }
                 }
                 return original(a_handler, a_event);
@@ -882,6 +933,10 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
+                    // Every letter goes into San Andreas's cheat string as well.
+                    if (button->IsDown()) {
+                        TypeCheat(code);
+                    }
                     if (code == Input::kDikX && state.owned) {
                         // The insult key: CJ insults whoever's about, San Andreas plays it.
                         if (button->IsDown() && !MenuHasInput() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
@@ -938,13 +993,6 @@ namespace AhShitRim::PlayerSync
             }
 
         private:
-            // Whether CJ drives or rides (the last pose says): E then is San Andreas's look right, not Skyrim's activate.
-            static bool InVehicle()
-            {
-                Protocol::PlayerState pose{};
-                return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0;
-            }
-
             static void NextDevPick()
             {
                 const auto model = state.devPicker.Next();
@@ -1046,6 +1094,7 @@ namespace AhShitRim::PlayerSync
             state.devKeys ? "on" : "off", devKeys.empty() ? "unset" : devKeys, state.devPicker.Count(), devList.empty() ? " built in" : "",
             devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
         Arms::OnDataLoaded();
+        CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
@@ -1066,6 +1115,7 @@ namespace AhShitRim::PlayerSync
         state.wasThirdPerson = false;  // the loaded save has its own camera
         state.resumePending = false;
         Release("game loading");
+        CheatCodes::OnGameLoad();
     }
 
     void Snapshot(Cosave::Record& a_out)

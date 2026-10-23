@@ -1,6 +1,8 @@
 #include "player/SaveState.h"
 
 #include "cosave.h"
+#include "mercy.h"
+#include "player/CheatCodes.h"
 #include "player/PlayerSync.h"
 
 namespace AhShitRim::SaveState
@@ -18,6 +20,7 @@ namespace AhShitRim::SaveState
 
         void Save(SKSE::SerializationInterface* a_intfc)
         {
+            CheatCodes::Save(a_intfc);  // NOMERCY, a record of its own
             Cosave::Record record;
             PlayerSync::Snapshot(record);
             const auto bytes = Cosave::Write(record);
@@ -33,12 +36,16 @@ namespace AhShitRim::SaveState
         {
             std::uint32_t type = 0, version = 0, length = 0;
             while (a_intfc->GetNextRecordInfo(type, version, length)) {
-                if (type != Cosave::kRecordType) {
+                if (type != Cosave::kRecordType && type != Mercy::kRecordType) {
                     continue;
                 }
                 std::vector<std::uint8_t> bytes(length);
                 if (length && a_intfc->ReadRecordData(bytes.data(), length) != length) {
-                    SKSE::log::warn("save state: the co-save record is cut short, ignored");
+                    SKSE::log::warn("save state: the co-save record {:08X} is cut short, ignored", type);
+                    continue;
+                }
+                if (type == Mercy::kRecordType) {
+                    CheatCodes::Load(version, bytes.data(), bytes.size());
                     continue;
                 }
                 Cosave::Record record;
@@ -62,6 +69,7 @@ namespace AhShitRim::SaveState
         void Revert(SKSE::SerializationInterface*)
         {
             PlayerSync::Revert();
+            CheatCodes::Revert();
         }
     }
 

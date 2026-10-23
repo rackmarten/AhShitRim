@@ -60,6 +60,8 @@ add_executable(protocol_tests
     tests/cpp/test_smoke_model.cpp
     tests/cpp/test_puff_model.cpp
     tests/cpp/test_reactions.cpp
+    tests/cpp/test_cheats.cpp
+    tests/cpp/test_mercy.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

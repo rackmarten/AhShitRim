@@ -1,5 +1,6 @@
 #include "vehicles.h"
 
+#include "cj_cheats.h"
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
@@ -41,6 +42,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <format>
 #include <map>
@@ -464,6 +466,7 @@ namespace AhShitRim::Vehicles
 
         bool Wrecked(CVehicle* a_vehicle) { return a_vehicle->m_nStatus == STATUS_WRECKED; }
 
+
         // Where the engine smokes and burns from, in the world: San Andreas's engine dummy, where it puts its
         // overheat_car and fire_car, or the bonnet for a model without one.
         CVector EngineAt(CVehicle* a_vehicle)
@@ -504,6 +507,9 @@ namespace AhShitRim::Vehicles
             }
             if (VehicleDamage::EngineBurns(a_vehicle->m_fHealth, wrecked, a_vehicle->bIsDrowning) || (wrecked && a_vehicle->m_pFire)) {
                 s.flags |= Protocol::kBodyBurning;
+            }
+            if (a_vehicle->m_nHandlingFlags.bHydraulicInst) {
+                s.flags |= Protocol::kBodyHydraulics;  // v20: LOWRIDER takes them off again
             }
             s.health = a_vehicle->m_fHealth;
             const CVector engine = (EngineAt(a_vehicle) - at) * Pose::kUnitsPerMeter;
@@ -569,8 +575,8 @@ namespace AhShitRim::Vehicles
                 return;
             }
             if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || type == VEHICLE_HELI || type == VEHICLE_PLANE ||
-                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0) {
-                return;
+                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0 || CjCheats::Active(Cheats::SaCheat::CarsFly)) {
+                return;  // flying cars (v20) take San Andreas's own flight controls in the air
             }
             const auto& mouse = CPad::NewMouseControllerState;
             const auto  steer = Vehicle::AirSteering(pad->GetSteeringLeftRight(), pad->GetSteeringUpDown(), CCamera::m_bUseMouse3rdPerson, mouse.x, mouse.y);
@@ -718,6 +724,69 @@ namespace AhShitRim::Vehicles
         Log(std::format("vehicle: the {} from the save restored in slot {} at ({:.1f},{:.1f},{:.1f}), colours {}/{}/{}/{}, CJ {}", name, index, now.x, now.y, now.z,
             a_car.colours[0], a_car.colours[1], a_car.colours[2], a_car.colours[3], Driven(a_ped) ? "at the wheel" : "could not be seated"));
         return true;
+    }
+
+    void Respray(CPlayerPed* a_ped)
+    {
+        CVehicle* vehicle = Driven(a_ped);
+        if (!vehicle || Wrecked(vehicle)) {
+            Log(vehicle ? "vehicle: PAINT, but CJ's vehicle is a wreck" : "vehicle: PAINT, but CJ is on foot");
+            return;
+        }
+        auto* info = InfoOf(vehicle->m_nModelIndex);
+        unsigned char colours[4] = { vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor, vehicle->m_nTertiaryColor, vehicle->m_nQuaternaryColor };
+        if (info) {
+            info->ChooseVehicleColour(colours[0], colours[1], colours[2], colours[3], 1);  // the model's next colour set
+        }
+        if (colours[0] == vehicle->m_nPrimaryColor && colours[1] == vehicle->m_nSecondaryColor) {
+            colours[0] = static_cast<unsigned char>((colours[0] + 1 + std::rand() % 125) % 126);  // one set only: any colour of carcols' 126
+            colours[1] = static_cast<unsigned char>(std::rand() % 126);
+        }
+        vehicle->m_nPrimaryColor = colours[0];
+        vehicle->m_nSecondaryColor = colours[1];
+        vehicle->m_nTertiaryColor = colours[2];
+        vehicle->m_nQuaternaryColor = colours[3];
+        vehicle->Fix();
+        vehicle->m_fHealth = 1000.0f;
+        vehicle->ExtinguishCarFire();
+        for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
+            if (Live(i) == vehicle) {
+                state.slots[i].model = 0;  // built again in its new colours
+                state.slots[i].failed = false;
+                Log(std::format("vehicle: the {} in slot {} resprayed {}/{}/{}/{} and mended", state.slots[i].name, i, colours[0], colours[1], colours[2], colours[3]));
+            }
+        }
+    }
+
+    void SetHydraulics(CPlayerPed* a_ped, bool a_on)
+    {
+        constexpr int kHydraulicsUpgrade = 1087;
+        CVehicle*     vehicle = Driven(a_ped);
+        if (!vehicle || vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || vehicle->m_nVehicleSubClass == VEHICLE_HELI ||
+            vehicle->m_nVehicleSubClass == VEHICLE_PLANE || Wrecked(vehicle)) {
+            Log("vehicle: LOWRIDER, but CJ isn't in a car");
+            return;
+        }
+        if (!a_on) {
+            if (vehicle->m_nHandlingFlags.bHydraulicInst) {
+                vehicle->RemoveVehicleUpgrade(kHydraulicsUpgrade);
+            }
+            Log(std::format("vehicle: hydraulics off model {}{}", vehicle->m_nModelIndex, vehicle->m_nHandlingFlags.bHydraulicInst ? " (they stayed)" : ""));
+            return;
+        }
+        if (vehicle->m_nHandlingFlags.bHydraulicNone) {
+            Log(std::format("vehicle: LOWRIDER, but model {} can't take hydraulics (its handling says so)", vehicle->m_nModelIndex));
+            return;
+        }
+        if (!vehicle->m_nHandlingFlags.bHydraulicInst) {
+            CStreaming::RequestModel(kHydraulicsUpgrade, 0x2 | 0x8);  // game required, keep in memory
+            CStreaming::LoadAllRequestedModels(false);
+            if (CStreaming::ms_aInfoForModel[kHydraulicsUpgrade].m_nLoadState == 1) {  // LOADSTATE_LOADED
+                vehicle->AddVehicleUpgrade(kHydraulicsUpgrade);
+            }
+        }
+        Log(vehicle->m_nHandlingFlags.bHydraulicInst ? std::format("vehicle: hydraulics on model {}", vehicle->m_nModelIndex) :
+                                                       "vehicle: LOWRIDER: the hydraulics didn't take");
     }
 
     void GetOut(CPlayerPed* a_ped)

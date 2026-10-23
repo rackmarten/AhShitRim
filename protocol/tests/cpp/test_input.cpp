@@ -168,6 +168,14 @@ TEST_CASE("each press of a spawn key asks for its vehicle once")
     b.SetKey(kDikLeftBracket, true, false);  // typed into the console
     CHECK(b.Build(4, true, true).spawnCount == 2);
     CHECK(b.IsKeyDown(kDikLeftBracket));
+
+    // v20: a cheat asks for one with no key.
+    b.RequestSpawn(520);
+    s = b.Build(5, true, true);
+    CHECK(s.spawnModel == 520);
+    CHECK(s.spawnCount == 3);
+    b.RequestSpawn(0);  // nothing
+    CHECK(b.Build(6, true, true).spawnCount == 3);
 }
 
 TEST_CASE("in a vehicle the keys take San Andreas's vehicle layout")
@@ -445,4 +453,15 @@ TEST_CASE("the debug key is = and nothing else maps to it")
     CHECK(kDikEquals == 0x0D);
     CHECK(ActionFromScanCode(kDikEquals) == Action::None);
     CHECK(SpawnModelFromScanCode(kDikEquals) == 0);
+}
+
+TEST_CASE("numpad 5 is the hydraulics' jump in a vehicle (v20)")
+{
+    Builder b;
+    b.SetKey(kDikNumpad5, true);
+    const auto s = b.Build(1, true, true);
+    CHECK((s.buttons & AhShitRim::Protocol::kButtonHydraulics) != 0);
+    CHECK(ToPad(s, true).shockButtonR == 255);
+    CHECK(ToPad(s, false).shockButtonR == 0);  // on foot it does nothing
+    CHECK(ActionFromScanCode(kDikNumpad5, KeyLayout::Classic) == Action::Hydraulics);
 }

@@ -42,6 +42,15 @@ namespace AhShitRim::Vehicles
     };
     bool Restore(CPlayerPed* a_ped, const CVector& a_cj, const Restoration& a_car);
 
+    // PAINT (v20): CJ's vehicle in new colours (another of its model's colour sets, or any colours for a model with
+    // one), mended, at full health and put out, as a Pay 'n' Spray does; its model is built and sent again.
+    void Respray(CPlayerPed* a_ped);
+
+    // LOWRIDER (v20): San Andreas's hydraulics (its upgrade 1087) on the car CJ drives (a_on), if its handling takes
+    // them, or off it. Its slot says which (kBodyHydraulics). The horn raises and lowers the car, and R3 (numpad 5)
+    // with the right stick (the turret keys) bounces it, as in San Andreas.
+    void SetHydraulics(CPlayerPed* a_ped, bool a_on);
+
     // CJ out of his vehicle at once (a scene takes him), the vehicle left where it is.
     void GetOut(CPlayerPed* a_ped);
 
