@@ -29,12 +29,15 @@
   summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
   summary .n { color: var(--muted); font-size: 13px; }
   summary .picked { margin-left: auto; font-size: 13px; color: var(--accent); }
-  .lines { padding: 0 14px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+  .lines { padding: 0 14px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 6px; }
   .row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
   .row.playing { border-color: var(--play); }
   .row button.play { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; flex: none; }
   .row .label { flex: 1; font-variant-numeric: tabular-nums; font-size: 13px; }
   .row .label small { color: var(--muted); }
+  .row .label .text { display: block; font-variant-numeric: normal; font-size: 14px; color: var(--text); }
+  .row .label .text.unsure { color: var(--muted); font-style: italic; }
+  .row .label mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
   .chip { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 5px; padding: 2px 7px; font: 600 12px system-ui; cursor: pointer; }
   .chip.x.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .chip.m.on { background: var(--swear-soft); color: var(--swear); border-color: var(--swear); }
@@ -51,9 +54,10 @@
 <header>
   <h1>CJ voice picker</h1>
   <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key, or give it a category for CJ's answers in Skyrim's conversations (greet, agree, refuse, ask, threaten, joke, goodbye). Your picks are kept in this browser; download them when you're done.</p>
+  <p id="transcripts"></p>
   <p>In AhShitRim CJ is always in the <b>CR</b> mood (no wanted level, no mission just passed), so the game on its own only plays the CR lines. Your picks play whatever the mood.</p>
   <div class="controls">
-    <input type="search" id="search" placeholder="Filter contexts (insult, crash, fight…)">
+    <input type="search" id="search" placeholder="Search what he says, the context or the voice (homie, crash, AG2…)">
     <span id="moods"></span>
   </div>
 </header>
@@ -64,8 +68,16 @@
   <button id="clear">Clear picks</button>
   <button class="primary" id="download">Download voice-picks.json</button>
 </footer>
+<script src="transcripts.js"></script>
 <script>
 const data = /*DATA*/null;
+// What each line says, from transcribe.py (Whisper on your own machine; never committed). Optional.
+const transcripts = (window.transcripts && window.transcripts.lines) || {};
+const transcribed = Object.keys(transcripts).length;
+document.getElementById('transcripts').textContent = transcribed
+  ? `${transcribed} lines transcribed by Whisper (${window.transcripts.model}); greyed text is a guess it wasn't sure of. Search finds words in them.`
+  : 'No transcripts yet: run uv run scripts/voice-picker/transcribe.py to search what CJ says.';
+const escape = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const moodNames = {
   AG: 'angry, gang', AR: 'angry (wanted 2-3)', CD: 'calm, well dressed', CF: 'calm, fat', CG: 'calm, gang',
   CR: 'calm (AhShitRim)', PG: 'panicked, gang', PR: 'panicked (wanted 4+)', WG: 'winning, gang', WR: 'winning (mission passed)',
@@ -116,7 +128,8 @@ for (const ctx of data.contexts) {
     const key = `${line.bank}:${line.sound}`;
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = `<button class="play" title="Play">▶</button><span class="label">${line.voice} #${line.sound} <small>${data.seconds[key] ?? '?'} s</small></span><button class="chip x">X</button><button class="chip m">MMB</button><select class="cat" title="Dialogue category"><option value="">talk</option>${categories.map(c => `<option>${c}</option>`).join('')}</select>`;
+    const said = transcripts[key];
+    row.innerHTML = `<button class="play" title="Play">▶</button><span class="label">${line.voice} #${line.sound} <small>${data.seconds[key] ?? '?'} s</small><span class="text"></span></span><button class="chip x">X</button><button class="chip m">MMB</button><select class="cat" title="Dialogue category"><option value="">talk</option>${categories.map(c => `<option>${c}</option>`).join('')}</select>`;
     row.querySelector('.play').onclick = () => play(row, key);
     for (const which of ['x', 'm']) {
       const chip = row.querySelector('.chip.' + which);
@@ -135,8 +148,15 @@ for (const ctx of data.contexts) {
       cat.classList.toggle('on', !!cat.value);
       save(); counts();
     };
+    const text = row.querySelector('.text');
+    if (said) {
+      text.textContent = said.text || '…';
+      text.classList.toggle('unsure', said.confidence < 0.5 || said.noSpeech > 0.6);
+      text.title = `confidence ${said.confidence}`;
+    }
     grid.append(row);
-    return { row, key, mood: line.voice.slice(0, 2) };
+    const words = [said?.text ?? '', ctx.name, ctx.name.replace(/_/g, ' '), line.voice].join(' ').toLowerCase();
+    return { row, key, text, said: said?.text ?? '', words, mood: line.voice.slice(0, 2) };
   });
   list.append(det);
   sections.push({ ctx, det, rows });
@@ -149,16 +169,21 @@ function counts() {
     s.det.querySelector('.picked').textContent = n ? `${n} picked` : '';
   }
 }
+// Every word of the search has to be in the line's text, its context or its voice.
 function filter() {
-  const q = document.getElementById('search').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const terms = q.split(/\s+/).filter(Boolean);
+  const mark = terms.length ? new RegExp(terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi') : null;
   for (const s of sections) {
     let shown = 0;
     for (const r of s.rows) {
-      const ok = moodsOn.has(r.mood) && (!onlyPicked || picked(r.key));
+      const ok = moodsOn.has(r.mood) && (!onlyPicked || picked(r.key)) && terms.every(t => r.words.includes(t));
       r.row.classList.toggle('hidden', !ok);
       shown += ok;
+      if (r.said) r.text.innerHTML = mark ? escape(r.said).replace(mark, m => `<mark>${m}</mark>`) : escape(r.said);
     }
-    s.det.classList.toggle('hidden', !shown || (q && !s.ctx.name.toLowerCase().includes(q)));
+    s.det.classList.toggle('hidden', !shown);
+    if (terms.length) s.det.open = shown > 0;
   }
 }
 document.getElementById('search').oninput = filter;

@@ -117,6 +117,10 @@ On any San Andreas exe other than 1.0 US, its log says which version it found an
 3. Press F10: Skyrim switches to first person and streams its collision around you to San Andreas; CJ waits at your spot until the ground under him is in (a fraction of a second), then WASD, the mouse, Shift (sprint), Space (jump), C (crouch) and Alt (walk) drive CJ on Skyrim's terrain and statics, and his movement moves you. F10 again gives the player back.
 4. `scripts/logs.ps1` shows `player sync:` once a second and `collision:` per chunk on the Skyrim side, and `ground:` and `runner:` every 5 s on the San Andreas side (chunks built, frames, inputs, CJ's position).
 
+### Picking CJ's lines
+
+CJ's lines for his keys and conversations are picked by ear on a local page: `node scripts/voice-picker/extract.mjs` builds it from your San Andreas install, `uv run scripts/voice-picker/transcribe.py` (optional; [uv](https://docs.astral.sh/uv/) and an NVIDIA GPU) transcribes every line with Whisper so the page can search what he says, and `node scripts/voice-picker/apply.mjs` writes the downloaded picks into `protocol/cpp/voice_lines.h`. Everything extracted or transcribed stays in the gitignored `extracted/`. See [`scripts/voice-picker/README.md`](../scripts/voice-picker/README.md).
+
 Milestone 1's ground check: from the stables outside Whiterun, walk up the road to the gate, over the rough tundra beside it, and (F10 again inside the city) up the steps to Dragonsreach. CJ should never fall through or hover, and San Andreas's log should show no `below the ground` line on normal ground.
 
 ## CI

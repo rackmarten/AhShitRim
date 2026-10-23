@@ -5,6 +5,7 @@
 //
 // Usage: node scripts/voice-picker/extract.mjs ["C:/Games/Grand Theft Auto San Andreas"]
 // Without a path it reads SaPath from local.props. Then open extracted/voice-picker/index.html.
+// uv run scripts/voice-picker/transcribe.py adds what each line says, for the page's search (README.md).
 
 import fs from 'node:fs';
 import path from 'node:path';
