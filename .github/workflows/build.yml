@@ -1,52 +1,77 @@
 name: build
 
-# Windows minutes bill double on a private repo, so: PRs that touch more than docs (the Windows
-# build only once they're out of draft), main only when a cache key's inputs change, and manual runs.
+# PRs and manual runs build on arcade, a self-hosted Linux runner with the real MSVC under Wine
+# (docs/DEV_SETUP.md, "CI"), which costs no Actions minutes. GitHub's windows-latest (billed double
+# on a private repo) only runs when asked for by hand, and is the only one that packages the
+# release zip.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - 'docs/**'
       - '**.md'
-  # A PR can only restore caches saved on its own ref or on main, so main still builds when the
-  # vcpkg or plugin_sa cache keys would change. A new MSVC toolset on the runner changes the
-  # plugin_sa key too: run the workflow by hand on main then.
-  push:
-    branches: [main]
-    paths:
-      - 'skse/vcpkg.json'
-      - 'skse/vcpkg-configuration.json'
-      - 'protocol/vcpkg.json'
-      - 'protocol/vcpkg-configuration.json'
-      - 'sa/cmake/plugin_sa.cmake'
-      - 'sa/extern/plugin-sdk'
-      - 'skse/extern/CommonLibSSE-NG'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
+    inputs:
+      windows:
+        description: Also build on GitHub's windows-latest (Actions minutes) and package the release zip
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # The game-free doctest cases on Linux (scripts/test.sh): a quick check next to the Windows build.
-  # The link's tests need Windows and run in the build job's scripts/test.ps1.
+  # The game-free doctest cases with gcc (scripts/test.sh), as a headless Linux session runs them.
   protocol-tests-linux:
-    # main's runs are only there to save the Windows caches.
-    if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, msvc-wine]
     steps:
+      # clean: false keeps the build folders, which the build job below shares with this one.
       - uses: actions/checkout@v4
-
-      - name: Install Ninja
-        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+        with:
+          clean: false
 
       - name: Protocol tests
         run: ./scripts/test.sh
 
+  # Both plugins and the whole doctest suite (the link's tests too) with MSVC under Wine
+  # (scripts/wine/build.sh). The build folders stay on the runner, so most runs are incremental.
   build:
-    # A draft PR gets only the Linux tests; marking it ready for review runs this.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: [self-hosted, msvc-wine]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          clean: false
+
+      # A cancelled or timed-out job can leave Wine processes behind.
+      - name: Stop leftover Wine processes
+        run: WINEPREFIX="$HOME/.wine-msvc" wineserver -k || true
+
+      # cl.exe under Wine now and then spins forever on one file: kill Wine and go again, once.
+      # A real compile error fails twice, the second time in seconds.
+      - name: Build and test (MSVC under Wine)
+        run: |
+          timeout -k 30s 45m scripts/wine/build.sh && exit 0
+          echo "::warning::scripts/wine/build.sh failed or hung; stopping Wine and running it again"
+          WINEPREFIX="$HOME/.wine-msvc" wineserver -k || true
+          timeout -k 30s 30m scripts/wine/build.sh
+
+      # Kept short: the account's free artifact storage is small, and a full store must not fail
+      # the build.
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: AhShitRim-${{ github.sha }}
+          path: |
+            skse/build/wine-release/AhShitRim.dll
+            sa/build/wine-release/AhShitRim.asi
+            sa/build/wine-release/AhShitRim.map
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows:
+    if: github.event_name == 'workflow_dispatch' && inputs.windows
     runs-on: windows-latest
     env:
       # vcpkg's binary archives in a known place, so actions/cache can carry them between runs.
@@ -109,7 +134,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AhShitRim-${{ github.sha }}
+          name: AhShitRim-windows-${{ github.sha }}
           path: |
             skse/build/release/AhShitRim.dll
             skse/build/release/AhShitRim.pdb
