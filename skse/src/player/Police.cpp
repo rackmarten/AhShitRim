@@ -3,10 +3,13 @@
 #include "hud/SaHud.h"
 #include "player/CheatCodes.h"
 #include "player/Vitals.h"
+#include "wasted.h"
 #include "vehicle_kinds.h"
 #include "wanted.h"
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -75,6 +78,8 @@ namespace AhShitRim::Police
             RE::NiPoint3        rotation;
         };
 
+        std::atomic<int> g_cheat{ -1 };  // a wanted cheat typed, for the next Update: 0 none, 1 two more, 2 six
+
         struct State
         {
             bool                     owned = false;
@@ -108,6 +113,8 @@ namespace AhShitRim::Police
             bool                     shownFlashing = false;
             std::uint8_t             line = 0;        // a line for CJ to say (Wanted::kLine*), taken by PlayerSync
             bool                     spared = false;  // a guard's hit was eased and left the player standing, since Vitals last asked
+            RE::NiPoint3             blowFrom;        // where the last hit on the player came from (anyone's), and when
+            std::chrono::steady_clock::time_point blowAt;
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
         } state;
 
@@ -760,6 +767,43 @@ namespace AhShitRim::Police
             return state.stop.Tick(a_delta, true, a_bust, speed, reach);
         }
 
+        // A wanted cheat typed (on the input thread), applied in the next Update: the pursuit is the last hold's, else the
+        // one the player stands in, else Whiterun's.
+        void ApplyCheat(RE::PlayerCharacter* player, int a_how)
+        {
+            if (NeverWanted()) {
+                return;
+            }
+            if (a_how == 0) {
+                state.pursuit.Clear();
+                Dismiss("ASNAEB");
+                SKSE::log::info("police: ASNAEB: no stars");
+                return;
+            }
+            if (!state.hold) {
+                // The hold the player stands in: its location, or one that holds it, named after it.
+                for (auto* location = player->GetCurrentLocation(); location && !state.hold; location = location->parentLoc) {
+                    const char* name = location->GetName();
+                    for (const auto& hold : Wanted::kHolds) {
+                        std::string_view word = hold.name;
+                        if (word.starts_with("the ")) {
+                            word.remove_prefix(4);
+                        }
+                        if (name && Wasted::detail::HasWord(name, word)) {
+                            state.hold = &hold;
+                            break;
+                        }
+                    }
+                }
+                if (!state.hold) {
+                    state.hold = &Wanted::kHolds[0];  // Whiterun's
+                }
+            }
+            const int stars = a_how == 2 ? Wanted::kMaxStars : (std::min)(state.pursuit.Stars() + 2, Wanted::kMaxStars);
+            state.pursuit.Restore(Wanted::HeatFor(stars), 0.0f);
+            SKSE::log::info("police: a wanted cheat: {} star(s) in {}", stars, state.hold->name);
+        }
+
         // Skyrim's "go to jail" while CJ has the player: Busted instead, next frame.
         struct GoToPrisonHook
         {
@@ -784,6 +828,10 @@ namespace AhShitRim::Police
             static void thunk(RE::PlayerCharacter* a_player, RE::Actor* a_attacker, float a_damage)
             {
                 original(a_player, a_attacker, a_damage);
+                if (state.owned && a_attacker && !a_attacker->IsPlayerRef()) {
+                    state.blowFrom = a_attacker->GetPosition();
+                    state.blowAt = std::chrono::steady_clock::now();
+                }
                 static bool inside = false;
                 if (!state.owned || inside || !a_attacker || a_attacker->IsPlayerRef() || !(a_attacker->IsGuard() || IsSpawned(a_attacker)) ||
                     state.sequence.Running()) {
@@ -875,6 +923,9 @@ namespace AhShitRim::Police
             }
         }
         WatchCrimes(a_player);
+        if (const int cheat = g_cheat.exchange(-1); cheat >= 0) {
+            ApplyCheat(a_player, cheat);
+        }
         if (auto* faction = std::exchange(state.jailAsked, nullptr)) {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
             const auto bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
@@ -915,6 +966,18 @@ namespace AhShitRim::Police
     std::uint8_t TakeLine() { return std::exchange(state.line, std::uint8_t{ 0 }); }
 
     bool TakeSpared() { return std::exchange(state.spared, false); }
+
+    void CheatStars(int a_how) { g_cheat.store(a_how); }
+
+    bool LastBlow(float a_seconds, RE::NiPoint3& a_from)
+    {
+        if (state.blowAt == std::chrono::steady_clock::time_point{} ||
+            std::chrono::duration<float>(std::chrono::steady_clock::now() - state.blowAt).count() > a_seconds) {
+            return false;
+        }
+        a_from = state.blowFrom;
+        return true;
+    }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
 

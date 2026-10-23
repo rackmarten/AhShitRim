@@ -6,6 +6,7 @@
 #include "hud/SaHud.h"
 #include "link/LinkService.h"
 #include "mercy.h"
+#include "player/Police.h"
 #include "player/Vitals.h"
 #include "vehicle_kinds.h"
 
@@ -214,6 +215,7 @@ namespace AhShitRim::CheatCodes
                 }
                 break;
             case Kind::NoMercy: SetMercy(on); break;
+            case Kind::Wanted: Police::CheatStars(a_cheat.argument); break;
             default: break;
             }
             if (ToSanAndreas(a_cheat.kind)) {

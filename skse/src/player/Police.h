@@ -57,6 +57,14 @@ namespace AhShitRim::Police
     // the whole hit began is then stopped, not Wasted. Taken once.
     bool TakeSpared();
 
+    // San Andreas's wanted cheats (CheatCodes): a_how 1 two more stars (OSRBLHH), 2 six (LJSPQK), 0 none (ASNAEB). The
+    // pursuit is the last hold's, else the one the player stands in, else Whiterun's; the bounty is left alone. Not
+    // while AEZAKMI is on.
+    void CheatStars(int a_how);
+
+    // Where the last hit on the player came from (anyone's, through the same hook), if it landed within a_seconds.
+    bool LastBlow(float a_seconds, RE::NiPoint3& a_from);
+
     // A line for CJ (Wanted::kLineChased, kLineArrested) to put in the input, 0 for none; taken once.
     std::uint8_t TakeLine();
 

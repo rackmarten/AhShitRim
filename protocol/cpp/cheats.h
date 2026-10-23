@@ -66,6 +66,8 @@ namespace AhShitRim::Cheats
         WeaponSet2 = 1,
         WeaponSet3 = 2,
         HealthArmourMoney = 3,
+        WantedUp = 4,      // CHEAT_WANTED_LEVEL_2STARS, OSRBLHH
+        WantedClear = 5,   // CHEAT_CLEAR_WANTED_LEVEL, ASNAEB
         SpawnRhino = 17,
         SpawnBloodringBanger = 18,
         SpawnRancher = 19,
@@ -93,6 +95,7 @@ namespace AhShitRim::Cheats
         Parachute = 63,
         Jetpack = 64,
         NeverWanted = 65,  // CHEAT_I_DO_AS_I_PLEASE, AEZAKMI
+        SixStars = 66,     // CHEAT_SIX_WANTED_STARS, LJSPQK
         InfiniteAmmo = 72,
         MaxStamina = 81,
         HitmanAllWeapons = 82,
@@ -122,6 +125,7 @@ namespace AhShitRim::Cheats
         Hydraulics, // ours: San Andreas's hydraulics (its upgrade 1087) on the car CJ is in, or off it if it has them
         NeverWanted, // AEZAKMI (v22), Skyrim's: no stars, and a crime's bounty put back (skse/src/player/Police.cpp). San Andreas's
                      // own is never sent: its wanted level is always 0 here, and its toggle is a function that flips
+        Wanted,      // v22, Skyrim's: the stars set by the cheat (argument: 1 two more, 2 six, 0 none), the bounty left alone
     };
 
     inline constexpr std::uint32_t kWeaponAmmo = 500;  // a weapon cheat's rounds, as weapon set 3 gives the minigun
@@ -191,6 +195,9 @@ namespace AhShitRim::Cheats
         { "VQIMAHA", Kind::SaOnce, SaCheat::MaxDrivingSkills, 0, "maximum driving, flying and bike skills" },
         { "SZCMAWO", Kind::Suicide, SaCheat::Suicide, 0, "suicide" },
         { "AEZAKMI", Kind::NeverWanted, SaCheat::NeverWanted, 0, "never wanted: no stars, and no bounty from crimes" },
+        { "OSRBLHH", Kind::Wanted, SaCheat::WantedUp, 1, "two more wanted stars" },
+        { "LJSPQK", Kind::Wanted, SaCheat::SixStars, 2, "six wanted stars" },
+        { "ASNAEB", Kind::Wanted, SaCheat::WantedClear, 0, "no wanted stars" },
         { "NOMERCY", Kind::NoMercy, SaCheat::None, 0, "nobody is essential (can break quests)" },
         { "MINIGUN", Kind::Weapon, SaCheat::None, 38, "a minigun" },
         { "PAINT", Kind::Respray, SaCheat::None, 0, "CJ's vehicle resprayed and mended" },

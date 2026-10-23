@@ -67,7 +67,7 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), AEZAKMI keeps the wanted level away, plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
+Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), AEZAKMI keeps the wanted level away, OSRBLHH and LJSPQK bring it on (two more stars, six), ASNAEB clears it, plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
 
 Every code, with its aliases and what it does: [docs/CHEATS.md](docs/CHEATS.md).
 
@@ -98,6 +98,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth that run CJ down if he stays on foot (dragons, giants and mammoths only out in the open world, not in a city). At most 12 at once.
 - Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
 - CJ has his own lines for being chased and busted.
+- A giant's club or a mammoth throws CJ through the air as a car's blast does, and he gets back up San Andreas's way.
 - In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.
 - Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks (Dragonsreach in Whiterun) with all his weapons. No jail. Once he's arrested nobody shoots him.

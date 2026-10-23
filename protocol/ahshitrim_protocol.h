@@ -435,6 +435,7 @@ namespace AhShitRim::Protocol
         Explosion = 2,       // a blast at `at`: San Andreas's explosion sound
         Fire = 3,            // fire on the ground at `at` for `seconds`: San Andreas's own (its crackle; CJ catches fire walking into it)
         BurnCj = 4,          // CJ was caught in fire: San Andreas sets him alight (his scream, the burn)
+        KnockCj = 5,         // v22: a blow knocked the player down in Skyrim (a giant's club): San Andreas throws CJ away from `at` at `seconds` metres a second, with its own fall and get-up (protocol/cpp/knock.h)
     };
 
     // Payload of an Effect message (v15).
