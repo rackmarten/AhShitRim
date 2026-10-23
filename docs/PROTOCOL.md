@@ -188,7 +188,7 @@ Four vehicle slots (v6), one per vehicle San Andreas keeps (`kVehicleMax`), each
 
 | Field | For a vehicle |
 |---|---|
-| `flags` | `kBodyValid` (0x1); `kBodyDriven` (0x2) while CJ is in it; (v18) `kBodyWrecked` (0x4) once it blew up (`STATUS_WRECKED`), `kBodyBurning` (0x8) while it burns: its engine (health under 250, not wrecked or drowning, as `CAutomobile::ProcessCarOnFireAndExplode` tests) or the wreck (San Andreas's fire on it, `m_pFire`). 0 once the vehicle is gone: Skyrim draws nothing for the slot |
+| `flags` | `kBodyValid` (0x1); `kBodyDriven` (0x2) while CJ is in it; (v18) `kBodyWrecked` (0x4) once it blew up (`STATUS_WRECKED`), (v20) `kBodyHydraulics` (0x40) while it has San Andreas's hydraulics (LOWRIDER); `kBodyBurning` (0x8) while it burns: its engine (health under 250, not wrecked or drowning, as `CAutomobile::ProcessCarOnFireAndExplode` tests) or the wreck (San Andreas's fire on it, `m_pFire`). 0 once the vehicle is gone: Skyrim draws nothing for the slot |
 | `model` | the vehicle's `ModelChunkHeader.model` |
 | `boneCount` | its parts (one per drawn atomic: chassis, wheels, doors, bonnet, a bike's forks and handlebars) |
 | `feet[3]` | the vehicle's position, relative to where the handover put CJ's feet |
@@ -270,7 +270,7 @@ What a finished cheat does (its `Kind` in `kCheats`):
 | `NoMercy` (ours) | see below | |
 | `Weapon` (ours: MINIGUN) | `WeaponCommand` `GiveWeapon` of the minigun (38) with 500 rounds | gives it, its model loaded |
 | `Respray` (ours: PAINT) | only with CJ in a vehicle | `Vehicles::Respray`: the model's next colour set (`CVehicleModelInfo::ChooseVehicleColour`), or any of carcols' for a model with one, `Fix`, health 1000, fire out, its model built and sent again in the new colours |
-| `Hydraulics` (ours: LOWRIDER) | only with CJ in a car | `Vehicles::AddHydraulics`: upgrade 1087 (`CVehicle::AddVehicleUpgrade`) unless its handling says `HYDRAULIC_NONE`; the horn raises and lowers it, R3 (`kButtonHydraulics`) with the right stick bounces it (`CAutomobile::HydraulicControl`) |
+| `Hydraulics` (ours: LOWRIDER) | only with CJ in a car; `kCheatOn` unless its vehicle slot has `kBodyHydraulics`, so typed again in that car it's off | `Vehicles::SetHydraulics` on the car CJ drives: upgrade 1087 (`CVehicle::AddVehicleUpgrade`) unless its handling says `HYDRAULIC_NONE`, or off (`RemoveVehicleUpgrade`); the horn raises and lowers it, R3 (`kButtonHydraulics`) with the right stick bounces it (`CAutomobile::HydraulicControl`) |
 
 AhShitRim's own codes (NOMERCY, MINIGUN, PAINT, LOWRIDER) and the vehicles' names match by their letters, not by San Andreas's key, from 3 letters long, and the top row's digits count. The names are every model in the `cars` section of the player's own `data/vehicles.ide` (`Cheats::ParseVehicleNames`: the model name upper case, letters and digits only), read at data load; one typed asks for that model as a spawn key does. Of all the cheats the shortest run of the newest letters wins, so a name can go off inside a longer code (MONSTERMASH brings MONSTER); the protocol tests type every code and its alternatives against the player's real `vehicles.ide` when `SaPath` is set. A Cheat command of ours has `cheat` 0xFF (`SaCheat::None`) and our code's key, and San Andreas finds it among `kCheats`' rows.
 

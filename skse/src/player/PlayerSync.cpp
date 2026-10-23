@@ -659,11 +659,24 @@ namespace AhShitRim::PlayerSync
             return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0 ? pose.vehicleModel : 0;
         }
 
+        // Whether the vehicle CJ drives has San Andreas's hydraulics (its slot says so, v20).
+        bool CjHydraulics()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                    vehicle.handover == state.handover) {
+                    return (vehicle.flags & Protocol::kBodyHydraulics) != 0;
+                }
+            }
+            return false;
+        }
+
         // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes).
         void TypeCheat(std::uint32_t a_dik)
         {
             if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && Cheats::LetterOf(a_dik)) {
-                static const CheatCodes::World world{ CheatSpawn, CjVehicle };
+                static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
                 CheatCodes::Key(a_dik, world);
             }
         }

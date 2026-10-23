@@ -466,6 +466,7 @@ namespace AhShitRim::Vehicles
 
         bool Wrecked(CVehicle* a_vehicle) { return a_vehicle->m_nStatus == STATUS_WRECKED; }
 
+
         // Where the engine smokes and burns from, in the world: San Andreas's engine dummy, where it puts its
         // overheat_car and fire_car, or the bonnet for a model without one.
         CVector EngineAt(CVehicle* a_vehicle)
@@ -506,6 +507,9 @@ namespace AhShitRim::Vehicles
             }
             if (VehicleDamage::EngineBurns(a_vehicle->m_fHealth, wrecked, a_vehicle->bIsDrowning) || (wrecked && a_vehicle->m_pFire)) {
                 s.flags |= Protocol::kBodyBurning;
+            }
+            if (a_vehicle->m_nHandlingFlags.bHydraulicInst) {
+                s.flags |= Protocol::kBodyHydraulics;  // v20: LOWRIDER takes them off again
             }
             s.health = a_vehicle->m_fHealth;
             const CVector engine = (EngineAt(a_vehicle) - at) * Pose::kUnitsPerMeter;
@@ -754,17 +758,24 @@ namespace AhShitRim::Vehicles
         }
     }
 
-    void AddHydraulics(CPlayerPed* a_ped)
+    void SetHydraulics(CPlayerPed* a_ped, bool a_on)
     {
         constexpr int kHydraulicsUpgrade = 1087;
         CVehicle*     vehicle = Driven(a_ped);
         if (!vehicle || vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || vehicle->m_nVehicleSubClass == VEHICLE_HELI ||
-            vehicle->m_nVehicleSubClass == VEHICLE_PLANE) {
+            vehicle->m_nVehicleSubClass == VEHICLE_PLANE || Wrecked(vehicle)) {
             Log("vehicle: LOWRIDER, but CJ isn't in a car");
             return;
         }
+        if (!a_on) {
+            if (vehicle->m_nHandlingFlags.bHydraulicInst) {
+                vehicle->RemoveVehicleUpgrade(kHydraulicsUpgrade);
+            }
+            Log(std::format("vehicle: hydraulics off model {}{}", vehicle->m_nModelIndex, vehicle->m_nHandlingFlags.bHydraulicInst ? " (they stayed)" : ""));
+            return;
+        }
         if (vehicle->m_nHandlingFlags.bHydraulicNone) {
-            Log(std::format("vehicle: LOWRIDER, but the {} can't take hydraulics (its handling says so)", vehicle->m_nModelIndex));
+            Log(std::format("vehicle: LOWRIDER, but model {} can't take hydraulics (its handling says so)", vehicle->m_nModelIndex));
             return;
         }
         if (!vehicle->m_nHandlingFlags.bHydraulicInst) {

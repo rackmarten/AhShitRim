@@ -10,7 +10,7 @@ A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer C
 
 **Early development.** San Andreas runs hidden as a simulator of CJ: F10 in Skyrim hands the player to it, Skyrim's keyboard and mouse drive CJ on Skyrim's own terrain and statics, rebuilt as collision around him in San Andreas, and Skyrim draws CJ there from San Andreas's own model, animated by San Andreas, seen through San Andreas's own camera. CJ can spawn a Sandking, a ZR-350 or a Sanchez in front of him and drive or ride it on Skyrim's roads, the vehicle drawn from San Andreas's own model too. He opens doors, pulls levers, searches chests, picks things up, talks to people and sits down with E, shouts with Skyrim's shout key, stays the player through load doors, interiors and fast travel, follows Skyrim's player through scenes that take it over, takes his damage out of Skyrim's health (when it runs out that is Wasted, and he wakes in a temple), and survives saving and loading, in his car if he was in one. Meanwhile Skyrim shows San Andreas's HUD (clock, health, money) and text styles, in San Andreas's own fonts. The first milestone tackles the hardest part first (see [Milestone 1: on the ground](#milestone-1-on-the-ground)). CJ carries San Andreas's weapons: the mouse wheel switches them, the right button aims (its lock-on, free aim and the sniper, rocket and camera sights), the left one fires, each drawn in his hand from its own model with its muzzle flash, icon and ammo in San Andreas's HUD, and the loadout is in the save. They hurt Skyrim's people and creatures, hit tested in Skyrim: headshots count, damage scales with the target's level and size (the minigun is for dragons), the player gets the kill and the bounty, and San Andreas's weapon skills grow with every hit and are saved. Rockets and grenades blow up as Skyrim explosions that throw people around and open locks nearby (a crime if anyone sees), Molotovs leave burning oil that spreads, tear gas chokes, and the flamethrower sets people on fire, all with San Andreas's own sounds and camera shake; CJ gets caught in his own blasts and burns as he does in San Andreas. Satchel charges stick to whatever they land on, mammoths and dragons included, and ride along until the detonator blows them, and the heat seeker locks on to dragons, horses, giants, mammoths and centurions with San Andreas's marker and chases them. San Andreas's cheat codes work too: type them while CJ has the player (see [Cheat codes](#cheat-codes)).
 
-Installing and playing it: [docs/INSTALL.md](docs/INSTALL.md). Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
+Installing and playing it: [docs/INSTALL.md](docs/INSTALL.md). Cheat codes: [docs/CHEATS.md](docs/CHEATS.md). Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). Where it's going: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Keys
 
@@ -60,40 +60,11 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). San Andreas's own matching decides, and it keeps only a key of each code, so every spelling that shares the key works as it does there (the table gives the best-known ones). M never opens Skyrim's map while CJ has the player, so codes with an M in them type straight through; open the map from Tab's menu.
+Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
 
-| Code | What |
-|---|---|
-| HESOYAM | Health bar and armour full, 250,000 gold, CJ's vehicle mended |
-| BAGUVIX | The player's health and armour stay full: San Andreas's damage is dropped and Skyrim's undone at once, so a big hit can still stagger it, and being hit doesn't train Block or armour skills (toggles) |
-| LXGIWYL, KJKSZPJ, UZUMYMW | San Andreas's weapon sets 1, 2 and 3 |
-| WANRLTW or FULLCLIP | Infinite ammo, no reloading (toggles) |
-| NCSGDAG | Hitman in every weapon skill |
-| VKYPQCF, VQIMAHA | Maximum stamina; maximum driving, flying and bike skills |
-| BTCDBCB, JYSDSOD (or BUFFMEUP), KVGYZQK | Fat, muscular or skinny CJ |
-| KANGAROO or LFGMHAL | Mega jump (toggles) |
-| SZCMAWO | Suicide: Wasted (not while BAGUVIX is on, as in San Andreas) |
-| JUMPJET, OHDUDE, AIWPRTON | Hydra, Hunter, Rhino |
-| KGGGDKP, URKQSRK, AKJJYGLC, AGBDLCID | Vortex, Stuntplane, Quad, Monster |
-| EEGCYXT, AMOMHRER | Dozer, Tanker (without its trailer) |
-| CQZIJMB, JQNTDMH, PDNEJOH, VPJTQWV | Bloodring Banger, Rancher, Hotring Racer, Hotring Racer 2 |
-| AQTBCODX, KRIJEBR, UBHYZHQ, RZHSUEW | Romero, Stretch, Trashmaster, Caddy |
-| ROCKETMAN (or YECGAA), AIYPWZQP | Jetpack, parachute |
-| RIPAZHA | Flying cars (toggles): in the air a car flies like a plane, W the throttle, the arrows pitch |
-| JHJOECW, PGGOMOY, COXEFGU | Huge bunny hop, perfect handling, nitro in every car (each toggles) |
-| JCNRUAD | Smash'n'boom: cars blow up on contact (toggles) |
-| CPKTNWT | Blow up every vehicle (not wrecks: as in San Andreas, a burnt-out one doesn't go up again) |
-| NOMERCY | Ours: nobody is essential any more (toggles, kept in the save) |
-| MINIGUN | Ours: a minigun with 500 rounds |
-| PAINT | Ours: the vehicle CJ is in gets new colours and is mended, as at a Pay 'n' Spray |
-| LOWRIDER | Ours: hydraulics on the car CJ is in. H raises and lowers it, numpad 5 with the numpad's arrows bounces it |
-| A vehicle's name | Ours: every vehicle by its model name from your San Andreas's `data/vehicles.ide`: SANCHEZ, HYDRA, RHINO, MAVERICK, SPARROW, SANDKING, DUNERIDE, NRG500 (the top row's digits count), and so on. Boats, trains, trailers and RC vehicles are refused as the spawn keys refuse them |
-
-Vehicles come in front of CJ on foot, as the spawn keys bring them (get out of a vehicle first), and the jetpack and the parachute go straight onto him. San Andreas's toggles are off again after a load, as in San Andreas.
+Every code, with its aliases and what it does: [docs/CHEATS.md](docs/CHEATS.md).
 
 **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die for good, and Skyrim's own quests weren't written for that. Typing it again gives exactly those flags back (someone who died meanwhile stays dead). It stays on in your saves until you type it again, so save before you try it.
-
-Ours are matched by their letters, from 3 long, so a vehicle's name can go off inside something longer: MONSTERMASH brings the Monster (444) at its R rather than the cheat's Monster (556), and MONSTERA and MONSTERB can't be typed past MONSTER. NOMERCY can only be typed while CJ has the player, and it notes people by form id, so changing your load order with it on can give the essential flag back to the wrong person. Ped, traffic, gang, weather and time cheats aren't in yet (San Andreas's world here has no peds or traffic, and the clock and weather are Skyrim's), nor the wanted level ones.
 
 ## How it will work
 

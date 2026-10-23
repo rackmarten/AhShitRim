@@ -16,8 +16,8 @@
 //   the player from taking any damage (Vitals) while CJ has it, SZCMAWO is Wasted, and NOMERCY (ours)
 //   clears every essential flag but the player's, puts back exactly those when typed again, and is kept in
 //   the co-save in a record of its own (Mercy::kRecordType).
-// - Ours besides (v20): MINIGUN gives the minigun, PAINT resprays and mends CJ's vehicle, LOWRIDER puts hydraulics on his
-//   car, and every vehicle's model name from San Andreas's vehicles.ide (SANCHEZ, HYDRA) spawns it.
+// - Ours besides (v20): MINIGUN gives the minigun, PAINT resprays and mends CJ's vehicle, LOWRIDER puts hydraulics on the car he
+//   is in, or takes them off it, and every vehicle's model name from San Andreas's vehicles.ide (SANCHEZ, HYDRA) spawns it.
 // Main thread only.
 namespace AhShitRim::CheatCodes
 {
@@ -26,6 +26,7 @@ namespace AhShitRim::CheatCodes
     {
         std::function<std::string(std::uint16_t)> spawn;    // asks for a model in front of CJ; returns why it can't (the help box says so), or nothing
         std::function<std::uint16_t()>            vehicle;  // the model of the vehicle CJ is in, 0 on foot
+        std::function<bool()>                     hydraulics;  // whether it has hydraulics (its slot's kBodyHydraulics)
     };
 
     // Reads the vehicle names from San Andreas's data/vehicles.ide (the install in AhShitRim.ini); call on kDataLoaded.

@@ -118,7 +118,7 @@ namespace AhShitRim::Cheats
         NoMercy,    // ours: nobody is essential (protocol/cpp/mercy.h), kept in the save
         Weapon,     // ours: one weapon (WeaponCommand GiveWeapon, argument its type, kWeaponAmmo rounds)
         Respray,    // ours: CJ's vehicle in new colours and mended, as a Pay 'n' Spray does (San Andreas's part)
-        Hydraulics, // ours: San Andreas's hydraulics on CJ's car (its upgrade 1087)
+        Hydraulics, // ours: San Andreas's hydraulics (its upgrade 1087) on the car CJ is in, or off it if it has them
     };
 
     inline constexpr std::uint32_t kWeaponAmmo = 500;  // a weapon cheat's rounds, as weapon set 3 gives the minigun
@@ -127,7 +127,10 @@ namespace AhShitRim::Cheats
     constexpr bool NeedsVehicle(Kind a_kind) { return a_kind == Kind::Respray || a_kind == Kind::Hydraulics; }
 
     // Whether typing it again turns it off (San Andreas's CHEAT8, "Cheat deactivated").
-    constexpr bool Toggles(Kind a_kind) { return a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::NoMercy; }
+    constexpr bool Toggles(Kind a_kind)
+    {
+        return a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::NoMercy;
+    }
 
     // Whether San Andreas gets a Cheat command for it.
     constexpr bool ToSanAndreas(Kind a_kind)
@@ -187,7 +190,7 @@ namespace AhShitRim::Cheats
         { "NOMERCY", Kind::NoMercy, SaCheat::None, 0, "nobody is essential (can break quests)" },
         { "MINIGUN", Kind::Weapon, SaCheat::None, 38, "a minigun" },
         { "PAINT", Kind::Respray, SaCheat::None, 0, "CJ's vehicle resprayed and mended" },
-        { "LOWRIDER", Kind::Hydraulics, SaCheat::None, 0, "hydraulics on CJ's car" },
+        { "LOWRIDER", Kind::Hydraulics, SaCheat::None, 0, "hydraulics on or off the car CJ is in" },
     };
     inline constexpr std::size_t kCheatCount = std::size(kCheats);
     static_assert(kCheatCount <= 64, "Toggles keeps a bit per cheat");
@@ -240,7 +243,8 @@ namespace AhShitRim::Cheats
     };
 
     // The vehicle names in the text of San Andreas's data/vehicles.ide (read from the player's install): each line of
-    // its "cars" section is "id, modelname, txdname, type, ...". Names under 3 letters are left out.
+    // its "cars" section is "id, modelname, txdname, type, ...", the model name up to the next comma or blank. Names
+    // under 3 letters are left out.
     inline std::vector<VehicleName> ParseVehicleNames(std::string_view a_ide)
     {
         std::vector<VehicleName> out;
@@ -279,8 +283,13 @@ namespace AhShitRim::Cheats
                     number = false;
                 }
             }
-            const auto       rest = line.substr(comma + 1);
-            const std::string_view name = rest.substr(0, rest.find(','));
+            // The name runs to the next comma, space or tab: a few of 1.0's rows (the Emperor, the Wayfarer, the Dodo) have
+            // tabs for their commas.
+            auto rest = line.substr(comma + 1);
+            while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
+                rest.remove_prefix(1);
+            }
+            const std::string_view name = rest.substr(0, rest.find_first_of(", \t"));
             std::string      code;
             for (const char c : name) {
                 if (c >= 'a' && c <= 'z') {

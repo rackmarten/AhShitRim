@@ -167,6 +167,8 @@ TEST_CASE("cheats: typing completes a cheat on its last letter")
     CHECK(TypeAll(typist, "ROCKETMAN") == &Row("YECGAA"));
     CHECK(TypeAll(typist, "KANGAROO") == &Row("LFGMHAL"));
     CHECK(TypeAll(typist, "JYSDSOD") == &Row("BUFFMEUP"));
+    CHECK(TypeAll(typist, "18HOLES") == &Row("RZHSUEW"));  // the top row's digits count for San Andreas's keys too
+    CHECK(TypeAll(typist, "CHITTYCHITTYBANGBANG") == &Row("RIPAZHA"));
     CHECK(TypeAll(typist, "NOMERCY") == &Row("NOMERCY"));
     // Keys that aren't letters go nowhere.
     CHECK_FALSE(typist.Key(Input::kDikSpace));
@@ -214,7 +216,9 @@ TEST_CASE("cheats: ours by their letters, MINIGUN, PAINT and LOWRIDER")
     CHECK(TypeAll(typist, "PAINT") == &Row("PAINT"));  // 5 letters: shorter than San Andreas's codes can be
     CHECK(TypeAll(typist, "LOWRIDER") == &Row("LOWRIDER"));
     CHECK(NeedsVehicle(Row("PAINT").kind));
-    CHECK(NeedsVehicle(Row("LOWRIDER").kind));
+    CHECK(NeedsVehicle(Row("LOWRIDER").kind));  // on or off by the car CJ is in, not one switch for all
+    CHECK_FALSE(Toggles(Row("LOWRIDER").kind));
+    CHECK_FALSE(Toggles(Row("PAINT").kind));
     CHECK_FALSE(NeedsVehicle(Row("MINIGUN").kind));
     CHECK(CommandFor(Row("PAINT")).cheat == static_cast<std::uint8_t>(SaCheat::None));
     CHECK(CommandFor(Row("PAINT")).key == CodeKey("PAINT"));
@@ -234,12 +238,15 @@ TEST_CASE("cheats: vehicles typed by name, from vehicles.ide")
                       "  468,\tTestbike, testbike, bike, TESTBIKE, TESTBK, bikev, motorbike, 10, 0, 0, 16, 0.6, 0.6, 1  # a bike\n"
                       "481, bm, bm, bmx, BM, BM, bmx, bicycle, 10, 0, 0, -1, 0.6, 0.6, -1\n"
                       "522, nrg500, nrg500, bike, NRG500, NRG500, bikes, motorbike, 10, 0, 0, 16, 0.6, 0.6, 1\n"
+                      "586,\ttabbed\ttabbed,\tbike,\t\tTABBED,\tTABBED,\ttabbed,motorbike,\t6\n"  // tabs for commas, as 1.0's Wayfarer row
                       "end\n"
                       "peds\n"
                       "7, someone, someone, CIVMALE\n"
                       "end\n";
     const auto names = ParseVehicleNames(ide);
-    REQUIRE(names.size() == 3);
+    REQUIRE(names.size() == 4);
+    CHECK(names[3].code == "TABBED");
+    CHECK(names[3].model == 586);
     CHECK(names[0].code == "TESTCAR");
     CHECK(names[0].model == 400);
     CHECK(names[1].code == "TESTBIKE");
@@ -248,7 +255,7 @@ TEST_CASE("cheats: vehicles typed by name, from vehicles.ide")
 
     Typist typist;
     typist.SetVehicleNames(names);
-    CHECK(typist.VehicleNameCount() == 3);
+    CHECK(typist.VehicleNameCount() == 4);
     CHECK(TypeAll(typist, "TESTBIK") == nullptr);
     CHECK(typist.Key(Dik('E')).model == 468);
     // Digits from the top row count.
@@ -272,6 +279,10 @@ TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player'
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     const auto        names = ParseVehicleNames(text);
     CHECK(names.size() >= 200);
+    for (const auto& name : names) {
+        CAPTURE(name.code);
+        CHECK(name.code.size() <= 12);  // a model name, not a row's fields run together
+    }
     std::vector<std::string_view> codes;
     for (const auto& cheat : kCheats) {
         codes.push_back(cheat.code);
@@ -279,7 +290,8 @@ TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player'
     for (std::string_view other : { "ROCKETMAN", "WANRLTW", "KANGAROO", "JYSDSOD", "THUGSARMOURY", "PROFESSIONALSKIT", "PROFESSIONALKILLER",
              "NATURALTALENT", "ICANGOALLNIGHT", "OLDSPEEDDEMON", "NOTFORPUBLICROADS", "JUSTTRYANDSTOPME", "WHERESTHEFUNERAL", "CELEBRITYSTATUS",
              "TRUEGRIME", "ITSALLBULL", "FLYINGTOSTUNT", "CJPHONEHOME", "STICKLIKEGLUE", "SPEEDFREAK", "GOODBYECRUELWORLD",
-             "WHOATEALLTHEPIES", "LEANANDMEAN", "BUFFMEUP" }) {  // not MONSTERMASH: MONSTER (444) goes off first, a monster truck all the same
+             "WHOATEALLTHEPIES", "LEANANDMEAN", "BUFFMEUP", "INEEDSOMEHELP", "TIMETOKICKASS", "VROCKPOKEY", "18HOLES", "FOURWHEELFUN",
+             "HITTHEROADJACK", "LETSGOBASEJUMPING", "CHITTYCHITTYBANGBANG", "TOUCHMYCARYOUDIE", "ALLCARSGOBOOM" }) {  // not MONSTERMASH: MONSTER (444) goes off first, a monster truck all the same
         codes.push_back(other);
     }
     for (const auto code : codes) {

@@ -187,7 +187,10 @@ namespace AhShitRim::CheatCodes
                 }
             }
             auto*      player = RE::PlayerCharacter::GetSingleton();
-            const bool on = a_cheat.kind == Kind::NoMercy ? !state.mercy.On() : Toggles(a_cheat.kind) ? state.on.Flip(a_cheat) : true;
+            const bool on = a_cheat.kind == Kind::NoMercy      ? !state.mercy.On() :
+                            a_cheat.kind == Kind::Hydraulics   ? !a_world.hydraulics() :  // the car CJ is in has them: off it
+                            Toggles(a_cheat.kind)              ? state.on.Flip(a_cheat) :
+                                                                 true;
             bool       sent = true;
             switch (a_cheat.kind) {
             case Kind::Health:
@@ -220,7 +223,7 @@ namespace AhShitRim::CheatCodes
                 state.resend = true;  // San Andreas gets it once the link is back
             }
             SaHud::ShowHelp(std::string(on ? kActivated : kDeactivated), 4.0f);
-            SKSE::log::info("cheats: {} typed: {} {}{}", a_cheat.code, a_cheat.what, Toggles(a_cheat.kind) ? (on ? "on" : "off") : "given",
+            SKSE::log::info("cheats: {} typed: {} {}{}", a_cheat.code, a_cheat.what, Toggles(a_cheat.kind) || a_cheat.kind == Kind::Hydraulics ? (on ? "on" : "off") : "given",
                 sent ? "" : " (the link is down: San Andreas's part is lost)");
         }
     }

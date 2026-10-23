@@ -66,7 +66,7 @@ namespace AhShitRim::CjCheats
                 if (cheat.kind == Cheats::Kind::Respray) {
                     Vehicles::Respray(a_ped);
                 } else if (cheat.kind == Cheats::Kind::Hydraulics) {
-                    Vehicles::AddHydraulics(a_ped);
+                    Vehicles::SetHydraulics(a_ped, (a_command.flags & Protocol::kCheatOn) != 0);
                 }
                 return;
             }
