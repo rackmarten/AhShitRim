@@ -1,5 +1,6 @@
 #include "cj_shots.h"
 
+#include "explosives.h"
 #include "log.h"
 #include "pose.h"
 #include "weapons.h"
@@ -8,6 +9,8 @@
 
 #include <CCamera.h>
 #include <CDraw.h>
+#include <CFire.h>
+#include <CFireManager.h>
 #include <CPlayerData.h>
 #include <CPlayerPed.h>
 #include <CTaskSimpleFight.h>
@@ -38,7 +41,7 @@ namespace AhShitRim::CjShots
         constexpr std::uintptr_t kDoBulletImpact = 0x73B550;  // CWeapon::DoBulletImpact (thiscall): the first-person rifles' bullets (and the drive-bys')
         constexpr std::uintptr_t kFireSniper = 0x73AAC0;      // CWeapon::FireSniper (thiscall): the sniper rifle from the camera
         constexpr std::uintptr_t kFightStrike = 0x6240B0;     // CTaskSimpleFight::FightStrike (thiscall): a blow at its hit frame
-        constexpr std::uintptr_t kFireAreaEffect = 0x73E800;  // CWeapon::FireAreaEffect (thiscall): the flamethrower's (and the spray cans') puff
+        constexpr std::uintptr_t kFireAreaEffect = 0x73E800;  // CWeapon::FireAreaEffect (thiscall): the flamethrower's, spray can's and extinguisher's puff
 
         // melee.dat's combos (CTaskSimpleFight::m_aComboData): one CMeleeInfo of 0x88 bytes each, the first
         // for combo set 4 (MELEE_COMBO_UNARMED_1). Per move (attack 1 to 3, on the ground, moving): the
@@ -272,16 +275,20 @@ namespace AhShitRim::CjShots
 
         // The flamethrower's puff, aimed as FireAreaEffect aims it: through the crosshair while the mouse turns the
         // camera behind him, else ahead of him at his look pitch. San Andreas's own (fire creeping over its
-        // ground, which no one in Skyrim would see but would still burn him) is skipped for him; the spray can
-        // and the extinguisher stay San Andreas's.
+        // ground, which no one in Skyrim would see but would still burn him) is skipped for him. The spray can's
+        // and the extinguisher's puffs are sent the same way (the shot's weapon type tells them apart) and still
+        // run San Andreas's own, which puts its fires out in the extinguisher's stream; the extinguisher also puts
+        // out San Andreas's fires along its cone (the Molotov fires Skyrim started there) and CJ himself.
         bool __fastcall FireAreaEffectHook(CWeapon* a_weapon, void*, CEntity* a_firedBy, CVector* a_origin, CEntity* a_target, CVector* a_targetPos)
         {
-            if (!IsCj(a_firedBy) || !a_origin || a_weapon->m_eWeaponType != WEAPONTYPE_FTHROWER || a_target || a_targetPos) {
+            const auto type = a_weapon->m_eWeaponType;
+            const auto cone = Explosives::ConeOf(static_cast<std::uint8_t>(type));
+            if (!IsCj(a_firedBy) || !a_origin || cone == Explosives::Cone::None || a_target || a_targetPos) {
                 return g_fireAreaEffect.thiscall<bool>(a_weapon, a_firedBy, a_origin, a_target, a_targetPos);
             }
             auto*       ped = static_cast<CPed*>(a_firedBy);
-            const auto  skill = static_cast<std::uint8_t>(ped->GetWeaponSkill(WEAPONTYPE_FTHROWER));
-            const auto* info = CWeaponInfo::GetWeaponInfo(WEAPONTYPE_FTHROWER, skill);
+            const auto  skill = static_cast<std::uint8_t>(ped->GetWeaponSkill(type));
+            const auto* info = CWeaponInfo::GetWeaponInfo(type, skill);
             const float range = info && info->m_fWeaponRange > 0.0f ? info->m_fWeaponRange : 5.0f;
             const auto  mode = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode;
             CVector     dir;
@@ -298,7 +305,7 @@ namespace AhShitRim::CjShots
             if (length > 1e-4f) {
                 dir /= length;
                 Protocol::ShotEvent shot{};
-                shot.weaponType = static_cast<std::uint8_t>(WEAPONTYPE_FTHROWER);
+                shot.weaponType = static_cast<std::uint8_t>(type);
                 shot.kind = Protocol::kShotFlame;
                 shot.skill = skill;
                 shot.damage = info ? static_cast<float>(info->m_nDamage) : 0.0f;
@@ -306,9 +313,23 @@ namespace AhShitRim::CjShots
                 shot.direction[1] = dir.y;
                 shot.direction[2] = dir.z;
                 shot.range = range * Pose::kUnitsPerMeter;
-                Send(shot, *a_origin, "flame");
+                Send(shot, *a_origin, cone == Explosives::Cone::Flame ? "flame" : cone == Explosives::Cone::Spray ? "spray" : "extinguisher puff");
             }
-            return true;
+            if (cone == Explosives::Cone::Flame) {
+                return true;
+            }
+            if (cone == Explosives::Cone::Hose) {
+                if (ped->m_pFire) {
+                    ped->m_pFire->Extinguish();
+                }
+                if (length > 1e-4f) {
+                    const float reach = Explosives::ConeRange(cone, range * Pose::kUnitsPerMeter);
+                    for (float along = 0.0f; along <= reach; along += Explosives::kHoseStep) {
+                        gFireManager.ExtinguishPoint(*a_origin + dir * (along / Pose::kUnitsPerMeter), Explosives::HoseRadius(along) / Pose::kUnitsPerMeter);
+                    }
+                }
+            }
+            return g_fireAreaEffect.thiscall<bool>(a_weapon, a_firedBy, a_origin, a_target, a_targetPos);
         }
 
         // Points the call at a_site to a_detour; returns what it called before, or nullptr when the site is

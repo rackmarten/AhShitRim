@@ -461,6 +461,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kSkinTextureRgba8 = 1;
     inline constexpr std::uint32_t kSkinMeshCutout = 0x1;  // alpha tested
     inline constexpr std::uint32_t kSkinMeshBlend = 0x2;   // alpha blended
+    inline constexpr std::uint32_t kSkinMeshAdditive = 0x4;  // with kSkinMeshBlend: added onto what's behind (Skyrim's own sprites only)
     inline constexpr std::uint32_t kSkinModelBody = 0;     // SkinModelHeader.kind: a ped (CJ)
     inline constexpr std::uint32_t kSkinModelVehicle = 1;  // v6: a vehicle, its parts as bones
     inline constexpr std::uint32_t kSkinModelWeapon = 2;   // v12: a weapon in CJ's hand, its parts as bones, bounded like CJ

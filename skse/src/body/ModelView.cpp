@@ -67,6 +67,7 @@ namespace AhShitRim::ModelView
             RE::NiSourceTexture*                         flatNormal = nullptr;
             RE::NiPointer<RE::NiAlphaProperty>           cutout;
             RE::NiPointer<RE::NiAlphaProperty>           blend;
+            RE::NiPointer<RE::NiAlphaProperty>           additive;
             W32::ID3D11DeviceContext*                    context = nullptr;
             bool                                         mapFailLogged = false;
             std::uint64_t                                frame = 1;
@@ -241,6 +242,15 @@ namespace AhShitRim::ModelView
             return state.blend.get();
         }
 
+        // Source alpha added onto what's behind (0x000D): San Andreas's glowing particles.
+        RE::NiAlphaProperty* Additive()
+        {
+            if (!state.additive) {
+                state.additive.reset(MakeAlpha(0x000D));
+            }
+            return state.additive.get();
+        }
+
         RE::BSGraphics::VertexDesc VertexDesc()
         {
             using V = RE::BSGraphics::Vertex;
@@ -368,7 +378,7 @@ namespace AhShitRim::ModelView
             geometry.vertexDesc = data->vertexDesc;
             geometry.skinInstance.reset();
             const bool blend = (mesh.flags & Protocol::kSkinMeshBlend) != 0;
-            geometry.alphaProperty.reset(blend ? Blend() : (mesh.flags & Protocol::kSkinMeshCutout) != 0 ? Cutout() : nullptr);
+            geometry.alphaProperty.reset(blend ? ((mesh.flags & Protocol::kSkinMeshAdditive) != 0 ? Additive() : Blend()) : (mesh.flags & Protocol::kSkinMeshCutout) != 0 ? Cutout() : nullptr);
             auto& counts = shape->GetTrishapeRuntimeData();
             counts.vertexCount = static_cast<std::uint16_t>(mesh.vertexCount);
             counts.triangleCount = static_cast<std::uint16_t>(mesh.indexCount / 3);
