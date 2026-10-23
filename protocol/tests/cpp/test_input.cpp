@@ -454,3 +454,14 @@ TEST_CASE("the debug key is = and nothing else maps to it")
     CHECK(ActionFromScanCode(kDikEquals) == Action::None);
     CHECK(SpawnModelFromScanCode(kDikEquals) == 0);
 }
+
+TEST_CASE("numpad 5 is the hydraulics' jump in a vehicle (v20)")
+{
+    Builder b;
+    b.SetKey(kDikNumpad5, true);
+    const auto s = b.Build(1, true, true);
+    CHECK((s.buttons & AhShitRim::Protocol::kButtonHydraulics) != 0);
+    CHECK(ToPad(s, true).shockButtonR == 255);
+    CHECK(ToPad(s, false).shockButtonR == 0);  // on foot it does nothing
+    CHECK(ActionFromScanCode(kDikNumpad5, KeyLayout::Classic) == Action::Hydraulics);
+}
