@@ -28,9 +28,15 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v23: the shout's voice")
+{
+    CHECK(kProtocolVersion == 23);
+    CHECK(offsetof(InputState, shoutVoice) == 111);
+    CHECK(sizeof(InputState) == 112);
+}
+
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -147,6 +153,7 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, carHeading) == 104);
     CHECK(offsetof(InputState, lineCount) == 108);
     CHECK(offsetof(InputState, lineKind) == 110);
+    CHECK(offsetof(InputState, shoutVoice) == 111);
     CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 248);
     CHECK(offsetof(PlayerState, skills) == 224);

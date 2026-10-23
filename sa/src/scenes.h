@@ -14,7 +14,9 @@ namespace AhShitRim::Protocol
 //   (SEAT_IDLE) where it sits and walking or running by how fast it moves. His vehicle stays where
 //   he left it. When Skyrim gives the player back he goes on from there.
 // - Talking: with kInputFace CJ stands still and turns to the one he talks to.
-// - Shouting: a new InputState.shoutCount plays SHOVE_PARTIAL over whatever he does, with an angry face.
+// - Shouting: a new InputState.shoutCount plays SHOVE_PARTIAL over whatever he does, with an angry face,
+//   and (v23) has CJ say his line for the shout and words in shoutVoice (protocol/cpp/thuum.h), cutting
+//   off his last line; Skyrim mutes the Dragonborn's voice.
 // - Swearing (v16): a new InputState.insultCount has CJ say an insult, and give the finger on foot; a new
 //   swearCount has him swear to himself. Neither waits for San Andreas's repeat time, and each plays
 //   the lines picked in protocol/cpp/voice_lines.h when it has any.
