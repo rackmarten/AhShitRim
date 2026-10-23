@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_busted.h"
 #include "cj_cheats.h"
 #include "cj_gear.h"
 #include "cj_projectiles.h"
@@ -342,6 +343,7 @@ namespace AhShitRim::Runner
             }
             state.wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
             Vitals::SetWasted(a_ped, state.wasted, state.wasted && (a_input.flags & Protocol::kInputWastedCamera) != 0);
+            CjBusted::Set(a_ped, owned && (a_input.flags & Protocol::kInputBusted) != 0);  // v22
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
                 state.carPending = false;

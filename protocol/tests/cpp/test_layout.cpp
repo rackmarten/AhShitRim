@@ -28,6 +28,14 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v22: busted")
+{
+    CHECK(kProtocolVersion == 22);
+    CHECK(kInputBusted == 0x80);
+    CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
+    CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
+}
+
 TEST_CASE("protocol v20: cheats")
 {
     CHECK(static_cast<std::uint16_t>(MessageType::Cheat) == 7);
@@ -40,7 +48,6 @@ TEST_CASE("protocol v20: cheats")
 
 TEST_CASE("protocol v19 constants")
 {
-    CHECK(kProtocolVersion == 21);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);

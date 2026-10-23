@@ -106,6 +106,11 @@ TEST_CASE("cheats: the table")
                                               cheat.kind == Kind::Respray || cheat.kind == Kind::Hydraulics));
     }
     CHECK(Row("NOMERCY").kind == Kind::NoMercy);
+    CHECK(Row("OSRBLHH").kind == Kind::Wanted);
+    CHECK(Row("LJSPQK").argument == 2);
+    CHECK(Row("ASNAEB").argument == 0);
+    CHECK_FALSE(ToSanAndreas(Kind::Wanted));
+    CHECK_FALSE(Toggles(Kind::Wanted));
     CHECK(Row("JUMPJET").argument == 520);  // Hydra
     CHECK(Row("OHDUDE").argument == 425);   // Hunter
     CHECK(Row("YECGAA").argument == VehicleKinds::kJetpack);

@@ -7,6 +7,7 @@
 #include "scene.h"
 #include "vehicles.h"
 #include "voice_lines.h"
+#include "wanted.h"
 
 #include <plugin.h>
 
@@ -37,6 +38,8 @@ namespace AhShitRim::Scenes
         constexpr int kFuckU = 144;           // ANIM_ID_FUCKU: the finger, as CTaskSimpleShakeFist plays it
         constexpr unsigned short kInsultMale = 110;  // CTX_GLOBAL_GENERIC_INSULT_MALE; CJ's voice says CTX_PLY_GENERIC_INSULT_MALE
         constexpr unsigned short kCrashGeneric = 68;  // CTX_GLOBAL_CRASH_GENERIC; CJ's CTX_PLY_CRASH_GENERIC, his "oh shit" lines
+        constexpr unsigned short kChased = 44;        // CTX_GLOBAL_CHASED: CJ with the cops after him (v22, Skyrim's wanted level)
+        constexpr unsigned short kArrested = 15;      // CTX_GLOBAL_ARRESTED: what CGameLogic has him say when busted
         constexpr std::uintptr_t kSpeechNextPlayTime = 0xB61670;  // gta-reversed: gGlobalSpeechContextNextPlayTime, uint32 ms per context
         constexpr std::uintptr_t kStopCurrentSpeech = 0x4E3FB0;   // CAEPedSpeechAudioEntity::StopCurrentSpeech
         constexpr std::uintptr_t kCallGetSoundAndBankIds = 0x4E67E2;  // AddSayEvent's call of CAEPedSpeechAudioEntity::GetSoundAndBankIDs (0x4E5920)
@@ -216,7 +219,11 @@ namespace AhShitRim::Scenes
         // A line Skyrim asks for (v21): CJ's answer in a conversation, also in a scene. Only his own lines:
         // the insult context merely carries them, so without the hook he says nothing.
         const auto kind = a_input.lineKind;
-        if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && g_getSoundAndBankIds && kind > 0 &&
+        if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && (kind == Wanted::kLineChased || kind == Wanted::kLineArrested)) {
+            // v22, the wanted level: San Andreas's own lines of CJ's for it, as it picks them.
+            static VoiceLines::Deck none;
+            SayNow(a_ped, kind == Wanted::kLineChased ? kChased : kArrested, none, kind == Wanted::kLineChased ? "is chased" : "is arrested");
+        } else if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && g_getSoundAndBankIds && kind > 0 &&
             kind < Dialogue::kCategoryCount && !g_dialogueLines[kind].Empty()) {
             const auto what = std::format("answers ({})", Dialogue::NameOf(static_cast<Dialogue::Category>(kind)));
             SayNow(a_ped, kInsultMale, g_dialogueLines[kind], what.c_str());

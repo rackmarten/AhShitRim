@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 21;
+    inline constexpr std::uint32_t kProtocolVersion = 22;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -114,6 +114,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kInputSeated = 0x10;     // InputState.flags (v9), with kInputScripted: the player sits
     inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas ignores damage; (v14) CJ falls dead on his front
     inline constexpr std::uint32_t kInputWastedCamera = 0x40;  // InputState.flags (v14), with kInputWasted: San Andreas's death camera rises over him
+    inline constexpr std::uint32_t kInputBusted = 0x80;     // InputState.flags (v22): Busted, CJ is arrested: dragged out of the car he is in (the driver's door), knocked off a bike, or on foot his hands up
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;
@@ -434,6 +435,7 @@ namespace AhShitRim::Protocol
         Explosion = 2,       // a blast at `at`: San Andreas's explosion sound
         Fire = 3,            // fire on the ground at `at` for `seconds`: San Andreas's own (its crackle; CJ catches fire walking into it)
         BurnCj = 4,          // CJ was caught in fire: San Andreas sets him alight (his scream, the burn)
+        KnockCj = 5,         // v22: a blow knocked the player down in Skyrim (a giant's club): San Andreas throws CJ away from `at` at `seconds` metres a second, with its own fall and get-up (protocol/cpp/knock.h)
     };
 
     // Payload of an Effect message (v15).
