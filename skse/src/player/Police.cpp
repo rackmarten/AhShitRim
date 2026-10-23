@@ -23,6 +23,7 @@ namespace AhShitRim::Police
         constexpr float      kCalmEvery = 0.5f;   // seconds between calling the fight off, while busted or never wanted
         constexpr float      kMountAfter = 0.5f;  // a rider gets on his horse this long after both are in
         constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that
+        constexpr float      kRetargetEvery = 1.0f;  // seconds between pulling ours back onto CJ from whoever else they fight
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
         constexpr float      kSpawnRise = 300.0f;    // a spawn spot more than this above or below the player is a tower or a ledge: not used
@@ -49,6 +50,7 @@ namespace AhShitRim::Police
             RE::ObjectRefHandle horse;  // a rider's
             Wanted::Unit        unit = Wanted::Unit::Guard;
             float               age = 0.0f;  // seconds since both were in (3D loaded)
+            float               retarget = 0.0f;  // seconds since its target was last checked
             bool                mounted = false;
             bool                fighting = false;
         };
@@ -555,6 +557,18 @@ namespace AhShitRim::Police
                     const bool fights = actor->StartCombat(a_player);
                     SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
                         horse ? (actor->IsOnMount() ? ", mounted" : ", on foot") : "");
+                }
+                // Ours are after CJ alone: a giant swatting at the dragon, or a dragon burning guards, is pulled back onto him.
+                s.retarget += a_delta;
+                if (s.fighting && s.retarget >= kRetargetEvery) {
+                    s.retarget = 0.0f;
+                    if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
+                        SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());
+                        actor->StopCombat();
+                        actor->StartCombat(a_player);
+                    } else if (!target) {
+                        actor->StartCombat(a_player);  // its fight ended (lost him, or won against someone else): after him again
+                    }
                 }
             }
         }

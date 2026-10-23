@@ -20,7 +20,8 @@ namespace AhShitRim::Protocol
 //   after him (Wanted::ForceFor): copies of the hold's guards, riders on saddled horses from 3, a captain and a
 //   guard wizard from 4, the hold's soldiers from 5, a dragon at 6 (bringing it
 //   down is a lot of heat). One spawns per cooldown, never in view: round CJ behind the camera on the ground, or
-//   out of the city's barracks door. Killing them all buys a breather. When the stars go they stop fighting and
+//   out of the city's barracks door. Killing them all buys a breather. They fight CJ alone: once a second, one fighting
+//   anyone else is pulled back onto him. When the stars go they stop fighting and
 //   are taken out a step a frame once the player can't see them (Sweep).
 // - Guards (any hold's) and ours hit CJ by the stars: a quarter of their damage at 1 star, half at 3, all of it from 4
 //   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
