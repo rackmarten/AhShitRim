@@ -254,6 +254,12 @@ TEST_CASE("Text styles place their text: clock top right, big messages up from t
     REQUIRE(one.lines == 1);
     CHECK(two.y == doctest::Approx(one.y - 18.0f * 1.2f * uy));
     CHECK(OutlinePixels(screen, kBigMessage) == doctest::Approx(3.0f * 2.25f));
+    // Subtitles have a drop shadow down and right, no outline.
+    CHECK(OutlinePixels(screen, kSubtitles) == 0.0f);
+    const auto [sx, sy] = ShadowPixels(screen, kSubtitles);
+    CHECK(sx == doctest::Approx(2.0f * 2.25f));
+    CHECK(sy == doctest::Approx(2.0f * uy));
+    CHECK(ShadowPixels(screen, kHelp).first == 0.0f);
 }
 
 TEST_CASE("The clock and money read as San Andreas shows them")

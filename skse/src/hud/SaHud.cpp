@@ -56,7 +56,7 @@ namespace AhShitRim::SaHud
             float       age = 0.0f;
             float       hold = 0.0f;  // seconds at full before fading out; 0 = not showing
             float       fadeIn = 0.25f;
-            float       fadeOut = 0.5f;
+            float       fadeOut = 0.5f;  // 0 for none: it is there, then it's gone
 
             void Show(std::string a_text, float a_hold)
             {
@@ -83,6 +83,9 @@ namespace AhShitRim::SaHud
                 if (age < fadeIn) {
                     return age / fadeIn;
                 }
+                if (fadeOut <= 0.0f) {
+                    return age <= fadeIn + hold ? 1.0f : 0.0f;
+                }
                 return std::clamp(1.0f - (age - fadeIn - hold) / fadeOut, 0.0f, 1.0f);
             }
         };
@@ -97,7 +100,7 @@ namespace AhShitRim::SaHud
             bool             bigUnderFade = false;  // "wasted" and "busted" go black with the picture
             Timed            help;
             Timed            prompt{ {}, 0.0f, 0.0f, 0.15f, 0.25f };  // what E activates, in the help box while no help shows
-            Timed            subtitle;
+            Timed            subtitle{ {}, 0.0f, 0.0f, 0.0f, 0.0f };  // San Andreas shows and drops its subtitles at once, no fades
             Timed            radio;
             bool             radioRetuning = false;
             bool             drawRadio = false;  // only while San Andreas has the player and no menu is up
@@ -155,7 +158,8 @@ namespace AhShitRim::SaHud
             }
 
             // a_text in a_style: its outline (SetEdge) in black first, as copies one edge out all
-            // round, then the letters in a_colour. a_x overrides the style's x (pixels).
+            // round, or its drop shadow (SetDropShadowPosition), then the letters in a_colour. a_x overrides the
+            // style's x (pixels).
             void Text(const TextStyle& a_style, std::string_view a_text, Colour a_colour, float a_x = -1.0f)
             {
                 if (a_colour.a == 0 || a_text.empty()) {
@@ -176,6 +180,13 @@ namespace AhShitRim::SaHud
                                 quads.push_back({ texture, g.x0 + dx * out, g.y0 + dy * out, g.x1 + dx * out, g.y1 + dy * out, g.u0, g.v0, g.u1, g.v1, drop });
                             }
                         }
+                    }
+                }
+                if (a_style.shadow > 0) {
+                    const auto [sx, sy] = ShadowPixels(screen, a_style);
+                    const std::uint32_t drop = Packed(WithAlpha(kBlack, a_colour.a / 255.0f));
+                    for (const auto& g : glyphs) {
+                        quads.push_back({ texture, g.x0 + sx, g.y0 + sy, g.x1 + sx, g.y1 + sy, g.u0, g.v0, g.u1, g.v1, drop });
                     }
                 }
                 const std::uint32_t colour = Packed(a_colour);

@@ -21,6 +21,9 @@ namespace AhShitRim::People
         constexpr float      kCjChest = 100.0f;                // over CJ's feet, where Skyrim's player looks from
         constexpr int        kLogged = 30;                     // the first reactions are logged one by one
         constexpr int        kLoggedLines = 10;                // and the first lines about the magic
+        constexpr float      kLineLongest = 8.0f;              // a spoken line's subtitle goes after this at the latest
+        constexpr float      kLineUnvoiced = 3.0f;             // and one with no voice after this
+        constexpr double     kVoiceStarts = 0.5;               // a voice isn't playing yet this soon after SpeakSound
         constexpr RE::FormID kGunSpell = 0x00012FCD;           // Flames: the spell a gunshot is cast as, to Skyrim
 
         // Actor::SpeakSoundFunction (the console's SpeakSound): the actor says a voice file, lip sync and all, as
@@ -36,6 +39,9 @@ namespace AhShitRim::People
             RE::TESIdleForm*          cower = nullptr;
             RE::SpellItem*            gunSpell = nullptr;
             SpeakSoundFn              speak = nullptr;
+            RE::BSSoundHandle         voice;                 // the line being spoken, whose subtitle shows while it plays
+            bool                      voiceSubtitle = false;
+            double                    voiceAt = -1e9;
             bool                      enabled = true;
             bool                      haveShots = false;
             std::uint16_t             lastShots = 0;
@@ -214,20 +220,22 @@ namespace AhShitRim::People
             }
             const char*       voice = response->voice.c_str();
             const std::string text = response->text.c_str() ? response->text.c_str() : "";
-            float             length = 0.0f;
+            state.voice = RE::BSSoundHandle{};
             if (state.speak && voice && *voice) {
-                std::uint32_t handle[3] = { 0xFFFFFFFF, 0, 0 };
-                length = state.speak(a_speaker, voice, handle, 0, 0x32, 0, 0, 0, 0, false, 0, false, true, true);
+                state.speak(a_speaker, voice, reinterpret_cast<std::uint32_t*>(&state.voice), 0, 0x32, 0, 0, 0, 0, false, 0, false, true, true);
             }
             state.comments.Said(a_speaker->GetFormID(), a_now);
             state.lines++;
+            // As San Andreas's subtitles: there while the line plays, gone when it ends (Update drops it).
+            state.voiceSubtitle = state.voice.IsValid();
+            state.voiceAt = a_now;
             if (!text.empty()) {
-                SaHud::ShowSubtitle(text, std::clamp(std::isfinite(length) && length > 0.0f ? length + 1.0f : 3.5f, 2.0f, 8.0f));
+                SaHud::ShowSubtitle(text, state.voiceSubtitle ? kLineLongest : kLineUnvoiced);
             }
             if (state.loggedLines < kLoggedLines) {
                 state.loggedLines++;
-                SKSE::log::info("people: {} ({:08X}) says {:08X} '{}' from {} ({:.1f} s)", a_speaker->GetName(), a_speaker->GetFormID(), a_info->GetFormID(), text,
-                    voice && *voice ? voice : "no voice file", length);
+                SKSE::log::info("people: {} ({:08X}) says {:08X} '{}' from {}{}", a_speaker->GetName(), a_speaker->GetFormID(), a_info->GetFormID(), text,
+                    voice && *voice ? voice : "no voice file", state.voiceSubtitle ? "" : " (no sound)");
             }
             return true;
         }
@@ -389,6 +397,10 @@ namespace AhShitRim::People
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_quiet)
     {
         const double now = NowSeconds();
+        if (state.voiceSubtitle && now - state.voiceAt > kVoiceStarts && !state.voice.IsPlaying()) {
+            state.voiceSubtitle = false;
+            SaHud::ShowSubtitle({}, 0.0f);  // the line ended
+        }
         for (const auto& [id, doing] : state.scares.Expired(now)) {
             LetGo(id, doing);
         }

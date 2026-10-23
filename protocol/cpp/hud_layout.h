@@ -90,6 +90,9 @@ namespace AhShitRim::HudLayout
     inline constexpr Colour kGold{ 144, 98, 16, 255 };
     inline constexpr Colour kDarkGray{ 150, 150, 150, 255 };  // HUD_COLOUR_DARK_GRAY: the radio while retuning
     inline constexpr Colour kBlack{ 0, 0, 0, 255 };
+    // San Andreas's subtitles come out at about 225 (measured off its screenshots). font1's letters are about
+    // 87% white, so drawn in kLightGray they came out at 195; drawn white they come out where San Andreas's do.
+    inline constexpr Colour kSubtitleWhite{ 255, 255, 255, 255 };
 
     inline Colour WithAlpha(Colour a_colour, float a_alpha)
     {
@@ -140,6 +143,7 @@ namespace AhShitRim::HudLayout
         bool           fromBottom = false;  // y is the last line's bottom (PrintStringFromBottom)
         float          wrap = 0.0f;  // line width, 0 = none
         Colour         colour = kLightGray;
+        int            shadow = 0;  // CFont::SetDropShadowPosition: a black copy this many units down and right
     };
 
     inline constexpr TextStyle kClock{ HudFont::Style::Pricedown, 0.55f, 1.1f, false, 2, HudFont::Align::Right, 608.0f, 22.0f, Edge::End, Edge::Start, false, 0.0f, kLightGray };
@@ -154,8 +158,9 @@ namespace AhShitRim::HudLayout
     inline constexpr TextStyle kMissionPassed{ HudFont::Style::Pricedown, 1.0f, 1.6f, true, 2, HudFont::Align::Centre, 320.0f, 194.0f, Edge::Middle, Edge::Middle, true, 0.0f, kGold };
     // CHud::DrawHelpText: a dark box top left.
     inline constexpr TextStyle kHelp{ HudFont::Style::Subtitles, 0.52f, 1.1f, true, 0, HudFont::Align::Left, 36.0f, 24.0f, Edge::Start, Edge::Start, false, 192.0f, kLightGray };
-    // CHud::DrawSubtitles: bottom centre, lines going up.
-    inline constexpr TextStyle kSubtitles{ HudFont::Style::Subtitles, 0.58f, 1.2f, true, 1, HudFont::Align::Centre, 320.0f, 416.0f, Edge::Middle, Edge::End, true, 500.0f, kLightGray };
+    // CHud::DrawSubtitles: bottom centre, lines going up, with a drop shadow 2 units down and right and no
+    // outline (as San Andreas's screenshots show it).
+    inline constexpr TextStyle kSubtitles{ HudFont::Style::Subtitles, 0.58f, 1.2f, true, 0, HudFont::Align::Centre, 320.0f, 416.0f, Edge::Middle, Edge::End, true, 500.0f, kSubtitleWhite, 2 };
 
     // The radio station's name, top centre (CAERadioTrackManager::DisplayRadioStationName): gold once
     // tuned, dark grey while retuning (v7).
@@ -188,6 +193,11 @@ namespace AhShitRim::HudLayout
     // The outline's offset in pixels: San Andreas draws it a_style.edge pixels out on a 640-wide
     // screen.
     inline float OutlinePixels(const Screen& a_screen, const TextStyle& a_style) { return static_cast<float>(a_style.edge) * a_screen.unitX; }
+    // How far down and right a style's drop shadow sits, in pixels (San Andreas stretches it like everything else).
+    inline std::pair<float, float> ShadowPixels(const Screen& a_screen, const TextStyle& a_style)
+    {
+        return { static_cast<float>(a_style.shadow) * a_screen.unitX, static_cast<float>(a_style.shadow) * a_screen.unitY };
+    }
 
     // Where a_text in a_style goes: x as its alignment needs it, y its first line's top.
     struct Placed
