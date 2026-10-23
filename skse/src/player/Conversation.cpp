@@ -1,6 +1,7 @@
 #include "player/Conversation.h"
 
 #include "hud/SaHud.h"
+#include "player/Missions.h"
 
 namespace AhShitRim::Conversation
 {
@@ -107,6 +108,9 @@ namespace AhShitRim::Conversation
                 if (a_message.type == RE::UI_MESSAGE_TYPE::kUpdate && a_message.data) {
                     if (auto* data = skyrim_cast<RE::HUDData*>(a_message.data)) {
                         const auto type = data->type.get();
+                        if (Missions::OnHudMessage(*data)) {
+                            return RE::UI_MESSAGE_RESULTS::kHandled;  // a quest started or completed: San Andreas shows it
+                        }
                         if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
                             std::scoped_lock guard(hudSubtitle.lock);
                             if (hudSubtitle.count == 0) {

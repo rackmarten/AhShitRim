@@ -28,9 +28,15 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v23: sound cues")
+{
+    CHECK(kProtocolVersion == 23);
+    CHECK(kCueMissionPassed == 1);
+    CHECK(kCueIntroLine == 2);
+}
+
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -130,7 +136,7 @@ TEST_CASE("the v14 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 112);
+    CHECK(sizeof(InputState) == 116);
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
@@ -147,6 +153,8 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, carHeading) == 104);
     CHECK(offsetof(InputState, lineCount) == 108);
     CHECK(offsetof(InputState, lineKind) == 110);
+    CHECK(offsetof(InputState, cueCount) == 112);  // v22: in the slot's padding, the slot stays 144 bytes
+    CHECK(offsetof(InputState, cue) == 114);
     CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 248);
     CHECK(offsetof(PlayerState, skills) == 224);

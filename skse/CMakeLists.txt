@@ -20,7 +20,7 @@ add_commonlibsse_plugin(
     ${PROJECT_NAME}
     NAME "AhShitRim"
     AUTHOR "Marek Uncik"
-    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/VehicleFx.cpp src/player/Puffs.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp ../protocol/cpp/link.cpp
+    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Missions.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/VehicleFx.cpp src/player/Puffs.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp ../protocol/cpp/link.cpp
 )
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)

@@ -25,16 +25,17 @@
 namespace AhShitRim::Radio
 {
     // San Andreas's volumes from Skyrim's sliders (each 0..1): effects for CJ, his vehicles and
-    // weapons, music for the radio. Silent while Skyrim has the player.
+    // weapons, music for the radio. Silent while Skyrim has the player, but for a sound cue playing
+    // (v23: the mission passed tune, CJ's intro line).
     struct Volumes
     {
         float effects = 0.0f;
         float music = 0.0f;
     };
 
-    constexpr Volumes FromSliders(float a_master, float a_effects, float a_music, bool a_owned)
+    constexpr Volumes FromSliders(float a_master, float a_effects, float a_music, bool a_owned, bool a_cue = false)
     {
-        if (!a_owned) {
+        if (!a_owned && !a_cue) {
             return {};
         }
         const float master = std::clamp(a_master, 0.0f, 1.0f);

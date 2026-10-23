@@ -98,6 +98,7 @@ namespace AhShitRim::SaHud
             Timed            missionTitle{ {}, 0.0f, 0.0f, 0.25f, 1.0f };
             Timed            big;
             const TextStyle* bigStyle = &kBigMessage;
+            std::string      bigWhite;  // a white line under it ("respect +"), "" for none
             bool             bigUnderFade = false;  // "wasted" and "busted" go black with the picture
             Timed            help;
             Timed            prompt{ {}, 0.0f, 0.0f, 0.15f, 0.25f };  // what E activates, in the help box while no help shows
@@ -352,15 +353,19 @@ namespace AhShitRim::SaHud
                 a_frame.Text(kRadioName, state.radio.text, WithAlpha(state.radioRetuning ? kDarkGray : kRadioName.colour, alpha));
             }
             const float big = state.big.Alpha();
-            if (big > 0.0f && state.bigUnderFade) {
+            const auto  drawBig = [&]() {
                 a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, big));
+                a_frame.Text(*state.bigStyle, state.bigWhite, WithAlpha(kLightGray, big));
+            };
+            if (big > 0.0f && state.bigUnderFade) {
+                drawBig();
             }
             if (state.fade > 0.0f) {
                 a_frame.Box({ 0.0f, 0.0f, a_frame.screen.width, a_frame.screen.height }, WithAlpha(kBlack, state.fade));
             }
             // "mission passed!" shows over the fade; "wasted" and "busted" fade to black with the screen, as in San Andreas.
             if (big > 0.0f && !state.bigUnderFade) {
-                a_frame.Text(*state.bigStyle, state.big.text, WithAlpha(state.bigStyle->colour, big));
+                drawBig();
             }
         }
 
@@ -573,7 +578,10 @@ namespace AhShitRim::SaHud
     {
         state.bigStyle = a_message == BigMessage::MissionPassed ? &kMissionPassed : &kBigMessage;
         state.bigUnderFade = a_message != BigMessage::MissionPassed;
-        state.big.Show(a_message == BigMessage::Wasted ? "Wasted" : a_message == BigMessage::Busted ? "Busted" : "mission passed!", a_seconds);  // as San Andreas's GXT has them
+        // As San Andreas's GXT has them; M_PASSR's "~w~respect +" goes on a line of its own under the gold one, in white (each
+        // drawn with an empty line for the other, so both lay out as the two lines San Andreas prints from the bottom).
+        state.big.Show(a_message == BigMessage::Wasted ? "Wasted" : a_message == BigMessage::Busted ? "Busted" : "mission passed!~n~", a_seconds);
+        state.bigWhite = a_message == BigMessage::MissionPassed ? "~n~respect +" : "";
         state.big.fadeIn = 0.65f;  // San Andreas brings "wasted" up over about two thirds of a second
     }
 

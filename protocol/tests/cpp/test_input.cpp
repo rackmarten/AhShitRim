@@ -271,6 +271,21 @@ TEST_CASE("each line asked of CJ counts, with the kind of the latest")
     CHECK(s.lineKind == 7);
 }
 
+TEST_CASE("sound cues count up with the last cue, also while Skyrim has the player")
+{
+    Builder b;
+    CHECK(b.Build(1, false, true).cueCount == 0);
+    b.AddCue(AhShitRim::Protocol::kCueIntroLine);
+    auto s = b.Build(2, false, true);
+    CHECK(s.cueCount == 1);
+    CHECK(s.cue == AhShitRim::Protocol::kCueIntroLine);
+    CHECK((s.flags & AhShitRim::Protocol::kInputOwnsPlayer) == 0);
+    b.AddCue(AhShitRim::Protocol::kCueMissionPassed);
+    s = b.Build(3, true, false);  // a menu has the input: still sent
+    CHECK(s.cueCount == 2);
+    CHECK(s.cue == AhShitRim::Protocol::kCueMissionPassed);
+}
+
 TEST_CASE("the ini picks the classic layout by name, anything else is modern")
 {
     CHECK(ParseKeyLayout("Classic") == KeyLayout::Classic);

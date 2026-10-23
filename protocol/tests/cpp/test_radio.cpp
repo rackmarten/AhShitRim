@@ -22,6 +22,15 @@ TEST_CASE("San Andreas's volumes follow Skyrim's sliders, silent while Skyrim ha
     CHECK(v.music == 0.0f);
 }
 
+TEST_CASE("a sound cue is heard while Skyrim has the player")
+{
+    auto v = FromSliders(0.5f, 0.8f, 0.4f, false, true);
+    CHECK(v.effects == doctest::Approx(0.4f));
+    CHECK(v.music == doctest::Approx(0.2f));
+    v = FromSliders(0.5f, 0.8f, 0.4f, true, true);  // and as ever while CJ has it
+    CHECK(v.effects == doctest::Approx(0.4f));
+}
+
 TEST_CASE("exploration tracks follow the time of day")
 {
     CHECK(ExploreFor(6.0f).data() == kExploreMorning.data());
