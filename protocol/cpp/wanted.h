@@ -106,12 +106,16 @@ namespace AhShitRim::Wanted
     inline constexpr std::uint32_t kWizardImperial = 0x000872A2;    // LvlGuardImperialWizard, a guard battlemage
     inline constexpr std::uint32_t kWizardSons = 0x000872A3;        // LvlGuardSonsWizard
     inline constexpr std::uint32_t kDragon = 0x0005EACE;            // lvlDragon, a levelled dragon
+    inline constexpr std::uint32_t kGiant = 0x0003053F;             // LvlGiant
+    inline constexpr std::uint32_t kMammoth = 0x00023AB4;           // EncMammothWild
+    inline constexpr std::uint32_t kTamriel = 0x0000003C;           // Skyrim's open world (the cities are worldspaces of their own)
 
     // ---- Stars ----
 
-    // The stars come from heat, as San Andreas's from its chaos points (CWanted::UpdateWantedLevel's thresholds): crimes
-    // add to it, and it falls a star at a time while CJ is out of sight. The bounty is only Skyrim's.
-    inline constexpr std::array<float, kMaxStars> kHeatStars = { 50.0f, 180.0f, 550.0f, 1200.0f, 2400.0f, 4600.0f };
+    // The stars come from heat, as San Andreas's from its chaos points (CWanted::UpdateWantedLevel's thresholds, but the
+    // sixth star as far past the fifth as the fifth is past the fourth, 3600 rather than 4600): crimes add to it, and it
+    // falls a star at a time while CJ is out of sight. The bounty is only Skyrim's.
+    inline constexpr std::array<float, kMaxStars> kHeatStars = { 50.0f, 180.0f, 550.0f, 1200.0f, 2400.0f, 3600.0f };
 
     constexpr int StarsForHeat(float a_heat)
     {
@@ -127,7 +131,7 @@ namespace AhShitRim::Wanted
 
     // What a crime adds, by the bounty Skyrim put on it (its defaults: trespass 5, pickpocketing 25, theft half the value,
     // an assault 40, a murder 1000). An assault is a star on its own; killing a guard (his assault, then his murder) is
-    // 160: two kills are two stars, four three, eight four, fifteen five and twenty-nine six. Petty crimes raise a star
+    // 160: two kills are two stars, four three, eight four, fifteen five and twenty-three six. Petty crimes raise a star
     // at most (Pursuit::Crime).
     constexpr float HeatForCrime(int a_added)
     {
@@ -273,7 +277,8 @@ namespace AhShitRim::Wanted
     }
 
     // What the director sends: copies of the hold's guards, on foot or on a horse, their captain, a guard wizard (the
-    // hold's battlemage), the hold's soldiers, and at 6 stars a dragon (San Andreas's helicopter).
+    // hold's battlemage), the hold's soldiers, from 5 stars a dragon (San Andreas's helicopter: CJ's guns are made for
+    // it), and at 6 giants and a mammoth (its tanks: they run him down on foot).
     enum class Unit : std::uint8_t
     {
         Guard,
@@ -282,8 +287,13 @@ namespace AhShitRim::Wanted
         Wizard,
         Soldier,
         Dragon,
+        Giant,
+        Mammoth,
     };
-    inline constexpr std::size_t kUnitCount = 6;
+    inline constexpr std::size_t kUnitCount = 8;
+
+    // Dragons, giants and mammoths only come in the open world, not into a city.
+    constexpr bool OpenWorldOnly(Unit a_unit) { return a_unit == Unit::Dragon || a_unit == Unit::Giant || a_unit == Unit::Mammoth; }
 
     constexpr const char* NameOf(Unit a_unit)
     {
@@ -294,6 +304,8 @@ namespace AhShitRim::Wanted
         case Unit::Wizard: return "wizard";
         case Unit::Soldier: return "soldier";
         case Unit::Dragon: return "dragon";
+        case Unit::Giant: return "giant";
+        case Unit::Mammoth: return "mammoth";
         default: return "?";
         }
     }
@@ -311,13 +323,13 @@ namespace AhShitRim::Wanted
 
     constexpr Force ForceFor(int a_stars)
     {
-        //                                       guard rider captain wizard soldier dragon
+        //                               guard rider captain wizard soldier dragon giant mammoth
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 2: return { 5, 8.0f, { 0, 0, 0, 0, 0, 0 } };
-        case 3: return { 7, 6.0f, { 0, 2, 0, 0, 0, 0 } };
-        case 4: return { 9, 5.0f, { 0, 2, 1, 1, 0, 0 } };
-        case 5: return { 11, 4.0f, { 0, 3, 1, 2, 3, 0 } };
-        case 6: return { kForceCap, 3.0f, { 0, 3, 1, 2, 4, 1 } };
+        case 2: return { 5, 8.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+        case 3: return { 7, 6.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
+        case 4: return { 9, 5.0f, { 0, 2, 1, 1, 0, 0, 0, 0 } };
+        case 5: return { 11, 4.0f, { 0, 3, 1, 2, 3, 1, 0, 0 } };
+        case 6: return { kForceCap, 3.0f, { 0, 2, 1, 2, 2, 1, 2, 1 } };
         default: return {};
         }
     }
@@ -357,14 +369,15 @@ namespace AhShitRim::Wanted
         return total;
     }
 
-    // The kind the next spawn is: the dragon first, then riders, the captain, wizards and soldiers up to their counts,
-    // plain guards for the rest. Guard too when the force is full (the caller doesn't spawn then).
-    constexpr Unit NextUnit(const Force& a_force, const Counts& a_counts)
+    // The kind the next spawn is: the dragon first, then giants and the mammoth, riders, the captain, wizards and soldiers
+    // up to their counts, plain guards for the rest. Out of the open world (a city), no dragon, giants or mammoth. Guard
+    // too when the force is full (the caller doesn't spawn then).
+    constexpr Unit NextUnit(const Force& a_force, const Counts& a_counts, bool a_openWorld = true)
     {
-        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Rider, Unit::Captain, Unit::Wizard, Unit::Soldier };
+        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Giant, Unit::Mammoth, Unit::Rider, Unit::Captain, Unit::Wizard, Unit::Soldier };
         for (const Unit unit : kOrder) {
             const auto i = static_cast<std::size_t>(unit);
-            if (a_counts[i] < a_force.most[i]) {
+            if ((a_openWorld || !OpenWorldOnly(unit)) && a_counts[i] < a_force.most[i]) {
                 return unit;
             }
         }

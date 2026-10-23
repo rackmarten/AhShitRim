@@ -43,7 +43,9 @@ TEST_CASE("stars for heat: San Andreas's thresholds")
     CHECK(StarsForHeat(550.0f) == 3);
     CHECK(StarsForHeat(1200.0f) == 4);
     CHECK(StarsForHeat(2400.0f) == 5);
-    CHECK(StarsForHeat(4600.0f) == 6);
+    CHECK(StarsForHeat(3599.0f) == 5);
+    CHECK(StarsForHeat(3600.0f) == 6);
+    CHECK(HeatFor(6) - HeatFor(5) == HeatFor(5) - HeatFor(4));  // the sixth star takes as much as the fifth
     CHECK(StarsForHeat(1.0e6f) == kMaxStars);
     for (int stars = 0; stars <= kMaxStars; stars++) {
         CHECK(StarsForHeat(HeatFor(stars)) == stars);
@@ -70,8 +72,8 @@ TEST_CASE("one assault is a star; killing guards climbs slowly, as in San Andrea
     CHECK(kills(2) == 3);  // four
     CHECK(kills(4) == 4);  // eight
     CHECK(kills(7) == 5);  // fifteen
-    CHECK(kills(13) == 5); // twenty-eight
-    CHECK(kills(1) == 6);  // twenty-nine
+    CHECK(kills(7) == 5);  // twenty-two
+    CHECK(kills(1) == 6);  // twenty-three
 }
 
 TEST_CASE("AEZAKMI: no stars from any crime")
@@ -216,8 +218,11 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
     CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Rider)] == 0);
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Wizard)] > 0);  // a guard wizard from 4
     CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Soldier)] > 0); // soldiers from 5
-    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
-    CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Dragon)] == 1); // the dragon at 6
+    CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Dragon)] == 1); // a dragon from 5
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Giant)] == 0);
+    CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Giant)] == 2);  // giants and a mammoth at 6
+    CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Mammoth)] == 1);
 }
 
 TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
@@ -236,22 +241,30 @@ TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
     CHECK(GiveBack(std::numeric_limits<float>::quiet_NaN(), 0.5f) == 0.0f);
 }
 
-TEST_CASE("the next unit: the dragon, riders, the captain, wizards, soldiers, then guards")
+TEST_CASE("the next unit: the dragon, giants, the mammoth, riders, the captain, wizards, soldiers, then guards")
 {
     const auto force = ForceFor(6);
     Counts     counts{};
     CHECK(NextUnit(force, counts) == Unit::Dragon);
+    CHECK(NextUnit(force, counts, false) == Unit::Rider);  // in a city: no dragon, giants or mammoth
     counts[static_cast<std::size_t>(Unit::Dragon)] = 1;
+    CHECK(NextUnit(force, counts) == Unit::Giant);
+    counts[static_cast<std::size_t>(Unit::Giant)] = 2;
+    CHECK(NextUnit(force, counts) == Unit::Mammoth);
+    counts[static_cast<std::size_t>(Unit::Mammoth)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Rider);
-    counts[static_cast<std::size_t>(Unit::Rider)] = 3;
+    counts[static_cast<std::size_t>(Unit::Rider)] = 2;
     CHECK(NextUnit(force, counts) == Unit::Captain);
     counts[static_cast<std::size_t>(Unit::Captain)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Wizard);
     counts[static_cast<std::size_t>(Unit::Wizard)] = 2;
     CHECK(NextUnit(force, counts) == Unit::Soldier);
-    counts[static_cast<std::size_t>(Unit::Soldier)] = 4;
+    counts[static_cast<std::size_t>(Unit::Soldier)] = 2;
     CHECK(NextUnit(force, counts) == Unit::Guard);
     CHECK(TotalOf(counts) == 11);
+    CHECK(OpenWorldOnly(Unit::Mammoth));
+    CHECK_FALSE(OpenWorldOnly(Unit::Soldier));
+    CHECK(std::string(NameOf(Unit::Giant)) == "giant");
     CHECK(NextUnit(ForceFor(2), Counts{}) == Unit::Guard);
     CHECK(std::string(NameOf(Unit::Wizard)) == "wizard");
 }

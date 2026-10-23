@@ -398,6 +398,8 @@ namespace AhShitRim::Police
             case Wanted::Unit::Wizard: id = imperial ? Wanted::kWizardImperial : Wanted::kWizardSons; break;
             case Wanted::Unit::Soldier: id = imperial ? Wanted::kSoldiersImperial : Wanted::kSoldiersSons; break;
             case Wanted::Unit::Dragon: id = Wanted::kDragon; break;
+            case Wanted::Unit::Giant: id = Wanted::kGiant; break;
+            case Wanted::Unit::Mammoth: id = Wanted::kMammoth; break;
             default: return GuardBase(a_player);
             }
             return RE::TESForm::LookupByID<RE::TESBoundObject>(id);
@@ -482,7 +484,7 @@ namespace AhShitRim::Police
                 return Place(a_player, a_base, RE::NiPoint3(spot.x, spot.y, feet.z + 1500.0f), false, true);
             }
             Spot barracks;
-            if (a_unit != Wanted::Unit::Rider && state.spawnTries % 2 == 0 && BarracksSpot(*state.hold, barracks) && barracks.world == a_player->GetWorldspace() &&
+            if (a_unit != Wanted::Unit::Rider && !Wanted::OpenWorldOnly(a_unit) && state.spawnTries % 2 == 0 && BarracksSpot(*state.hold, barracks) && barracks.world == a_player->GetWorldspace() &&
                 barracks.position.GetDistance(feet) < kBarracksRange &&
                 !Wanted::InView(Wanted::CameraOf(Flat(feet), heading), heading, Flat(barracks.position))) {
                 state.spawnTries++;
@@ -580,8 +582,10 @@ namespace AhShitRim::Police
                 counts[static_cast<std::size_t>(s.unit)]++;
             }
             if (state.director.Tick(a_delta, stars, Wanted::TotalOf(counts))) {
-                const auto force = Wanted::ForceFor(stars);
-                if (!Spawn(a_player, Wanted::NextUnit(force, counts))) {
+                const auto* world = a_player->GetWorldspace();
+                const bool  open = world && world->GetFormID() == Wanted::kTamriel;
+                const auto  force = Wanted::ForceFor(stars);
+                if (!Spawn(a_player, Wanted::NextUnit(force, counts, open))) {
                     state.director.Retry();
                 }
             }
