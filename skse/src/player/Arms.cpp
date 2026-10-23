@@ -8,6 +8,7 @@
 #include "hud/SaHud.h"
 #include "link/LinkService.h"
 #include "pose.h"
+#include "shop.h"
 #include "weapons.h"
 
 namespace AhShitRim::Arms
@@ -31,6 +32,7 @@ namespace AhShitRim::Arms
             std::uint16_t      lastShots = 0;
             bool               haveShots = false;
             unsigned           nextHand = 0;
+            std::vector<std::pair<std::uint8_t, std::uint32_t>> gifts;  // weapons and rounds bought or earned, for San Andreas once it shows the loadout
         } state;
 
         Protocol::WeaponCommand SetCommand(const Cosave::Arms& a_arms)
@@ -106,6 +108,18 @@ namespace AhShitRim::Arms
                 SKSE::log::info("arms: CJ's weapons sent to San Andreas, holding slot {}:{}", state.known.slot, Describe(state.known));
             }
         }
+        // Bought or earned: given on top of what San Andreas has, once it has the loadout it was sent.
+        while (up && !state.pending && !state.settling && !state.gifts.empty()) {
+            Protocol::WeaponCommand command{};
+            command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon);
+            command.argument = state.gifts.front().first;
+            command.entries[0].ammo = state.gifts.front().second;
+            if (!Send(command)) {
+                break;
+            }
+            SKSE::log::info("arms: weapon {} with {} rounds sent to San Andreas", command.argument, command.entries[0].ammo);
+            state.gifts.erase(state.gifts.begin());
+        }
         if (state.settling && posed && Same(pose, state.known)) {
             state.settling = false;
         } else if (state.settling && std::chrono::steady_clock::now() > state.settleUntil) {
@@ -131,6 +145,24 @@ namespace AhShitRim::Arms
     }
 
     bool DebugKeyEnabled() { return state.debugKey; }
+
+    void Give(std::uint8_t a_type, std::uint32_t a_rounds)
+    {
+        if (!Weapons::Carried(a_type)) {
+            return;
+        }
+        if (LinkService::Get().IsUp()) {
+            state.gifts.emplace_back(a_type, a_rounds);
+            return;
+        }
+        // No San Andreas to give it to: into the loadout the save holds and sends it once the link is up.
+        Shop::GiveTo(state.known.entries, a_type, a_rounds);
+        state.pending = true;
+        state.settling = false;
+        SKSE::log::info("arms: weapon {} with {} rounds kept for San Andreas, which isn't there:{}", a_type, a_rounds, Describe(state.known));
+    }
+
+    const Weapons::Loadout& Loadout() { return state.known.entries; }
 
     void DebugKey()
     {
@@ -197,6 +229,7 @@ namespace AhShitRim::Arms
     void Restore(const Cosave::Arms& a_arms)
     {
         state.known = a_arms;
+        state.gifts.clear();  // the game they were for is gone
         state.pending = true;
         state.settling = false;
         state.haveLevels = false;
@@ -206,6 +239,7 @@ namespace AhShitRim::Arms
     void Revert()
     {
         state.known = {};
+        state.gifts.clear();
         state.pending = true;  // a new game or a save without weapons: San Andreas starts over too
         state.settling = false;
         state.haveLevels = false;

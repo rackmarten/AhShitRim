@@ -5,6 +5,7 @@
 #include "hud_layout.h"
 #include "img.h"
 #include "link/LinkService.h"
+#include "loot.h"
 #include "txd.h"
 #include "explosives.h"
 #include "weapons.h"
@@ -120,6 +121,10 @@ namespace AhShitRim::SaHud
             RE::NiPoint3     markAt;
             bool             markLocked = false;
             std::array<std::uint32_t, 64> icons{};  // by weapon type
+            Loot::Counter    money;  // the money shown, counting towards the player's gold
+            float            delta = 0.0f;
+            std::string      menuTitle;
+            std::vector<MenuRow> menuRows;  // set again every frame (ShowMenu)
         } state;
 
         std::vector<std::uint8_t> ReadFile(const std::filesystem::path& a_path)
@@ -290,13 +295,29 @@ namespace AhShitRim::SaHud
                 a_frame.Bar(HealthBar(a_frame.screen), fraction, kRed);
             }
 
-            const std::int64_t gold = a_player->GetGoldAmount();
+            const std::int64_t gold = state.money.Tick(a_player->GetGoldAmount(), state.delta, true);
             a_frame.Text(kMoney, MoneyText(gold), MoneyColour(gold));
 
             if (state.wanted > 0) {
                 for (int i = 0; i < kStarCount; i++) {
                     a_frame.Text(kWantedStar, "]", i < state.wanted ? kGold : kBlack, StarRight(a_frame.screen, i));
                 }
+            }
+        }
+
+        // San Andreas's standard menu (CMenuSystem::DisplayStandardMenu): Ammu-Nation's.
+        void DrawMenu(Frame& a_frame)
+        {
+            if (state.menuRows.empty()) {
+                return;
+            }
+            a_frame.Box(MenuWindow(a_frame.screen, state.menuRows.size()), kMenuWindow);
+            a_frame.Text(kMenuTitle, state.menuTitle, kMenuTitle.colour);
+            for (std::size_t i = 0; i < state.menuRows.size(); i++) {
+                const auto& row = state.menuRows[i];
+                const auto  colour = MenuRowColour(row.highlighted, row.available, row.owned);
+                a_frame.Text(HudLayout::MenuRow(i, false), row.name, colour);
+                a_frame.Text(HudLayout::MenuRow(i, true), row.price, colour);
             }
         }
 
@@ -478,6 +499,7 @@ namespace AhShitRim::SaHud
             return;
         }
         state.frame++;
+        state.delta = a_delta;
         for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.prompt, &state.subtitle, &state.radio }) {
             timed->Tick(a_delta);
         }
@@ -501,8 +523,12 @@ namespace AhShitRim::SaHud
             DrawHud(frame, player);
             DrawScope(frame);
             DrawMark(frame);
+            DrawMenu(frame);
+        } else if (player) {
+            state.money.Tick(player->GetGoldAmount(), a_delta, false);  // not shown: it comes back as it is
         }
         state.mark = false;
+        state.menuRows.clear();
         DrawText(frame);
         Overlay::Submit(std::move(frame.quads));
     }
@@ -575,6 +601,12 @@ namespace AhShitRim::SaHud
             state.radio.age = state.radio.fadeIn;  // already up: stays at full, only the colour changes
         }
         state.radioRetuning = a_retuning;
+    }
+
+    void ShowMenu(std::string a_title, std::vector<MenuRow> a_rows)
+    {
+        state.menuTitle = std::move(a_title);
+        state.menuRows = std::move(a_rows);
     }
 
     void FadeTo(float a_black, float a_seconds)

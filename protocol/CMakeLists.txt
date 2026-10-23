@@ -62,6 +62,9 @@ add_executable(protocol_tests
     tests/cpp/test_reactions.cpp
     tests/cpp/test_cheats.cpp
     tests/cpp/test_mercy.cpp
+    tests/cpp/test_shop.cpp
+    tests/cpp/test_loot.cpp
+    tests/cpp/test_rewards.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
