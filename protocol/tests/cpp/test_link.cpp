@@ -474,6 +474,70 @@ TEST_CASE("each hand has a weapon slot of its own, apart from the body and the v
     CHECK_FALSE(p.skyrim->ReadVehicle(1, back));
 }
 
+TEST_CASE("the proxy slot carries Skyrim's actors to San Andreas, and a vehicle slot its seats back")
+{
+    Pair p;
+    p.Tick(3);
+    ProxyState proxies{};
+    proxies.frame = 40;
+    proxies.handover = 2;
+    proxies.count = 2;
+    proxies.proxies[1].id = 0x0001A2B3;
+    proxies.proxies[1].flags = kProxyHeavy;
+    proxies.proxies[1].b[2] = 300.0f;
+    proxies.proxies[1].mass = 6000.0f;
+    p.skyrim->WriteProxies(proxies);
+    p.sa->WriteProxies(proxies);  // San Andreas never writes it, but nothing stops it either: what Skyrim wrote last is read
+
+    ProxyState got{};
+    REQUIRE(p.sa->ReadProxies(got));
+    CHECK(got.count == 2);
+    CHECK(got.proxies[1].id == 0x0001A2B3);
+    CHECK(got.proxies[1].b[2] == 300.0f);
+    CHECK(got.proxies[1].mass == 6000.0f);
+
+    BodyState car{};
+    car.flags = kBodyValid | kBodyDriven;
+    car.boneCount = 17;
+    car.seatCount = 3;
+    car.seats[2].translation[0] = 35.0f;
+    p.sa->WriteVehicle(0, car);
+    BodyState back{};
+    REQUIRE(p.skyrim->ReadVehicle(0, back));
+    CHECK(back.seatCount == 3);
+    CHECK(back.seats[2].translation[0] == 35.0f);
+}
+
+TEST_CASE("an impact goes to Skyrim and arrives whole")
+{
+    Pair p;
+    p.Tick(3);
+    ImpactEvent impact{};
+    impact.handover = 4;
+    impact.id = 0x000A1B2C;
+    impact.speed = 18.5f;
+    impact.flags = kImpactBike;
+    impact.vehicleModel = 468;
+    impact.push[1] = 900.0f;
+    impact.damage = 220.0f;
+    REQUIRE(p.sa->Send(MessageType::Impact, &impact, sizeof(impact)));
+
+    int seen = 0;
+    p.skyrim->Receive([&](MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+        REQUIRE(a_type == MessageType::Impact);
+        REQUIRE(a_size == sizeof(ImpactEvent));
+        ImpactEvent got{};
+        std::memcpy(&got, a_data, sizeof(got));
+        CHECK(got.id == 0x000A1B2C);
+        CHECK(got.speed == 18.5f);
+        CHECK(got.vehicleModel == 468);
+        CHECK(got.push[1] == 900.0f);
+        CHECK(got.damage == 220.0f);
+        seen++;
+    });
+    CHECK(seen == 1);
+}
+
 TEST_CASE("a weapon command goes to San Andreas and arrives whole")
 {
     Pair p;

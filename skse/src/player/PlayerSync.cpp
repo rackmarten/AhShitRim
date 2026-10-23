@@ -25,7 +25,9 @@
 #include "player/Respawns.h"
 #include "player/Looting.h"
 #include "player/Conversation.h"
+#include "player/CarHits.h"
 #include "player/Projectiles.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
@@ -431,7 +433,10 @@ namespace AhShitRim::PlayerSync
         // smoke and fire (VehicleFx). A slot whose vehicle is gone reads with no flags and draws nothing.
         void DrawVehicles(RE::PlayerCharacter* a_player, float a_delta)
         {
-            const double now = NowMs();
+            const double        now = NowMs();
+            Protocol::BodyState driven{};
+            RE::NiPoint3        drivenFeet;
+            bool                anyDriven = false;
             for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
                 // A read that stayed torn keeps drawing from what came before.
                 Protocol::BodyState vehicle{};
@@ -450,8 +455,15 @@ namespace AhShitRim::PlayerSync
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
+                    if ((pose.flags & Protocol::kBodyDriven) != 0) {
+                        driven = pose;
+                        drivenFeet = feet;
+                        anyDriven = true;
+                    }
                 }
             }
+            // CJ's followers ride in his (v23), smoothed with it.
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
         }
 
         // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed.
@@ -492,6 +504,8 @@ namespace AhShitRim::PlayerSync
             Projectiles::Clear();
             VehicleFx::Clear();
             People::Clear();
+            CarHits::Clear();
+            Riders::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -569,6 +583,8 @@ namespace AhShitRim::PlayerSync
             state.gear.Reset();
             VehicleFx::Clear();
             People::Clear();
+            CarHits::Clear();
+            Riders::Clear();
             Activation::Clear();
             AmmuNation::Close();
             state.reanchoring = true;
@@ -842,6 +858,7 @@ namespace AhShitRim::PlayerSync
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
@@ -894,6 +911,8 @@ namespace AhShitRim::PlayerSync
                         Shots::Queue(a_data, a_size);
                     } else if (a_type == Protocol::MessageType::Projectile && state.owned) {
                         Projectiles::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::Impact && state.owned) {
+                        CarHits::Queue(a_data, a_size);
                     }
                 });
                 if (state.owned && a_delta > 0.0f) {
@@ -1200,6 +1219,7 @@ namespace AhShitRim::PlayerSync
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
+        Riders::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

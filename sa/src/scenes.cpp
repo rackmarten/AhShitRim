@@ -40,6 +40,7 @@ namespace AhShitRim::Scenes
         constexpr unsigned short kCrashGeneric = 68;  // CTX_GLOBAL_CRASH_GENERIC; CJ's CTX_PLY_CRASH_GENERIC, his "oh shit" lines
         constexpr unsigned short kChased = 44;        // CTX_GLOBAL_CHASED: CJ with the cops after him (v22, Skyrim's wanted level)
         constexpr unsigned short kArrested = 15;      // CTX_GLOBAL_ARRESTED: what CGameLogic has him say when busted
+        constexpr unsigned short kCrashCar = 67;      // CTX_GLOBAL_CRASH_CAR; CJ's CTX_PLY_CRASH_CAR, what he says crashing a car
         constexpr std::uintptr_t kSpeechNextPlayTime = 0xB61670;  // gta-reversed: gGlobalSpeechContextNextPlayTime, uint32 ms per context
         constexpr std::uintptr_t kStopCurrentSpeech = 0x4E3FB0;   // CAEPedSpeechAudioEntity::StopCurrentSpeech
         constexpr std::uintptr_t kCallGetSoundAndBankIds = 0x4E67E2;  // AddSayEvent's call of CAEPedSpeechAudioEntity::GetSoundAndBankIDs (0x4E5920)
@@ -114,6 +115,7 @@ namespace AhShitRim::Scenes
         }
         std::array<VoiceLines::Deck, Dialogue::kCategoryCount> g_dialogueLines{ DialogueDeck(0), DialogueDeck(1), DialogueDeck(2), DialogueDeck(3),
             DialogueDeck(4), DialogueDeck(5), DialogueDeck(6), DialogueDeck(7) };
+        VoiceLines::Deck   g_crashLines;  // no picks: San Andreas's own CRASH_CAR line for his mood
         const CAEPedSpeechAudioEntity* g_forcedFor = nullptr;
         VoiceLines::Line               g_forced{};
 
@@ -305,4 +307,11 @@ namespace AhShitRim::Scenes
     }
 
     bool Following() { return state.following; }
+
+    void SayCrash(CPlayerPed* a_ped)
+    {
+        if (a_ped && !state.following) {
+            SayNow(a_ped, kCrashCar, g_crashLines, "hit someone with his vehicle");
+        }
+    }
 }

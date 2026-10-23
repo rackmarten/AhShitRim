@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 22;
+    inline constexpr std::uint32_t kProtocolVersion = 23;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -49,6 +49,12 @@ namespace AhShitRim::Protocol
     // order, each 0 to 1000 (poor, gangster, hitman).
     inline constexpr std::uint32_t kWeaponSkillCount = 11;
 
+    // Skyrim's actors near CJ's vehicle that San Andreas tests it against at once (v23): the nearest ones.
+    inline constexpr std::uint32_t kProxyMax = 16;
+
+    // A vehicle slot's passenger seats (v23): a car's front passenger seat and its two back seats, a bike's pillion.
+    inline constexpr std::uint32_t kSeatMax = 3;
+
     // Section layout (byte offsets from the start of the mapping): the header, the latest-value
     // slots, the ring from Skyrim to San Andreas, then the ring back.
     inline constexpr std::uint32_t kOffsetHeader = 0;
@@ -56,14 +62,15 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kOffsetPlayerSlot = 272;              // v9: after the larger input slot
     inline constexpr std::uint32_t kOffsetAudioSlot = 576;               // v7; v12, v13: after the larger player slot
     inline constexpr std::uint32_t kOffsetBodySlot = 640;                // v5
-    inline constexpr std::uint32_t kOffsetVehicleSlots = 2560;           // v6: kVehicleMax BodySlots
-    inline constexpr std::uint32_t kOffsetWeaponSlots = 10240;           // v12: kWeaponHandMax BodySlots
-    inline constexpr std::uint32_t kOffsetGearSlot = 14080;              // v19: one BodySlot, the jetpack or the parachute on CJ
-    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 16000;      // RingHeader, data follows
+    inline constexpr std::uint32_t kOffsetVehicleSlots = 2688;           // v6: kVehicleMax BodySlots (v23: after the larger body slot)
+    inline constexpr std::uint32_t kOffsetWeaponSlots = 10880;           // v12: kWeaponHandMax BodySlots
+    inline constexpr std::uint32_t kOffsetGearSlot = 14976;              // v19: one BodySlot, the jetpack or the parachute on CJ
+    inline constexpr std::uint32_t kOffsetProxySlot = 17024;             // v23: Skyrim's actors near CJ's vehicle
+    inline constexpr std::uint32_t kOffsetRingToSanAndreas = 18112;      // RingHeader, data follows
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
-    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4210368;        // v5
+    inline constexpr std::uint32_t kOffsetRingToSkyrim = 4212480;        // v5
     inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's, the vehicles', the weapons' and the gear's models, the shots
-    inline constexpr std::uint32_t kMappingSize = 8404736;               // 4210368 + 64 + 4 MiB
+    inline constexpr std::uint32_t kMappingSize = 8406848;               // 4212480 + 64 + 4 MiB
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -304,6 +311,9 @@ namespace AhShitRim::Protocol
         float         engine[3];         // v18, vehicle slots: where its engine is (the engine dummy), relative to feet; zero elsewhere
         std::uint64_t hiddenParts;       // v19: bit i set: bone i isn't drawn (a vehicle's damaged or whole version of a part, a helicopter's rotor
                                          // standing or spinning); bones past 63 are always drawn
+        std::uint32_t seatCount;         // v23, vehicle slots: its passenger seats in seats (San Andreas's m_nMaxPassengers, at most kSeatMax); 0 elsewhere
+        BodyBone      seats[kSeatMax];   // v23: each passenger seat (San Andreas's passenger order: the front one or a bike's pillion, back left,
+                                         // back right) relative to feet, as the bones are: where a seated passenger's hips go, turned as the vehicle
     };
 
     struct BodySlot
@@ -311,7 +321,44 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[20];
+        std::uint8_t  pad[60];  // v23: 2048 bytes, keeping the later slots on 64-byte boundaries
+    };
+
+    inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v23): a giant, mammoth or dragon, which stops a car like a wall
+    inline constexpr std::uint8_t kProxyPerson = 0x2;  // a person (a humanoid race)
+
+    // One of Skyrim's actors near CJ's vehicle (v23): a capsule San Andreas tests the vehicle against. Its
+    // segment ends and velocity are Skyrim's, relative to InputState.anchor.
+    struct ActorProxy
+    {
+        std::uint32_t id;           // the actor's form id, which an ImpactEvent names
+        std::uint8_t  flags;        // kProxy*
+        std::uint8_t  reserved0[3];
+        float         a[3];         // the capsule's segment, Skyrim units relative to the anchor
+        float         b[3];
+        float         radius;       // Skyrim units
+        float         mass;         // kilograms
+        float         velocity[3];  // Skyrim units a second
+        std::uint32_t reserved1[3];
+    };
+
+    // Skyrim -> San Andreas, every Skyrim frame while CJ is in a vehicle (v23): the nearest actors around it,
+    // count 0 otherwise.
+    struct ProxyState
+    {
+        std::uint32_t frame;     // Skyrim frame counter
+        std::uint32_t handover;  // InputState.handover the positions belong to
+        std::uint32_t count;     // proxies in use
+        std::uint32_t reserved;
+        ActorProxy    proxies[kProxyMax];
+    };
+
+    struct ProxySlot
+    {
+        std::uint32_t seq;
+        std::uint32_t reserved;
+        ProxyState    value;
+        std::uint8_t  pad[40];  // the ring follows on a 64-byte boundary
     };
 
     // ---- Rings (single producer, single consumer) ----
@@ -340,6 +387,7 @@ namespace AhShitRim::Protocol
         Projectile = 5,      // San Andreas -> Skyrim (v15): a rocket, grenade, tear gas or Molotov CJ launched, for Skyrim to fly
         Effect = 6,          // Skyrim -> San Andreas (v15): what CJ's explosives did, for San Andreas's own sound and fire
         Cheat = 7,           // Skyrim -> San Andreas (v20): a cheat typed in Skyrim that San Andreas has a part in
+        Impact = 8,          // San Andreas -> Skyrim (v23): CJ's vehicle hit one of the actors in the proxy slot
     };
 
     struct MessageHeader
@@ -461,6 +509,24 @@ namespace AhShitRim::Protocol
         std::uint8_t  cheat;     // San Andreas's eCheats index it should be at; the key decides
         std::uint8_t  flags;     // kCheatOn
         std::uint16_t reserved;
+    };
+
+    inline constexpr std::uint8_t kImpactHeavy = 0x1;  // ImpactEvent.flags (v23): it hit a heavy one (kProxyHeavy), which stopped it
+    inline constexpr std::uint8_t kImpactBike = 0x2;   // CJ was on a bike or a bicycle
+
+    // Payload of an Impact message (v23): CJ's vehicle hit a proxy hard enough to hurt.
+    struct ImpactEvent
+    {
+        std::uint32_t handover;      // InputState.handover `at` belongs to
+        std::uint32_t id;            // ActorProxy.id
+        float         speed;         // how fast they closed, metres a second
+        std::uint8_t  flags;         // kImpact*
+        std::uint8_t  reserved0;
+        std::uint16_t vehicleModel;  // San Andreas's model id of CJ's vehicle
+        float         at[3];         // where they touched, relative to InputState.anchor, Skyrim units
+        float         push[3];       // the velocity the hit gives the actor, Skyrim units a second (zero for a heavy one)
+        float         damage;        // San Andreas's damage for it, its health points (RunOver::ImpactDamage)
+        std::uint32_t reserved1;
     };
 
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
@@ -611,7 +677,9 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36 + 4 + kSeatMax * 28);
+    static_assert(offsetof(BodyState, seatCount) == 64 + kBodyBoneMax * 28 + 36);
+    static_assert(offsetof(BodyState, seats) == 64 + kBodyBoneMax * 28 + 40);
     static_assert(offsetof(BodyState, cameraUp) == 64 + kBodyBoneMax * 28);
     static_assert(offsetof(BodyState, health) == 64 + kBodyBoneMax * 28 + 12);
     static_assert(offsetof(BodyState, engine) == 64 + kBodyBoneMax * 28 + 16);
@@ -619,7 +687,17 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(BodyState, feet) == 24);
     static_assert(offsetof(BodyState, cameraFov) == 60);
     static_assert(offsetof(BodyState, bones) == 64);
-    static_assert(sizeof(BodySlot) == 1920);
+    static_assert(sizeof(BodySlot) == 2048);
+    static_assert(sizeof(ActorProxy) == 64);
+    static_assert(offsetof(ActorProxy, a) == 8);
+    static_assert(offsetof(ActorProxy, radius) == 32);
+    static_assert(offsetof(ActorProxy, velocity) == 40);
+    static_assert(sizeof(ProxyState) == 16 + kProxyMax * 64);
+    static_assert(sizeof(ProxySlot) == 1088);
+    static_assert(sizeof(ImpactEvent) == 48);
+    static_assert(offsetof(ImpactEvent, at) == 16);
+    static_assert(offsetof(ImpactEvent, push) == 28);
+    static_assert(offsetof(ImpactEvent, damage) == 40);
     static_assert(sizeof(RingHeader) == 64);
     static_assert(offsetof(RingHeader, head) == 8);
     static_assert(offsetof(RingHeader, tail) == 32);
@@ -648,7 +726,9 @@ namespace AhShitRim::Protocol
     static_assert(kOffsetWeaponSlots == kOffsetVehicleSlots + kVehicleMax * sizeof(BodySlot));
     static_assert(kOffsetWeaponSlots % 64 == 0);
     static_assert(kOffsetGearSlot == kOffsetWeaponSlots + kWeaponHandMax * sizeof(BodySlot));
-    static_assert(kOffsetRingToSanAndreas == kOffsetGearSlot + sizeof(BodySlot));
+    static_assert(kOffsetProxySlot == kOffsetGearSlot + sizeof(BodySlot));
+    static_assert(kOffsetProxySlot % 64 == 0);
+    static_assert(kOffsetRingToSanAndreas == kOffsetProxySlot + sizeof(ProxySlot));
     static_assert(kOffsetRingToSanAndreas % 64 == 0);
     static_assert(kOffsetRingToSkyrim == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
     static_assert(kMappingSize == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);

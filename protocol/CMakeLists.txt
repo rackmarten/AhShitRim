@@ -69,6 +69,8 @@ add_executable(protocol_tests
     tests/cpp/test_dialogue.cpp
     tests/cpp/test_wanted.cpp
     tests/cpp/test_knock.cpp
+    tests/cpp/test_run_over.cpp
+    tests/cpp/test_passengers.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
