@@ -203,10 +203,10 @@ namespace AhShitRim::People
         }
 
         // a_speaker says a_info's first line whatever its conditions want (the player casting a spell), in its own
-        // voice with lip sync, and San Andreas's subtitles show it. False when it isn't their turn.
+        // voice with lip sync, and San Andreas's subtitles show it.
         bool Say(RE::Actor* a_speaker, RE::TESTopicInfo* a_info, double a_now)
         {
-            if (!a_info || !a_info->parentTopic || !state.comments.Due(a_speaker->GetFormID(), a_now)) {
+            if (!a_info || !a_info->parentTopic) {
                 return false;
             }
             auto                  item = a_info->GetDialogueData(a_speaker);
@@ -226,7 +226,7 @@ namespace AhShitRim::People
             if (state.speak && voice && *voice) {
                 state.speak(a_speaker, voice, reinterpret_cast<std::uint32_t*>(&state.voice), 0, 0x32, 0, 0, 0, 0, false, 0, false, true, true);
             }
-            state.comments.Said(a_speaker->GetFormID(), a_now);
+            state.comments.Said(a_speaker->GetFormID(), a_now, a_info->GetFormID());
             state.lines++;
             // As San Andreas's subtitles: there while the line plays, gone when it ends (Update drops it).
             state.voiceSubtitle = state.voice.IsValid();
@@ -243,32 +243,35 @@ namespace AhShitRim::People
             return true;
         }
 
-        // A civilian's line about magic: one of the WICommentMagic greetings recorded for its voice.
-        RE::TESTopicInfo* CivilianLine(RE::PlayerCharacter* a_player, RE::Actor* a_actor)
+        // The voice bit of a_actor's voice type, 0 when no line is recorded for it.
+        std::uint64_t VoiceOf(RE::Actor* a_actor)
         {
-            static std::mt19937            random{ std::random_device{}() };
-            std::vector<RE::TESTopicInfo*> fits;
-            for (const auto id : { Reactions::kCommentMagicColorful, Reactions::kCommentMagicDangerous }) {
-                auto* topic = RE::TESForm::LookupByID<RE::TESTopic>(id);
-                if (!topic || !topic->topicInfos) {
-                    continue;
-                }
-                for (std::uint32_t i = 0; i < topic->numTopicInfos; ++i) {
-                    if (auto* info = topic->topicInfos[i]; info && info->objConditions.IsTrue(a_actor, a_player)) {
-                        fits.push_back(info);
-                    }
-                }
-            }
-            return fits.empty() ? nullptr : fits[std::uniform_int_distribution<std::size_t>(0, fits.size() - 1)(random)];
+            auto* base = a_actor->GetActorBase();
+            auto* voice = base ? base->GetVoiceType() : nullptr;
+            return voice ? Reactions::VoiceBit(voice->GetFormID()) : 0;
         }
 
-        // Shots or a blast at a_at: civilians who hear it flee, and the nearest guard who hears it has a word about
-        // the magic.
-        void Gunfire(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, const Reactions::Noise& a_noise, double a_now)
+        // a_speaker has a word about the magic, if it's their turn: a line for a_moment in their own voice, one they
+        // haven't said lately.
+        bool Comment(RE::Actor* a_speaker, Reactions::Moment a_moment, std::uint8_t a_type, double a_now)
+        {
+            static std::mt19937 random{ std::random_device{}() };
+            if (!a_speaker || !state.comments.Due(a_speaker->GetFormID(), a_now)) {
+                return false;
+            }
+            const auto line = state.comments.Pick(a_speaker->GetFormID(), VoiceOf(a_speaker), Reactions::LinesFor(a_moment, a_type), random());
+            return line && Say(a_speaker, RE::TESForm::LookupByID<RE::TESTopicInfo>(line), a_now);
+        }
+
+        // Shots of a_type or a blast (a_loud) at a_at: civilians who hear it flee, and the nearest guard who hears it
+        // has a word about the magic, or with no guard about the nearest civilian; a loud one is a shout to them.
+        void Gunfire(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, const Reactions::Noise& a_noise, std::uint8_t a_type, bool a_loud, double a_now)
         {
             Alert(a_player, a_at, a_noise.sound, a_now);
             RE::Actor* guard = nullptr;
+            RE::Actor* civilian = nullptr;
             float      guardDistance = Reactions::kCommentRange;
+            float      civilianDistance = Reactions::kCommentRange;
             ForPeopleNear(a_player, a_at, (std::max)(a_noise.heard, a_noise.seen), [&](RE::Actor* a_actor, float a_distance) {
                 const auto person = PersonOf(a_actor, a_player);
                 const auto role = Reactions::RoleOf(person);
@@ -292,10 +295,16 @@ namespace AhShitRim::People
                     }
                 } else {
                     Flee(a_player, a_actor, a_now);
+                    if (a_distance <= civilianDistance) {
+                        civilian = a_actor;
+                        civilianDistance = a_distance;
+                    }
                 }
             });
-            if (guard) {
-                Say(guard, RE::TESForm::LookupByID<RE::TESTopicInfo>(Reactions::kGuardWatchTheMagic), a_now);
+            const auto guardMoment = a_loud ? Reactions::Moment::Loud : Reactions::Moment::GuardHears;
+            const auto civilianMoment = a_loud ? Reactions::Moment::Loud : Reactions::Moment::CivilianHears;
+            if (!Comment(guard, guardMoment, a_type, a_now) && (!guard || a_loud)) {
+                Comment(civilian, civilianMoment, a_type, a_now);
             }
         }
 
@@ -343,12 +352,12 @@ namespace AhShitRim::People
             }
             if (role == Reactions::Role::Guard) {  // a guard isn't scared, just tired of the magic
                 if (cj.GetDistance(target->GetPosition()) <= Reactions::kCommentRange) {
-                    Say(target, RE::TESForm::LookupByID<RE::TESTopicInfo>(Reactions::kGuardFancyMagic), a_now);
+                    Comment(target, Reactions::Moment::GuardAimedAt, a_pose.weaponType, a_now);
                 }
                 return;
             }
             if (Reactions::Reacts(person.confidence, Reactions::Cause::Aimed) && Cower(a_player, target, a_now)) {
-                Say(target, CivilianLine(a_player, target), a_now);
+                Comment(target, Reactions::Moment::CivilianAimedAt, a_pose.weaponType, a_now);
             }
         }
 
@@ -425,11 +434,11 @@ namespace AhShitRim::People
 
         const RE::NiPoint3 cj = a_anchor + RE::NiPoint3(a_pose->offset[0], a_pose->offset[1], a_pose->offset[2]);
         for (const auto& at : blasts) {
-            Gunfire(a_player, at, { Reactions::kBlastHeard, 0.0f, Reactions::Sound::VeryLoud }, now);
+            Gunfire(a_player, at, { Reactions::kBlastHeard, 0.0f, Reactions::Sound::VeryLoud }, a_pose->weaponType, true, now);
         }
         if (shots > 0) {
             if (const auto noise = Reactions::NoiseOf(a_pose->weaponType); noise.noisy()) {
-                Gunfire(a_player, cj, noise, now);
+                Gunfire(a_player, cj, noise, a_pose->weaponType, Reactions::IsLoud(a_pose->weaponType), now);
             }
             if (Reactions::IsMagic(a_pose->weaponType)) {
                 Cast(a_player, now);
