@@ -69,6 +69,13 @@ namespace
             const auto& blob = a_received.blobs[id] = a_received.assembler.Blob();
             if (const auto model = SkinModel::Parse(blob.data(), blob.size())) {
                 std::printf("model %08X %s: %zu meshes, %zu bones\n", id, model->name.c_str(), model->meshes.size(), model->boneIds.size());
+                if (model->name == "parachute") {
+                    for (const auto& mesh : model->meshes) {
+                        std::printf("  mesh: %u triangles, %u twins, %s, flags 0x%X, colour %u/%u/%u/%u, texture %d\n", mesh.indexCount / 3, SkinModel::Twins(mesh),
+                            SkinModel::OneSided(mesh) ? "one-sided" : "two-sided", mesh.flags, mesh.color[0], mesh.color[1], mesh.color[2], mesh.color[3],
+                            mesh.texture);
+                    }
+                }
             }
         });
     }

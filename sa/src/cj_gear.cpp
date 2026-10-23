@@ -412,7 +412,7 @@ namespace AhShitRim::CjGear
                 return false;
             }
             if (!state.chuteModel.id) {
-                const auto blob = CjBody::ReadSkinnedModel(state.canopy, "parachute", Protocol::kSkinModelBody, state.chuteModel.boneCount);
+                const auto blob = CjBody::ReadSkinnedModel(state.canopy, "parachute", Protocol::kSkinModelBody, state.chuteModel.boneCount, true);
                 if (blob.empty()) {
                     state.chuteModel.failed = true;
                     return false;
@@ -508,6 +508,15 @@ namespace AhShitRim::CjGear
         }
         // Held as Parachute::HoldOf says: the parachute's at full blend, his face's as they are, his idle at a sliver (it
         // alone drives his face, which parachute.ifp doesn't), San Andreas's fall and everything else at none.
+        // Which animations he has each time the parachute's changes (the grin on steering right was one of them).
+        if (static std::string logged; logged != state.playing) {
+            logged = state.playing;
+            std::string list;
+            for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+                list += std::format(" {}/{} 0x{:X} {:.2f}{}", assoc->m_nAnimGroup, assoc->m_nAnimId, assoc->m_nFlags, assoc->m_fBlendAmount, assoc == ours ? " ours" : "");
+            }
+            Log(std::format("gear: {} over CJ's animations (group/id flags blend):{}", state.playing, list));
+        }
         bool haveIdle = false;
         for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
             haveIdle = haveIdle || Parachute::HoldOf(false, assoc->m_nAnimGroup, assoc->m_nAnimId, (assoc->m_nFlags & 0x10) != 0, a_ped->m_nAnimGroup) ==

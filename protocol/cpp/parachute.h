@@ -42,10 +42,10 @@ namespace AhShitRim::Parachute
 
     inline constexpr float kOpenSeconds = 1.1f;    // PARA_open
     inline constexpr float kFloatFall = 4.5f;      // under the canopy
-    inline constexpr float kFlareFall = 2.5f;      // S: flared
+    inline constexpr float kFlareFall = 2.5f;      // S: flared, sinking slower
     inline constexpr float kSteepFall = 7.0f;      // W: pulled down
     inline constexpr float kFloatForward = 7.0f;
-    inline constexpr float kFlareForward = 2.5f;
+    inline constexpr float kFlareForward = 7.0f;    // S keeps him going: as in San Andreas, flaring is how he glides furthest
     inline constexpr float kSteepForward = 11.0f;
     inline constexpr float kFloatTurn = 0.9f;
     inline constexpr float kBrake = 4.0f;          // per second: how fast speeds go over to what they should be

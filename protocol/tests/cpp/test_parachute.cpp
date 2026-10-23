@@ -87,6 +87,9 @@ TEST_CASE("parachute: the fire key opens the chute, which brakes him to a glide"
     flare.pitch = -1.0f;
     s = Run(s, Falling(0.0f, 300.0f), flare, 3.0f);
     CHECK(s.fall == doctest::Approx(kFlareFall).epsilon(0.02));
+    // Flaring slows the sink, not the glide: he goes further, as in San Andreas.
+    CHECK(s.forward >= kFloatForward - 0.1f);
+    CHECK(s.forward / s.fall > kFloatForward / kFloatFall);
     CHECK(s.fall < kFloatFall);
 
     Keys right;
