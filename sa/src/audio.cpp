@@ -12,6 +12,7 @@
 #include <Windows.h>
 
 #include <cmath>
+#include <cstring>
 #include <format>
 
 namespace AhShitRim::Audio
@@ -107,6 +108,26 @@ namespace AhShitRim::Audio
         // Radio Sovngarde and Sweetroll FM are San Andreas's radio off; Skyrim plays on them.
         AudioEngine.RetuneRadio(Radio::SaStation(state.dial));
         Log(std::format("audio: the wheel tunes {}", Radio::StationName(state.dial)));
+    }
+
+    void Play(HudSounds::Sound a_sound)
+    {
+        AudioEngine.ReportFrontendAudioEvent(static_cast<int>(a_sound), 0.0f, 1.0f);
+        Log(std::format("audio: HUD sound {} ({})", static_cast<int>(a_sound), HudSounds::NameOf(a_sound)));
+    }
+
+    void PlayFrontend(const std::uint8_t* a_data, std::uint32_t a_size)
+    {
+        Protocol::FrontendSoundCommand command{};
+        if (a_size < sizeof(command)) {
+            return;
+        }
+        std::memcpy(&command, a_data, sizeof(command));
+        if (!HudSounds::Plays(command.event)) {
+            Log(std::format("audio: no HUD sound {}", command.event));
+            return;
+        }
+        Play(static_cast<HudSounds::Sound>(command.event));
     }
 
     void Update(bool a_owned, bool a_paused)

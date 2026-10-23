@@ -8,6 +8,8 @@
 // game time, weapon icon, armour bar hidden at 0, health bar on the Skyrim player's health, money
 // on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), and Skyrim's compass, attribute bars
 // and crosshair hidden. The text styles below show whenever something asks for them.
+#include "hud_sounds.h"
+
 namespace AhShitRim::Protocol
 {
     struct PlayerState;
@@ -37,7 +39,7 @@ namespace AhShitRim::SaHud
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();
-    void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left
+    void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left, with San Andreas's beep when it starts showing
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
     void HoldSubtitle(std::string a_text);  // the subtitles, as long as it's called every frame with the line (Skyrim's subtitles, a scene's lines)
@@ -48,6 +50,7 @@ namespace AhShitRim::SaHud
     void SetWantedFlashing(bool a_flashing);      // v22: the stars flash (just changed, or CJ is out of the guards' sight)
     void SetArmor(float a_fraction);              // 0..1 of the armour bar; 0 hides it
     void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
+    void PlayHudSound(HudSounds::Sound a_sound);  // v24: one of San Andreas's HUD sounds, played by the hidden San Andreas
 
     // San Andreas's standard menu top left (Ammu-Nation, #830), as long as it's called every frame: a title and
     // rows of a name and a price.

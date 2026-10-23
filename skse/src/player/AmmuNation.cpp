@@ -55,6 +55,7 @@ namespace AhShitRim::AmmuNation
                 return;
             }
             Pay(a_player, offer.price);
+            SaHud::PlayHudSound(HudSounds::Sound::PurchaseWeapon);
             if (item.type == Shop::kArmour) {
                 Vitals::SetArmor(Shop::kArmourMax);
             } else {

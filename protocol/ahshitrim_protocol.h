@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 23;
+    inline constexpr std::uint32_t kProtocolVersion = 24;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -342,6 +342,7 @@ namespace AhShitRim::Protocol
         Cheat = 7,           // Skyrim -> San Andreas (v20): a cheat typed in Skyrim that San Andreas has a part in
         PickupCommand = 8,   // Skyrim -> San Andreas (v23): a pickup's model wanted, or one CJ took
         PickupEvent = 9,     // San Andreas -> Skyrim (v23): a pickup's model sent, or one San Andreas dropped
+        FrontendSound = 10,  // Skyrim -> San Andreas (v24): one of San Andreas's HUD sounds to play (protocol/cpp/hud_sounds.h)
     };
 
     struct MessageHeader
@@ -516,6 +517,15 @@ namespace AhShitRim::Protocol
         std::uint32_t reserved;
     };
 
+    // Payload of a FrontendSound message (v24): San Andreas plays one of its HUD sounds
+    // (CAudioEngine::ReportFrontendAudioEvent), if it is one of HudSounds::Sound.
+    struct FrontendSoundCommand
+    {
+        std::uint8_t  event;  // San Andreas's eAudioEvents, an AE_FRONTEND_* one
+        std::uint8_t  reserved0;
+        std::uint16_t reserved1;
+    };
+
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
     // arrive in order; offset 0 starts a model.
     struct ModelChunkHeader
@@ -638,6 +648,7 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(PickupEvent, model) == 8);
     static_assert(offsetof(PickupEvent, at) == 16);
     static_assert(offsetof(PickupEvent, parts) == 28);
+    static_assert(sizeof(FrontendSoundCommand) == 4);
     static_assert(offsetof(EffectEvent, projectile) == 8);
     static_assert(offsetof(EffectEvent, at) == 12);
     static_assert(offsetof(EffectEvent, seconds) == 24);

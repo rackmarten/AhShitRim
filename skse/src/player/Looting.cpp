@@ -63,6 +63,9 @@ namespace AhShitRim::Looting
                     a_player->StealAlarm(a_ref, gold, haul.gold, haul.gold, a_ref->GetOwner(), true);
                 }
             }
+            if (haul.gold > 0) {
+                SaHud::PlayHudSound(HudSounds::Sound::PickupMoney);  // San Andreas's money pickup
+            }
             if (const auto text = Loot::QuestItemsText(haul.questItems); !text.empty()) {
                 SaHud::ShowHelp(text, 4.0f);
             }

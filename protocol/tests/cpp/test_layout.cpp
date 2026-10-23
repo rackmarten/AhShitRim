@@ -30,7 +30,7 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 23);
+    CHECK(kProtocolVersion == 24);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -44,6 +44,13 @@ TEST_CASE("protocol v20: cheats")
     CHECK(offsetof(CheatCommand, cheat) == 4);
     CHECK(offsetof(CheatCommand, flags) == 5);
     CHECK(kCheatOn == 0x1);
+}
+
+TEST_CASE("protocol v24: HUD sounds")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 10);
+    CHECK(sizeof(FrontendSoundCommand) == 4);
+    CHECK(offsetof(FrontendSoundCommand, event) == 0);
 }
 
 TEST_CASE("protocol v19 constants")
