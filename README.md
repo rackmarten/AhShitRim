@@ -93,8 +93,8 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 
 Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guards still arrest, fine and fight the player as they do. On top of it San Andreas's wanted stars show in the HUD while CJ has the player:
 
-- A crime sets the stars from that hold's bounty (any bounty is one star, an assault two, a murder four, up to six), and another violent crime while wanted adds a star.
-- Out of the guards' sight the stars flash, and after a while (longer the more stars) they go. The bounty doesn't: a guard who fights CJ later knows him, and the stars come back.
+- Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage.
+- Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. The bounty doesn't: a guard who fights CJ later knows him, and a star or two come back.
 - More stars bring more of the hold's guards. From 3 stars mounted guards ride after CJ, from 5 the hold's soldiers join.
 - In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.

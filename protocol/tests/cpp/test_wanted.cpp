@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <string>
 
@@ -33,104 +34,131 @@ namespace
     }
 }
 
-TEST_CASE("stars for a bounty: any is one, an assault two, a murder four, six at the top")
+TEST_CASE("stars for heat: San Andreas's thresholds")
 {
-    CHECK(StarsForBounty(0) == 0);
-    CHECK(StarsForBounty(5) == 1);    // trespass
-    CHECK(StarsForBounty(39) == 1);
-    CHECK(StarsForBounty(40) == 2);   // an assault
-    CHECK(StarsForBounty(499) == 2);
-    CHECK(StarsForBounty(500) == 3);
-    CHECK(StarsForBounty(1000) == 4); // a murder
-    CHECK(StarsForBounty(3000) == 5);
-    CHECK(StarsForBounty(6000) == 6);
-    CHECK(StarsForBounty(1000000) == kMaxStars);
-    CHECK(StarsForBounty(-5) == 0);
+    CHECK(StarsForHeat(0.0f) == 0);
+    CHECK(StarsForHeat(49.0f) == 0);
+    CHECK(StarsForHeat(50.0f) == 1);
+    CHECK(StarsForHeat(180.0f) == 2);
+    CHECK(StarsForHeat(550.0f) == 3);
+    CHECK(StarsForHeat(1200.0f) == 4);
+    CHECK(StarsForHeat(2400.0f) == 5);
+    CHECK(StarsForHeat(4600.0f) == 6);
+    CHECK(StarsForHeat(1.0e6f) == kMaxStars);
+    for (int stars = 0; stars <= kMaxStars; stars++) {
+        CHECK(StarsForHeat(HeatFor(stars)) == stars);
+    }
 }
 
-TEST_CASE("stars for the crime just committed")
-{
-    CHECK(StarsForCrime(0) == 0);
-    CHECK(StarsForCrime(5) == 1);
-    CHECK(StarsForCrime(40) == 2);
-    CHECK(StarsForCrime(1000) == 4);
-}
-
-TEST_CASE("a crime raises the stars, a violent one while wanted adds one more")
+TEST_CASE("one assault is a star; killing guards climbs slowly, as in San Andreas")
 {
     Pursuit p;
-    CHECK(p.Crime(5, 5, false) == 1);     // trespass
-    CHECK(p.Crime(10, 5, false) == 1);    // more trespass: still one
-    CHECK(p.Crime(50, 40, false) == 2);   // assaulting a guard
-    CHECK(p.Crime(50, 40, false) == 3);   // and again, wanted already: one more
-    CHECK(p.Crime(1050, 1000, false) == 4);  // he dies
-    CHECK(p.Crime(2050, 1000, false) == 5);
-    CHECK(p.Crime(3050, 1000, false) == 6);
-    CHECK(p.Crime(4050, 1000, false) == 6);  // six at most
+    CHECK(p.Crime(5, false) == 0);   // trespass alone: nothing yet
+    Pursuit q;
+    CHECK(q.Crime(40, false) == 1);  // shooting a guard once
+    // Each guard killed: his assault, then his murder.
+    Pursuit r;
+    auto kills = [&](int a_count) {
+        for (int i = 0; i < a_count; i++) {
+            r.Crime(40, false);
+            r.Crime(1000, false);
+        }
+        return r.Stars();
+    };
+    CHECK(kills(1) == 1);
+    CHECK(kills(1) == 2);  // two
+    CHECK(kills(2) == 3);  // four
+    CHECK(kills(5) == 4);  // nine
+    CHECK(kills(9) == 5);  // eighteen
+    CHECK(kills(14) == 5); // thirty-two
+    CHECK(kills(1) == 6);  // thirty-three
 }
 
-TEST_CASE("shooting a Whiterun guard: two stars, three as it goes on, then the riders")
+TEST_CASE("three stars bring the riders")
 {
-    Pursuit p;
-    CHECK(p.Crime(40, 40, false) == 2);
-    CHECK(ResponseFor(p.Stars()).riders == 0);
-    CHECK(p.Crime(40, 40, false) == 3);  // Skyrim counts another assault: three stars
-    CHECK(ResponseFor(p.Stars()).riders == 1);
+    CHECK(ResponseFor(2).riders == 0);
+    CHECK(ResponseFor(3).riders == 1);
 }
 
 TEST_CASE("AEZAKMI: no stars from any crime")
 {
     Pursuit p;
-    CHECK(p.Crime(1000, 1000, true) == 0);
+    CHECK(p.Crime(1000, true) == 0);
     p.Recognised(1000, true);
     CHECK(p.Stars() == 0);
-    p.Crime(40, 40, false);
+    p.Crime(40, false);
     CHECK(p.Tick(0.1f, true, 40, true).stars == 0);  // typed while wanted: gone at once
 }
 
-TEST_CASE("out of sight the stars flash, then go; the bounty doesn't")
+TEST_CASE("out of sight: a grace before the flashing, then the stars go one at a time")
 {
     Pursuit p;
-    p.Crime(50, 40, false);
-    p.Crime(50, 40, false);  // three stars
+    for (int i = 0; i < 4; i++) {
+        p.Crime(40, false);
+        p.Crime(1000, false);
+    }
     REQUIRE(p.Stars() == 3);
-    Look look = p.Tick(0.1f, true, 50, false);
+    Look look = p.Tick(0.1f, true, 5000, false);
     CHECK(look.flashing);  // they just changed
     for (int i = 0; i < 30; i++) {
-        look = p.Tick(0.1f, true, 50, false);
+        look = p.Tick(0.1f, true, 5000, false);
     }
-    CHECK(look.stars == 3);
     CHECK_FALSE(look.flashing);  // seen, settled
-    look = p.Tick(0.1f, false, 50, false);
-    CHECK(look.flashing);  // out of sight
-    look = Hide(p, LoseSeconds(3) - 1.0f, 50);
+    look = Hide(p, kFlashAfter - 0.5f, 5000);
     CHECK(look.stars == 3);
+    CHECK_FALSE(look.flashing);  // not at once
+    look = Hide(p, 1.0f, 5000);
     CHECK(look.flashing);
-    look = Hide(p, 1.5f, 50);
+    look = Hide(p, LoseSeconds(3) - 1.0f, 5000);
+    CHECK(look.stars == 3);
+    look = Hide(p, 1.5f, 5000);
+    CHECK(look.stars == 2);  // one star, not all
+    CHECK(look.flashing);
+    look = Hide(p, LoseSeconds(2) + 0.5f, 5000);
+    CHECK(look.stars == 1);
+    look = Hide(p, LoseSeconds(1) + 0.5f, 5000);
     CHECK(look.stars == 0);
     CHECK_FALSE(look.flashing);
 }
 
-TEST_CASE("being seen again holds the stars; more stars take longer to lose")
+TEST_CASE("two stars go in well under half a minute unseen; six take more than a minute")
 {
-    CHECK(LoseSeconds(1) < LoseSeconds(3));
-    CHECK(LoseSeconds(3) < LoseSeconds(6));
-    Pursuit p;
-    p.Crime(1000, 1000, false);
-    Hide(p, LoseSeconds(4) - 1.0f, 1000);
-    p.Tick(0.1f, true, 1000, false);  // a guard spots him
-    CHECK(p.Unseen() == 0.0f);
-    CHECK(Hide(p, LoseSeconds(4) - 1.0f, 1000).stars == 4);
+    auto loseAll = [](int a_stars) {
+        Pursuit p;
+        p.Restore(HeatFor(a_stars), 0.0f);
+        float t = 0.0f;
+        while (p.Stars() > 0 && t < 600.0f) {
+            p.Tick(0.1f, false, 5000, false);
+            t += 0.1f;
+        }
+        return t;
+    };
+    CHECK(loseAll(2) < 30.0f);
+    CHECK(loseAll(6) > 60.0f);
+    CHECK(LoseSeconds(1) < LoseSeconds(6));
 }
 
-TEST_CASE("a guard who fights him later recognises him by the bounty")
+TEST_CASE("being seen again stops the countdown")
 {
     Pursuit p;
-    p.Crime(1000, 1000, false);
-    Hide(p, LoseSeconds(4) + 1.0f, 1000);
-    REQUIRE(p.Stars() == 0);
-    p.Recognised(1000, false);
+    p.Restore(HeatFor(4), 0.0f);
+    Hide(p, kFlashAfter + LoseSeconds(4) - 1.0f, 1000);
     CHECK(p.Stars() == 4);
+    p.Tick(0.1f, true, 1000, false);  // a guard spots him
+    CHECK(p.Unseen() == 0.0f);
+    CHECK(Hide(p, kFlashAfter + LoseSeconds(4) - 1.0f, 1000).stars == 4);
+}
+
+TEST_CASE("a guard who fights him later knows him: a star, two for a murderer, no more")
+{
+    CHECK(StarsForBounty(0) == 0);
+    CHECK(StarsForBounty(40) == 1);
+    CHECK(StarsForBounty(1000) == 2);
+    CHECK(StarsForBounty(50000) == 2);
+    Pursuit p;
+    p.Recognised(5000, false);
+    CHECK(p.Stars() == 2);
+    p.Restore(HeatFor(4), 0.0f);
     p.Recognised(5000, false);  // already wanted: no change
     CHECK(p.Stars() == 4);
     Pursuit clean;
@@ -141,8 +169,9 @@ TEST_CASE("a guard who fights him later recognises him by the bounty")
 TEST_CASE("no bounty, no stars: the fine paid or Wasted forgiving it")
 {
     Pursuit p;
-    p.Crime(1000, 1000, false);
+    p.Crime(1000, false);
     CHECK(p.Tick(0.1f, true, 0, false).stars == 0);
+    CHECK(p.Heat() == 0.0f);
 }
 
 TEST_CASE("more guards join as the stars rise, riders from 3, soldiers from 5")
@@ -302,26 +331,41 @@ TEST_CASE("the nine holds by crime faction, each with a guard to copy")
 TEST_CASE("the co-save record reads back, and a broken one doesn't")
 {
     Record r;
-    r.stars = 4;
+    r.heat = 1300.0f;
     r.faction = 0x000267EA;
     r.unseen = 7.5f;
     const auto bytes = Write(r);
-    CHECK(bytes.size() == kSizeV1);
+    CHECK(bytes.size() == kSizeV2);
     Record back;
     REQUIRE(Read(kVersion, bytes.data(), bytes.size(), back));
-    CHECK(back.stars == 4);
+    CHECK(back.heat == 1300.0f);
     CHECK(back.faction == 0x000267EA);
     CHECK(back.unseen == 7.5f);
     CHECK_FALSE(Read(kVersion + 1, bytes.data(), bytes.size(), back));
     CHECK_FALSE(Read(kVersion, bytes.data(), bytes.size() - 1, back));
-    auto bad = bytes;
-    bad[0] = 9;
-    CHECK_FALSE(Read(kVersion, bad.data(), bad.size(), back));
     r.unseen = std::numeric_limits<float>::infinity();
     const auto inf = Write(r);
     CHECK_FALSE(Read(kVersion, inf.data(), inf.size(), back));
+    r.unseen = 0.0f;
+    r.heat = -1.0f;
+    const auto negative = Write(r);
+    CHECK_FALSE(Read(kVersion, negative.data(), negative.size(), back));
     Pursuit p;
-    p.Restore(9, -3.0f);
+    p.Restore(1.0e9f, -3.0f);
     CHECK(p.Stars() == kMaxStars);
     CHECK(p.Unseen() == 0.0f);
+}
+
+TEST_CASE("a version 1 record's stars read as the least heat they need")
+{
+    std::vector<std::uint8_t> v1(kSizeV1, 0);
+    v1[0] = 3;
+    const std::uint32_t faction = 0x000267EA;
+    std::memcpy(v1.data() + 1, &faction, 4);
+    Record back;
+    REQUIRE(Read(1, v1.data(), v1.size(), back));
+    CHECK(back.heat == HeatFor(3));
+    CHECK(back.faction == faction);
+    v1[0] = 9;
+    CHECK_FALSE(Read(1, v1.data(), v1.size(), back));
 }

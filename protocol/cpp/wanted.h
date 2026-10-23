@@ -1,16 +1,17 @@
-// San Andreas's wanted level on top of Skyrim's crime system (v22), the game-free half: how many stars a
-// hold's bounty and the crime just committed are worth, how they flash and fade while CJ is out of the
-// guards' sight, how many guards, riders and soldiers each star brings, when a guard busts CJ out of a stopped
+// San Andreas's wanted level on top of Skyrim's crime system (v22), the game-free half: how much heat a crime
+// adds and how many stars it's worth, how they flash and fall a star at a time while CJ is out of the guards'
+// sight, how many guards, riders and soldiers each star brings, when a guard busts CJ out of a stopped
 // vehicle, the Busted sequence, the fine and where CJ wakes, and the stars' record in the co-save. Header-only
-// and free of game types, so the protocol tests cover it; the SKSE plugin feeds it (skse/src/player/Wanted.cpp).
+// and free of game types, so the protocol tests cover it; the SKSE plugin feeds it (skse/src/player/Police.cpp).
 //
-// The bounty stays Skyrim's: the stars are only the pursuit. They rise with a crime (the bounty one of the nine
-// holds puts on the player went up), go to 0 once CJ has been out of every pursuer's sight long enough (the
-// bounty stays, and a guard who fights him later brings them back), and to 0 with Busted, Wasted or the fine
-// paid. AEZAKMI keeps them at 0 and the bounty where it was.
+// The bounty stays Skyrim's (the guards' dialogue, the fine, who knows CJ): the stars are only the pursuit. Each
+// crime (the bounty one of the nine holds puts on the player went up) adds heat; out of every pursuer's sight
+// the stars start to flash, then go one at a time (the bounty stays, and a guard who fights him later brings a
+// star or two back), and all go with Busted, Wasted or the fine paid. AEZAKMI keeps them at 0 and the bounty
+// where it was.
 //
-// The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 1 is the stars (u8),
-// the hold's crime faction (u32) and the seconds CJ has been unseen (f32).
+// The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 2 is the heat (f32), the
+// hold's crime faction (u32) and the seconds CJ has been unseen (f32); version 1 had the stars (u8) for the heat.
 
 #pragma once
 
@@ -77,33 +78,38 @@ namespace AhShitRim::Wanted
 
     // ---- Stars ----
 
-    // The least bounty each star needs: any bounty is one, an assault's 40 two, a murder's 1000 four.
-    inline constexpr std::array<int, kMaxStars> kBountyStars = { 1, 40, 500, 1000, 3000, 6000 };
+    // The stars come from heat, as San Andreas's from its chaos points (CWanted::UpdateWantedLevel's thresholds): crimes
+    // add to it, and it falls a star at a time while CJ is out of sight. The bounty is only Skyrim's.
+    inline constexpr std::array<float, kMaxStars> kHeatStars = { 50.0f, 180.0f, 550.0f, 1200.0f, 2400.0f, 4600.0f };
 
-    constexpr int StarsForBounty(int a_bounty)
+    constexpr int StarsForHeat(float a_heat)
     {
         int stars = 0;
-        for (const int least : kBountyStars) {
-            stars += a_bounty >= least ? 1 : 0;
+        for (const float least : kHeatStars) {
+            stars += a_heat >= least ? 1 : 0;
         }
         return stars;
     }
 
-    // What the crime just committed is worth on its own, by the bounty it added (Skyrim's defaults: trespass 5,
-    // theft half the value, assault 40, murder 1000).
-    constexpr int StarsForCrime(int a_added)
+    // The least heat a_stars stars need (0 for none).
+    constexpr float HeatFor(int a_stars) { return a_stars <= 0 ? 0.0f : kHeatStars[static_cast<std::size_t>((std::min)(a_stars, kMaxStars) - 1)]; }
+
+    // What a crime adds, by the bounty Skyrim put on it (its defaults: trespass 5, pickpocketing 25, theft half the value,
+    // an assault 40, a murder 1000). An assault is a star on its own; killing a guard (his assault, then his murder) is
+    // 140: two kills are two stars, four three, nine four, about eighteen five and thirty-three six.
+    constexpr float HeatForCrime(int a_added)
     {
-        return a_added >= 1000 ? 4 : a_added >= 40 ? 2 : a_added > 0 ? 1 : 0;
+        return a_added >= 1000 ? 80.0f : a_added >= 40 ? 60.0f : a_added > 0 ? 15.0f : 0.0f;
     }
 
-    // A violent crime (an assault or worse) while already wanted is one star more, as more shooting is in San Andreas.
-    inline constexpr int kViolent = 40;
+    // A guard who fights CJ while no stars show knows him by his bounty: a star, two for a murderer's. No more.
+    constexpr int StarsForBounty(int a_bounty) { return a_bounty >= 1000 ? 2 : a_bounty > 0 ? 1 : 0; }
 
-    // How long CJ has to stay out of every pursuer's sight before the stars go, by the stars: longer the more there
-    // are. San Andreas flashes them all that while.
-    constexpr float LoseSeconds(int a_stars) { return 10.0f + 5.0f * static_cast<float>(std::clamp(a_stars, 1, kMaxStars)); }
+    inline constexpr float kFlashAfter = 5.0f;   // unseen this long, the stars start to flash
+    inline constexpr float kChangeFlash = 2.0f;  // and they flash this long after they change, as San Andreas's do
 
-    inline constexpr float kChangeFlash = 2.0f;  // the stars flash this long after they change, as San Andreas's do
+    // Then each star goes after this long more unseen, the top one first: longer the more there are.
+    constexpr float LoseSeconds(int a_stars) { return 6.0f + 2.0f * static_cast<float>(std::clamp(a_stars, 1, kMaxStars)); }
 
     struct Look
     {
@@ -111,35 +117,36 @@ namespace AhShitRim::Wanted
         bool flashing = false;
     };
 
-    // The pursuit: the stars and how long CJ has been out of sight.
+    // The pursuit: the heat and how long CJ has been out of sight.
     class Pursuit
     {
     public:
-        int   Stars() const { return _stars; }
+        static constexpr float kHeatMax = 9999.0f;
+
+        int   Stars() const { return StarsForHeat(_heat); }
+        float Heat() const { return _heat; }
         float Unseen() const { return _unseen; }
 
-        // A crime: the hold's bounty is a_bounty now, a_added more than before. Returns the stars.
-        int Crime(int a_bounty, int a_added, bool a_neverWanted)
+        // A crime that added a_added to a hold's bounty. Returns the stars.
+        int Crime(int a_added, bool a_neverWanted)
         {
             if (a_neverWanted) {
                 Clear();
                 return 0;
             }
-            int stars = (std::max)({ _stars, StarsForBounty(a_bounty), StarsForCrime(a_added) });
-            if (_stars > 0 && a_added >= kViolent) {
-                stars = (std::max)(stars, _stars + 1);
-            }
-            Set((std::min)(stars, kMaxStars));
+            Set(_heat + HeatForCrime(a_added));
             _unseen = 0.0f;
-            return _stars;
+            _losing = 0.0f;
+            return Stars();
         }
 
         // A guard of the hold fights CJ while no stars show: he is recognised by his bounty.
         void Recognised(int a_bounty, bool a_neverWanted)
         {
-            if (_stars == 0 && !a_neverWanted && a_bounty > 0) {
-                Set(StarsForBounty(a_bounty));
+            if (Stars() == 0 && !a_neverWanted && a_bounty > 0) {
+                Set(HeatFor(StarsForBounty(a_bounty)));
                 _unseen = 0.0f;
+                _losing = 0.0f;
             }
         }
 
@@ -151,40 +158,58 @@ namespace AhShitRim::Wanted
             if (a_neverWanted || a_bounty <= 0) {
                 Clear();
             }
-            if (_stars > 0) {
-                _unseen = a_seen ? 0.0f : _unseen + a_delta;
-                if (_unseen >= LoseSeconds(_stars)) {
-                    Clear();
+            const int stars = Stars();
+            if (stars > 0) {
+                if (a_seen) {
+                    _unseen = 0.0f;
+                    _losing = 0.0f;
+                } else {
+                    _unseen += a_delta;
+                    if (_unseen >= kFlashAfter) {
+                        _losing += a_delta;
+                        if (_losing >= LoseSeconds(stars)) {
+                            _losing = 0.0f;
+                            Set(HeatFor(stars - 1));  // the top star goes; the rest flash on
+                        }
+                    }
                 }
             }
-            return { _stars, _stars > 0 && (_unseen > 0.0f || _changed < kChangeFlash) };
+            const int now = Stars();
+            if (now == 0) {
+                Clear();
+            }
+            return { now, now > 0 && (_unseen >= kFlashAfter || _changed < kChangeFlash) };
         }
 
         void Clear()
         {
-            _stars = 0;
+            _heat = 0.0f;
             _unseen = 0.0f;
+            _losing = 0.0f;
         }
 
         // A loaded save's.
-        void Restore(int a_stars, float a_unseen)
+        void Restore(float a_heat, float a_unseen)
         {
-            _stars = std::clamp(a_stars, 0, kMaxStars);
-            _unseen = std::isfinite(a_unseen) ? std::clamp(a_unseen, 0.0f, LoseSeconds(kMaxStars)) : 0.0f;
+            _heat = std::isfinite(a_heat) ? std::clamp(a_heat, 0.0f, kHeatMax) : 0.0f;
+            _unseen = std::isfinite(a_unseen) ? std::clamp(a_unseen, 0.0f, kFlashAfter) : 0.0f;
+            _losing = 0.0f;
             _changed = kChangeFlash;
         }
 
     private:
-        void Set(int a_stars)
+        void Set(float a_heat)
         {
-            if (a_stars != _stars) {
+            const float heat = std::clamp(a_heat, 0.0f, kHeatMax);
+            if (StarsForHeat(heat) != Stars()) {
                 _changed = 0.0f;
             }
-            _stars = a_stars;
+            _heat = heat;
         }
 
-        int   _stars = 0;
+        float _heat = 0.0f;
         float _unseen = 0.0f;
+        float _losing = 0.0f;  // seconds towards losing the top star, once flashing
         float _changed = kChangeFlash;
     };
 
@@ -433,37 +458,44 @@ namespace AhShitRim::Wanted
     // ---- The co-save ----
 
     inline constexpr std::uint32_t kRecordType = 0x4C575341;  // "ASWL"
-    inline constexpr std::uint32_t kVersion = 1;
-    inline constexpr std::size_t   kSizeV1 = 1 + 4 + 4;
+    inline constexpr std::uint32_t kVersion = 2;
+    inline constexpr std::size_t   kSizeV1 = 1 + 4 + 4;  // the stars (u8), the faction, the seconds unseen
+    inline constexpr std::size_t   kSizeV2 = 4 + 4 + 4;  // the heat (f32), the faction, the seconds unseen
 
     struct Record
     {
-        int           stars = 0;
+        float         heat = 0.0f;
         std::uint32_t faction = 0;  // the hold's crime faction, 0 for none
         float         unseen = 0.0f;
     };
 
     inline std::vector<std::uint8_t> Write(const Record& a_record)
     {
-        std::vector<std::uint8_t> out(kSizeV1);
-        out[0] = static_cast<std::uint8_t>(std::clamp(a_record.stars, 0, kMaxStars));
-        std::memcpy(out.data() + 1, &a_record.faction, 4);
-        std::memcpy(out.data() + 5, &a_record.unseen, 4);
+        std::vector<std::uint8_t> out(kSizeV2);
+        std::memcpy(out.data(), &a_record.heat, 4);
+        std::memcpy(out.data() + 4, &a_record.faction, 4);
+        std::memcpy(out.data() + 8, &a_record.unseen, 4);
         return out;
     }
 
-    // Reads a record of any version up to the current one; false if it doesn't read (a_out is left empty).
+    // Reads a record of any version up to the current one (version 1's stars as the least heat they need); false if it
+    // doesn't read (a_out is left empty).
     inline bool Read(std::uint32_t a_version, const std::uint8_t* a_data, std::size_t a_size, Record& a_out)
     {
         a_out = {};
-        if (a_version < 1 || a_version > kVersion || a_size < kSizeV1 || a_data[0] > kMaxStars) {
+        Record record;
+        if (a_version == 1 && a_size >= kSizeV1 && a_data[0] <= kMaxStars) {
+            record.heat = HeatFor(a_data[0]);
+            std::memcpy(&record.faction, a_data + 1, 4);
+            std::memcpy(&record.unseen, a_data + 5, 4);
+        } else if (a_version == 2 && a_size >= kSizeV2) {
+            std::memcpy(&record.heat, a_data, 4);
+            std::memcpy(&record.faction, a_data + 4, 4);
+            std::memcpy(&record.unseen, a_data + 8, 4);
+        } else {
             return false;
         }
-        Record record;
-        record.stars = a_data[0];
-        std::memcpy(&record.faction, a_data + 1, 4);
-        std::memcpy(&record.unseen, a_data + 5, 4);
-        if (!std::isfinite(record.unseen) || record.unseen < 0.0f) {
+        if (!std::isfinite(record.heat) || record.heat < 0.0f || !std::isfinite(record.unseen) || record.unseen < 0.0f) {
             return false;
         }
         a_out = record;

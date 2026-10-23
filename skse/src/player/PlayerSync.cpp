@@ -858,6 +858,7 @@ namespace AhShitRim::PlayerSync
                 }
                 Arms::Update();
                 CheatCodes::Update();
+                Police::Sweep();
                 GunRewards::Update();
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
