@@ -4,13 +4,15 @@
 # systemd user service actions-runner.service, labelled msvc-wine, and keeps its checkout and
 # build folders between jobs. See docs/DEV_SETUP.md, "CI".
 #
-# The registration token comes on stdin (it's short-lived and needs a repo admin), e.g. from the
+# The registration token comes on stdin (it's short-lived and needs a repo admin). Run it from
+# a checkout of this repo on that machine (the one setup-msvc-wine.sh ran from), e.g. from the
 # desktop:
 #
 #   gh api -X POST repos/rackmarten/AhShitRim/actions/runners/registration-token --jq .token \
-#       | ssh arcade '~/AhShitRim-cold/scripts/wine/setup-runner.sh'
+#       | ssh arcade '<checkout>/scripts/wine/setup-runner.sh'
 #
-# Re-running it on a registered runner skips the registration and just reinstalls the service.
+# Re-running it on a registered runner skips the registration and just reinstalls the service;
+# the runner's own checkout works for that: ~/actions-runner/_work/AhShitRim/AhShitRim.
 #
 # Settings (environment):
 #   RUNNER_DIR      where the runner goes (default ~/actions-runner)
