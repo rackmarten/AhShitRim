@@ -34,7 +34,36 @@ namespace AhShitRim::Conversation
             std::uint32_t saying = 0;
             RE::FormID    topic = 0;
             std::string   text;
+            std::string   line;  // what the speaker says now, when Skyrim has its text
         };
+
+        // The text of the response the speaker says now: the current response of the dialogue that
+        // leads to it (the one last picked, or another in the menu's list).
+        std::string SpokenLine(RE::MenuTopicManager* a_topics)
+        {
+            auto* saying = a_topics->currentTopicInfo;
+            if (!saying) {
+                return {};
+            }
+            const auto lineOf = [&](RE::MenuTopicManager::Dialogue* a_dialogue) -> std::string {
+                if (!a_dialogue || a_dialogue->parentTopicInfo != saying || !a_dialogue->currentResponse) {
+                    return {};
+                }
+                const auto* response = a_dialogue->currentResponse->item;
+                return response && response->text.c_str() ? response->text.c_str() : "";
+            };
+            if (auto line = lineOf(a_topics->lastSelectedDialogue); !line.empty()) {
+                return line;
+            }
+            if (a_topics->dialogueList) {
+                for (auto* dialogue : *a_topics->dialogueList) {
+                    if (auto line = lineOf(dialogue); !line.empty()) {
+                        return line;
+                    }
+                }
+            }
+            return {};
+        }
 
         Selection ReadSelection(RE::MenuTopicManager* a_topics)
         {
@@ -47,6 +76,7 @@ namespace AhShitRim::Conversation
                 s.text = d->topicText.c_str();
             }
             s.saying = a_topics->currentTopicInfo ? a_topics->currentTopicInfo->GetFormID() : 0;
+            s.line = SpokenLine(a_topics);
             REX::W32::LeaveCriticalSection(&a_topics->criticalSection);
             return s;
         }
@@ -57,13 +87,6 @@ namespace AhShitRim::Conversation
                 return head->world.translate + RE::NiPoint3(0.0f, 0.0f, 6.0f);
             }
             return a_ref->GetPosition() + RE::NiPoint3(0.0f, 0.0f, a_ref->GetHeight() * 0.92f);
-        }
-
-        bool Interface(const char* a_name)
-        {
-            auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
-            auto* setting = prefs ? prefs->GetSetting(a_name) : nullptr;
-            return !setting || setting->GetBool();
         }
 
         // The subtitle Skyrim's HUD shows: it gets each one, in dialogue or out of it, as a HUD message to
@@ -86,6 +109,9 @@ namespace AhShitRim::Conversation
                         const auto type = data->type.get();
                         if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
                             std::scoped_lock guard(hudSubtitle.lock);
+                            if (hudSubtitle.count == 0) {
+                                SKSE::log::info("conversation: Skyrim's HUD shows its first subtitle");
+                            }
                             hudSubtitle.shown = type == RE::HUD_MESSAGE_TYPE::kShowSubtitle;
                             hudSubtitle.text = hudSubtitle.shown && data->text.c_str() ? data->text.c_str() : "";
                             hudSubtitle.count++;
@@ -97,10 +123,11 @@ namespace AhShitRim::Conversation
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Shows Skyrim's subtitle in San Andreas's style while Skyrim shows it, as its Interface
-        // settings allow (dialogue subtitles while a dialogue is open, general ones otherwise), and
-        // takes it down the moment Skyrim does.
-        void FollowSubtitle(bool a_dialogue)
+        // Shows Skyrim's subtitle in San Andreas's style while Skyrim shows it and takes it down the
+        // moment Skyrim does, whatever Skyrim's own subtitle settings: San Andreas's cutscenes always
+        // have them. With Skyrim's subtitles off its HUD may get no text, so in a dialogue the line the
+        // speaker says (a_dialogueLine) stands in.
+        void FollowSubtitle(const std::string& a_dialogueLine)
         {
             std::string text;
             bool        shown = false;
@@ -109,7 +136,10 @@ namespace AhShitRim::Conversation
                 shown = hudSubtitle.shown;
                 text = hudSubtitle.text;
             }
-            shown = shown && !text.empty() && Interface(a_dialogue ? "bDialogueSubtitles:Interface" : "bGeneralSubtitles:Interface");
+            if (!shown || text.empty()) {
+                text = a_dialogueLine;
+            }
+            shown = !text.empty();
             if (shown) {
                 SaHud::HoldSubtitle(std::move(text));
             } else if (state.subtitleShown) {
@@ -183,8 +213,8 @@ namespace AhShitRim::Conversation
         auto*      topics = RE::MenuTopicManager::GetSingleton();
         const auto speaker = Speaker(topics);
         auto       say = Dialogue::Category::None;
+        const auto s = speaker ? ReadSelection(topics) : Selection{};
         if (speaker && !state.director.IsOpen()) {
-            const auto s = ReadSelection(topics);
             state.picks.Open(s.dialogue, s.info, s.saying);
             state.side = 0;
             say = state.director.Open();
@@ -195,7 +225,6 @@ namespace AhShitRim::Conversation
             SaHud::SetLetterbox(false);
             SKSE::log::info("conversation: the dialogue closed{}", say == Dialogue::Category::Goodbye ? ", CJ says goodbye" : "");
         } else if (speaker) {
-            const auto s = ReadSelection(topics);
             if (state.picks.Update(s.dialogue, s.info, s.saying)) {
                 const auto fromTable = Dialogue::TopicCategory(s.topic);
                 const auto category = Dialogue::CategoryOf(s.topic, s.text);
@@ -205,7 +234,7 @@ namespace AhShitRim::Conversation
             }
         }
         state.director.Tick(a_delta);
-        FollowSubtitle(speaker != nullptr);
+        FollowSubtitle(s.line);
         return say;
     }
 
@@ -234,26 +263,6 @@ namespace AhShitRim::Conversation
     }
 
     bool DialogueOpen() { return Speaker(RE::MenuTopicManager::GetSingleton()) != nullptr; }
-
-    void Skip()
-    {
-        auto* controls = RE::PlayerControls::GetSingleton();
-        auto* handler = controls ? controls->GetActivateHandler() : nullptr;
-        auto* events = RE::UserEvents::GetSingleton();
-        if (!handler || !events || !DialogueOpen()) {
-            return;
-        }
-        auto*      map = RE::ControlMap::GetSingleton();
-        const auto key = map ? map->GetMappedKey(events->activate, RE::INPUT_DEVICE::kKeyboard) : 0x12u;  // E
-        // A press and its release, as Skyrim's activate key would send them.
-        for (const auto& [value, held] : { std::pair{ 1.0f, 0.0f }, std::pair{ 0.0f, 0.1f } }) {
-            if (auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, events->activate, key, value, held)) {
-                handler->ProcessButton(event, &controls->data);
-                RE::free(event);
-            }
-        }
-        SKSE::log::info("conversation: Space skips the line");
-    }
 
     void Clear()
     {

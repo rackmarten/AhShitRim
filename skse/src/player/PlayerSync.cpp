@@ -868,15 +868,20 @@ namespace AhShitRim::PlayerSync
 
         // Skyrim's own handlers refuse while San Andreas has the player, but for its movement and
         // activate keys while the player sits: those stand it up again. In a dialogue the activate
-        // key skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
+        // key (and Space) skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
         template <int N>
         struct BlockHook
         {
             static bool thunk(RE::PlayerInputHandler* a_handler, RE::InputEvent* a_event)
             {
                 const bool standUp = (N == kMovementHook || N == kActivateHook) && state.control == Scene::Control::Seated;
-                const bool skip = N == kActivateHook && Conversation::DialogueOpen();
-                return (!state.owned || standUp || skip) && original(a_handler, a_event);
+                const bool talking = N == kActivateHook && Conversation::DialogueOpen();
+                // Space there too: the activate handler takes it as its own key.
+                auto* button = talking && a_event ? a_event->AsButtonEvent() : nullptr;
+                if (state.owned && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard && button->GetIDCode() == Input::kDikSpace) {
+                    return true;
+                }
+                return (!state.owned || standUp || talking) && original(a_handler, a_event);
             }
             static inline REL::Relocation<decltype(thunk)> original;
 
@@ -1022,9 +1027,6 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     // A spawn key typed into the console or a menu (or the shop) spawns nothing.
-                    if (code == Input::kDikSpace && state.owned && button->IsDown() && Conversation::DialogueOpen()) {
-                        Conversation::Skip();  // Space skips the speaker's line too
-                    }
                     state.input.SetKey(code, button->IsPressed(), !MenuHasInput() && !AmmuNation::IsOpen());
                     changed = true;
                 }
