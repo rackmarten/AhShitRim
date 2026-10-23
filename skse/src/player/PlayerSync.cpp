@@ -768,6 +768,9 @@ namespace AhShitRim::PlayerSync
             }
             Vitals::Update(a_player, valid ? &pose : nullptr, !state.reanchoring);
             Police::Update(a_player, state.anchor, valid ? &pose : nullptr, !state.reanchoring, scene, a_delta);
+            if (const auto line = Police::TakeLine(); line && !Vitals::IsDown()) {
+                state.input.AddLine(line);  // CJ chased or arrested
+            }
             const bool held = Vitals::IsWasted() || Police::IsBusted();  // dying or arrested
             if (held) {
                 // Bleeding out or busted, Skyrim may take its camera elsewhere; San Andreas's drives the view.

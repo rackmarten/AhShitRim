@@ -93,13 +93,15 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 
 Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guards still arrest, fine and fight the player as they do. On top of it San Andreas's wanted stars show in the HUD while CJ has the player:
 
-- Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage.
-- Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. The bounty doesn't: a guard who fights CJ later knows him, and a star or two come back.
-- More stars bring more of the hold's guards. From 3 stars mounted guards ride after CJ, from 5 the hold's soldiers join.
+- Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
+- Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars. A guard who fights CJ later knows him by his bounty, and a star or two come back.
+- The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join and everyone hits harder, from 5 the hold's soldiers, and at 6 a dragon. At most 12 at once.
+- CJ has his own lines for being chased and busted.
 - In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.
-- Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks with all his weapons. No jail.
-- AEZAKMI: no stars, and crimes put no bounty on him.
+- Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks (Dragonsreach in Whiterun) with all his weapons. No jail. Once he's arrested nobody shoots him.
+- Paying the fine to a guard ends the stars too.
+- AEZAKMI: every bounty cleared and the guards leave him alone at once; after that, no stars and crimes put no bounty on him.
 
 ## Milestone 1: on the ground
 
@@ -123,7 +125,7 @@ San Andreas loads collision as static per-sector files, so Skyrim's ground is bu
 - The Helgen intro (the cart and the execution) isn't supported as CJ yet: play it as Skyrim's own player and press F10 afterwards.
 - In a carriage CJ sits on the ground beside it, where the player got on: Skyrim's animation carries the player into the cart, and the carriage only says where it gets on. The ride itself (fast travel) works.
 - Every surface counts as tarmac for San Andreas: roads, grass and dirt all grip the same. A low sports car like the ZR-350 scrapes on Skyrim's rocks and rough ground (its ground clearance, not a collision bug).
-- Wanted level: the police scanner stays off, a car CJ was busted out of is left behind (gone with the next load door), and the mounted guards only chase outdoors.
+- Wanted level: the police scanner stays off, a car CJ was busted out of is left behind (gone with the next load door), reinforcements only come outdoors, and riders get off their horses to fight (Skyrim's AI does that).
 - Looting as CJ takes only gold and quest items; for anything else, or to talk to a blacksmith with an Ammu-Nation, press F10 and use Skyrim's menus. A boss's gun reward comes again if a save from before it is loaded and the boss killed again (that save didn't have it).
 - Guns: right-click's lock-on has no Skyrim actor to lock onto (free aim works), and bullet holes leave no decal.
 - Explosives: San Andreas keeps 60 fires at a time, so with four or five Molotovs burning at once the later ones' outer flames are silent and don't set CJ alight (Skyrim's flames and damage still work). The spray can and extinguisher do nothing yet. Rockets leave no smoke trail. The heat seeker's homing is our own (San Andreas's isn't reversed), its marker doesn't spin as San Andreas's does, and a homing rocket's roar flies on straight where the rocket turns. Satchels are dropped when CJ goes through a load door or F10 hands the player back, and one stuck to an actor that unloads stays where it was. Locks only a key opens stay locked.

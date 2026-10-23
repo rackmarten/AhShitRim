@@ -3,6 +3,7 @@
 #include "health.h"
 #include "pose.h"
 #include "hud/SaHud.h"
+#include "player/Police.h"
 #include "wasted.h"
 
 #include <chrono>
@@ -308,6 +309,18 @@ namespace AhShitRim::Vitals
         if (state.sequence.Running()) {
             Run(a_player, seconds, a_cjDrawn);
             return state.sequence.Running();
+        }
+        if (Police::IsBusted()) {
+            // Busted (v22): an arrested man isn't shot dead; San Andreas's damage is dropped and Skyrim's undone, as for BAGUVIX.
+            auto*       values = a_player->AsActorValueOwner();
+            const float max = MaxHealth(a_player);
+            if (const float now = values->GetActorValue(RE::ActorValue::kHealth); now < max) {
+                values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
+            }
+            if (Bleeding(a_player)) {
+                a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            }
+            return false;
         }
         if (state.invincible) {
             // BAGUVIX: San Andreas's damage is dropped, and whatever Skyrim's people did to the player this frame undone.

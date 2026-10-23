@@ -24,11 +24,11 @@ namespace
     }
 
     // Ticks a pursuit unseen in 0.1 s steps for a_seconds; returns the last look.
-    Look Hide(Pursuit& a_pursuit, float a_seconds, int a_bounty)
+    Look Hide(Pursuit& a_pursuit, float a_seconds, int /*a_bounty*/ = 0)
     {
         Look look;
         for (float t = 0.0f; t < a_seconds; t += 0.1f) {
-            look = a_pursuit.Tick(0.1f, false, a_bounty, false);
+            look = a_pursuit.Tick(0.1f, false, false);
         }
         return look;
     }
@@ -74,12 +74,6 @@ TEST_CASE("one assault is a star; killing guards climbs slowly, as in San Andrea
     CHECK(kills(1) == 6);  // thirty-three
 }
 
-TEST_CASE("three stars bring the riders")
-{
-    CHECK(ResponseFor(2).riders == 0);
-    CHECK(ResponseFor(3).riders == 1);
-}
-
 TEST_CASE("AEZAKMI: no stars from any crime")
 {
     Pursuit p;
@@ -87,7 +81,7 @@ TEST_CASE("AEZAKMI: no stars from any crime")
     p.Recognised(1000, true);
     CHECK(p.Stars() == 0);
     p.Crime(40, false);
-    CHECK(p.Tick(0.1f, true, 40, true).stars == 0);  // typed while wanted: gone at once
+    CHECK(p.Tick(0.1f, true, true).stars == 0);  // typed while wanted: gone at once
 }
 
 TEST_CASE("out of sight: a grace before the flashing, then the stars go one at a time")
@@ -98,10 +92,10 @@ TEST_CASE("out of sight: a grace before the flashing, then the stars go one at a
         p.Crime(1000, false);
     }
     REQUIRE(p.Stars() == 3);
-    Look look = p.Tick(0.1f, true, 5000, false);
+    Look look = p.Tick(0.1f, true, false);
     CHECK(look.flashing);  // they just changed
     for (int i = 0; i < 30; i++) {
-        look = p.Tick(0.1f, true, 5000, false);
+        look = p.Tick(0.1f, true, false);
     }
     CHECK_FALSE(look.flashing);  // seen, settled
     look = Hide(p, kFlashAfter - 0.5f, 5000);
@@ -128,7 +122,7 @@ TEST_CASE("two stars go in well under half a minute unseen; six take more than a
         p.Restore(HeatFor(a_stars), 0.0f);
         float t = 0.0f;
         while (p.Stars() > 0 && t < 600.0f) {
-            p.Tick(0.1f, false, 5000, false);
+            p.Tick(0.1f, false, false);
             t += 0.1f;
         }
         return t;
@@ -144,7 +138,7 @@ TEST_CASE("being seen again stops the countdown")
     p.Restore(HeatFor(4), 0.0f);
     Hide(p, kFlashAfter + LoseSeconds(4) - 1.0f, 1000);
     CHECK(p.Stars() == 4);
-    p.Tick(0.1f, true, 1000, false);  // a guard spots him
+    p.Tick(0.1f, true, false);  // a guard spots him
     CHECK(p.Unseen() == 0.0f);
     CHECK(Hide(p, kFlashAfter + LoseSeconds(4) - 1.0f, 1000).stars == 4);
 }
@@ -166,27 +160,148 @@ TEST_CASE("a guard who fights him later knows him: a star, two for a murderer, n
     CHECK(clean.Stars() == 0);
 }
 
-TEST_CASE("no bounty, no stars: the fine paid or Wasted forgiving it")
+TEST_CASE("killing the witnesses takes Skyrim's bounty, not the stars")
 {
     Pursuit p;
     p.Crime(1000, false);
-    CHECK(p.Tick(0.1f, true, 0, false).stars == 0);
-    CHECK(p.Heat() == 0.0f);
+    p.Crime(1000, false);
+    REQUIRE(p.Stars() == 1);
+    CHECK(p.Tick(0.1f, true, false).stars == 1);  // the bounty is gone; the pursuit isn't
+    p.Clear();  // the fine paid, Busted, Wasted
+    CHECK(p.Stars() == 0);
 }
 
-TEST_CASE("more guards join as the stars rise, riders from 3, soldiers from 5")
+TEST_CASE("petty crimes alone raise a star at most, however often Skyrim reports them")
 {
-    CHECK(ResponseFor(0).joinRadius == 0.0f);
-    CHECK(ResponseFor(1).joinRadius == 0.0f);
-    CHECK(ResponseFor(2).riders == 0);
-    CHECK(ResponseFor(3).riders == 1);
-    CHECK(ResponseFor(4).soldiers == 0);
-    CHECK(ResponseFor(5).soldiers > 0);
-    for (int stars = 1; stars < kMaxStars; stars++) {
-        CHECK(ResponseFor(stars + 1).joinRadius >= ResponseFor(stars).joinRadius);
-        CHECK(ResponseFor(stars + 1).riders >= ResponseFor(stars).riders);
-        CHECK(ResponseFor(stars + 1).soldiers >= ResponseFor(stars).soldiers);
+    Pursuit p;
+    for (int i = 0; i < 200; i++) {
+        p.Crime(5, false);  // trespassing, step after step
     }
+    CHECK(p.Stars() == 1);
+    CHECK(p.Heat() == HeatFor(1));
+    p.Crime(40, false);  // an assault on top still counts
+    CHECK(p.Heat() == HeatFor(1) + 60.0f);
+    Pursuit q;
+    q.Crime(1, false);  // a piece of meat
+    CHECK(q.Stars() == 0);
+}
+
+TEST_CASE("the hold's own guards join from 2 stars, further the more there are")
+{
+    CHECK(JoinRadius(0) == 0.0f);
+    CHECK(JoinRadius(1) == 0.0f);
+    CHECK(JoinRadius(2) > 0.0f);
+    for (int stars = 2; stars < kMaxStars; stars++) {
+        CHECK(JoinRadius(stars + 1) > JoinRadius(stars));
+    }
+}
+
+TEST_CASE("the force grows with the stars, faster, tougher, never more than twelve")
+{
+    CHECK(ForceFor(0).total == 0);
+    CHECK(ForceFor(1).total == 0);  // Skyrim's own guards only
+    CHECK(ForceFor(2).total > 0);
+    for (int stars = 2; stars < kMaxStars; stars++) {
+        const auto now = ForceFor(stars);
+        const auto next = ForceFor(stars + 1);
+        CHECK(next.total > now.total);
+        CHECK(next.cooldown < now.cooldown);
+        CHECK(next.damage >= now.damage);
+        int special = 0;
+        for (const int n : now.most) {
+            special += n;
+        }
+        CHECK(special <= now.total);
+    }
+    CHECK(ForceFor(kMaxStars).total == kForceCap);
+    CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Rider)] > 0);   // riders from 3
+    CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Rider)] == 0);
+    CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Wizard)] > 0);  // a guard wizard from 4
+    CHECK(ForceFor(4).damage > 1.0f);                                       // and they hit harder
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Soldier)] > 0); // soldiers from 5
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
+    CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Dragon)] == 1); // the dragon at 6
+}
+
+TEST_CASE("the next unit: the dragon, riders, the captain, wizards, soldiers, then guards")
+{
+    const auto force = ForceFor(6);
+    Counts     counts{};
+    CHECK(NextUnit(force, counts) == Unit::Dragon);
+    counts[static_cast<std::size_t>(Unit::Dragon)] = 1;
+    CHECK(NextUnit(force, counts) == Unit::Rider);
+    counts[static_cast<std::size_t>(Unit::Rider)] = 3;
+    CHECK(NextUnit(force, counts) == Unit::Captain);
+    counts[static_cast<std::size_t>(Unit::Captain)] = 1;
+    CHECK(NextUnit(force, counts) == Unit::Wizard);
+    counts[static_cast<std::size_t>(Unit::Wizard)] = 2;
+    CHECK(NextUnit(force, counts) == Unit::Soldier);
+    counts[static_cast<std::size_t>(Unit::Soldier)] = 4;
+    CHECK(NextUnit(force, counts) == Unit::Guard);
+    CHECK(TotalOf(counts) == 11);
+    CHECK(NextUnit(ForceFor(2), Counts{}) == Unit::Guard);
+    CHECK(std::string(NameOf(Unit::Wizard)) == "wizard");
+}
+
+TEST_CASE("the director spawns one per cooldown up to the force, and gives a breather when they're all dead")
+{
+    Director d;
+    const auto force = ForceFor(3);
+    int        alive = 0;
+    float      t = 0.0f;
+    float      first = -1.0f;
+    while (t < 120.0f) {
+        if (d.Tick(0.1f, 3, alive)) {
+            if (first < 0.0f) {
+                first = t;
+            }
+            alive++;
+        }
+        t += 0.1f;
+    }
+    CHECK(alive == force.total);  // and no more
+    CHECK(first == doctest::Approx(force.cooldown).epsilon(0.05));
+    // All killed: the next one waits two cooldowns.
+    int   spawned = 0;
+    float wait = 0.0f;
+    while (spawned == 0 && wait < 60.0f) {
+        spawned += d.Tick(0.1f, 3, 0) ? 1 : 0;
+        wait += 0.1f;
+    }
+    CHECK(wait == doctest::Approx(2.0f * force.cooldown).epsilon(0.05));
+    // 1 star: nothing of ours.
+    Director none;
+    for (int i = 0; i < 1000; i++) {
+        CHECK_FALSE(none.Tick(0.1f, 1, 0));
+    }
+}
+
+TEST_CASE("never in view: behind the camera is hidden, in front isn't")
+{
+    const Point cj{ 0.0f, 0.0f };
+    const float north = 0.0f;
+    const Point camera = CameraOf(cj, north);
+    CHECK(camera.y == doctest::Approx(-kCameraBack));
+    CHECK(InView(camera, north, { 0.0f, 2000.0f }));        // ahead
+    CHECK(InView(camera, north, { 300.0f, 0.0f }));         // close by
+    CHECK_FALSE(InView(camera, north, { 0.0f, -2000.0f })); // behind
+    CHECK_FALSE(InView(camera, north, { 2000.0f, -500.0f }));  // off to the side, a little behind
+    for (int i = 0; i < 8; i++) {
+        const Point at = SpawnSpot(cj, north, i);
+        const float distance = std::hypot(at.x - cj.x, at.y - cj.y);
+        CHECK(distance >= kSpawnNear);
+        CHECK(distance <= kSpawnFar);
+        CHECK_FALSE(InView(camera, north, at));
+    }
+    // Facing east, behind is west.
+    const Point west = SpawnSpot(cj, 1.5707963f, 0);
+    CHECK(west.x < -kSpawnNear);
+}
+
+TEST_CASE("CJ's pursuit lines come after the conversation's categories")
+{
+    CHECK(kLineChased >= 16);
+    CHECK(kLineArrested != kLineChased);
 }
 
 TEST_CASE("which vehicles a guard busts CJ out of, and how")
@@ -324,6 +439,8 @@ TEST_CASE("the nine holds by crime faction, each with a guard to copy")
     CHECK(HoldOf(0x00028849) == nullptr);  // CrimeFactionSons isn't a hold
     for (const auto& hold : kHolds) {
         CHECK(hold.guard != 0);
+        CHECK(hold.barracks != 0);
+        CHECK(std::string(BarracksName(hold)) != "the barracks");
         CHECK(HoldOf(hold.faction) == &hold);
     }
 }

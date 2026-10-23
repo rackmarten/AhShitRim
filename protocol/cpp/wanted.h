@@ -1,6 +1,6 @@
 // San Andreas's wanted level on top of Skyrim's crime system (v22), the game-free half: how much heat a crime
 // adds and how many stars it's worth, how they flash and fall a star at a time while CJ is out of the guards'
-// sight, how many guards, riders and soldiers each star brings, when a guard busts CJ out of a stopped
+// sight, the director that keeps a force after him by the stars (never in view), when a guard busts CJ out of a stopped
 // vehicle, the Busted sequence, the fine and where CJ wakes, and the stars' record in the co-save. Header-only
 // and free of game types, so the protocol tests cover it; the SKSE plugin feeds it (skse/src/player/Police.cpp).
 //
@@ -29,6 +29,12 @@ namespace AhShitRim::Wanted
 {
     inline constexpr int kMaxStars = 6;
 
+    // A spot on the ground, Skyrim units.
+    struct Point
+    {
+        float x = 0.0f, y = 0.0f;
+    };
+
     // ---- The holds ----
 
     enum class Side : std::uint8_t
@@ -41,24 +47,44 @@ namespace AhShitRim::Wanted
     {
         std::uint32_t    faction;  // its crime faction in Skyrim.esm (CrimeFaction*)
         std::string_view name;
-        std::uint32_t    guard;     // a guard to copy for the riders when none of the hold's is about (Skyrim.esm NPC_)
-        Side             side;      // who holds it when the war starts: whose soldiers join at 5 stars
+        std::uint32_t    guard;     // a guard to copy when none of the hold's is about (Skyrim.esm NPC_)
+        Side             side;      // who holds it when the war starts: whose captain, wizards and soldiers come
+        std::uint32_t    barracks;  // the barracks' (or keep's) inside door out: where its teleport leads is where CJ wakes after Busted
     };
 
-    // The nine holds. A guard's crime faction says which hold he is from; the riders copy one of those about
-    // (the hold's guards as the war has left them), else the guard here. CJ wakes after Busted at the hold's
-    // barracks: its crime faction's exterior jail marker (JAIL), where Skyrim lets the player out of its jail.
+    // The nine holds. A guard's crime faction says which hold he is from; the guards sent copy one of those about
+    // (the hold's guards as the war has left them), else the guard here. CJ wakes after Busted outside the hold's
+    // barracks, or the keep where it has none: where walking out of its door puts the player (the door's own
+    // teleport, read at runtime). Reinforcements also come out of there in its city. Whiterun's crime faction's
+    // exterior jail marker put the player under the ground, so the markers are only the fallback.
     inline constexpr std::array<Hold, 9> kHolds = { {
-        { 0x000267EA, "Whiterun", 0x000EA0A2, Side::Imperial },     // GuardWhiterunImperialTemplate
-        { 0x000267E3, "Eastmarch", 0x00045C31, Side::Sons },        // GuardWindhelmSons
-        { 0x0002816B, "the Rift", 0x00045854, Side::Sons },         // GuardRiftenSonsBase
-        { 0x0002816C, "the Reach", 0x000210CE, Side::Imperial },    // GuardMarkarthImperialDayShift01
-        { 0x00029DB0, "Haafingar", 0x000853C4, Side::Imperial },    // GuardSolitudeImperialBase
-        { 0x0002816D, "Hjaalmarch", 0x0002C81B, Side::Imperial },   // GuardHjaalmarchImperial
-        { 0x0002816E, "the Pale", 0x0008757D, Side::Sons },         // GuardDawnstarSonsNoShift
-        { 0x0002816F, "Winterhold", 0x00024B63, Side::Sons },       // GuardWinterholdSons
-        { 0x00028170, "Falkreath", 0x0010107B, Side::Imperial },    // GuardFalkreathImperial
+        { 0x000267EA, "Whiterun", 0x000EA0A2, Side::Imperial, 0x00016707 },     // GuardWhiterunImperialTemplate; Dragonsreach
+        { 0x000267E3, "Eastmarch", 0x00045C31, Side::Sons, 0x000C0E2B },        // GuardWindhelmSons; the Palace of the Kings
+        { 0x0002816B, "the Rift", 0x00045854, Side::Sons, 0x00045A3A },         // GuardRiftenSonsBase; Mistveil Keep's barracks
+        { 0x0002816C, "the Reach", 0x000210CE, Side::Imperial, 0x0007F65E },    // GuardMarkarthImperialDayShift01; Understone Keep
+        { 0x00029DB0, "Haafingar", 0x000853C4, Side::Imperial, 0x000223B2 },    // GuardSolitudeImperialBase; Castle Dour
+        { 0x0002816D, "Hjaalmarch", 0x0002C81B, Side::Imperial, 0x000173C4 },   // GuardHjaalmarchImperial; the Morthal guardhouse
+        { 0x0002816E, "the Pale", 0x0008757D, Side::Sons, 0x00013BE0 },         // GuardDawnstarSonsNoShift; the Dawnstar barracks
+        { 0x0002816F, "Winterhold", 0x00024B63, Side::Sons, 0x0001759B },       // GuardWinterholdSons; the Jarl's longhouse
+        { 0x00028170, "Falkreath", 0x0010107B, Side::Imperial, 0x000EF3A2 },    // GuardFalkreathImperial; the Falkreath barracks
     } };
+
+    // What the help line calls where CJ wakes, by the hold's barracks door.
+    constexpr const char* BarracksName(const Hold& a_hold)
+    {
+        switch (a_hold.barracks) {
+        case 0x00016707: return "Dragonsreach";
+        case 0x000C0E2B: return "the Palace of the Kings";
+        case 0x00045A3A: return "Mistveil Keep's barracks";
+        case 0x0007F65E: return "Understone Keep";
+        case 0x000223B2: return "Castle Dour";
+        case 0x000173C4: return "the Morthal guardhouse";
+        case 0x00013BE0: return "the Dawnstar barracks";
+        case 0x0001759B: return "the Jarl's longhouse";
+        case 0x000EF3A2: return "the Falkreath barracks";
+        default: return "the barracks";
+        }
+    }
 
     // The hold whose crime faction is a_faction, or nullptr.
     constexpr const Hold* HoldOf(std::uint32_t a_faction)
@@ -75,6 +101,11 @@ namespace AhShitRim::Wanted
     inline constexpr std::uint32_t kHorse = 0x00023AB2;             // EncHorseSaddledBrown, a saddled horse
     inline constexpr std::uint32_t kSoldiersImperial = 0x0001FC5B;  // LCharSoldierImperial, a levelled legionnaire
     inline constexpr std::uint32_t kSoldiersSons = 0x0001FC5C;      // LCharSoldierSons, a levelled Stormcloak
+    inline constexpr std::uint32_t kCaptainImperial = 0x000AA8D4;   // EncGuardImperialM01MaleNordCommander
+    inline constexpr std::uint32_t kCaptainSons = 0x000AA932;       // EncGuardSonsM01MaleNordCommander
+    inline constexpr std::uint32_t kWizardImperial = 0x000872A2;    // LvlGuardImperialWizard, a guard battlemage
+    inline constexpr std::uint32_t kWizardSons = 0x000872A3;        // LvlGuardSonsWizard
+    inline constexpr std::uint32_t kDragon = 0x0005EACE;            // lvlDragon, a levelled dragon
 
     // ---- Stars ----
 
@@ -96,7 +127,8 @@ namespace AhShitRim::Wanted
 
     // What a crime adds, by the bounty Skyrim put on it (its defaults: trespass 5, pickpocketing 25, theft half the value,
     // an assault 40, a murder 1000). An assault is a star on its own; killing a guard (his assault, then his murder) is
-    // 140: two kills are two stars, four three, nine four, about eighteen five and thirty-three six.
+    // 140: two kills are two stars, four three, nine four, about eighteen five and thirty-three six. Petty crimes raise a
+    // star at most (Pursuit::Crime).
     constexpr float HeatForCrime(int a_added)
     {
         return a_added >= 1000 ? 80.0f : a_added >= 40 ? 60.0f : a_added > 0 ? 15.0f : 0.0f;
@@ -134,10 +166,21 @@ namespace AhShitRim::Wanted
                 Clear();
                 return 0;
             }
-            Set(_heat + HeatForCrime(a_added));
+            const float added = HeatForCrime(a_added);
+            // Petty crimes alone (trespassing, theft, a horse taken) raise no more than a star: Skyrim reports some of
+            // them over and over (each step trespassing), and they shouldn't call in the army.
+            Set(a_added >= 40 ? _heat + added : (std::max)(_heat, (std::min)(_heat + added, HeatFor(1))));
             _unseen = 0.0f;
             _losing = 0.0f;
             return Stars();
+        }
+
+        // Heat of its own (the guards' dragon brought down), as a crime would add it.
+        void AddHeat(float a_heat)
+        {
+            Set(_heat + a_heat);
+            _unseen = 0.0f;
+            _losing = 0.0f;
         }
 
         // A guard of the hold fights CJ while no stars show: he is recognised by his bounty.
@@ -150,12 +193,13 @@ namespace AhShitRim::Wanted
             }
         }
 
-        // A frame of a_delta seconds: a_seen while a pursuer sees CJ, a_bounty the hold's bounty now. No bounty, no
-        // stars (it was paid or forgiven).
-        Look Tick(float a_delta, bool a_seen, int a_bounty, bool a_neverWanted)
+        // A frame of a_delta seconds: a_seen while a pursuer sees CJ. The bounty doesn't matter: Skyrim drops it when the
+        // witnesses die, and San Andreas's stars don't go because CJ shot the cops who saw him. Paying the fine, Busted
+        // and Wasted clear them (Clear).
+        Look Tick(float a_delta, bool a_seen, bool a_neverWanted)
         {
             _changed += a_delta;
-            if (a_neverWanted || a_bounty <= 0) {
+            if (a_neverWanted) {
                 Clear();
             }
             const int stars = Stars();
@@ -215,29 +259,174 @@ namespace AhShitRim::Wanted
 
     // ---- The response ----
 
-    struct Response
-    {
-        float joinRadius = 0.0f;  // Skyrim units: the hold's guards this close join the fight (0: only those Skyrim sends)
-        int   riders = 0;         // mounted guards spawned to chase CJ
-        int   soldiers = 0;       // the hold's soldiers spawned to join
-    };
-
-    // More guards join as the stars rise; riders from 3, soldiers from 5.
-    constexpr Response ResponseFor(int a_stars)
+    // The hold's own guards round about join the fight from 2 stars: this close, in Skyrim units.
+    constexpr float JoinRadius(int a_stars)
     {
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 2: return { 2000.0f, 0, 0 };
-        case 3: return { 4000.0f, 1, 0 };
-        case 4: return { 6000.0f, 2, 0 };
-        case 5: return { 8000.0f, 2, 2 };
-        case 6: return { 12000.0f, 3, 4 };
+        case 2: return 2000.0f;
+        case 3: return 4000.0f;
+        case 4: return 6000.0f;
+        case 5: return 8000.0f;
+        case 6: return 12000.0f;
+        default: return 0.0f;
+        }
+    }
+
+    // What the director sends: copies of the hold's guards, on foot or on a horse, their captain, a guard wizard (the
+    // hold's battlemage), the hold's soldiers, and at 6 stars a dragon (San Andreas's helicopter).
+    enum class Unit : std::uint8_t
+    {
+        Guard,
+        Rider,
+        Captain,
+        Wizard,
+        Soldier,
+        Dragon,
+    };
+    inline constexpr std::size_t kUnitCount = 6;
+
+    constexpr const char* NameOf(Unit a_unit)
+    {
+        switch (a_unit) {
+        case Unit::Guard: return "guard";
+        case Unit::Rider: return "rider";
+        case Unit::Captain: return "captain";
+        case Unit::Wizard: return "wizard";
+        case Unit::Soldier: return "soldier";
+        case Unit::Dragon: return "dragon";
+        default: return "?";
+        }
+    }
+
+    // The force each star level keeps up: how many pursuers of ours at once, the seconds between one spawning and the
+    // next, how many of them are of each kind besides plain guards, and how much harder they hit (their attack damage
+    // and weapon speed: the SWAT and army of San Andreas's top stars). 1 star is Skyrim's own guards only.
+    struct Force
+    {
+        int   total = 0;
+        float cooldown = 0.0f;
+        std::array<int, kUnitCount> most{};  // by Unit; Guard's is unused (the rest of total)
+        float damage = 1.0f;
+    };
+
+    inline constexpr int kForceCap = 12;  // never more of ours alive at once
+
+    constexpr Force ForceFor(int a_stars)
+    {
+        //                                       guard rider captain wizard soldier dragon
+        switch (std::clamp(a_stars, 0, kMaxStars)) {
+        case 2: return { 3, 12.0f, { 0, 0, 0, 0, 0, 0 }, 1.0f };
+        case 3: return { 5, 9.0f, { 0, 2, 0, 0, 0, 0 }, 1.0f };
+        case 4: return { 7, 7.0f, { 0, 2, 1, 1, 0, 0 }, 1.25f };
+        case 5: return { 10, 5.0f, { 0, 3, 1, 2, 3, 0 }, 1.5f };
+        case 6: return { kForceCap, 4.0f, { 0, 3, 1, 2, 4, 1 }, 1.75f };
         default: return {};
         }
     }
 
-    inline constexpr float kSpawnEvery = 5.0f;       // seconds between one spawned pursuer and the next
-    inline constexpr float kSpawnDistance = 3500.0f;  // Skyrim units behind CJ they come from
-    inline constexpr float kSightRange = 5000.0f;     // a pursuer further off doesn't count as seeing CJ
+    // How many of ours are alive, by Unit.
+    using Counts = std::array<int, kUnitCount>;
+
+    constexpr int TotalOf(const Counts& a_counts)
+    {
+        int total = 0;
+        for (const int n : a_counts) {
+            total += n;
+        }
+        return total;
+    }
+
+    // The kind the next spawn is: the dragon first, then riders, the captain, wizards and soldiers up to their counts,
+    // plain guards for the rest. Guard too when the force is full (the caller doesn't spawn then).
+    constexpr Unit NextUnit(const Force& a_force, const Counts& a_counts)
+    {
+        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Rider, Unit::Captain, Unit::Wizard, Unit::Soldier };
+        for (const Unit unit : kOrder) {
+            const auto i = static_cast<std::size_t>(unit);
+            if (a_counts[i] < a_force.most[i]) {
+                return unit;
+            }
+        }
+        return Unit::Guard;
+    }
+
+    // When the next of ours spawns: one per cooldown while fewer than the force are alive. Killing them all buys a
+    // breather of another cooldown on top, so CJ can get away (onto a bike) before the next wave.
+    class Director
+    {
+    public:
+        // A frame of a_delta seconds with a_alive of ours alive. Returns whether one spawns now.
+        bool Tick(float a_delta, int a_stars, int a_alive)
+        {
+            const Force force = ForceFor(a_stars);
+            if (force.total == 0) {
+                _timer = 0.0f;
+                _had = false;
+                return false;
+            }
+            if (_had && a_alive == 0) {
+                _timer = -force.cooldown;  // wiped out: a breather
+            }
+            _had = a_alive > 0;
+            _timer += a_delta;
+            if (a_alive < (std::min)(force.total, kForceCap) && _timer >= force.cooldown) {
+                _timer = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        // A spawn that didn't come off (no spot): try again soon.
+        void Retry() { _timer = (std::max)(_timer, ForceFor(kMaxStars).cooldown * 0.75f); }
+
+        void Reset()
+        {
+            _timer = 0.0f;
+            _had = false;
+        }
+
+    private:
+        float _timer = 0.0f;
+        bool  _had = false;
+    };
+
+    // Where ours spawn: on the ground 1200 to 2800 units from CJ, never in view. The camera stands about kCameraBack
+    // behind CJ along its heading (San Andreas's, which the player's follows) and sees a cone of kViewHalfAngle either
+    // side of it (a wide screen's, and some), and anything within kViewNear of it.
+    inline constexpr float kSpawnNear = 1200.0f;
+    inline constexpr float kSpawnFar = 2800.0f;
+    inline constexpr float kDragonDistance = 5000.0f;
+    inline constexpr float kCameraBack = 300.0f;
+    inline constexpr float kViewHalfAngle = 1.25f;  // radians, about 72 degrees
+    inline constexpr float kViewNear = 600.0f;
+    inline constexpr float kSightRange = 5000.0f;   // a pursuer further off doesn't count as seeing CJ
+
+    // Where the camera stands for CJ at a_cj looking along a_heading (Skyrim radians: 0 north, clockwise).
+    inline Point CameraOf(Point a_cj, float a_heading) { return { a_cj.x - std::sin(a_heading) * kCameraBack, a_cj.y - std::cos(a_heading) * kCameraBack }; }
+
+    // Whether a_at is in view of a camera at a_camera looking along a_heading.
+    inline bool InView(Point a_camera, float a_heading, Point a_at)
+    {
+        const float dx = a_at.x - a_camera.x;
+        const float dy = a_at.y - a_camera.y;
+        const float distance = std::hypot(dx, dy);
+        if (distance <= kViewNear) {
+            return true;
+        }
+        const float cosine = (dx * std::sin(a_heading) + dy * std::cos(a_heading)) / distance;
+        return cosine >= std::cos(kViewHalfAngle);
+    }
+
+    // The a_try-th spot to try round CJ at a_cj, looking along a_heading: behind him first, then further round to
+    // either side, near and far in turn. Out of view whichever (the turns stop short of the cone).
+    inline Point SpawnSpot(Point a_cj, float a_heading, int a_try, float a_distance = 0.0f)
+    {
+        constexpr float kTurns[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, 1.7f, -1.7f, 0.3f };
+        const float     turn = kTurns[static_cast<std::size_t>(a_try) % std::size(kTurns)];
+        const float     distance = a_distance > 0.0f ? a_distance : (a_try % 2 == 0 ? kSpawnNear + 400.0f : kSpawnFar - 400.0f);
+        const float     away = a_heading + 3.14159265f + turn;  // behind
+        return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
+    }
 
     // ---- Busted in a vehicle ----
 
@@ -265,11 +454,6 @@ namespace AhShitRim::Wanted
     inline constexpr float kReach = 110.0f;         // Skyrim units, 1.5 m: a guard this close to the door (or to CJ on a bike) has him
     inline constexpr float kDoorSide = 95.0f;       // the driver's door: this far left of the car's middle (San Andreas drives on the right, its driver sits left)
     inline constexpr float kDoorAhead = 15.0f;      // and this far forward
-
-    struct Point
-    {
-        float x = 0.0f, y = 0.0f;
-    };
 
     // Where a guard has to stand to open the driver's door of a car whose middle is a_middle, heading a_heading
     // (Skyrim radians: 0 north, clockwise).
@@ -303,6 +487,15 @@ namespace AhShitRim::Wanted
     private:
         float _stopped = 0.0f;
     };
+
+    // ---- CJ's lines ----
+
+    // InputState.lineKind (v22) values past the conversation's categories (dialogue.h): San Andreas's own lines of
+    // CJ's for the pursuit, its CTX_GLOBAL_CHASED and CTX_GLOBAL_ARRESTED, played as San Andreas picks them.
+    inline constexpr std::uint8_t kLineChased = 16;
+    inline constexpr std::uint8_t kLineArrested = 17;
+
+    inline constexpr float kChasedEvery = 20.0f;  // seconds at least between his chased lines while pursuers see him
 
     // ---- Busted ----
 

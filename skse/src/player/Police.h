@@ -14,20 +14,27 @@ namespace AhShitRim::Protocol
 //   bounty on the player went up) adds some, by how bad it was. Out of every pursuer's sight for 5 s they flash,
 //   then go one at a time; the bounty stays, and a guard of the hold who fights CJ later brings a star or two back.
 //   No bounty (the fine paid, Wasted) is no stars.
-// - The response: from 2 stars the hold's guards round about join the fight, from 3 mounted guards (a copy of
-//   one of the hold's guards on a saddled horse, spawned behind CJ) chase him, from 5 the hold's soldiers
-//   (levelled legionnaires or Stormcloaks, by who holds it when the war starts) join. When the stars go they stop
-//   fighting and are taken out a step a frame once the player can't see them (Sweep).
-// - AEZAKMI (San Andreas's toggle, CheatCodes) keeps the stars at 0, puts any bounty a crime adds back as it
-//   was, and calls off the fight.
+// - Skyrim drops a bounty when the witnesses die; the stars stay (San Andreas's don't go because CJ shot the cops
+//   who saw him). The fine paid to a guard (PayFine, Actor's vfunc 0xBB, hooked), Busted and Wasted end them.
+// - The response: from 2 stars the hold's guards round about join the fight, and a director keeps a force of ours
+//   after him (Wanted::ForceFor): copies of the hold's guards, riders on saddled horses from 3, a captain and a
+//   guard wizard from 4 (and everyone of ours hits harder), the hold's soldiers from 5, a dragon at 6 (bringing it
+//   down is a lot of heat). One spawns per cooldown, never in view: round CJ behind the camera on the ground, or
+//   out of the city's barracks door. Killing them all buys a breather. When the stars go they stop fighting and
+//   are taken out a step a frame once the player can't see them (Sweep).
+// - AEZAKMI (CheatCodes) clears every hold's bounty and calls off the fight as it's typed, then keeps the stars
+//   at 0, puts back any bounty a crime adds and stops any guard fighting the player.
 // - Busted in a vehicle: wanted, the car nearly stopped for 1.5 s, a guard of the hold at the driver's door:
 //   San Andreas drags CJ out (kInputBusted, its jacked animation). A bike, bicycle or quad has no door: a guard
 //   reaching him knocks him off. Moving keeps him safe.
 // - On foot Skyrim's guard dialogue stays (the fine, resisting, persuading); only "go to jail" changes: the
 //   player's GoToPrison (Actor's vfunc 0xB9) is hooked while CJ has the player, and Busted runs instead.
 // - Busted: the arrest, "busted", the fade to black, the player taken to the hold's barracks (its crime
-//   faction's exterior jail marker, `player.moveto`), the bounty paid from gold (all of it if short) and
-//   cleared, the stars gone, everyone's fight called off, the fade back in. Weapons are kept; no jail.
+//   the barracks' door's own teleport outside, the jail marker as the fallback), the bounty paid from gold (all of it
+//   if short) and cleared, the stars gone, the fade back in. Weapons are kept; no jail. From the arrest on nobody
+//   fights the player (and Vitals keeps its health), and CJ says one of his arrested lines.
+// - CJ's lines (Wanted::kLine*, through PlayerSync's input): his chased line on a star gained and now and then while
+//   pursuers see him.
 // - The heat, its hold and how long CJ has been unseen are in the co-save, a record of their own
 //   (Wanted::kRecordType).
 // Main thread only.
@@ -42,6 +49,9 @@ namespace AhShitRim::Police
 
     // Every frame, owned or not: one step of taking out the spawned pursuers that are leaving.
     void Sweep();
+
+    // A line for CJ (Wanted::kLineChased, kLineArrested) to put in the input, 0 for none; taken once.
+    std::uint8_t TakeLine();
 
     // Busted is running and the player can't act.
     bool IsBusted();

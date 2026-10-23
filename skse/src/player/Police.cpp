@@ -20,17 +20,33 @@ namespace AhShitRim::Police
         constexpr RE::FormID kGold = 0x0000000F;
         constexpr float      kLookEvery = 0.25f;  // seconds between looks for who sees CJ
         constexpr float      kJoinEvery = 1.0f;   // seconds between calls for the hold's guards to join
+        constexpr float      kCalmEvery = 0.5f;   // seconds between calling the fight off, while busted or never wanted
         constexpr float      kMountAfter = 0.5f;  // a rider gets on his horse this long after both are in
         constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
+        constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
         constexpr float      kSpawnRise = 300.0f;    // a spawn spot more than this above or below the player is a tower or a ledge: not used
-        constexpr float      kOnMarker = 150.0f;     // after the move, the player this far from the barracks' marker is moved there again
+        constexpr float      kOnSpot = 150.0f;       // after the move, the player this far from where it should be is moved there again
         constexpr float      kSettle = 2.0f;         // seconds after a game loads before the crimes and the guards are looked at
+        constexpr float      kBarracksRange = 6000.0f;  // the city's barracks this close: half the reinforcements come out of there
+        constexpr float      kDragonHeat = 400.0f;   // bringing down the guards' dragon, San Andreas's helicopter
+        constexpr float      kChasedAfterRise = 6.0f;  // seconds at least between CJ's chased line on a star gained and the last one
+        constexpr int        kSpawnTries = 4;        // spots tried per spawn
+
+        // MoveTo_Impl, which CommonLib keeps private: TESObjectREFR::MoveTo with a position of our own.
+        void MoveToSpot(RE::TESObjectREFR* a_ref, const RE::ObjectRefHandle& a_target, RE::TESObjectCELL* a_cell, RE::TESWorldSpace* a_world,
+            const RE::NiPoint3& a_position, const RE::NiPoint3& a_rotation)
+        {
+            using func_t = void (*)(RE::TESObjectREFR*, const RE::ObjectRefHandle&, RE::TESObjectCELL*, RE::TESWorldSpace*, const RE::NiPoint3&, const RE::NiPoint3&);
+            static REL::Relocation<func_t> func{ RELOCATION_ID(56227, 56626) };
+            func(a_ref, a_target, a_cell, a_world, a_position, a_rotation);
+        }
 
         struct Spawned
         {
             RE::ObjectRefHandle actor;
-            RE::ObjectRefHandle horse;  // a rider's, none for a soldier
+            RE::ObjectRefHandle horse;  // a rider's
+            Wanted::Unit        unit = Wanted::Unit::Guard;
             float               age = 0.0f;  // seconds since both were in (3D loaded)
             bool                mounted = false;
             bool                fighting = false;
@@ -45,6 +61,16 @@ namespace AhShitRim::Police
             int                 step = 0;  // 0 disable the actor, 1 delete it, 2 disable the horse, 3 delete it
         };
 
+        // Where walking out of a barracks door puts the player: the door's own teleport.
+        struct Spot
+        {
+            RE::ObjectRefHandle door;  // the door outside, the move's target
+            RE::TESObjectCELL*  cell = nullptr;
+            RE::TESWorldSpace*  world = nullptr;
+            RE::NiPoint3        position;
+            RE::NiPoint3        rotation;
+        };
+
         struct State
         {
             bool                     owned = false;
@@ -56,11 +82,13 @@ namespace AhShitRim::Police
             bool                     seen = false;
             float                    lookTimer = 0.0f;
             float                    joinTimer = 0.0f;
-            float                    spawnTimer = 0.0f;
+            float                    calmTimer = 0.0f;
+            Wanted::Director         director;
             std::vector<Spawned>     spawned;
             std::vector<Leaving>     leaving;
-            bool                     clearOut = false;  // the leaving go whether the player sees them or not (Skyrim has it back, Busted)
+            bool                     clearOut = false;  // the leaving go whether the player sees them or not (Skyrim has it back)
             int                      spawnTries = 0;    // turns the next spawn spot round CJ
+            bool                     neverWanted = false;  // AEZAKMI was on last frame
             Wanted::StopWatch        stop;
             Wanted::Sequence         sequence;
             Wanted::Frame            frame;
@@ -68,11 +96,14 @@ namespace AhShitRim::Police
             RE::TESFaction*          jailAsked = nullptr;  // GoToPrison came while CJ has the player: Busted next frame
             bool                     moveAsked = false;
             bool                     arrived = false;
-            bool                     movedAgain = false;
-            float                    settle = 0.0f;  // seconds left before the loaded world is looked at  // the player was moved to the marker a second time, its ground in
+            bool                     movedAgain = false;  // the player was moved to the spot a second time, its ground in
+            RE::NiPoint3             destination;        // where the move should put the player
+            float                    settle = 0.0f;  // seconds left before the loaded world is looked at
             int                      loggedStars = 0;
             int                      shownStars = -1;  // what the HUD was last told (so the HUD demo's stars stay up)
             bool                     shownFlashing = false;
+            std::uint8_t             line = 0;        // a line for CJ to say (Wanted::kLine*), taken by PlayerSync
+            float                    chasedTimer = 0.0f;  // seconds since his last chased line
         } state;
 
         void Show(int a_stars, bool a_flashing = false)
@@ -97,15 +128,17 @@ namespace AhShitRim::Police
 
         bool NeverWanted() { return CheatCodes::On(Cheats::SaCheat::NeverWanted); }
 
-        bool IsSpawned(RE::Actor* a_actor)
+        const Spawned* SpawnedOf(RE::Actor* a_actor)
         {
             for (const auto& s : state.spawned) {
                 if (s.actor.get().get() == a_actor) {
-                    return true;
+                    return &s;
                 }
             }
-            return false;
+            return nullptr;
         }
+
+        bool IsSpawned(RE::Actor* a_actor) { return SpawnedOf(a_actor) != nullptr; }
 
         // Whether a_actor is one of the pursuit's: a guard of its hold, or one we spawned.
         bool Pursues(RE::Actor* a_actor)
@@ -121,6 +154,41 @@ namespace AhShitRim::Police
         }
 
         bool Fights(RE::Actor* a_actor, RE::PlayerCharacter* a_player) { return a_actor->GetActorRuntimeData().currentCombatTarget.get().get() == a_player; }
+
+        void Say(std::uint8_t a_line)
+        {
+            state.line = a_line;
+            if (a_line == Wanted::kLineChased) {
+                state.chasedTimer = 0.0f;
+            }
+        }
+
+        // ---- Calling the fight off ----
+
+        // Every guard and everyone of ours fighting the player stops; a_alarm also calls off everyone's alarm
+        // (Skyrim's own, which brings bandits round too, so only once at a time).
+        void Calm(RE::PlayerCharacter* a_player, bool a_alarm)
+        {
+            int calmed = 0;
+            if (auto* lists = RE::ProcessLists::GetSingleton()) {
+                if (a_alarm) {
+                    lists->StopCombatAndAlarmOnActor(a_player, false);
+                }
+                lists->ForEachHighActor([&](RE::Actor* a_actor) {
+                    if (a_actor && !a_actor->IsDead() && Fights(a_actor, a_player) && (a_actor->IsGuard() || IsSpawned(a_actor))) {
+                        a_actor->StopCombat();
+                        calmed++;
+                    }
+                    return RE::BSContainer::ForEachResult::kContinue;
+                });
+            }
+            if (a_alarm) {
+                a_player->StopCombat();
+            }
+            if (calmed > 0) {
+                SKSE::log::info("police: {} pursuer(s) stop fighting the player", calmed);
+            }
+        }
 
         // ---- The bounties ----
 
@@ -142,9 +210,7 @@ namespace AhShitRim::Police
                     if (never) {
                         a_player->SetCrimeGoldValue(faction, true, state.violent[i]);
                         a_player->SetCrimeGoldValue(faction, false, state.nonViolent[i]);
-                        if (auto* lists = RE::ProcessLists::GetSingleton()) {
-                            lists->StopCombatAndAlarmOnActor(a_player, false);
-                        }
+                        Calm(a_player, true);
                         SKSE::log::info("police: AEZAKMI: a crime in {} ({} gold) undone, the bounty stays {}", hold.name, now - before, before);
                         continue;
                     }
@@ -162,7 +228,7 @@ namespace AhShitRim::Police
         // ---- Who sees CJ ----
 
         // Whether any pursuer of the hold sees the player; while no stars show, a guard of a hold with a bounty on
-        // the player fighting it brings them back.
+        // the player fighting it brings a star or two back.
         void Look(RE::PlayerCharacter* a_player)
         {
             state.seen = false;
@@ -197,12 +263,13 @@ namespace AhShitRim::Police
             });
         }
 
-        // ---- The response ----
+        // ---- Ours leaving ----
 
-        // Everyone spawned stops fighting and leaves: Sweep takes them out once the player can't see them.
+        // Everyone spawned stops fighting and leaves: SweepLeaving takes them out once the player can't see them.
         void Dismiss(const char* a_why, bool a_clearOut = false)
         {
             state.clearOut = state.clearOut || a_clearOut;
+            state.director.Reset();
             if (state.spawned.empty()) {
                 return;
             }
@@ -224,8 +291,7 @@ namespace AhShitRim::Police
             if (!a_ref || state.clearOut || !a_player || !a_ref->Is3DLoaded()) {
                 return true;
             }
-            auto* actor = a_ref->As<RE::Actor>();
-            if ((actor && actor->IsDead()) || a_ref->GetPosition().GetDistance(a_player->GetPosition()) > kGoneRange) {
+            if (a_ref->GetPosition().GetDistance(a_player->GetPosition()) > kGoneRange) {
                 return true;
             }
             bool unused = false;
@@ -260,6 +326,30 @@ namespace AhShitRim::Police
             }
         }
 
+        // Ours that died or got lost leave (out of sight); the guards' dragon brought down is a lot of heat.
+        void Prune(RE::PlayerCharacter* a_player)
+        {
+            const auto feet = a_player->GetPosition();
+            for (auto it = state.spawned.begin(); it != state.spawned.end();) {
+                auto  ref = it->actor.get();
+                auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                const bool dead = !actor || actor->IsDead();
+                const bool lost = actor && actor->GetPosition().GetDistance(feet) > kLostRange;
+                if (!dead && !lost) {
+                    ++it;
+                    continue;
+                }
+                if (dead && actor && it->unit == Wanted::Unit::Dragon) {
+                    state.pursuit.AddHeat(kDragonHeat);
+                    SKSE::log::info("police: the guards' dragon is down: heat {:.0f}, {} star(s)", state.pursuit.Heat(), state.pursuit.Stars());
+                }
+                state.leaving.push_back({ it->actor, it->horse, 0 });
+                it = state.spawned.erase(it);
+            }
+        }
+
+        // ---- The response ----
+
         // The hold's guards round about who aren't fighting yet join.
         void CallGuards(RE::PlayerCharacter* a_player, float a_radius)
         {
@@ -280,7 +370,7 @@ namespace AhShitRim::Police
             }
         }
 
-        // A guard of the hold about, whose base the riders copy (the hold's guards as the war left them), else the table's.
+        // A guard of the hold about, whose base ours copy (the hold's guards as the war left them), else the table's.
         RE::TESBoundObject* GuardBase(RE::PlayerCharacter* a_player)
         {
             RE::TESBoundObject* found = nullptr;
@@ -296,64 +386,148 @@ namespace AhShitRim::Police
             return found ? found : RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
         }
 
-        // One of a_base, kSpawnDistance behind the player (turned a_turn radians round it) on the nearest navmesh, at about
-        // the player's height: a spot on a tower or a ledge is given up.
-        RE::TESObjectREFR* Place(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, float a_aside, float a_turn)
+        RE::TESBoundObject* BaseFor(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
+        {
+            const bool imperial = state.hold->side == Wanted::Side::Imperial;
+            std::uint32_t id = 0;
+            switch (a_unit) {
+            case Wanted::Unit::Captain: id = imperial ? Wanted::kCaptainImperial : Wanted::kCaptainSons; break;
+            case Wanted::Unit::Wizard: id = imperial ? Wanted::kWizardImperial : Wanted::kWizardSons; break;
+            case Wanted::Unit::Soldier: id = imperial ? Wanted::kSoldiersImperial : Wanted::kSoldiersSons; break;
+            case Wanted::Unit::Dragon: id = Wanted::kDragon; break;
+            default: return GuardBase(a_player);
+            }
+            return RE::TESForm::LookupByID<RE::TESBoundObject>(id);
+        }
+
+        // The hold's barracks door's spot outside.
+        bool BarracksSpot(const Wanted::Hold& a_hold, Spot& a_out)
+        {
+            auto* door = RE::TESForm::LookupByID<RE::TESObjectREFR>(a_hold.barracks);
+            auto* teleport = door ? door->extraList.GetByType<RE::ExtraTeleport>() : nullptr;
+            auto* data = teleport ? teleport->teleportData : nullptr;
+            auto  outside = data ? data->linkedDoor.get() : RE::NiPointer<RE::TESObjectREFR>();
+            if (!outside) {
+                return false;
+            }
+            a_out.door = outside->CreateRefHandle();
+            a_out.cell = outside->GetParentCell();
+            a_out.world = outside->GetWorldspace();
+            a_out.position = data->position;
+            a_out.rotation = data->rotation;
+            return true;
+        }
+
+        Wanted::Point Flat(const RE::NiPoint3& a_at) { return { a_at.x, a_at.y }; }
+
+        // One of a_base at a_at (on the nearest navmesh when a_snap), or nothing when the spot turns out in view or on a
+        // tower or a ledge (it then leaves at once).
+        RE::TESObjectREFR* Place(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, bool a_snap, bool a_anyHeight)
         {
             auto* data = RE::TESDataHandler::GetSingleton();
             auto* cell = a_player->GetParentCell();
             if (!data || !a_base || !cell) {
                 return nullptr;
             }
-            const float heading = a_player->GetAngleZ() + a_turn;
-            const auto  feet = a_player->GetPosition();
-            const RE::NiPoint3 at(feet.x - std::sin(heading) * Wanted::kSpawnDistance + std::cos(heading) * a_aside,
-                feet.y - std::cos(heading) * Wanted::kSpawnDistance - std::sin(heading) * a_aside, feet.z + 50.0f);
-            const auto handle = data->CreateReferenceAtLocation(a_base, at, RE::NiPoint3(0.0f, 0.0f, heading), cell, a_player->GetWorldspace(), nullptr, nullptr,
-                RE::ObjectRefHandle(), false, true);
+            const auto feet = a_player->GetPosition();
+            const auto handle = data->CreateReferenceAtLocation(a_base, a_at, RE::NiPoint3(0.0f, 0.0f, a_player->GetAngleZ()), cell, a_player->GetWorldspace(),
+                nullptr, nullptr, RE::ObjectRefHandle(), false, true);
             auto ref = handle.get();
             if (!ref) {
                 return nullptr;
             }
-            ref->MoveToNearestNavmesh();
-            if (std::abs(ref->GetPosition().z - feet.z) > kSpawnRise) {
-                SKSE::log::info("police: a spawn spot {:.0f} units {} the player given up (a tower or a ledge)", std::abs(ref->GetPosition().z - feet.z),
-                    ref->GetPosition().z > feet.z ? "above" : "below");
+            if (a_snap) {
+                ref->MoveToNearestNavmesh();
+            }
+            const auto at = ref->GetPosition();
+            const bool tooHigh = !a_anyHeight && std::abs(at.z - feet.z) > kSpawnRise;
+            const bool seen = Wanted::InView(Wanted::CameraOf(Flat(feet), a_player->GetAngleZ()), a_player->GetAngleZ(), Flat(at));
+            if (tooHigh || seen) {
+                SKSE::log::info("police: a spawn spot given up ({})", tooHigh ? "a tower or a ledge" : "in view");
                 state.leaving.push_back({ ref->CreateRefHandle(), {}, 0 });
                 return nullptr;
             }
             return ref.get();
         }
 
-        void Spawn(RE::PlayerCharacter* a_player, bool a_rider)
+        // Where the next of ours comes from: half of them out of the city's barracks when it's close and out of view,
+        // else round CJ, behind him first.
+        RE::TESObjectREFR* PlaceSomewhere(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, Wanted::Unit a_unit, const char*& a_from)
         {
-            const float aside = static_cast<float>(state.spawnTries % 3) * 250.0f - 250.0f;
-            const float turn = static_cast<float>((state.spawnTries++ % 5) - 2) * 0.6f;  // behind, and round to either side
-            RE::TESBoundObject* base = a_rider ? GuardBase(a_player) :
-                                                 RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->side == Wanted::Side::Imperial ? Wanted::kSoldiersImperial : Wanted::kSoldiersSons);
-            auto* actor = Place(a_player, base, aside, turn);
-            if (!actor) {
-                SKSE::log::warn("police: a {} for {} couldn't be placed (base {:08X})", a_rider ? "rider" : "soldier", state.hold->name, base ? base->GetFormID() : 0);
+            const auto  feet = a_player->GetPosition();
+            const float heading = a_player->GetAngleZ();
+            if (a_unit == Wanted::Unit::Dragon) {
+                a_from = "far behind";
+                const auto spot = Wanted::SpawnSpot(Flat(feet), heading, 0, Wanted::kDragonDistance);
+                return Place(a_player, a_base, RE::NiPoint3(spot.x, spot.y, feet.z + 1500.0f), false, true);
+            }
+            Spot barracks;
+            if (a_unit != Wanted::Unit::Rider && state.spawnTries % 2 == 0 && BarracksSpot(*state.hold, barracks) && barracks.world == a_player->GetWorldspace() &&
+                barracks.position.GetDistance(feet) < kBarracksRange &&
+                !Wanted::InView(Wanted::CameraOf(Flat(feet), heading), heading, Flat(barracks.position))) {
+                state.spawnTries++;
+                a_from = "the barracks";
+                return Place(a_player, a_base, barracks.position, false, true);
+            }
+            for (int i = 0; i < kSpawnTries; ++i) {
+                const auto spot = Wanted::SpawnSpot(Flat(feet), heading, state.spawnTries++);
+                if (Wanted::InView(Wanted::CameraOf(Flat(feet), heading), heading, spot)) {
+                    continue;
+                }
+                if (auto* ref = Place(a_player, a_base, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), true, false)) {
+                    a_from = "round CJ";
+                    return ref;
+                }
+            }
+            return nullptr;
+        }
+
+        // From 4 stars ours hit harder and swing or draw faster.
+        void Toughen(RE::Actor* a_actor, float a_damage)
+        {
+            if (a_damage <= 1.0f) {
                 return;
+            }
+            auto* values = a_actor->AsActorValueOwner();
+            values->SetActorValue(RE::ActorValue::kAttackDamageMult, a_damage);
+            values->SetActorValue(RE::ActorValue::kWeaponSpeedMult, 1.0f + (a_damage - 1.0f) * 0.5f);
+        }
+
+        bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit, float a_damage)
+        {
+            auto*       base = BaseFor(a_player, a_unit);
+            const char* from = "?";
+            auto*       ref = base ? PlaceSomewhere(a_player, base, a_unit, from) : nullptr;
+            auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
+            if (!actor) {
+                SKSE::log::info("police: no spot for a {} of {} (base {:08X})", Wanted::NameOf(a_unit), state.hold->name, base ? base->GetFormID() : 0);
+                return false;
             }
             Spawned s;
             s.actor = actor->CreateRefHandle();
-            if (a_rider) {
-                if (auto* horse = Place(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHorse), aside + 120.0f, turn)) {
+            s.unit = a_unit;
+            if (a_unit == Wanted::Unit::Rider) {
+                const auto at = actor->GetPosition();
+                const auto heading = a_player->GetAngleZ();
+                const RE::NiPoint3 beside(at.x + std::cos(heading) * 120.0f, at.y - std::sin(heading) * 120.0f, at.z + 50.0f);
+                if (auto* horse = Place(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHorse), beside, true, false)) {
                     s.horse = horse->CreateRefHandle();
                 }
             }
+            Toughen(actor, a_damage);
             const auto at = actor->GetPosition();
-            SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}{}) comes from ({:.0f},{:.0f},{:.0f})", a_rider ? "rider" : "soldier", state.hold->name,
-                actor->GetFormID(), base->GetFormID(), a_rider ? (s.horse ? ", on a horse" : ", but no horse") : "", at.x, at.y, at.z);
+            SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}{}) comes from {} at ({:.0f},{:.0f},{:.0f}), {:.0f} units from CJ", Wanted::NameOf(a_unit),
+                state.hold->name, actor->GetFormID(), base->GetFormID(), a_unit == Wanted::Unit::Rider ? (s.horse ? ", on a horse" : ", no horse") : "", from, at.x,
+                at.y, at.z, at.GetDistance(a_player->GetPosition()));
             state.spawned.push_back(s);
+            return true;
         }
 
-        // The riders get on their horses once both are in, then everyone spawned goes for CJ.
+        // The riders get on their horses once both are in, then everyone of ours goes for CJ.
         void Lead(RE::PlayerCharacter* a_player, float a_delta)
         {
             for (auto& s : state.spawned) {
-                auto actorRef = s.actor.get();
+                auto  actorRef = s.actor.get();
                 auto* actor = actorRef ? actorRef->As<RE::Actor>() : nullptr;
                 auto  horse = s.horse.get();
                 if (!actor || !actor->Is3DLoaded() || (horse && !horse->Is3DLoaded())) {
@@ -369,7 +543,7 @@ namespace AhShitRim::Police
                 if (!s.fighting && s.age >= (horse ? kMountAfter + kFightAfter : kMountAfter)) {
                     s.fighting = true;
                     const bool fights = actor->StartCombat(a_player);
-                    SKSE::log::info("police: {:08X} goes for CJ ({}{})", actor->GetFormID(), fights ? "fighting" : "won't fight",
+                    SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
                         horse ? (actor->IsOnMount() ? ", mounted" : ", on foot") : "");
                 }
             }
@@ -382,29 +556,44 @@ namespace AhShitRim::Police
                 Dismiss("the stars are gone");
                 return;
             }
-            const auto response = Wanted::ResponseFor(stars);
             state.joinTimer += a_delta;
             if (state.joinTimer >= kJoinEvery) {
                 state.joinTimer = 0.0f;
-                CallGuards(a_player, response.joinRadius);
+                CallGuards(a_player, Wanted::JoinRadius(stars));
             }
+            Prune(a_player);
             Lead(a_player, a_delta);
             auto* cell = a_player->GetParentCell();
-            state.spawnTimer += a_delta;
-            if (a_scene || !cell || cell->IsInteriorCell() || state.spawnTimer < Wanted::kSpawnEvery) {
+            if (a_scene || !cell || cell->IsInteriorCell()) {
                 return;
             }
-            int riders = 0, soldiers = 0;
+            Wanted::Counts counts{};
             for (const auto& s : state.spawned) {
-                (s.horse ? riders : soldiers)++;
+                counts[static_cast<std::size_t>(s.unit)]++;
             }
-            if (riders < response.riders) {
-                state.spawnTimer = 0.0f;
-                Spawn(a_player, true);
-            } else if (soldiers < response.soldiers) {
-                state.spawnTimer = 0.0f;
-                Spawn(a_player, false);
+            if (state.director.Tick(a_delta, stars, Wanted::TotalOf(counts))) {
+                const auto force = Wanted::ForceFor(stars);
+                if (!Spawn(a_player, Wanted::NextUnit(force, counts), force.damage)) {
+                    state.director.Retry();
+                }
             }
+        }
+
+        // AEZAKMI typed: every hold's bounty cleared, the fight called off, the stars gone.
+        void ForgiveAll(RE::PlayerCharacter* a_player)
+        {
+            int cleared = 0;
+            for (const auto& hold : Wanted::kHolds) {
+                if (auto* faction = FactionOf(hold); faction && a_player->GetCrimeGoldValue(faction) > 0) {
+                    a_player->ClearAllCrimeGold(faction);
+                    cleared++;
+                }
+            }
+            Calm(a_player, true);
+            state.pursuit.Clear();
+            state.seeded = false;
+            Dismiss("AEZAKMI");
+            SKSE::log::info("police: AEZAKMI: {} hold(s)' bounty cleared, the fight called off", cleared);
         }
 
         // ---- Busted ----
@@ -421,29 +610,38 @@ namespace AhShitRim::Police
             state.frame = state.sequence.Start(a_arrest);
             state.moveAsked = state.arrived = state.movedAgain = false;
             state.stop.Reset();
+            state.calmTimer = 0.0f;
+            Calm(a_player, true);  // nobody shoots an arrested man
+            Dismiss("Busted");
+            Say(Wanted::kLineArrested);
             static constexpr const char* kHow[] = { "on foot, his hands up", "dragged out of the car", "knocked off his bike" };
             SKSE::log::info("police: BUSTED by {} ({}), bounty {}, {} gold", a_faction ? a_faction->GetName() : "?", kHow[static_cast<int>(a_arrest)],
                 a_faction ? a_player->GetCrimeGoldValue(a_faction) : 0, a_player->GetGoldAmount());
         }
 
-        // `player.moveto` the hold's exterior jail marker: the game's own teleport, a load door's worth of loading.
-        RE::TESObjectREFR* BarracksMarker() { return state.bustFaction ? state.bustFaction->crimeData.factionJailMarker : nullptr; }
-
+        // Out of the hold's barracks door (its teleport's spot outside), else to its crime faction's exterior jail marker.
         void MoveToBarracks(RE::PlayerCharacter* a_player)
         {
             state.moveAsked = state.arrived = false;
-            auto* marker = BarracksMarker();
-            auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-            auto* script = marker && factory ? factory->Create() : nullptr;
-            if (!script) {
-                SKSE::log::warn("police: no barracks to take the player to ({}), it wakes where it was", marker ? "no script" : "the faction has no jail marker");
+            const auto* hold = state.bustFaction ? Wanted::HoldOf(state.bustFaction->GetFormID()) : nullptr;
+            Spot        spot;
+            if (hold && BarracksSpot(*hold, spot)) {
+                state.destination = spot.position;
+                MoveToSpot(a_player, spot.door, spot.cell, spot.world, spot.position, spot.rotation);
+                state.moveAsked = true;
+                SKSE::log::info("police: the player is taken out of {} (door {:08X}) at ({:.0f},{:.0f},{:.0f})", Wanted::BarracksName(*hold), hold->barracks,
+                    spot.position.x, spot.position.y, spot.position.z);
                 return;
             }
-            script->SetCommand(std::format("player.moveto {:08X}", marker->GetFormID()));
-            script->CompileAndRun(a_player);
-            delete script;
+            auto* marker = state.bustFaction ? state.bustFaction->crimeData.factionJailMarker : nullptr;
+            if (!marker) {
+                SKSE::log::warn("police: no barracks to take the player to, it wakes where it was");
+                return;
+            }
+            state.destination = marker->GetPosition();
+            a_player->MoveTo(marker);
             state.moveAsked = true;
-            SKSE::log::info("police: the player is taken to the barracks (player.moveto {:08X})", marker->GetFormID());
+            SKSE::log::info("police: the player is taken to {}'s jail marker {:08X}", state.bustFaction->GetName(), marker->GetFormID());
         }
 
         // The fine from the gold (all of it if short), the bounty cleared, the stars gone, everyone's fight over.
@@ -461,10 +659,7 @@ namespace AhShitRim::Police
             if (faction) {
                 a_player->ClearAllCrimeGold(faction);
             }
-            if (auto* lists = RE::ProcessLists::GetSingleton()) {
-                lists->StopCombatAndAlarmOnActor(a_player, false);
-            }
-            a_player->StopCombat();
+            Calm(a_player, true);
             state.pursuit.Clear();
             state.seeded = false;  // the cleared bounty is no crime the other way either
             Dismiss("Busted", true);
@@ -472,19 +667,23 @@ namespace AhShitRim::Police
             SKSE::log::info("police: Busted is paid: a {} gold fine of a {} bounty, in {:08X}{}", fine, bounty, cell ? cell->GetFormID() : 0,
                 state.moveAsked && !state.arrived ? " (the barracks never opened: where it was)" : "");
             SaHud::HideBigMessage();
-            const std::string where = hold ? std::format("You were let go outside the barracks of {}.", hold->name) : std::string("You were let go.");
+            const std::string where = hold ? std::format("You were let go outside {}.", Wanted::BarracksName(*hold)) : std::string("You were let go.");
             SaHud::ShowHelp(fine > 0 ? std::format("{} The guards took {} gold for the bounty.", where, fine) : where);
         }
 
         void Run(RE::PlayerCharacter* a_player, float a_delta, bool a_cjDrawn)
         {
-            // The first move can drop the player under the ground while the cell loads (Whiterun's came out 338 units
-            // below its marker): once there, it is moved onto the marker again, the ground in.
-            if (auto* marker = BarracksMarker(); marker && state.moveAsked && state.arrived && a_cjDrawn && !state.movedAgain &&
-                                                 a_player->GetPosition().GetDistance(marker->GetPosition()) > kOnMarker) {
+            // Nobody keeps fighting an arrested man (the guards Skyrim sends on, a dragon coming in).
+            state.calmTimer += a_delta;
+            if (state.frame.active && state.calmTimer >= kCalmEvery) {
+                state.calmTimer = 0.0f;
+                Calm(a_player, false);
+            }
+            // A move can drop the player under the ground while the cell loads: once there, it is moved onto its spot
+            // again, the ground in.
+            if (state.moveAsked && state.arrived && a_cjDrawn && !state.movedAgain && a_player->GetPosition().GetDistance(state.destination) > kOnSpot) {
                 state.movedAgain = true;
-                SKSE::log::info("police: the player came out {:.0f} units from the barracks' marker, moved onto it again",
-                    a_player->GetPosition().GetDistance(marker->GetPosition()));
+                SKSE::log::info("police: the player came out {:.0f} units from its spot, moved there again", a_player->GetPosition().GetDistance(state.destination));
                 MoveToBarracks(a_player);
             }
             const bool arrived = !state.moveAsked || (state.arrived && a_cjDrawn);
@@ -506,7 +705,7 @@ namespace AhShitRim::Police
         }
 
         // The vehicle CJ is in: nearly stopped long enough with one of the pursuit at the driver's door (at him, on a bike).
-        bool CheckVehicle(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, float a_delta, Wanted::Bust& a_bust)
+        bool CheckVehicle(const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, float a_delta, Wanted::Bust& a_bust)
         {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
             a_bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
@@ -522,7 +721,7 @@ namespace AhShitRim::Police
             float reach = (std::numeric_limits<float>::max)();
             if (auto* lists = RE::ProcessLists::GetSingleton()) {
                 lists->ForEachHighActor([&](RE::Actor* a_actor) {
-                    if (Pursues(a_actor)) {
+                    if (Pursues(a_actor) && (!SpawnedOf(a_actor) || SpawnedOf(a_actor)->unit != Wanted::Unit::Dragon)) {
                         const auto at = a_actor->GetPosition();
                         if (std::abs(at.z - feet.z) < 200.0f) {
                             reach = (std::min)(reach, std::hypot(at.x - target.x, at.y - target.y));
@@ -551,27 +750,50 @@ namespace AhShitRim::Police
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
+
+        // The fine paid to a guard: the pursuit is over, as Skyrim's.
+        struct PayFineHook
+        {
+            static void thunk(RE::PlayerCharacter* a_player, RE::TESFaction* a_faction, bool a_goToJail, bool a_removeStolenItems)
+            {
+                original(a_player, a_faction, a_goToJail, a_removeStolenItems);
+                if (state.owned && state.pursuit.Stars() > 0) {
+                    SKSE::log::info("police: the fine paid to {}: the stars go", a_faction ? a_faction->GetName() : "?");
+                    state.pursuit.Clear();
+                    state.seeded = false;
+                    Dismiss("the fine paid");
+                }
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
     }
 
     void Install()
     {
         REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_PlayerCharacter[0] };
         GoToPrisonHook::original = vtable.write_vfunc(0xB9, GoToPrisonHook::thunk);
-        SKSE::log::info("police: PlayerCharacter::GoToPrison hooked: \"go to jail\" is Busted while CJ has the player");
+        PayFineHook::original = vtable.write_vfunc(0xBB, PayFineHook::thunk);
+        SKSE::log::info("police: PlayerCharacter::GoToPrison and PayFine hooked: \"go to jail\" is Busted while CJ has the player, the fine ends the stars");
     }
 
     bool Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene, float a_delta)
     {
         state.owned = true;
+        state.chasedTimer += a_delta;
         if (Vitals::IsWasted()) {
             if (state.sequence.Running()) {
                 state.sequence.Cancel();
                 SaHud::HideBigMessage();
                 SKSE::log::info("police: Busted gave way to Wasted");
             }
+            if (state.pursuit.Stars() > 0) {
+                state.pursuit.Clear();  // San Andreas clears the wanted level with Wasted
+                Dismiss("Wasted");
+                SKSE::log::info("police: Wasted: the stars go");
+            }
             state.jailAsked = nullptr;
             state.stop.Reset();
-            Show(state.pursuit.Stars());
+            Show(0);
             return false;
         }
         if (state.sequence.Running()) {
@@ -585,6 +807,18 @@ namespace AhShitRim::Police
             state.settle -= a_delta;  // a loaded world's actors are still coming in
             Show(state.pursuit.Stars());
             return false;
+        }
+        const bool never = NeverWanted();
+        if (never && !state.neverWanted) {
+            ForgiveAll(a_player);
+        }
+        state.neverWanted = never;
+        if (never) {
+            state.calmTimer += a_delta;
+            if (state.calmTimer >= kCalmEvery) {
+                state.calmTimer = 0.0f;
+                Calm(a_player, false);
+            }
         }
         WatchCrimes(a_player);
         if (auto* faction = std::exchange(state.jailAsked, nullptr)) {
@@ -602,21 +836,29 @@ namespace AhShitRim::Police
             state.lookTimer = 0.0f;
             Look(a_player);
         }
-        const auto look = state.pursuit.Tick(a_delta, state.seen, BountyOf(a_player, state.hold), NeverWanted());
+        const auto look = state.pursuit.Tick(a_delta, state.seen, never);
         Show(look.stars, look.flashing);
         if (look.stars != state.loggedStars) {
             SKSE::log::info("police: {} star(s){}", look.stars, look.stars < state.loggedStars && look.stars == 0 ? " (lost them)" : "");
+            // A star gained: CJ has something to say about it, now and then while they keep after him.
+            if (look.stars > state.loggedStars && state.chasedTimer >= kChasedAfterRise) {
+                Say(Wanted::kLineChased);
+            }
             state.loggedStars = look.stars;
+        } else if (look.stars > 0 && state.seen && state.chasedTimer >= Wanted::kChasedEvery) {
+            Say(Wanted::kLineChased);
         }
         Respond(a_player, a_delta, a_scene);
 
         Wanted::Bust bust = Wanted::Bust::None;
-        if (!a_scene && CheckVehicle(a_player, a_anchor, a_pose, a_delta, bust) && state.hold) {
+        if (!a_scene && CheckVehicle(a_anchor, a_pose, a_delta, bust) && state.hold) {
             Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : Wanted::Arrest::KnockOff, FactionOf(*state.hold));
             return true;
         }
         return false;
     }
+
+    std::uint8_t TakeLine() { return std::exchange(state.line, std::uint8_t{ 0 }); }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
 
@@ -630,6 +872,7 @@ namespace AhShitRim::Police
             SKSE::log::info("police: Busted ended with the handover");
         }
         state.jailAsked = nullptr;
+        state.line = 0;
         EndShow();
         Dismiss("Skyrim has the player back", true);
         state.stop.Reset();
@@ -649,12 +892,15 @@ namespace AhShitRim::Police
     {
         state.spawned.clear();  // the save's own references now
         state.leaving.clear();
+        state.director.Reset();
         state.settle = kSettle;
         state.clearOut = false;
         state.seeded = false;
+        state.neverWanted = false;
         state.sequence.Cancel();
         state.jailAsked = nullptr;
         state.stop.Reset();
+        state.line = 0;
     }
 
     void Save(SKSE::SerializationInterface* a_intfc)
