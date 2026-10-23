@@ -389,11 +389,37 @@ int main()
         std::printf("jetpack: %s, %.1f m up, %s\n", up ? "flew up" : "DID NOT FLY UP", height() - ground, drawn ? "drawn" : "NOT DRAWN");
         failed += !(up && drawn);
 
-        // Off it with the parachute in his hands: he falls, skydives, opens it with the fire key and lands.
+        // Back down (the jump key is San Andreas's brake: down), and off it with F standing still, as San Andreas allows.
+        input.SetKey(Input::kDikSpace, true);
+        run(40.0, [&] { return (player().flags & Protocol::kPlayerGrounded) != 0; });
+        input.SetKey(Input::kDikSpace, false);
+        wait(1.0);
+        press(Input::kDikF);
+        wait(1.5);
+        Protocol::BodyState off{};
+        const bool takenOff = !(link.ReadGear(off) && (off.flags & Protocol::kBodyJetpack));
+        std::printf("jetpack: landed and %s\n", takenOff ? "taken off with F" : "STILL ON");
+        failed += !takenOff;
+
+        // The parachute on board a Hunter, up 60 m, and a bail-out (San Andreas's fall from a flying vehicle): it comes out,
+        // he skydives, opens it with the fire key and lands.
+        fresh();  // the F that took the jetpack off may have sat him on the BMX next to him
+        Protocol::BodyState heli{};
+        const bool inHeli = spawn(425, "HUNTER", heli) >= 0 && board("HUNTER");
         input.SetDevModel(VehicleKinds::kParachute);
         press(Input::kDikApostrophe);
+        const float heliGround = height();
+        input.SetKey(Input::kDikW, true);
+        const bool climbed = run(150.0, [&] { return height() - heliGround > 100.0f; });
+        input.SetKey(Input::kDikW, false);
+        wait(3.0);  // San Andreas lets him out once the climb has eased
+        input.SetKey(Input::kDikF, true);
+        const bool bailed = run(8.0, [&] { return !inVehicle(); });
+        input.SetKey(Input::kDikF, false);
+        std::printf("parachute: %s the Hunter, %.0f m up, %s\n", inHeli ? "in" : "NOT IN", height() - heliGround, bailed ? "bailed out" : "DID NOT BAIL OUT");
+        failed += !(inHeli && climbed && bailed);
         float fastest = 0.0f;
-        run(1.0, [&] {
+        run(1.5, [&] {
             fastest = (std::max)(fastest, -player().velocity[2] * Pose::kMetersPerUnit);
             return false;
         });
@@ -418,7 +444,7 @@ int main()
             if (canopy && !(p.flags & Protocol::kPlayerGrounded)) {
                 floatFall = -p.velocity[2] * Pose::kMetersPerUnit;
             }
-            if (canopy && !dumped && ms() - opened > 3000) {
+            if (canopy && !dumped && ms() - opened > 2500) {
                 dumped = true;
                 Protocol::BodyState cjBody{};
                 link.ReadBody(cjBody);

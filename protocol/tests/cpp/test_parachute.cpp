@@ -154,3 +154,19 @@ TEST_CASE("parachute: its animations from parachute.ifp")
     CHECK_FALSE(Loops(Phase::Opening));
     CHECK_FALSE(Loops(Phase::Landing));
 }
+
+TEST_CASE("parachute: what each of CJ's animations is held at during a skydive")
+{
+    constexpr int kPlayerGroup = 54;  // his movement group, as the log showed it
+    CHECK(HoldOf(true, 65535, -1, false, kPlayerGroup) == Hold::Full);
+    CHECK(HoldOf(false, 0, 120, true, kPlayerGroup) == Hold::None);  // FALL_FALL, partial: the flailing
+    CHECK(HoldOf(false, 0, 121, true, kPlayerGroup) == Hold::None);  // FALL_GLIDE
+    CHECK(HoldOf(false, 0, 160, true, kPlayerGroup) == Hold::Keep);  // FACTALK: his face talking
+    CHECK(HoldOf(false, 0, 154, true, kPlayerGroup) == Hold::Keep);
+    CHECK(HoldOf(false, 0, 162, true, kPlayerGroup) == Hold::None);
+    CHECK(HoldOf(false, kPlayerGroup, 3, false, kPlayerGroup) == Hold::Idle);
+    CHECK(HoldOf(false, 0, 3, false, kPlayerGroup) == Hold::None);  // another group's idle
+    CHECK(HoldOf(false, kPlayerGroup, 0, false, kPlayerGroup) == Hold::None);  // walking
+    CHECK(kIdleBlend > 0.0f);
+    CHECK(kIdleBlend < 0.05f);
+}

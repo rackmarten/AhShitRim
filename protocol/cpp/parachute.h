@@ -191,4 +191,37 @@ namespace AhShitRim::Parachute
 
     // Whether CJ's animation loops (the falls and the glides) or plays once and holds (opening, landing).
     constexpr bool Loops(Phase a_phase) { return a_phase == Phase::Freefall || a_phase == Phase::Floating; }
+
+    // ---- Holding CJ's pose ----
+    //
+    // San Andreas's own in-air reaction keeps blending its partial fall over him (FALL_FALL, FALL_GLIDE: the flailing),
+    // so while he skydives the parachute's animation is held at full blend and the rest at none, but for his face's:
+    // parachute.ifp keys 26 of his 32 bones, not his jaw, lips and brows. San Andreas sums a bone's rotations weighted
+    // by blend and normalizes them, so a bone nothing animates came out as a grin; his own idle, held at kIdleBlend,
+    // alone drives those and gives a still face, and next to the parachute's full blend it barely moves the rest.
+
+    inline constexpr float kIdleBlend = 0.02f;
+
+    enum class Hold : std::uint8_t
+    {
+        Full,  // the parachute's animation
+        Idle,  // his idle, at kIdleBlend
+        Keep,  // left as San Andreas has it: his face's animations
+        None,  // everything else, at no blend
+    };
+
+    // What one of CJ's animations is held at, by its group and id (eAnimGroup, eAnimID) and flags.
+    constexpr Hold HoldOf(bool a_parachute, int a_group, int a_id, bool a_partial, int a_idleGroup)
+    {
+        if (a_parachute) {
+            return Hold::Full;
+        }
+        if (a_partial && a_group == 0 && a_id >= 154 && a_id <= 161) {  // ANIM_ID_FACSURP .. ANIM_ID_FACGUM
+            return Hold::Keep;
+        }
+        if (!a_partial && a_group == a_idleGroup && a_id == 3) {  // ANIM_ID_IDLE of his movement group
+            return Hold::Idle;
+        }
+        return Hold::None;
+    }
 }

@@ -431,11 +431,11 @@ namespace AhShitRim::CjGear
 
     void Give(CPlayerPed* a_ped, std::uint16_t a_model)
     {
-        if (a_ped->bInVehicle) {
-            Log(std::format("gear: CJ is in a vehicle, no {}", VehicleKinds::DevName(a_model)));
-            return;
-        }
         if (a_model == VehicleKinds::kJetpack) {
+            if (a_ped->bInVehicle) {
+                Log("gear: CJ is in a vehicle, no jetpack");
+                return;
+            }
             if (Jetpack(a_ped)) {
                 Log("gear: CJ has the jetpack on already");
                 return;
@@ -454,15 +454,15 @@ namespace AhShitRim::CjGear
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(task, kTaskPrimary, false);
             Log("gear: the jetpack on CJ");
         } else if (a_model == VehicleKinds::kParachute) {
-            // What CCheat::ParachuteCheat does. Off the jetpack, he falls with it.
-            if (Jetpack(a_ped)) {
-                a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
-            }
+            // What CCheat::ParachuteCheat does, in a vehicle too (it comes out when he bails out and falls); on the jetpack
+            // he keeps flying, as in San Andreas.
             LoadModel(371);  // MODEL_GUN_PARA
             a_ped->GiveWeapon(WEAPONTYPE_PARACHUTE, 0, true);
-            a_ped->SetCurrentWeapon(WEAPONTYPE_PARACHUTE);
+            if (!a_ped->bInVehicle) {
+                a_ped->SetCurrentWeapon(WEAPONTYPE_PARACHUTE);
+            }
             ParachuteBlock();
-            Log("gear: the parachute in CJ's hands");
+            Log(a_ped->bInVehicle ? "gear: the parachute given to CJ in his vehicle" : "gear: the parachute in CJ's hands");
         }
     }
 
@@ -506,13 +506,23 @@ namespace AhShitRim::CjGear
         if (!ours) {
             ours = CAnimManager::BlendAnimation(clump, state.hierarchy, 0x1 | (state.loop ? 0x2 : 0x4), 1000.0f);  // started, looped or held at its end
         }
-        // His partial animations (his face's talking and blinking) stay: the parachute's don't move his face, and with
-        // nothing on its bones it was pulled into a grin.
+        // Held as Parachute::HoldOf says: the parachute's at full blend, his face's as they are, his idle at a sliver (it
+        // alone drives his face, which parachute.ifp doesn't), San Andreas's fall and everything else at none.
+        bool haveIdle = false;
         for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
-            if (assoc != ours && (assoc->m_nFlags & 0x10) != 0) {  // ANIMATION_PARTIAL
-                continue;
+            haveIdle = haveIdle || Parachute::HoldOf(false, assoc->m_nAnimGroup, assoc->m_nAnimId, (assoc->m_nFlags & 0x10) != 0, a_ped->m_nAnimGroup) ==
+                                       Parachute::Hold::Idle;
+        }
+        if (!haveIdle) {
+            CAnimManager::AddAnimation(clump, a_ped->m_nAnimGroup, kMoveIdle);
+        }
+        for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            switch (Parachute::HoldOf(assoc == ours, assoc->m_nAnimGroup, assoc->m_nAnimId, (assoc->m_nFlags & 0x10) != 0, a_ped->m_nAnimGroup)) {
+            case Parachute::Hold::Full: assoc->m_fBlendAmount = 1.0f; break;
+            case Parachute::Hold::Idle: assoc->m_fBlendAmount = Parachute::kIdleBlend; break;
+            case Parachute::Hold::Keep: continue;
+            case Parachute::Hold::None: assoc->m_fBlendAmount = 0.0f; break;
             }
-            assoc->m_fBlendAmount = assoc == ours ? 1.0f : 0.0f;
             assoc->m_fBlendDelta = 0.0f;
         }
     }

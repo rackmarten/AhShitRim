@@ -17,7 +17,8 @@ class CVector;
 // Game thread only.
 namespace AhShitRim::CjGear
 {
-    // A dev spawn request for a_model: the jetpack (370) on, or the parachute (371) given and put in his hands.
+    // A dev spawn request for a_model: the jetpack (370) on (on foot), or the parachute (371) given, in his hands on foot
+    // or kept for when he bails out of his vehicle.
     void Give(CPlayerPed* a_ped, std::uint16_t a_model);
 
     // Once a frame after CjBody::Update posed him (and before CjWeapons::Update): the skydive and the canopy, the
