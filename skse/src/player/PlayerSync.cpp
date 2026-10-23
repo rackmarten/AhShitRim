@@ -25,6 +25,7 @@
 #include "player/Respawns.h"
 #include "player/Looting.h"
 #include "player/Conversation.h"
+#include "player/Particles.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
@@ -439,6 +440,7 @@ namespace AhShitRim::PlayerSync
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
+                        Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -450,18 +452,21 @@ namespace AhShitRim::PlayerSync
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
+                    Particles::ShowVehicle(i, &pose, feet, a_delta);
                 }
             }
         }
 
-        // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed.
-        void DrawGear()
+        // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed,
+        // with (v23) the jetpack's flames.
+        void DrawGear(float a_delta)
         {
             const double        now = NowMs();
             Protocol::BodyState gear{};
             if (LinkService::Get().ReadGear(gear)) {
                 if ((gear.flags & Protocol::kBodyValid) == 0 || gear.handover != state.handover) {
                     state.gear.Reset();
+                    Particles::ShowGear(nullptr, {}, a_delta);
                     return;
                 }
                 if (gear.boneCount <= Protocol::kBodyBoneMax && Body::Finite(gear)) {
@@ -470,7 +475,11 @@ namespace AhShitRim::PlayerSync
             }
             Protocol::BodyState pose{};
             if (state.gear.Sample(now, pose)) {
-                ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+                const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                ModelView::Show(pose, feet);
+                Particles::ShowGear(&pose, feet, a_delta);
+            } else {
+                Particles::ShowGear(nullptr, {}, a_delta);
             }
         }
 
@@ -491,6 +500,7 @@ namespace AhShitRim::PlayerSync
             Shots::Clear();
             Projectiles::Clear();
             VehicleFx::Clear();
+            Particles::Clear();
             People::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
@@ -568,6 +578,7 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            Particles::Clear();
             People::Clear();
             Activation::Clear();
             AmmuNation::Close();
@@ -837,7 +848,8 @@ namespace AhShitRim::PlayerSync
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles(a_player, a_delta);
-            DrawGear();
+            DrawGear(a_delta);
+            Particles::Update(a_delta);
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }

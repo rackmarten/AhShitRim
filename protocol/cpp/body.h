@@ -230,6 +230,12 @@ namespace AhShitRim::Body
         out.cameraUp[1] = u.y;
         out.cameraUp[2] = u.z;
         out.cameraFov = a.cameraFov + (b.cameraFov - a.cameraFov) * t;
+        for (int i = 0; i < 2; i++) {
+            // The jets on CJ's back move with him (v23); their way and the levels are b's.
+            if (a.fx.along[i][0] != 0.0f || a.fx.along[i][1] != 0.0f || a.fx.along[i][2] != 0.0f) {
+                Lerp3(a.fx.at[i], b.fx.at[i], t, out.fx.at[i]);
+            }
+        }
         const std::uint32_t count = (std::min)(b.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
             const auto& ba = a.bones[i];
@@ -256,6 +262,9 @@ namespace AhShitRim::Body
             return true;
         };
         if (!finite(a_body.feet, 3) || !finite(a_body.cameraPosition, 3) || !finite(a_body.cameraForward, 3) || !finite(a_body.cameraUp, 3) || !std::isfinite(a_body.cameraFov)) {
+            return false;
+        }
+        if (!finite(&a_body.fx.at[0][0], 6) || !finite(&a_body.fx.along[0][0], 6) || !std::isfinite(a_body.fx.ground)) {
             return false;
         }
         const std::uint32_t count = (std::min)(a_body.boneCount, Protocol::kBodyBoneMax);

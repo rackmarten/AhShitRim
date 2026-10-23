@@ -2,6 +2,8 @@
 
 #include "../../cpp/body.h"
 
+#include <limits>
+
 using namespace AhShitRim;
 using namespace AhShitRim::Body;
 using namespace AhShitRim::Protocol;
@@ -128,6 +130,25 @@ TEST_CASE("blending turns the short way and moves in a straight line")
     // Halfway from no turn to 3 rad about Z is 1.5 rad, not the long way round.
     const Matrix34 m = ToMatrix(half.bones[0]);
     CHECK(std::atan2(m.m[1][0], m.m[0][0]) == doctest::Approx(1.5f).epsilon(1e-3));
+}
+
+TEST_CASE("blending moves the particles' sources (v23), the levels and a new source as the newer frame's")
+{
+    BodyState a = Frame(1, 0, 0.0f), b = Frame(2, 33, 70.0f);
+    a.fx.at[0][2] = 10.0f;
+    a.fx.along[0][2] = -1.0f;
+    b.fx.at[0][2] = 30.0f;
+    b.fx.along[0][2] = -1.0f;
+    b.fx.at[1][0] = 50.0f;  // a second jet only in b
+    b.fx.along[1][2] = -1.0f;
+    b.fx.level = 200;
+    const auto half = Blend(a, b, 0.5f);
+    CHECK(half.fx.at[0][2] == doctest::Approx(20.0f));
+    CHECK(half.fx.at[1][0] == doctest::Approx(50.0f));
+    CHECK(half.fx.level == 200);
+    CHECK(Finite(half));
+    b.fx.ground = std::numeric_limits<float>::quiet_NaN();
+    CHECK_FALSE(Finite(b));
 }
 
 TEST_CASE("the interpolator plays San Andreas's frames back a fixed delay behind, smoothly")

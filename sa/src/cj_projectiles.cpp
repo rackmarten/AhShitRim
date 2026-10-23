@@ -434,6 +434,7 @@ namespace AhShitRim::CjProjectiles
             }
             Protocol::ProjectileEvent event{};
             event.weaponType = Explosives::kRocket;
+            event.flags = Protocol::kProjectileCannon;  // v23: Skyrim puts tank_fire's smoke and flash at the muzzle
             CVector spawnFeet;
             if (Frame(event, muzzle, spawnFeet)) {
                 event.velocity[0] = along.x * kShellSpeed * Pose::kUnitsPerMeter;

@@ -4,6 +4,7 @@
 #include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
+#include "player/Particles.h"
 #include "player/People.h"
 #include "player/Puffs.h"
 #include "player/Shots.h"
@@ -827,6 +828,13 @@ namespace AhShitRim::Projectiles
             const RE::NiPoint3 at = a_anchor + RE::NiPoint3(a_event.origin[0], a_event.origin[1], a_event.origin[2]);
             if (p.kind == Kind::None || !std::isfinite(at.x + at.y + at.z)) {
                 return;
+            }
+            if (a_event.flags & Protocol::kProjectileCannon) {
+                // v23: the Rhino's cannon fires with San Andreas's tank_fire, its smoke and flash, at the muzzle.
+                RE::NiPoint3 dir(a_event.velocity[0], a_event.velocity[1], a_event.velocity[2]);
+                if (dir.Unitize() > 0.0f) {
+                    Particles::TankFire(at, dir);
+                }
             }
             if (a_event.flags & Protocol::kProjectileBurst) {
                 GoOff(a_player, p, at);

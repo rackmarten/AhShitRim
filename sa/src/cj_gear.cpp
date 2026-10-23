@@ -3,6 +3,7 @@
 #include "body.h"
 #include "cj_body.h"
 #include "cj_weapons.h"
+#include "fx_model.h"
 #include "log.h"
 #include "model_sender.h"
 #include "parachute.h"
@@ -204,6 +205,34 @@ namespace AhShitRim::CjGear
             }
             RwFrameUpdateObjects(root);
             a_task->m_fOldHeading = a_ped->m_fHeadingCurrent;
+            // DoJetPackEffect's level, which only RenderJetPack steps (v23): its flames grow while he thrusts.
+            a_task->m_fxKeyTime = FxModel::JetpackLevel(a_task->m_fxKeyTime, a_task->m_nThrustFwd != 0 || a_task->m_fThrustStrafe != 0.0f);
+        }
+
+        // Where the jetpack's flames come out (v23): each jet ball's frame 15 cm down its own axis (JETBALL_OFFSET,
+        // where DoJetPackEffect puts its jetpack fx), down that axis, relative to a_feet.
+        void JetFx(CTaskSimpleJetPack* a_task, const CVector& a_feet, Protocol::BodyFx& a_fx)
+        {
+            int jet = 0;
+            for (const char* name : { "jetball1", "jetball2" }) {
+                RwFrame* ball = CClumpModelInfo::GetFrameFromName(a_task->m_pJetPackClump, name);
+                if (!ball) {
+                    continue;
+                }
+                const RwMatrix* m = RwFrameGetLTM(ball);
+                const CVector   axis(m->at.x, m->at.y, m->at.z);
+                const CVector   pos(m->pos.x, m->pos.y, m->pos.z);
+                const CVector   at = (pos + axis * FxModel::kJetballOffset.z - a_feet) * Pose::kUnitsPerMeter;
+                const auto      down = Body::Normalize({ -axis.x, -axis.y, -axis.z }, { 0.0f, 0.0f, -1.0f });
+                a_fx.at[jet][0] = at.x;
+                a_fx.at[jet][1] = at.y;
+                a_fx.at[jet][2] = at.z;
+                a_fx.along[jet][0] = down.x;
+                a_fx.along[jet][1] = down.y;
+                a_fx.along[jet][2] = down.z;
+                ++jet;
+            }
+            a_fx.level = FxModel::ToByte(a_task->m_fxKeyTime);
         }
 
         bool BuildJetpack(RpClump* a_clump)
@@ -239,6 +268,7 @@ namespace AhShitRim::CjGear
             for (std::uint32_t i = 0; i < s.boneCount; i++) {
                 s.bones[i] = Body::ToBone(ToFrame(*RwFrameGetLTM(RpAtomicGetFrame(state.jetpack.parts[i]))), Vec(a_feet));
             }
+            JetFx(task, a_feet, s.fx);
             Write(s);
             return true;
         }

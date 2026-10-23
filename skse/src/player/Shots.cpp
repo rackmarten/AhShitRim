@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "player/Particles.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -365,6 +366,9 @@ namespace AhShitRim::Shots
             RE::NiPoint3       dir(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
             if (!(dir.Unitize() >= 1e-4f) || !(a_shot.range > 0.0f) || !std::isfinite(origin.x + origin.y + origin.z)) {
                 return;
+            }
+            if (a_shot.flags & Protocol::kShotVehicleGun) {
+                Particles::GunFlash(origin, dir);  // v23: the Hunter's guns flash as in San Andreas
             }
             bool      hit = false;
             const int pellets = (a_shot.flags & Protocol::kShotSpread) ? Damage::Pellets(a_shot.weaponType) : 1;

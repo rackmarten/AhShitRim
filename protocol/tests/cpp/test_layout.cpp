@@ -28,9 +28,27 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v23: particles")
+{
+    CHECK(kProtocolVersion == 23);
+    CHECK(sizeof(BodyFx) == 56);
+    CHECK(offsetof(BodyFx, at) == 0);
+    CHECK(offsetof(BodyFx, along) == 24);
+    CHECK(offsetof(BodyFx, ground) == 48);
+    CHECK(offsetof(BodyFx, gas) == 52);
+    CHECK(offsetof(BodyFx, level) == 53);
+    CHECK(offsetof(BodyFx, dust) == 54);
+    CHECK(offsetof(BodyFx, flags) == 55);
+    CHECK(offsetof(BodyState, fx) == 1892);
+    CHECK(kFxLowGear == 0x1);
+    CHECK(kShotVehicleGun == 0x4);
+    CHECK((kShotVehicleGun & (kShotSpread | kShotFirstPerson)) == 0);
+    CHECK(kProjectileCannon == 0x2);
+    CHECK((kProjectileCannon & kProjectileBurst) == 0);
+}
+
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -114,7 +132,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8404736);
+    CHECK(kMappingSize == 8405248);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -180,22 +198,22 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(AudioSlot, value) == 8);
     CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
     CHECK(kOffsetBodySlot == 640);
-    CHECK(sizeof(BodySlot) == 1920);
+    CHECK(sizeof(BodySlot) == 1984);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 1892);
+    CHECK(sizeof(BodyState) == 1948);
     CHECK(offsetof(BodyState, cameraUp) == 1856);
     CHECK(offsetof(BodyState, health) == 1868);
     CHECK(offsetof(BodyState, engine) == 1872);
     CHECK(offsetof(BodyState, hiddenParts) == 1884);
-    CHECK(kOffsetVehicleSlots == 2560);
+    CHECK(kOffsetVehicleSlots == 2624);
     CHECK(kOffsetVehicleSlots % 64 == 0);
-    CHECK(kOffsetWeaponSlots == 2560 + 4 * 1920);
+    CHECK(kOffsetWeaponSlots == 2624 + 4 * 1984);
     CHECK(kOffsetWeaponSlots % 64 == 0);
-    CHECK(kOffsetGearSlot == 10240 + 2 * 1920);
+    CHECK(kOffsetGearSlot == 10560 + 2 * 1984);
     CHECK(kOffsetGearSlot % 64 == 0);
-    CHECK(kOffsetRingToSanAndreas == kOffsetGearSlot + 1920);
+    CHECK(kOffsetRingToSanAndreas == kOffsetGearSlot + 1984);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4210368);
+    CHECK(kOffsetRingToSkyrim == 4210880);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);
