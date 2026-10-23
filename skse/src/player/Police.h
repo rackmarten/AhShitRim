@@ -65,6 +65,10 @@ namespace AhShitRim::Police
     // Where the last hit on the player came from (anyone's, through the same hook), if it landed within a_seconds.
     bool LastBlow(float a_seconds, RE::NiPoint3& a_from);
 
+    // The player is back where CJ is after a knock-down: everyone fighting it starts its fight over, so they come for it
+    // there and stop swinging at where it lay.
+    void Retarget(RE::PlayerCharacter* a_player);
+
     // A line for CJ (Wanted::kLineChased, kLineArrested) to put in the input, 0 for none; taken once.
     std::uint8_t TakeLine();
 

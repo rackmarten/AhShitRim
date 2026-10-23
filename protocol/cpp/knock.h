@@ -67,4 +67,90 @@ namespace AhShitRim::Knock
         }
         return { dx / length * a_speed, dy / length * a_speed, a_speed * kRise };
     }
+
+    // ---- How long Skyrim's player may stay down ----
+
+    // Left alone, Skyrim's player may never get up (its knock state stuck, its ragdoll never settling) and the pursuers
+    // keep swinging at where it lies while CJ stands elsewhere. So it stays down no longer than CJ does in San Andreas
+    // (his launch and fall, then his get-up), then it is made to get up and goes back to CJ whether it did or not; the
+    // fix is tried again now and then while Skyrim still says it's down, and that isn't a new blow.
+    inline constexpr float kFallSeconds = 1.5f;   // CJ's launch and fall
+    inline constexpr float kGetUpSeconds = 1.5f;  // and his get-up (KO_skid_front's, KO_skid_back's)
+    inline constexpr float kDownMost = kFallSeconds + kGetUpSeconds;
+    inline constexpr float kFixEvery = 0.5f;  // seconds between tries to make it get up
+    inline constexpr int   kFixTries = 4;     // and no more than this many
+
+    enum class Step
+    {
+        None,   // nothing new
+        Fell,   // knocked down just now: San Andreas throws CJ, the player is left where it falls
+        Force,  // down too long: make it get up (again), it goes back to CJ
+        Up,     // up again (on its own or made to): back at CJ, the pursuers onto him
+    };
+
+    class Down
+    {
+    public:
+        // A frame of a_delta seconds; a_knocked whether Skyrim says the player is down (its knock state, its ragdoll).
+        Step Tick(float a_delta, bool a_knocked)
+        {
+            switch (_phase) {
+            case Phase::Standing:
+                if (!a_knocked) {
+                    return Step::None;
+                }
+                _phase = Phase::Falling;
+                _time = 0.0f;
+                return Step::Fell;
+            case Phase::Falling:
+                if (!a_knocked) {
+                    _phase = Phase::Standing;
+                    return Step::Up;
+                }
+                _time += a_delta;
+                if (_time < kDownMost) {
+                    return Step::None;
+                }
+                _phase = Phase::Forced;
+                _fixTimer = 0.0f;
+                _tries = 1;
+                return Step::Force;
+            case Phase::Forced:
+                if (!a_knocked) {
+                    _phase = Phase::Standing;
+                    return Step::Up;
+                }
+                _time += a_delta;
+                _fixTimer += a_delta;
+                if (_fixTimer >= kFixEvery && _tries < kFixTries) {
+                    _fixTimer = 0.0f;
+                    _tries++;
+                    return Step::Force;
+                }
+                return Step::None;
+            }
+            return Step::None;
+        }
+
+        // Whether the player is left where it fell this frame (else it stands where CJ is).
+        bool Unpinned() const { return _phase == Phase::Falling; }
+        bool IsDown() const { return _phase != Phase::Standing; }
+        float Seconds() const { return _phase == Phase::Standing ? 0.0f : _time; }
+        int   Tries() const { return _phase == Phase::Forced ? _tries : 0; }
+
+        void Reset() { _phase = Phase::Standing; }
+
+    private:
+        enum class Phase
+        {
+            Standing,
+            Falling,  // down, left where it fell
+            Forced,   // down too long: made to get up, back at CJ
+        };
+
+        Phase _phase = Phase::Standing;
+        float _time = 0.0f;
+        float _fixTimer = 0.0f;
+        int   _tries = 0;
+    };
 }

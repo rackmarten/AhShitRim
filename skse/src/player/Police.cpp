@@ -979,6 +979,31 @@ namespace AhShitRim::Police
         return true;
     }
 
+    void Retarget(RE::PlayerCharacter* a_player)
+    {
+        auto* lists = RE::ProcessLists::GetSingleton();
+        if (!lists || !a_player || state.sequence.Running() || NeverWanted()) {
+            return;
+        }
+        const auto                            feet = a_player->GetPosition();
+        std::vector<RE::NiPointer<RE::Actor>> fighting;  // not while walking the list: a fight started over may change it
+        lists->ForEachHighActor([&](RE::Actor* a_actor) {
+            if (a_actor && !a_actor->IsDead() && a_actor->Is3DLoaded() && Fights(a_actor, a_player) && a_actor->GetPosition().GetDistance(feet) <= Wanted::kSightRange) {
+                fighting.emplace_back(a_actor);
+            }
+            return RE::BSContainer::ForEachResult::kContinue;
+        });
+        int again = 0;
+        for (const auto& actor : fighting) {
+            actor->StopCombat();
+            again += actor->StartCombat(a_player) ? 1 : 0;
+        }
+        for (auto& s : state.spawned) {
+            s.retarget = 0.0f;
+        }
+        SKSE::log::info("police: the player is back at CJ: {} fighting it start over there", again);
+    }
+
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
 
     bool IsArrested() { return state.sequence.Running() && state.frame.busted; }
