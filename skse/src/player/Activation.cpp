@@ -173,7 +173,15 @@ namespace AhShitRim::Activation
         tes->ForEachReferenceInRange(a_player, reach + kSearchSlack, [&](RE::TESObjectREFR* a_ref) {
             if (a_ref && a_ref != a_player && !a_ref->IsDisabled() && !a_ref->IsDeleted() && Activatable(a_ref)) {
                 if (auto* root = a_ref->Get3D(); root && !root->GetAppCulled()) {
-                    candidates.push_back({ BoxOf(a_ref, root), a_ref->GetFormID() });
+                    auto* actor = a_ref->As<RE::Actor>();
+                    auto* base = a_ref->GetBaseObject();
+                    auto  kind = Activate::Kind::Other;  // someone in a seat beats the seat (Activate::Pick)
+                    if (actor && !actor->IsDead()) {
+                        kind = Activate::Kind::Person;
+                    } else if (base && base->Is(RE::FormType::Furniture)) {
+                        kind = Activate::Kind::Furniture;
+                    }
+                    candidates.push_back({ BoxOf(a_ref, root), a_ref->GetFormID(), kind });
                     refs.push_back(a_ref);
                 }
             }

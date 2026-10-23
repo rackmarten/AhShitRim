@@ -21,6 +21,7 @@
 #include "player/People.h"
 #include "player/GunRewards.h"
 #include "player/Looting.h"
+#include "player/Conversation.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
@@ -343,8 +344,20 @@ namespace AhShitRim::PlayerSync
                 }
                 state.haveCameraOffset = true;
             }
-            // With San Andreas's roll: looking down, its death camera swings about the view.
-            const auto angles = Camera::AnglesOf(a_body.cameraForward, a_body.cameraUp);
+            // With San Andreas's roll: looking down, its death camera swings about the view. In a
+            // dialogue the cutscene's shot instead (Conversation), level.
+            auto                 at = state.anchor + RE::NiPoint3(a_body.cameraPosition[0], a_body.cameraPosition[1], a_body.cameraPosition[2]);
+            float                fov = a_body.cameraFov;
+            auto                 angles = Camera::AnglesOf(a_body.cameraForward, a_body.cameraUp);
+            const RE::NiPoint3   feet = state.anchor + RE::NiPoint3(a_body.feet[0], a_body.feet[1], a_body.feet[2]);
+            Dialogue::CameraShot shot;
+            if (Conversation::Shot(RE::PlayerCharacter::GetSingleton(), feet, at, shot)) {
+                const float forward[3] = { shot.forward.x, shot.forward.y, shot.forward.z };
+                constexpr float up[3] = { 0.0f, 0.0f, 1.0f };
+                angles = Camera::AnglesOf(forward, up);
+                at = RE::NiPoint3(shot.position.x, shot.position.y, shot.position.z);
+                fov = shot.fov;
+            }
             Camera::Apply(state.cameraOffset, angles.heading, angles.pitch, angles.roll, posed);
             RE::NiMatrix3 rotate;
             for (int r = 0; r < 3; r++) {
@@ -352,7 +365,6 @@ namespace AhShitRim::PlayerSync
                     rotate.entry[r][c] = posed[r][c];
                 }
             }
-            const auto at = state.anchor + RE::NiPoint3(a_body.cameraPosition[0], a_body.cameraPosition[1], a_body.cameraPosition[2]);
             // Update keeps the node's local transform, so give it the wanted world one in its parent's
             // frame (scale 1).
             if (auto* parent = root->parent) {
@@ -369,12 +381,12 @@ namespace AhShitRim::PlayerSync
             }
             RE::NiUpdateData update{};
             root->Update(update);
-            if (a_body.cameraFov > 1.0f && a_body.cameraFov < 170.0f) {
+            if (fov > 1.0f && fov < 170.0f) {
                 auto& data = camera->GetRuntimeData2();
                 if (state.savedFov <= 0.0f) {
                     state.savedFov = data.worldFOV;
                 }
-                data.worldFOV = a_body.cameraFov;
+                data.worldFOV = fov;
             }
             return true;
         }
@@ -467,6 +479,7 @@ namespace AhShitRim::PlayerSync
             CollisionSampler::Stop();
             Activation::Clear();
             AmmuNation::Close();
+            Conversation::Clear();
             Shots::Clear();
             Projectiles::Clear();
             VehicleFx::Clear();
@@ -726,6 +739,10 @@ namespace AhShitRim::PlayerSync
                 state.lastPlaced = a_player->GetPosition();  // Skyrim moving the player in a scene isn't a jump
             }
             WatchShout(a_player);
+            // A dialogue's cutscene: CJ greets, answers each topic and says goodbye in his own voice.
+            if (const auto line = Conversation::Update(a_delta); line != Dialogue::Category::None && !Vitals::IsDown()) {
+                state.input.AddLine(static_cast<std::uint8_t>(line));
+            }
             ReleaseStuckKeys();
             Publish();
 
@@ -850,14 +867,16 @@ namespace AhShitRim::PlayerSync
         constexpr int kActivateHook = 11;
 
         // Skyrim's own handlers refuse while San Andreas has the player, but for its movement and
-        // activate keys while the player sits: those stand it up again. Its Shout key isn't blocked.
+        // activate keys while the player sits: those stand it up again. In a dialogue the activate
+        // key skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
         template <int N>
         struct BlockHook
         {
             static bool thunk(RE::PlayerInputHandler* a_handler, RE::InputEvent* a_event)
             {
                 const bool standUp = (N == kMovementHook || N == kActivateHook) && state.control == Scene::Control::Seated;
-                return (!state.owned || standUp) && original(a_handler, a_event);
+                const bool talking = N == kActivateHook && Conversation::DialogueOpen();
+                return (!state.owned || standUp || talking) && original(a_handler, a_event);
             }
             static inline REL::Relocation<decltype(thunk)> original;
 
@@ -1095,6 +1114,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<kActivateHook>::Install(RE::VTABLE_ActivateHandler[0]);
         BlockHook<13>::Install(RE::VTABLE_FirstPersonState[1]);  // its zoom and POV keys
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
+        Conversation::Install();
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 

@@ -593,6 +593,21 @@ namespace AhShitRim::SaHud
 
     void ShowSubtitle(std::string a_text, float a_seconds) { state.subtitle.Show(std::move(a_text), a_seconds); }
 
+    void HoldSubtitle(std::string a_text)
+    {
+        if (a_text.empty()) {
+            return;  // the one up fades out on its own
+        }
+        const bool  same = state.subtitle.hold > 0.0f && state.subtitle.text == a_text;
+        const float age = state.subtitle.age;
+        state.subtitle.Show(std::move(a_text), 0.1f);
+        if (same) {
+            state.subtitle.age = (std::min)(age, state.subtitle.fadeIn);  // already up: stays, without fading in again
+        }
+    }
+
+    void HideSubtitle() { state.subtitle.hold = 0.0f; }
+
     void ShowRadioStation(std::string a_name, bool a_retuning)
     {
         const bool same = state.radio.hold > 0.0f && state.radio.text == a_name;

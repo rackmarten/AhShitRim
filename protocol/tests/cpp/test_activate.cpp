@@ -81,6 +81,28 @@ TEST_CASE("the nearest box the ray enters within reach is picked")
     CHECK_FALSE(Pick({ 0, 0, 0 }, { 0, 1, 0 }, kDefaultReach, {}));
 }
 
+TEST_CASE("someone on a throne beats the throne, though the ray enters the throne first")
+{
+    std::vector<Candidate> c;
+    c.push_back({ BoxOf({ -50, -50, 0 }, { 50, 50, 150 }, kIdentity, { 0, 100, 0 }, 1.0f), 1, Kind::Furniture });  // the throne, from y = 50
+    c.push_back({ BoxOf({ -20, -20, 0 }, { 20, 20, 130 }, kIdentity, { 0, 110, 0 }, 1.0f), 2, Kind::Person });     // the Jarl in it, from y = 90
+    auto picked = Pick({ 0, 0, 100 }, { 0, 1, 0 }, kDefaultReach, c);
+    REQUIRE(picked);
+    CHECK(c[picked->index].id == 2);
+    CHECK(picked->distance == doctest::Approx(90.0f));
+
+    // An empty throne is still the throne, and an item in front of someone is still the item.
+    c.pop_back();
+    picked = Pick({ 0, 0, 100 }, { 0, 1, 0 }, kDefaultReach, c);
+    REQUIRE(picked);
+    CHECK(c[picked->index].id == 1);
+    c[0].kind = Kind::Other;
+    c.push_back({ BoxOf({ -20, -20, 0 }, { 20, 20, 130 }, kIdentity, { 0, 110, 0 }, 1.0f), 2, Kind::Person });
+    picked = Pick({ 0, 0, 100 }, { 0, 1, 0 }, kDefaultReach, c);
+    REQUIRE(picked);
+    CHECK(c[picked->index].id == 1);
+}
+
 TEST_CASE("CJ looking down at an item on the floor picks it")
 {
     // A sweetroll at his feet, a step ahead: the ray from his chest, pitched down by San Andreas's camera.
