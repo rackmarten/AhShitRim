@@ -35,7 +35,7 @@ namespace
 TEST_CASE("a record round trips")
 {
     const auto bytes = Write(Sample());
-    CHECK(bytes.size() == kSizeV4);
+    CHECK(bytes.size() == kSizeV5);
 
     Record back;
     REQUIRE(Read(kVersion, bytes.data(), bytes.size(), back) == Result::Ok);
@@ -62,6 +62,27 @@ TEST_CASE("a record round trips")
     CHECK(back.weapons.skills[6] == 120);
     CHECK(back.weapons.skills[10] == 1000);
     CHECK(back.weapons.skills[1] == 0);
+    CHECK(back.pickupsTaken.empty());
+}
+
+TEST_CASE("the one-off pickups taken round trip, and a version 4 record has none")
+{
+    auto r = Sample();
+    r.pickupsTaken = { 80, 82, 84 };
+    const auto bytes = Write(r);
+    CHECK(bytes.size() == kSizeV5 + 3 * 2);
+    Record back;
+    REQUIRE(Read(kVersion, bytes.data(), bytes.size(), back) == Result::Ok);
+    CHECK(back.pickupsTaken == std::vector<std::uint16_t>{ 80, 82, 84 });
+    CHECK(back.weapons.skills[0] == 999);
+
+    // Its list cut short.
+    CHECK(Read(kVersion, bytes.data(), bytes.size() - 1, back) == Result::Short);
+
+    // What a version 4 AhShitRim wrote: everything up to the skills.
+    REQUIRE(Read(4, bytes.data(), kSizeV4, back) == Result::Ok);
+    CHECK(back.pickupsTaken.empty());
+    CHECK(back.weapons.skills[10] == 1000);
 }
 
 TEST_CASE("a CJ on foot with the handover off round trips")

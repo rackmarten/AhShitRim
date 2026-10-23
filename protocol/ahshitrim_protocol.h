@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 22;
+    inline constexpr std::uint32_t kProtocolVersion = 23;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -340,6 +340,8 @@ namespace AhShitRim::Protocol
         Projectile = 5,      // San Andreas -> Skyrim (v15): a rocket, grenade, tear gas or Molotov CJ launched, for Skyrim to fly
         Effect = 6,          // Skyrim -> San Andreas (v15): what CJ's explosives did, for San Andreas's own sound and fire
         Cheat = 7,           // Skyrim -> San Andreas (v20): a cheat typed in Skyrim that San Andreas has a part in
+        PickupCommand = 8,   // Skyrim -> San Andreas (v23): a pickup's model wanted, or one CJ took
+        PickupEvent = 9,     // San Andreas -> Skyrim (v23): a pickup's model sent, or one San Andreas dropped
     };
 
     struct MessageHeader
@@ -463,6 +465,55 @@ namespace AhShitRim::Protocol
         std::uint16_t reserved;
     };
 
+    // What a pickup is (v23, protocol/cpp/pickups.h): San Andreas's model for it and what it gives.
+    enum class PickupKind : std::uint8_t
+    {
+        None = 0,
+        Health = 1,     // the heart: full health
+        Armour = 2,     // full armour
+        Parachute = 3,  // the parachute, in CJ's hands
+        Weapon = 4,     // a weapon (`weapon`) with its ammo
+        Money = 5,      // a wad of money: Skyrim's gold
+        Jetpack = 6,    // the jetpack, put on
+    };
+
+    enum class PickupCommandKind : std::uint8_t
+    {
+        Model = 1,      // build and send the model of `pickup` (`weapon` for a weapon); a PickupEvent Model names it
+        Collected = 2,  // CJ took one: San Andreas plays its sound, puts the jetpack on him and the parachute in his hands
+    };
+
+    // Payload of a PickupCommand message (v23).
+    struct PickupCommand
+    {
+        std::uint8_t  kind;    // PickupCommandKind
+        std::uint8_t  pickup;  // PickupKind
+        std::uint8_t  weapon;  // San Andreas's eWeaponType, a weapon's
+        std::uint8_t  reserved0;
+        std::uint32_t reserved[3];
+    };
+
+    enum class PickupEventKind : std::uint8_t
+    {
+        Model = 1,    // the model of `pickup` (`weapon`) comes as ModelChunks under `model`, its parts in `parts`
+        Dropped = 2,  // San Andreas made a pickup of its own (the jetpack CJ took off) at `at` and dropped it: Skyrim keeps it
+    };
+
+    // Payload of a PickupEvent message (v23).
+    struct PickupEvent
+    {
+        std::uint32_t handover;   // InputState.handover `at` belongs to (Dropped)
+        std::uint8_t  kind;       // PickupEventKind
+        std::uint8_t  pickup;     // PickupKind
+        std::uint8_t  weapon;     // San Andreas's eWeaponType, a weapon's
+        std::uint8_t  partCount;  // parts of the model in parts (Model)
+        std::uint32_t model;      // ModelChunkHeader.model (a kSkinModelWeapon), Model only
+        std::uint32_t amount;     // a weapon's ammo, a wad's money (Dropped)
+        float         at[3];      // where it is, relative to InputState.anchor, Skyrim units (Dropped)
+        BodyBone      parts[kProjectilePartMax];  // each part of the model relative to the pickup (Model)
+        std::uint32_t reserved[3];
+    };
+
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
     // arrive in order; offset 0 starts a model.
     struct ModelChunkHeader
@@ -580,6 +631,11 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(EffectEvent) == 32);
     static_assert(sizeof(CheatCommand) == 8);
     static_assert(offsetof(CheatCommand, cheat) == 4);
+    static_assert(sizeof(PickupCommand) == 16);
+    static_assert(sizeof(PickupEvent) == 96);
+    static_assert(offsetof(PickupEvent, model) == 8);
+    static_assert(offsetof(PickupEvent, at) == 16);
+    static_assert(offsetof(PickupEvent, parts) == 28);
     static_assert(offsetof(EffectEvent, projectile) == 8);
     static_assert(offsetof(EffectEvent, at) == 12);
     static_assert(offsetof(EffectEvent, seconds) == 24);

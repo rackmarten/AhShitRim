@@ -5,7 +5,8 @@
 // added at the end, each version's fields behind the version that brought them, and an older record
 // reads with the newer fields at their defaults. The wanted level has a record of its own (protocol/cpp/wanted.h).
 //
-// Version history: 1 the handover and the armour; 2 the car; 3 the weapons; 4 the weapon skills.
+// Version history: 1 the handover and the armour; 2 the car; 3 the weapons; 4 the weapon skills; 5 the one-off
+// pickups taken (v23).
 
 #pragma once
 
@@ -21,7 +22,7 @@
 namespace AhShitRim::Cosave
 {
     inline constexpr std::uint32_t kRecordType = 0x4D525341;  // "ASRM"
-    inline constexpr std::uint32_t kVersion = 4;
+    inline constexpr std::uint32_t kVersion = 5;
 
     // The car CJ was in, relative to him; model 0 = on foot.
     struct Car
@@ -46,6 +47,7 @@ namespace AhShitRim::Cosave
         float   armor = 0.0f;      // San Andreas points, 0..100
         Car     car;
         Arms    weapons;           // version 3
+        std::vector<std::uint16_t> pickupsTaken;  // version 5: the one-off pickups CJ took (Pickups::Spot ids)
     };
 
     enum class Result
@@ -61,7 +63,9 @@ namespace AhShitRim::Cosave
     inline constexpr std::size_t kWeaponBytes = 1 + 2 + 4;  // type, clip, ammo
     inline constexpr std::size_t kSizeV3 = kSizeV2 + 1 + AhShitRim::Protocol::kWeaponSlotCount * kWeaponBytes;
     inline constexpr std::size_t kSizeV4 = kSizeV3 + AhShitRim::Protocol::kWeaponSkillCount * 2;
+    inline constexpr std::size_t kSizeV5 = kSizeV4 + 2;  // and 2 bytes per pickup taken
     inline constexpr std::uint16_t kSkillMax = 1000;
+    inline constexpr std::size_t kPickupsMax = 4096;
 
     namespace detail
     {
@@ -105,6 +109,11 @@ namespace AhShitRim::Cosave
         for (auto skill : a_record.weapons.skills) {
             detail::Put(out, skill);
         }
+        const auto taken = static_cast<std::uint16_t>((std::min)(a_record.pickupsTaken.size(), kPickupsMax));
+        detail::Put(out, taken);
+        for (std::size_t i = 0; i < taken; ++i) {
+            detail::Put(out, a_record.pickupsTaken[i]);
+        }
         return out;
     }
 
@@ -117,7 +126,7 @@ namespace AhShitRim::Cosave
             return Result::TooNew;
         }
         if (a_version < 1 || a_size < kSizeV1 || (a_version >= 2 && a_size < kSizeV2) || (a_version >= 3 && a_size < kSizeV3) ||
-            (a_version >= 4 && a_size < kSizeV4)) {
+            (a_version >= 4 && a_size < kSizeV4) || (a_version >= 5 && a_size < kSizeV5)) {
             return Result::Short;
         }
         const std::uint8_t* at = a_data;
@@ -158,6 +167,16 @@ namespace AhShitRim::Cosave
         if (a_version >= 4) {
             for (auto& skill : record.weapons.skills) {
                 skill = (std::min)(detail::Get<std::uint16_t>(at), kSkillMax);
+            }
+        }
+        if (a_version >= 5) {
+            const auto taken = detail::Get<std::uint16_t>(at);
+            if (taken > kPickupsMax || a_size < kSizeV5 + 2u * taken) {
+                return Result::Short;
+            }
+            record.pickupsTaken.resize(taken);
+            for (auto& id : record.pickupsTaken) {
+                id = detail::Get<std::uint16_t>(at);
             }
         }
         record.armor = record.armor < 0.0f ? 0.0f : record.armor > 100.0f ? 100.0f : record.armor;

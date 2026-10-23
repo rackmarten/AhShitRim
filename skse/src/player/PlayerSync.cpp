@@ -29,6 +29,7 @@
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
+#include "player/WorldPickups.h"
 #include "pose.h"
 #include "scene.h"
 #include "vehicle_kinds.h"
@@ -490,6 +491,7 @@ namespace AhShitRim::PlayerSync
             Conversation::Clear();
             Shots::Clear();
             Projectiles::Clear();
+            WorldPickups::Clear();
             VehicleFx::Clear();
             People::Clear();
             DrawSkyrimPlayer();
@@ -847,6 +849,7 @@ namespace AhShitRim::PlayerSync
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
                 valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
+            WorldPickups::Update(a_player, state.anchor, state.handover, a_delta, valid ? &pose : nullptr, Vitals::IsWasted() || state.reanchoring);
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -894,6 +897,8 @@ namespace AhShitRim::PlayerSync
                         Shots::Queue(a_data, a_size);
                     } else if (a_type == Protocol::MessageType::Projectile && state.owned) {
                         Projectiles::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::PickupEvent) {
+                        WorldPickups::Queue(a_data, a_size);
                     }
                 });
                 if (state.owned && a_delta > 0.0f) {
@@ -1229,6 +1234,7 @@ namespace AhShitRim::PlayerSync
         a_out.handover = state.owned;
         a_out.armor = Vitals::Armor();
         Arms::Snapshot(a_out.weapons);
+        a_out.pickupsTaken = WorldPickups::Taken();
         Protocol::PlayerState pose{};
         if (state.owned && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 && pose.handover == state.handover &&
             (pose.flags & Protocol::kPlayerInVehicle) != 0 && pose.vehicleModel && Pose::Finite(pose)) {
@@ -1245,6 +1251,7 @@ namespace AhShitRim::PlayerSync
         state.resumePending = a_record.handover;
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
+        WorldPickups::Restore(a_record.pickupsTaken);
     }
 
     void Revert()
@@ -1253,5 +1260,6 @@ namespace AhShitRim::PlayerSync
         state.resumePending = false;
         Vitals::SetArmor(0.0f);
         Arms::Revert();
+        WorldPickups::Revert();
     }
 }

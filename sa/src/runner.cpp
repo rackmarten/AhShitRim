@@ -6,6 +6,7 @@
 #include "cj_busted.h"
 #include "cj_cheats.h"
 #include "cj_gear.h"
+#include "cj_pickups.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
@@ -488,6 +489,7 @@ namespace AhShitRim::Runner
             CjGear::Update(ped, state.owned && !state.wasted && !Scenes::Following(), state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjProjectiles::Update(ped, state.owned);
+            CjPickups::Update(ped, state.owned);
             ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.

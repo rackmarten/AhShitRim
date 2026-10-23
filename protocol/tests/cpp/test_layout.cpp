@@ -30,7 +30,7 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
+    CHECK(kProtocolVersion == 23);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -81,6 +81,20 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(EffectEvent, projectile) == 8);
     CHECK(offsetof(EffectEvent, at) == 12);
     CHECK(offsetof(EffectEvent, seconds) == 24);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupCommand) == 8);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupEvent) == 9);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Health) == 1);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Jetpack) == 6);
+    CHECK(static_cast<std::uint8_t>(PickupCommandKind::Collected) == 2);
+    CHECK(static_cast<std::uint8_t>(PickupEventKind::Dropped) == 2);
+    CHECK(sizeof(PickupCommand) == 16);
+    CHECK(sizeof(PickupEvent) == 96);
+    CHECK(offsetof(PickupEvent, kind) == 4);
+    CHECK(offsetof(PickupEvent, partCount) == 7);
+    CHECK(offsetof(PickupEvent, model) == 8);
+    CHECK(offsetof(PickupEvent, amount) == 12);
+    CHECK(offsetof(PickupEvent, at) == 16);
+    CHECK(offsetof(PickupEvent, parts) == 28);
     CHECK(kPlayerOnFire == 0x20);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);
