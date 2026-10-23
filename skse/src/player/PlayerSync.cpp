@@ -30,6 +30,7 @@
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "pose.h"
+#include "power/KeepAwake.h"
 #include "scene.h"
 #include "vehicle_kinds.h"
 #include "weapons.h"
@@ -500,6 +501,7 @@ namespace AhShitRim::PlayerSync
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
             state.sneak = false;
+            KeepAwake::Display(false);
             if (state.wasThirdPerson) {
                 if (auto* camera = RE::PlayerCamera::GetSingleton()) {
                     camera->ForceThirdPerson();
@@ -550,6 +552,10 @@ namespace AhShitRim::PlayerSync
             state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);
+            // An idle CJ would let the display sleep, and monitor speakers take both games' sound with them.
+            if (!KeepAwake::Display(true)) {
+                SKSE::log::warn("player sync: Windows refused to keep the display on");
+            }
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
                 state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading);
         }

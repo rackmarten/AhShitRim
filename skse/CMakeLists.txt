@@ -20,7 +20,7 @@ add_commonlibsse_plugin(
     ${PROJECT_NAME}
     NAME "AhShitRim"
     AUTHOR "Marek Uncik"
-    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/VehicleFx.cpp src/player/Puffs.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp ../protocol/cpp/link.cpp
+    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/VehicleFx.cpp src/player/Puffs.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp src/power/KeepAwake.cpp ../protocol/cpp/link.cpp
 )
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
@@ -29,3 +29,5 @@ target_include_directories(${PROJECT_NAME} PRIVATE src ../protocol/cpp)
 set_source_files_properties(../protocol/cpp/link.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 # So does the overlay, which needs the real d3d11.h.
 set_source_files_properties(src/hud/Overlay.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+# And the display request, which needs <Windows.h> for its power API.
+set_source_files_properties(src/power/KeepAwake.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
