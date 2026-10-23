@@ -11,8 +11,13 @@
 #   gh api -X POST repos/rackmarten/AhShitRim/actions/runners/registration-token --jq .token \
 #       | ssh arcade '<checkout>/scripts/wine/setup-runner.sh'
 #
-# Re-running it on a registered runner skips the registration and just reinstalls the service;
-# the runner's own checkout works for that: ~/actions-runner/_work/AhShitRim/AhShitRim.
+# Re-running it on a registered runner skips the registration and just reinstalls the service
+# and the healthcheck (from whichever checkout runs it, so use one on main; the runner's own,
+# ~/actions-runner/_work/AhShitRim/AhShitRim, is on whatever its last job built).
+#
+# It also installs the healthcheck (runner-healthcheck.sh) as actions-runner-healthcheck.timer,
+# every 3 minutes, and gh for it. gh has to be logged in once, by hand, with a read-only token
+# (docs/DEV_SETUP.md, "CI"); until then the check only logs a warning.
 #
 # Settings (environment):
 #   RUNNER_DIR      where the runner goes (default ~/actions-runner)
@@ -82,3 +87,31 @@ else
     systemctl --user restart "$UNIT"
     systemctl --user --no-pager status "$UNIT" | head -5
 fi
+
+step "healthcheck"
+command -v gh >/dev/null || sudo apt-get install -y -q gh
+install -D -m755 "$(dirname "$0")/runner-healthcheck.sh" "$HOME/.local/bin/actions-runner-healthcheck"
+cat >"$HOME/.config/systemd/user/actions-runner-healthcheck.service" <<EOF
+# Installed by AhShitRim's scripts/wine/setup-runner.sh: see runner-healthcheck.sh there.
+[Unit]
+Description=Start or restart the AhShitRim runner if it's down or stuck
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/actions-runner-healthcheck
+EOF
+cat >"$HOME/.config/systemd/user/actions-runner-healthcheck.timer" <<EOF
+# Installed by AhShitRim's scripts/wine/setup-runner.sh.
+[Unit]
+Description=Check the AhShitRim runner every 3 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=3min
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now actions-runner-healthcheck.timer
+gh auth status >/dev/null 2>&1 || echo "gh isn't logged in yet: the healthcheck can't see GitHub until it is (docs/DEV_SETUP.md, \"CI\")."
