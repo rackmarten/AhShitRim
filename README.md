@@ -69,7 +69,7 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), AEZAKMI keeps the wanted level away, OSRBLHH and LJSPQK bring it on (two more stars, six), ASNAEB clears it, plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
+Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, mega punch, floating cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), AEZAKMI keeps the wanted level away, OSRBLHH and LJSPQK bring it on (two more stars, six), ASNAEB clears it, plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
 
 Every code, with its aliases and what it does: [docs/CHEATS.md](docs/CHEATS.md).
 

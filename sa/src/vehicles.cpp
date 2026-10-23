@@ -58,6 +58,7 @@ namespace AhShitRim::Vehicles
         constexpr float kGroundBelow = Vehicle::kMaxStep + 1.0f;  // ... and look this far below them
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
+        constexpr float kFloatRise = 0.02f;                        // BSXSGGC: a car hit rises at least this fast (San Andreas's speed a step, 1 m/s)
 
         struct Slot
         {
@@ -592,6 +593,34 @@ namespace AhShitRim::Vehicles
                 a_vehicle->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_vehicle->m_vecCentreOfMass + forward);
             }
         }
+
+        // BSXSGGC (CHEAT_CARS_FLOAT_AWAY_WHEN_HIT, v20 table): a vehicle the player's vehicle hits loses its gravity and
+        // floats up. San Andreas does it in CPhysical::ApplyCollision for every vehicle but a mission vehicle, and every
+        // vehicle here is one (Create), so it never happens to them: done here instead, for the vehicles in the slots
+        // the player's vehicle touched this step (its collision records, cleared at the start of each). A parked
+        // vehicle hit gently gets a little lift too, so it floats rather than hangs.
+        void FloatAway(CVehicle* a_driven)
+        {
+            if (!CjCheats::Active(Cheats::SaCheat::CarsFloatAway) || CTimer::m_UserPause || CTimer::m_CodePause) {
+                return;
+            }
+            const int count = (std::min)(static_cast<int>(a_driven->m_nNumEntitiesCollided), static_cast<int>(std::size(a_driven->m_apCollidedEntities)));
+            for (int c = 0; c < count; c++) {
+                CEntity* hit = a_driven->m_apCollidedEntities[c];
+                for (int i = 0; hit && hit != a_driven && i < static_cast<int>(Protocol::kVehicleMax); i++) {
+                    auto* vehicle = Live(i);
+                    if (vehicle != hit || !vehicle->bApplyGravity) {
+                        continue;
+                    }
+                    vehicle->bApplyGravity = false;
+                    vehicle->SetIsStatic(false);
+                    if (vehicle->m_vecMoveSpeed.z < kFloatRise) {
+                        vehicle->m_vecMoveSpeed.z = kFloatRise;
+                    }
+                    Log(std::format("vehicle: the {} in slot {} was hit by CJ's and floats away (BSXSGGC)", state.slots[i].name, i));
+                }
+            }
+        }
     }
 
 
@@ -895,6 +924,7 @@ namespace AhShitRim::Vehicles
         }
         if (driven) {
             AirControl(driven, a_ped);
+            FloatAway(driven);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
             // What the vehicle makes of the input and the ground, every 5 s while CJ drives.
             if (const std::uint64_t now = ::GetTickCount64(); now - state.drivenLogMs >= 5000) {

@@ -31,6 +31,7 @@ San Andreas keeps only a key of each code (a checksum of its letters), so every 
 | VKYPQCF | ICANGOALLNIGHT | Maximum stamina |
 | VQIMAHA | NATURALTALENT | Maximum driving, flying and bike skills |
 | LFGMHAL | KANGAROO | Toggle. Mega jump |
+| IAVENJQ | STINGLIKEABEE | Toggle. Mega punch: a blow with fists, brass knuckles or the parachute kills and throws the victim far (giants, mammoths and dragons only die; an essential person kneels, unless NOMERCY) |
 | YECGAA | ROCKETMAN | The jetpack on his back |
 | AIYPWZQP | LETSGOBASEJUMPING | The parachute in his hands |
 
@@ -67,6 +68,7 @@ They come in front of CJ on foot, as the spawn keys bring them; in a vehicle the
 | PGGOMOY | STICKLIKEGLUE | Toggle. Perfect handling |
 | COXEFGU | SPEEDFREAK | Toggle. Nitro in every car |
 | JCNRUAD | TOUCHMYCARYOUDIE | Toggle. Smash'n'boom: cars CJ hits blow up |
+| BSXSGGC | BUBBLECARS | Toggle. Cars float away when hit: a vehicle CJ's vehicle hits loses its gravity and floats up, and stays that way (as in San Andreas) |
 | CPKTNWT | ALLCARSGOBOOM | Blow up every vehicle (not wrecks: as in San Andreas, a burnt-out one doesn't go up again) |
 
 ## AhShitRim's own
@@ -82,7 +84,7 @@ Matched by their letters as typed.
 
 ## Not in yet
 
-Mega punch (IAVENJQ) and cars floating away (BSXSGGC) come later. San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), but the wanted level ones are (OSRBLHH, LJSPQK, ASNAEB, AEZAKMI).
+San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), but the wanted level ones are (OSRBLHH, LJSPQK, ASNAEB, AEZAKMI).
 
 ## Every vehicle by its name
 

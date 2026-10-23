@@ -175,6 +175,10 @@ TEST_CASE("cheats: typing completes a cheat on its last letter")
     CHECK(TypeAll(typist, "18HOLES") == &Row("RZHSUEW"));  // the top row's digits count for San Andreas's keys too
     CHECK(TypeAll(typist, "CHITTYCHITTYBANGBANG") == &Row("RIPAZHA"));
     CHECK(TypeAll(typist, "NOMERCY") == &Row("NOMERCY"));
+    CHECK(TypeAll(typist, "IAVENJQ") == &Row("IAVENJQ"));
+    CHECK(TypeAll(typist, "STINGLIKEABEE") == &Row("IAVENJQ"));
+    CHECK(TypeAll(typist, "BSXSGGC") == &Row("BSXSGGC"));
+    CHECK(TypeAll(typist, "BUBBLECARS") == &Row("BSXSGGC"));
     // Keys that aren't letters go nowhere.
     CHECK_FALSE(typist.Key(Input::kDikSpace));
     CHECK(typist.Count() == 0);
@@ -296,7 +300,7 @@ TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player'
              "NATURALTALENT", "ICANGOALLNIGHT", "OLDSPEEDDEMON", "NOTFORPUBLICROADS", "JUSTTRYANDSTOPME", "WHERESTHEFUNERAL", "CELEBRITYSTATUS",
              "TRUEGRIME", "ITSALLBULL", "FLYINGTOSTUNT", "CJPHONEHOME", "STICKLIKEGLUE", "SPEEDFREAK", "GOODBYECRUELWORLD",
              "WHOATEALLTHEPIES", "LEANANDMEAN", "BUFFMEUP", "INEEDSOMEHELP", "TIMETOKICKASS", "VROCKPOKEY", "18HOLES", "FOURWHEELFUN",
-             "HITTHEROADJACK", "LETSGOBASEJUMPING", "CHITTYCHITTYBANGBANG", "TOUCHMYCARYOUDIE", "ALLCARSGOBOOM" }) {  // not MONSTERMASH: MONSTER (444) goes off first, a monster truck all the same
+             "HITTHEROADJACK", "LETSGOBASEJUMPING", "STINGLIKEABEE", "BUBBLECARS", "CHITTYCHITTYBANGBANG", "TOUCHMYCARYOUDIE", "ALLCARSGOBOOM" }) {  // not MONSTERMASH: MONSTER (444) goes off first, a monster truck all the same
         codes.push_back(other);
     }
     for (const auto code : codes) {
@@ -367,4 +371,8 @@ TEST_CASE("cheats: the command for San Andreas")
     CHECK(CommandFor(Row("HESOYAM")).cheat == 3);    // CHEAT_HEALTH_ARMOR_250K
     CHECK(CommandFor(Row("BAGUVIX")).cheat == 61);   // CHEAT_INFINITE_HEALTH
     CHECK(CommandFor(Row("FULLCLIP")).cheat == 72);  // CHEAT_INFINITE_AMMO
+    CHECK(CommandFor(Row("IAVENJQ")).cheat == 67);   // CHEAT_MEGA_PUNCH
+    CHECK(CommandFor(Row("BSXSGGC")).cheat == 54);   // CHEAT_CARS_FLOAT_AWAY_WHEN_HIT
+    CHECK(Toggles(Row("IAVENJQ").kind));
+    CHECK(Toggles(Row("BSXSGGC").kind));
 }

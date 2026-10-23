@@ -96,6 +96,7 @@ namespace AhShitRim::Cheats
         Jetpack = 64,
         NeverWanted = 65,  // CHEAT_I_DO_AS_I_PLEASE, AEZAKMI
         SixStars = 66,     // CHEAT_SIX_WANTED_STARS, LJSPQK
+        MegaPunch = 67,    // CHEAT_MEGA_PUNCH, IAVENJQ: Skyrim's (protocol/cpp/mega_punch.h)
         InfiniteAmmo = 72,
         MaxStamina = 81,
         HitmanAllWeapons = 82,
@@ -187,6 +188,8 @@ namespace AhShitRim::Cheats
         { "COXEFGU", Kind::SaToggle, SaCheat::AllCarsNitro, 0, "nitro in every car" },
         { "JCNRUAD", Kind::SaToggle, SaCheat::SmashNBoom, 0, "smash'n'boom (cars blow up on contact)" },
         { "LFGMHAL", Kind::SaToggle, SaCheat::MegaJump, 0, "mega jump" },
+        { "IAVENJQ", Kind::SaToggle, SaCheat::MegaPunch, 0, "mega punch (fists throw people far and kill)" },
+        { "BSXSGGC", Kind::SaToggle, SaCheat::CarsFloatAway, 0, "cars float away when hit" },
         { "CPKTNWT", Kind::SaOnce, SaCheat::BlowUpCars, 0, "blow up every vehicle" },
         { "BTCDBCB", Kind::SaOnce, SaCheat::Fat, 0, "fat CJ" },
         { "BUFFMEUP", Kind::SaOnce, SaCheat::Muscle, 0, "muscular CJ" },
