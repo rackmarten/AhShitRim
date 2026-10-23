@@ -61,7 +61,9 @@ TEST_CASE("the builder turns held keys into axes and buttons")
     b.SetKey(kDikLeftAlt, true);
     s = b.Build(9, true, true);
     CHECK(s.moveY == 0.0f);
-    CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonJump | Protocol::kButtonCrouch | Protocol::kButtonWalk | Protocol::kButtonHandbrake));
+    // v23: Left Ctrl and Left Alt are a vehicle's fire keys as well, which ToPad only reads in one.
+    CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonJump | Protocol::kButtonCrouch | Protocol::kButtonWalk | Protocol::kButtonHandbrake |
+                           Protocol::kButtonVehicleFire | Protocol::kButtonVehicleFireAlt));
 
     b.SetKey(kDikW, false);
     b.SetKey(kDikD, false);
@@ -299,9 +301,9 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     CHECK(ActionFromScanCode(kDikF, classic) == Action::EnterExit);
     CHECK(ActionFromScanCode(kDikReturn, classic) == Action::EnterExit);
     CHECK(ActionFromScanCode(kDikUp, classic) == Action::LeanForward);
-    // The modern layout leaves Right Ctrl and Caps Lock to Skyrim.
+    // The modern layout has no Right Ctrl on foot; (v23) Caps Lock is the horn there too.
     CHECK(ActionFromScanCode(kDikRightCtrl) == Action::None);
-    CHECK(ActionFromScanCode(kDikCapsLock) == Action::None);
+    CHECK(ActionFromScanCode(kDikCapsLock) == Action::Horn);
 
     Builder b;
     b.SetLayout(classic);
@@ -326,7 +328,9 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     b.SetKey(kDikLeftShift, false);
     b.SetKey(kDikRightCtrl, true);
     in = b.Build(3, true, true);
-    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake));  // San Andreas's second jump and handbrake key
+    // San Andreas's second jump and handbrake key, and (v23) a vehicle's fire key, all three as San Andreas binds it.
+    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake | Protocol::kButtonVehicleFire));
+    CHECK(ToPad(in, true).buttonCircle == 255);
 
     b.SetKey(kDikRightCtrl, false);
     b.SetKey(kDikCapsLock, true);
@@ -478,4 +482,161 @@ TEST_CASE("numpad 5 is the hydraulics' jump in a vehicle (v20)")
     CHECK(ToPad(s, true).shockButtonR == 255);
     CHECK(ToPad(s, false).shockButtonR == 0);  // on foot it does nothing
     CHECK(ActionFromScanCode(kDikNumpad5, KeyLayout::Classic) == Action::Hydraulics);
+}
+
+TEST_CASE("v23: San Andreas's keyboard fire keys join the mouse buttons in a vehicle")
+{
+    for (const auto layout : { KeyLayout::Modern, KeyLayout::Classic }) {
+        CAPTURE(NameOf(layout));
+        CHECK(VehicleActionFromScanCode(kDikLeftAlt) == Action::VehicleFire);
+        CHECK(VehicleActionFromScanCode(kDikRightCtrl) == Action::VehicleFire);
+        CHECK(VehicleActionFromScanCode(kDikLeftCtrl) == Action::VehicleFireAlt);
+        CHECK(VehicleActionFromScanCode(kDikNumpad0) == Action::VehicleFireAlt);
+
+        Builder b;
+        b.SetLayout(layout);
+        b.SetKey(kDikLeftAlt, true);
+        auto in = b.Build(1, true, true);
+        CHECK((in.buttons & Protocol::kButtonVehicleFire) != 0);
+        CHECK(ToPad(in, true).buttonCircle == 255);  // the Hunter's rockets, the Hydra's flares, nitro
+        CHECK(ToPad(in, false).buttonCircle == 0);   // on foot Left Alt only walks
+        CHECK(ToPad(in, false).pedWalk == 255);
+
+        b.SetKey(kDikLeftAlt, false);
+        b.SetKey(kDikNumpad0, true);
+        in = b.Build(2, true, true);
+        CHECK(ToPad(in, true).leftShoulder1 == 255);  // the second weapon, a bicycle's bunny hop
+        CHECK(ToPad(in, false).rightShoulder1 == 0);  // on foot it doesn't aim
+        b.SetKey(kDikNumpad0, false);
+        b.SetKey(kDikLeftCtrl, true);
+        in = b.Build(3, true, true);
+        CHECK(ToPad(in, true).leftShoulder1 == 255);
+        CHECK(ToPad(in, true).shockButtonL == 0);  // not the horn
+    }
+    // Left Ctrl still crouches on foot in the modern layout.
+    Builder b;
+    b.SetKey(kDikLeftCtrl, true);
+    const auto in = b.Build(1, true, true);
+    CHECK(ToPad(in, false).shockButtonL == 255);
+    CHECK(ToPad(in, false).leftShoulder1 == 0);
+}
+
+TEST_CASE("v23: the right mouse button and its keys are the same L1: the BMX's bunny hop")
+{
+    Builder b;
+    b.SetAim(true);
+    const auto mouse = ToPad(b.Build(1, true, true), true);
+    b.SetAim(false);
+    b.SetKey(kDikLeftCtrl, true);
+    const auto key = ToPad(b.Build(2, true, true), true);
+    CHECK(mouse.leftShoulder1 == 255);
+    CHECK(key.leftShoulder1 == mouse.leftShoulder1);
+    CHECK(key.buttonCircle == 0);
+}
+
+TEST_CASE("v23: the middle mouse button looks behind in a vehicle, both shoulders as San Andreas reads it")
+{
+    Builder b;
+    b.SetLookBehind(true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.buttons == Protocol::kButtonLookBehind);
+    auto pad = ToPad(in, true);
+    CHECK(pad.leftShoulder2 == 255);  // CPad::GetLookBehindForCar: L2 and R2 together
+    CHECK(pad.rightShoulder2 == 255);
+    pad = ToPad(in, false);
+    CHECK(pad.leftShoulder2 == 0);
+    CHECK(pad.rightShoulder2 == 0);
+    b.ReleaseAll();
+    CHECK(b.Build(2, true, true).buttons == 0);
+
+    // Q and E together look behind too.
+    b.SetKey(kDikQ, true);
+    b.SetKey(kDikE, true);
+    pad = ToPad(b.Build(3, true, true), true);
+    CHECK(pad.leftShoulder2 == 255);
+    CHECK(pad.rightShoulder2 == 255);
+
+    b.ReleaseAll();
+    b.SetLookBehind(true);
+    CHECK(b.Build(4, true, false).buttons == 0);  // a menu has the input
+}
+
+TEST_CASE("v23: V and Home change the camera distance in a vehicle")
+{
+    CHECK(VehicleActionFromScanCode(kDikV) == Action::CameraView);
+    CHECK(VehicleActionFromScanCode(kDikHome) == Action::CameraView);
+    CHECK(ActionFromScanCode(kDikV) == Action::None);
+    Builder b;
+    b.SetKey(kDikHome, true);
+    const auto in = b.Build(1, true, true);
+    CHECK(in.buttons == Protocol::kButtonCameraView);
+    CHECK(ToPad(in, true).select == 255);
+    CHECK(ToPad(in, false).select == 0);
+}
+
+TEST_CASE("v23: 2 and numpad + are the sub-mission key with numpad 5: the hydraulics' jump, a plane's landing gear")
+{
+    for (const auto layout : { KeyLayout::Modern, KeyLayout::Classic }) {
+        CHECK(ActionFromScanCode(kDik2, layout) == Action::Hydraulics);
+        CHECK(ActionFromScanCode(kDikNumpadPlus, layout) == Action::Hydraulics);
+    }
+    Builder b;
+    b.SetKey(kDik2, true);
+    const auto in = b.Build(1, true, true);
+    CHECK(in.buttons == Protocol::kButtonHydraulics);
+    CHECK(ToPad(in, true).shockButtonR == 255);  // CPlane::ProcessControlInputs toggles the gear on its press
+    CHECK(ToPad(in, true).shockButtonL == 0);    // not the horn
+}
+
+TEST_CASE("v23: Caps Lock is the horn in both layouts")
+{
+    Builder b;
+    b.SetKey(kDikCapsLock, true);
+    const auto in = b.Build(1, true, true);
+    CHECK(in.buttons == Protocol::kButtonHorn);
+    CHECK(ToPad(in, true).shockButtonL == 255);
+    CHECK(ToPad(in, false).shockButtonL == 0);  // not a crouch on foot
+}
+
+TEST_CASE("v23: Insert and 4 tune the next station, Delete and R the one before")
+{
+    CHECK(RadioStepFromScanCode(kDikInsert) == 1);
+    CHECK(RadioStepFromScanCode(kDik4) == 1);
+    CHECK(RadioStepFromScanCode(kDikDelete) == -1);
+    CHECK(RadioStepFromScanCode(kDikR) == -1);
+    CHECK(RadioStepFromScanCode(kDikW) == 0);
+    for (const auto dik : { kDikInsert, kDik4, kDikDelete, kDikR }) {
+        CHECK(ActionFromScanCode(dik) == Action::None);  // a step each press, nothing held
+        CHECK(VehicleActionFromScanCode(dik) == Action::None);
+    }
+}
+
+TEST_CASE("v23: the handbrake key held is the Hydra's lock-on")
+{
+    Builder b;
+    CHECK_FALSE(b.HandbrakeHeld());
+    b.SetKey(kDikSpace, true);
+    CHECK(b.HandbrakeHeld());
+    b.SetKey(kDikSpace, false);
+    b.SetKey(kDikRightCtrl, true);
+    CHECK_FALSE(b.HandbrakeHeld());  // Right Ctrl is the handbrake in the classic layout only
+    b.SetLayout(KeyLayout::Classic);
+    CHECK(b.HandbrakeHeld());
+}
+
+TEST_CASE("v23: none of the new keys is one of Skyrim's own")
+{
+    for (const auto dik : { kDikNumpad0, kDikNumpadPlus, kDik2, kDik4, kDikR, kDikV, kDikHome, kDikInsert, kDikDelete, kDikLeftAlt, kDikRightCtrl, kDikLeftCtrl, kDikCapsLock }) {
+        CHECK_FALSE(OpensSkyrimMenu(dik));
+        CHECK(dik != kDikF10);
+        CHECK(dik != kDikF11);
+        CHECK(dik != kDikEquals);
+        CHECK(dik != kDikSlash);
+        CHECK(dik != kDikSemicolon);
+        CHECK(dik != kDikApostrophe);
+        CHECK(dik != kDikM);
+        CHECK(dik != 0x3F);  // F5, quick save
+        CHECK(dik != 0x43);  // F9, quick load
+        CHECK(SpawnModelFromScanCode(dik) == 0);
+    }
 }

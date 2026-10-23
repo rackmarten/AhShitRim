@@ -844,8 +844,11 @@ namespace AhShitRim::PlayerSync
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
+            // The heat seeker aims while CJ aims it, and in the Hydra (v23) while its lock-on, the handbrake key, is held.
+            const std::uint16_t vehicleModel = valid && (pose.flags & Protocol::kPlayerInVehicle) ? pose.vehicleModel : 0;
+            const bool          seekerAimed = vehicleModel ? state.input.HandbrakeHeld() && !MenuHasInput() : valid && (pose.weaponFlags & Protocol::kWeaponAiming);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
-                valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
+                valid ? pose.weaponType : 0, seekerAimed, vehicleModel);
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
@@ -999,10 +1002,12 @@ namespace AhShitRim::PlayerSync
                             state.input.SetAim(button->IsPressed() && forCj);
                             changed = true;
                         } else if (id == RE::BSWin32MouseDevice::Key::kMiddleButton) {
-                            // The swear key: CJ swears to himself, San Andreas plays it.
-                            if (button->IsDown() && forCj && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                            // In a vehicle San Andreas's look behind, held (v23). On foot the swear key: CJ swears to
+                            // himself, San Andreas plays it.
+                            state.input.SetLookBehind(button->IsPressed() && forCj);
+                            changed = true;
+                            if (button->IsDown() && forCj && state.control == Scene::Control::Cj && !Vitals::IsDown() && !InVehicle()) {
                                 state.input.AddSwear();
-                                changed = true;
                             }
                         } else if (button->IsDown() && forCj &&
                                    (id == RE::BSWin32MouseDevice::Key::kWheelUp || id == RE::BSWin32MouseDevice::Key::kWheelDown)) {
@@ -1078,6 +1083,10 @@ namespace AhShitRim::PlayerSync
                             SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
                         }
                         continue;
+                    }
+                    // San Andreas's radio keys (v23), in a vehicle: a station on each press, as the wheel's steps.
+                    if (const int step = Input::RadioStepFromScanCode(code); step && button->IsDown() && state.owned && !MenuHasInput() && InVehicle()) {
+                        state.input.AddWheel(step > 0);
                     }
                     // A spawn key typed into the console or a menu (or the shop) spawns nothing.
                     state.input.SetKey(code, button->IsPressed(), !MenuHasInput() && !AmmuNation::IsOpen());

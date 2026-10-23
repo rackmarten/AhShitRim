@@ -121,6 +121,7 @@ namespace AhShitRim::Projectiles
             float                                  losTick = 0.0f;
             bool                                   inSight = false;
             std::uint8_t                           cjWeapon = 0;
+            std::uint16_t                          vehicleModel = 0;  // the vehicle CJ is in, 0 on foot (v23: the Hydra seeks heat)
             std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> copies;  // (model, nth shown) to its copy's id
             std::uint32_t                          copyCount = 0;
         } state;
@@ -818,10 +819,12 @@ namespace AhShitRim::Projectiles
             p.kind = KindOf(p.type);
             p.weapon = WeaponOf(p.type);
             p.place = frame.place;
-            if (p.kind == Kind::Rocket && state.cjWeapon == Weapons::RocketLauncherHs) {
-                // San Andreas fires a plain rocket from the heat seeker without a lock of its own (it locks on to
-                // vehicles only): Skyrim's lock steers it.
-                p.weapon = Weapons::RocketLauncherHs;
+            if (p.kind == Kind::Rocket && SeeksHeat(state.cjWeapon, state.vehicleModel)) {
+                // San Andreas fires a plain rocket from the heat seeker (and the Hydra) without a lock of its own (it
+                // locks on to vehicles only): Skyrim's lock steers it.
+                if (!state.vehicleModel) {
+                    p.weapon = Weapons::RocketLauncherHs;
+                }
                 p.target = state.lock.Locked() ? state.lock.target : 0;
             }
             const RE::NiPoint3 at = a_anchor + RE::NiPoint3(a_event.origin[0], a_event.origin[1], a_event.origin[2]);
@@ -1128,12 +1131,13 @@ namespace AhShitRim::Projectiles
     }
 
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
-        std::uint8_t a_cjWeapon, bool a_aiming)
+        std::uint8_t a_cjWeapon, bool a_aiming, std::uint16_t a_vehicleModel)
     {
         frame.handover = a_handover;
         frame.anchor = a_anchor;
         frame.place = PlaceOf(a_player);
         state.cjWeapon = a_cjWeapon;
+        state.vehicleModel = a_vehicleModel;
         auto queue = std::move(state.queue);
         state.queue.clear();
         for (const auto& event : queue) {
@@ -1144,7 +1148,7 @@ namespace AhShitRim::Projectiles
             Launch(a_player, event, a_anchor);
         }
         const float dt = std::clamp(a_delta, 0.0f, 0.25f);
-        LockOn(a_player, a_aiming && a_cjWeapon == Weapons::RocketLauncherHs, dt);
+        LockOn(a_player, a_aiming && SeeksHeat(a_cjWeapon, a_vehicleModel), dt);
         for (auto it = state.flights.begin(); it != state.flights.end();) {
             it = Fly(a_player, *it, dt) ? it + 1 : state.flights.erase(it);
         }

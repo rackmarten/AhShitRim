@@ -18,6 +18,12 @@
 // The mouse: the left button fires and the right one aims on foot, and in a vehicle they fire its first and
 // second weapons (v19); the wheel switches weapons on foot and tunes the radio in a vehicle. Everything else
 // stays with Skyrim (see docs/PROTOCOL.md#input).
+// v23 adds the rest of San Andreas's PC vehicle keys (InitDefaultControlConfiguration) where Skyrim doesn't
+// need them: Left Alt and Right Ctrl fire like the left mouse button, Left Ctrl and numpad 0 like the right one
+// (a bicycle's bunny hop), the middle mouse button looks behind, V and Home change the camera distance, 2 and
+// numpad + are the sub-mission key with numpad 5 (a plane's landing gear), Caps Lock is the horn in both
+// layouts, Insert and 4 tune the next station and Delete and R the one before. F5 (San Andreas's track skip)
+// stays Skyrim's quick save.
 
 #pragma once
 
@@ -73,6 +79,16 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikNumpad2 = 0x50;
     inline constexpr std::uint32_t kDikPageUp = 0xC9;
     inline constexpr std::uint32_t kDikPageDown = 0xD1;
+    // v23, in a vehicle only: the rest of San Andreas's vehicle keys.
+    inline constexpr std::uint32_t kDikNumpad0 = 0x52;     // the second weapon (L1), with Left Ctrl
+    inline constexpr std::uint32_t kDikNumpadPlus = 0x4E;  // the sub-mission key (R3), with 2
+    inline constexpr std::uint32_t kDik2 = 0x03;
+    inline constexpr std::uint32_t kDik4 = 0x05;           // the next radio station, with Insert
+    inline constexpr std::uint32_t kDikR = 0x13;           // the station before, with Delete (Skyrim's ready weapon, blocked while CJ has the player)
+    inline constexpr std::uint32_t kDikV = 0x2F;           // the camera distance, with Home
+    inline constexpr std::uint32_t kDikHome = 0xC7;
+    inline constexpr std::uint32_t kDikInsert = 0xD2;
+    inline constexpr std::uint32_t kDikDelete = 0xD3;
 
     // Whether a key still opens one of Skyrim's menus while San Andreas has the player: Escape, Tab and the
     // console. Not M (v20): codes such as UZUMYMW have it in the middle.
@@ -140,7 +156,11 @@ namespace AhShitRim::Input
         TurretRight,
         TurretUp,
         TurretDown,
-        Hydraulics,   // v20, numpad 5: in a vehicle only, San Andreas's R3
+        Hydraulics,   // v20, numpad 5 (v23: 2, numpad +): in a vehicle only, San Andreas's R3 (its sub-mission key)
+        // v23, from VehicleActionFromScanCode: keys that do something else on foot, or nothing there.
+        VehicleFire,     // Left Alt, Right Ctrl: the vehicle's weapon (circle)
+        VehicleFireAlt,  // Left Ctrl, numpad 0: its second weapon, a bicycle's bunny hop (L1)
+        CameraView,      // V, Home: the next camera distance (select)
     };
 
     // DirectInput scan code -> the action it drives in San Andreas, None for keys San Andreas doesn't get.
@@ -172,11 +192,14 @@ namespace AhShitRim::Input
         case kDikLeftAlt: return Action::Walk;
         case kDikF:
         case kDikReturn: return Action::EnterExit;
-        case kDikH: return Action::Horn;
+        case kDikH:
+        case kDikCapsLock: return Action::Horn;  // v23: Caps Lock in the modern layout too, as San Andreas has it
         case kDikQ: return Action::LookLeft;
         case kDikE: return Action::LookRight;
         case kDikNumpad4: return Action::TurretLeft;
-        case kDikNumpad5: return Action::Hydraulics;
+        case kDikNumpad5:
+        case kDik2:
+        case kDikNumpadPlus: return Action::Hydraulics;
         case kDikNumpad6: return Action::TurretRight;
         case kDikNumpad8:
         case kDikPageUp: return Action::TurretUp;
@@ -191,6 +214,35 @@ namespace AhShitRim::Input
     constexpr bool IsHandbrakeKey(std::uint32_t a_dik, KeyLayout a_layout = KeyLayout::Modern)
     {
         return a_dik == kDikSpace || (a_layout == KeyLayout::Classic && a_dik == kDikRightCtrl);
+    }
+
+    // v23: the vehicle action of a key that has another one on foot (Left Alt walks, Left Ctrl crouches in the
+    // modern layout, Right Ctrl jumps in the classic one) or none there, None for the rest. Both layouts have
+    // San Andreas's: in the classic one Right Ctrl is the handbrake as well and fires too, as San Andreas binds it.
+    constexpr Action VehicleActionFromScanCode(std::uint32_t a_dik)
+    {
+        switch (a_dik) {
+        case kDikLeftAlt:
+        case kDikRightCtrl: return Action::VehicleFire;
+        case kDikLeftCtrl:
+        case kDikNumpad0: return Action::VehicleFireAlt;
+        case kDikV:
+        case kDikHome: return Action::CameraView;
+        default: return Action::None;
+        }
+    }
+
+    // v23: a radio key's step in a vehicle, as a wheel step: 1 for the next station (Insert, 4), -1 for the one
+    // before (Delete, R), 0 for any other key. Skyrim's side only steps on a press while CJ is in a vehicle.
+    constexpr int RadioStepFromScanCode(std::uint32_t a_dik)
+    {
+        switch (a_dik) {
+        case kDikInsert:
+        case kDik4: return 1;
+        case kDikDelete:
+        case kDikR: return -1;
+        default: return 0;
+        }
     }
 
     // Accumulates held keys and mouse movement and produces the InputState to publish.
@@ -249,6 +301,19 @@ namespace AhShitRim::Input
         // The mouse buttons (v12): the left one fires, the right one aims, on foot.
         void SetFire(bool a_down) { _fire = a_down; }
         void SetAim(bool a_down) { _aim = a_down; }
+        // The middle mouse button held (v23): looks behind in a vehicle (on foot each press swears instead).
+        void SetLookBehind(bool a_down) { _lookBehind = a_down; }
+
+        // Whether a handbrake key is held (v23: the Hydra's lock-on, San Andreas's R1 in it).
+        bool HandbrakeHeld() const
+        {
+            for (std::uint32_t dik = 0; dik < 256; ++dik) {
+                if (IsKeyDown(dik) && IsHandbrakeKey(dik, _layout)) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before; on
         // foot (v12) up switches to the next weapon and down to the previous one. San Andreas acts on
@@ -276,7 +341,7 @@ namespace AhShitRim::Input
             for (auto& k : _keys) {
                 k = 0;
             }
-            _fire = _aim = false;
+            _fire = _aim = _lookBehind = false;
         }
 
         // a_live false (a Skyrim menu has the input): no movement or buttons, so CJ stands still.
@@ -319,14 +384,13 @@ namespace AhShitRim::Input
             if (Held(Action::TurretUp)) s.buttons |= Protocol::kButtonTurretUp;
             if (Held(Action::TurretDown)) s.buttons |= Protocol::kButtonTurretDown;
             if (Held(Action::Hydraulics)) s.buttons |= Protocol::kButtonHydraulics;
+            if (Held(Action::VehicleFire)) s.buttons |= Protocol::kButtonVehicleFire;
+            if (Held(Action::VehicleFireAlt)) s.buttons |= Protocol::kButtonVehicleFireAlt;
+            if (Held(Action::CameraView)) s.buttons |= Protocol::kButtonCameraView;
             if (_fire) s.buttons |= Protocol::kButtonFire;
             if (_aim) s.buttons |= Protocol::kButtonAim;
-            for (std::uint32_t dik = 0; dik < 256; ++dik) {
-                if (IsKeyDown(dik) && IsHandbrakeKey(dik, _layout)) {
-                    s.buttons |= Protocol::kButtonHandbrake;
-                    break;
-                }
-            }
+            if (_lookBehind) s.buttons |= Protocol::kButtonLookBehind;
+            if (HandbrakeHeld()) s.buttons |= Protocol::kButtonHandbrake;
             return s;
         }
 
@@ -334,7 +398,7 @@ namespace AhShitRim::Input
         bool Held(Action a_action) const
         {
             for (std::uint32_t dik = 0; dik < 256; ++dik) {
-                if (IsKeyDown(dik) && ActionFromScanCode(dik, _layout) == a_action) {
+                if (IsKeyDown(dik) && (ActionFromScanCode(dik, _layout) == a_action || VehicleActionFromScanCode(dik) == a_action)) {
                     return true;
                 }
             }
@@ -349,6 +413,7 @@ namespace AhShitRim::Input
         KeyLayout     _layout = KeyLayout::Modern;
         bool          _fire = false;
         bool          _aim = false;
+        bool          _lookBehind = false;
         std::uint64_t _keys[4]{};
         double        _mouseX = 0.0;
         double        _mouseY = 0.0;
@@ -372,16 +437,17 @@ namespace AhShitRim::Input
         std::int16_t buttonCross = 0;     // on foot: sprint; in a vehicle: accelerate
         std::int16_t buttonSquare = 0;    // on foot: jump; in a vehicle: brake and reverse
         std::int16_t buttonTriangle = 0;  // get in or out of a vehicle
-        std::int16_t buttonCircle = 0;    // on foot (v12): fire; a melee weapon attacks
-        std::int16_t rightShoulder1 = 0;  // on foot (v12): aim; in a vehicle: handbrake
-        std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn (a plane's landing gear)
+        std::int16_t buttonCircle = 0;    // on foot (v12): fire; a melee weapon attacks; in a vehicle: its weapon, nitro
+        std::int16_t rightShoulder1 = 0;  // on foot (v12): aim; in a vehicle: handbrake, the Hydra's lock-on
+        std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn, hydraulics up and down, a police helicopter's searchlight
         std::int16_t pedWalk = 0;         // on foot: walk
-        std::int16_t leftShoulder1 = 0;   // in a vehicle (v19): its second weapon
-        std::int16_t leftShoulder2 = 0;   // in a vehicle (v19): look left, an aircraft's rudder
+        std::int16_t leftShoulder1 = 0;   // in a vehicle (v19): its second weapon, a bicycle's bunny hop
+        std::int16_t leftShoulder2 = 0;   // in a vehicle (v19): look left, an aircraft's rudder (v23: with R2, look behind)
         std::int16_t rightShoulder2 = 0;  // in a vehicle (v19): look right
         std::int16_t rightStickX = 0;     // in a vehicle (v19): the turret keys, left negative
         std::int16_t rightStickY = 0;     // in a vehicle (v19): the turret keys, up (numpad 8) negative
-        std::int16_t shockButtonR = 0;    // in a vehicle (v20): numpad 5, the hydraulics' jump
+        std::int16_t shockButtonR = 0;    // in a vehicle (v20): the sub-mission key, the hydraulics' jump, a plane's landing gear
+        std::int16_t select = 0;          // in a vehicle (v23): the next camera distance
     };
 
     constexpr std::int16_t Stick(float a_value)
@@ -393,7 +459,8 @@ namespace AhShitRim::Input
     // a_inVehicle: CJ drives or rides, so the keys take San Andreas's vehicle layout (W
     // accelerates, S brakes and reverses, A/D steer, kButtonHandbrake is the handbrake, kButtonHorn
     // the horn, the up and down arrows lean a bike forward and back; v19: the mouse buttons fire the
-    // vehicle's weapons, Q and E look left and right, the numpad is the right stick). On foot the arrows
+    // vehicle's weapons, Q and E look left and right, the numpad is the right stick; v23: the keyboard's fire
+    // keys join the mouse buttons, look behind is both shoulders, the camera key select). On foot the arrows
     // walk like W and S.
     constexpr PadState ToPad(const Protocol::InputState& a_input, bool a_inVehicle = false)
     {
@@ -408,10 +475,11 @@ namespace AhShitRim::Input
             p.buttonSquare = a_input.moveY < 0.0f ? 255 : 0;
             p.rightShoulder1 = held(Protocol::kButtonHandbrake);
             p.shockButtonL = held(Protocol::kButtonHorn);
-            p.buttonCircle = held(Protocol::kButtonFire);
-            p.leftShoulder1 = held(Protocol::kButtonAim);
-            p.leftShoulder2 = held(Protocol::kButtonLookLeft);
-            p.rightShoulder2 = held(Protocol::kButtonLookRight);
+            p.buttonCircle = held(Protocol::kButtonFire | Protocol::kButtonVehicleFire);
+            p.leftShoulder1 = held(Protocol::kButtonAim | Protocol::kButtonVehicleFireAlt);
+            p.leftShoulder2 = held(Protocol::kButtonLookLeft | Protocol::kButtonLookBehind);
+            p.rightShoulder2 = held(Protocol::kButtonLookRight | Protocol::kButtonLookBehind);
+            p.select = held(Protocol::kButtonCameraView);
             const auto axis = [&](std::uint32_t a_neg, std::uint32_t a_pos) {
                 return Stick(((a_input.buttons & a_pos) ? 1.0f : 0.0f) - ((a_input.buttons & a_neg) ? 1.0f : 0.0f));
             };

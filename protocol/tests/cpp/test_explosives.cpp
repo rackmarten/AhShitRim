@@ -404,3 +404,13 @@ TEST_CASE("a steered rocket's model turns with it")
     CheckNear(Rotate(FromTo(a, b), { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });
     CheckNear(Rotate(FromTo(a, a), { 0.0f, 1.0f, 0.0f }), { 0.0f, 1.0f, 0.0f });
 }
+
+TEST_CASE("v23: the Hydra's rockets seek heat, the Hunter's don't")
+{
+    CHECK(SeeksHeat(Weapons::RocketLauncherHs, 0));
+    CHECK_FALSE(SeeksHeat(Weapons::RocketLauncher, 0));
+    CHECK(SeeksHeat(Weapons::RocketLauncher, kModelHydra));
+    CHECK(SeeksHeat(0, 520));
+    CHECK_FALSE(SeeksHeat(Weapons::RocketLauncherHs, 425));  // the heat seeker in his hands doesn't steer the Hunter's
+    CHECK_FALSE(SeeksHeat(0, 432));
+}
