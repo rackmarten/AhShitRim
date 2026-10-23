@@ -28,6 +28,8 @@ endif()
 add_executable(protocol_tests
     tests/cpp/main.cpp
     tests/cpp/test_layout.cpp
+    tests/cpp/test_vehicle_kinds.cpp
+    tests/cpp/test_parachute.cpp
     tests/cpp/test_input.cpp
     tests/cpp/test_pose.cpp
     tests/cpp/test_collision.cpp
@@ -83,5 +85,13 @@ if(WIN32)
     add_executable(fake_weapons cpp/link.cpp tools/fake_weapons.cpp)
     if(MSVC)
         target_compile_options(fake_weapons PRIVATE /W4 /permissive- /utf-8)
+    endif()
+endif()
+
+# The same for every kind of vehicle and CJ's gear (scripts/fake-vehicles.ps1). Not a test.
+if(WIN32)
+    add_executable(fake_vehicles cpp/link.cpp tools/fake_vehicles.cpp)
+    if(MSVC)
+        target_compile_options(fake_vehicles PRIVATE /W4 /permissive- /utf-8)
     endif()
 endif()

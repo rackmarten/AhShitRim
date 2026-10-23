@@ -191,3 +191,28 @@ TEST_CASE("a body with a NaN is not finite")
     b.bones[0].translation[1] = std::nanf("");
     CHECK_FALSE(Finite(b));
 }
+
+TEST_CASE("a hidden part collapses onto its joint, and only bones the mask names hide")
+{
+    CHECK(Body::Hidden(0x5, 0));
+    CHECK_FALSE(Body::Hidden(0x5, 1));
+    CHECK(Body::Hidden(0x5, 2));
+    CHECK(Body::Hidden(1ull << 63, 63));
+    CHECK_FALSE(Body::Hidden(~0ull, 64));  // past the mask: always drawn
+
+    Protocol::BodyBone bone{};
+    bone.rotation[3] = 1.0f;
+    bone.translation[0] = 10.0f;
+    bone.translation[2] = -3.0f;
+    const auto           m = Body::Collapsed(bone);
+    Protocol::SkinVertex v{};
+    v.position[0] = 5.0f;
+    v.position[1] = 7.0f;
+    v.normal[2] = 1.0f;
+    v.weights[0] = 1.0f;
+    Body::Vec3 position, normal;
+    Body::Skin(&m, 1, v, position, normal);
+    CHECK(position.x == doctest::Approx(10.0f));
+    CHECK(position.y == doctest::Approx(0.0f));
+    CHECK(position.z == doctest::Approx(-3.0f));
+}

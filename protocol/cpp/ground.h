@@ -228,10 +228,28 @@ namespace AhShitRim::Ground
 
     // ---- Which chunks San Andreas keeps ----
 
-    // Skyrim forgets chunks more than 3 from the player and from a point up to 3 chunks ahead of
-    // it (a fast car's), and sends them again when they come back into range. San Andreas drops them
-    // only past kKeepRadius from CJ, so a chunk it dropped is always one Skyrim forgot and will resend.
-    inline constexpr int kKeepRadius = 7;
+    // Skyrim samples the chunks within kSampleRadius of the player and of a point ahead of it, where it
+    // will be in kLookAheadSeconds (a fast vehicle's), but at most kMaxAheadChunks ahead, and forgets them
+    // past kForgetRadius from both, sending them again when they come back into range. San Andreas drops
+    // them only past kKeepRadius from CJ, so a chunk it dropped is always one Skyrim forgot and will resend.
+    // v19: 6 chunks ahead (175 m) for the aircraft, 87 m/s and more: a Hydra's.
+    inline constexpr int   kSampleRadius = 2;
+    inline constexpr int   kForgetRadius = kSampleRadius + 1;
+    inline constexpr int   kKeepRadius = 10;
+    inline constexpr int   kMaxAheadChunks = kKeepRadius - kForgetRadius - 1;  // a chunk of slack: CJ and the player can be a frame apart
+    inline constexpr float kLookAheadSeconds = 2.0f;
+
+    // The point ahead of the player, relative to it (Skyrim units, x and y), for its velocity (units a second).
+    inline std::array<float, 2> Ahead(float a_vx, float a_vy)
+    {
+        constexpr float kMax = static_cast<float>(kMaxAheadChunks) * Protocol::kCollisionChunkUnits;
+        float           x = a_vx * kLookAheadSeconds, y = a_vy * kLookAheadSeconds;
+        if (const float length = std::hypot(x, y); length > kMax) {
+            x *= kMax / length;
+            y *= kMax / length;
+        }
+        return { x, y };
+    }
 
     // The chunks San Andreas has built for the current handover, each in one of a fixed number of
     // slots (San Andreas model ids, sa/src/ground.cpp).

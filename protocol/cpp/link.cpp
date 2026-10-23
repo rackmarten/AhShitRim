@@ -324,6 +324,18 @@ namespace AhShitRim
         return IsUp() && a_hand < kWeaponHandMax && SeqRead(At<BodySlot>(Base(), kOffsetWeaponSlots + a_hand * sizeof(BodySlot)), a_out);
     }
 
+    void Link::WriteGear(const BodyState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<BodySlot>(base, kOffsetGearSlot), a_value);
+        }
+    }
+
+    bool Link::ReadGear(BodyState& a_out) const
+    {
+        return IsUp() && SeqRead(At<BodySlot>(Base(), kOffsetGearSlot), a_out);
+    }
+
     bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
     {
         if (!IsUp()) {

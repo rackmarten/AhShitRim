@@ -11,10 +11,13 @@
 //   Right Ctrl is the handbrake and Caps Lock or H the horn.
 // In both, X has CJ insult whoever's about and the middle mouse button has him swear to himself
 // (v16); Skyrim counts those itself.
-// In a vehicle the up and down arrows lean a bike forward and back instead. ], [ and \ spawn a
-// Sandking, a ZR-350 and a Sanchez. The mouse: the left button fires and the right one aims on foot,
-// and the wheel switches weapons on foot and tunes the radio in a vehicle. Everything else stays with
-// Skyrim (see docs/PROTOCOL.md#input).
+// In a vehicle the up and down arrows lean a bike forward and back (and pitch an aircraft) instead, Q and E
+// look left and right (an aircraft's rudder), and the numpad's 4, 6, 8 and 2 (8 and 2 also on Page Up and
+// Page Down) are San Andreas's turret keys: the Hydra's nozzles (v19). ], [ and \ spawn a Sandking, a ZR-350
+// and a Sanchez; ' spawns the dev pick, which ; steps through (Skyrim's side, VehicleKinds::DevPicker).
+// The mouse: the left button fires and the right one aims on foot, and in a vehicle they fire its first and
+// second weapons (v19); the wheel switches weapons on foot and tunes the radio in a vehicle. Everything else
+// stays with Skyrim (see docs/PROTOCOL.md#input).
 
 #pragma once
 
@@ -59,6 +62,15 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikLeftCtrl = 0x1D;
     inline constexpr std::uint32_t kDikX = 0x2D;  // the insult key (v16): CJ insults whoever's about, on Skyrim's side
     inline constexpr std::uint32_t kDikCapsLock = 0x3A;
+    inline constexpr std::uint32_t kDikQ = 0x10;            // v19: look left in a vehicle (Skyrim's favorites key, which is blocked while CJ has the player)
+    inline constexpr std::uint32_t kDikSemicolon = 0x27;    // v19: the dev key that picks the next vehicle to spawn
+    inline constexpr std::uint32_t kDikApostrophe = 0x28;   // v19: the dev key that spawns the pick
+    inline constexpr std::uint32_t kDikNumpad8 = 0x48;
+    inline constexpr std::uint32_t kDikNumpad4 = 0x4B;
+    inline constexpr std::uint32_t kDikNumpad6 = 0x4D;
+    inline constexpr std::uint32_t kDikNumpad2 = 0x50;
+    inline constexpr std::uint32_t kDikPageUp = 0xC9;
+    inline constexpr std::uint32_t kDikPageDown = 0xD1;
 
     enum class KeyLayout : std::uint8_t
     {
@@ -116,6 +128,12 @@ namespace AhShitRim::Input
         Horn,
         LeanForward,  // the up arrow: forwards on foot
         LeanBack,     // the down arrow: back on foot
+        LookLeft,     // v19, Q: in a vehicle only
+        LookRight,    // v19, E: in a vehicle only (on foot Skyrim's side activates with it)
+        TurretLeft,   // v19, the numpad: in a vehicle only
+        TurretRight,
+        TurretUp,
+        TurretDown,
     };
 
     // DirectInput scan code -> the action it drives in San Andreas, None for keys San Andreas doesn't get.
@@ -148,7 +166,15 @@ namespace AhShitRim::Input
         case kDikF:
         case kDikReturn: return Action::EnterExit;
         case kDikH: return Action::Horn;
-        default: return Action::None;  // Escape, Tab, M, ~, F10, E and anything unmapped
+        case kDikQ: return Action::LookLeft;
+        case kDikE: return Action::LookRight;
+        case kDikNumpad4: return Action::TurretLeft;
+        case kDikNumpad6: return Action::TurretRight;
+        case kDikNumpad8:
+        case kDikPageUp: return Action::TurretUp;
+        case kDikNumpad2:
+        case kDikPageDown: return Action::TurretDown;
+        default: return Action::None;  // Escape, Tab, M, ~, F10 and anything unmapped
         }
     }
 
@@ -174,7 +200,8 @@ namespace AhShitRim::Input
             if (a_dik >= 256) {
                 return;
             }
-            if (const auto model = SpawnModelFromScanCode(a_dik); model && a_down && a_canSpawn && !IsKeyDown(a_dik)) {
+            const auto model = a_dik == kDikApostrophe ? _devModel : SpawnModelFromScanCode(a_dik);
+            if (model && a_down && a_canSpawn && !IsKeyDown(a_dik)) {
                 _spawnModel = model;
                 _spawnCount++;
             }
@@ -185,6 +212,10 @@ namespace AhShitRim::Input
                 _keys[a_dik >> 6] &= ~bit;
             }
         }
+
+        // The model ' spawns (v19): the dev pick, a vehicle or the gear (VehicleKinds); 0 spawns nothing.
+        void          SetDevModel(std::uint16_t a_model) { _devModel = a_model; }
+        std::uint16_t DevModel() const { return _devModel; }
 
         bool IsKeyDown(std::uint32_t a_dik) const
         {
@@ -255,6 +286,12 @@ namespace AhShitRim::Input
             if (Held(Action::Horn)) s.buttons |= Protocol::kButtonHorn;
             if (Held(Action::LeanForward)) s.buttons |= Protocol::kButtonLeanForward;
             if (Held(Action::LeanBack)) s.buttons |= Protocol::kButtonLeanBack;
+            if (Held(Action::LookLeft)) s.buttons |= Protocol::kButtonLookLeft;
+            if (Held(Action::LookRight)) s.buttons |= Protocol::kButtonLookRight;
+            if (Held(Action::TurretLeft)) s.buttons |= Protocol::kButtonTurretLeft;
+            if (Held(Action::TurretRight)) s.buttons |= Protocol::kButtonTurretRight;
+            if (Held(Action::TurretUp)) s.buttons |= Protocol::kButtonTurretUp;
+            if (Held(Action::TurretDown)) s.buttons |= Protocol::kButtonTurretDown;
             if (_fire) s.buttons |= Protocol::kButtonFire;
             if (_aim) s.buttons |= Protocol::kButtonAim;
             for (std::uint32_t dik = 0; dik < 256; ++dik) {
@@ -290,6 +327,7 @@ namespace AhShitRim::Input
         double        _mouseY = 0.0;
         std::uint16_t _spawnModel = 0;
         std::uint16_t _spawnCount = 0;
+        std::uint16_t _devModel = 0;
         std::uint16_t _radioNext = 0;
         std::uint16_t _radioPrev = 0;
         std::uint16_t _insultCount = 0;
@@ -307,8 +345,13 @@ namespace AhShitRim::Input
         std::int16_t buttonTriangle = 0;  // get in or out of a vehicle
         std::int16_t buttonCircle = 0;    // on foot (v12): fire; a melee weapon attacks
         std::int16_t rightShoulder1 = 0;  // on foot (v12): aim; in a vehicle: handbrake
-        std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn
+        std::int16_t shockButtonL = 0;    // on foot: crouch; in a vehicle: horn (a plane's landing gear)
         std::int16_t pedWalk = 0;         // on foot: walk
+        std::int16_t leftShoulder1 = 0;   // in a vehicle (v19): its second weapon
+        std::int16_t leftShoulder2 = 0;   // in a vehicle (v19): look left, an aircraft's rudder
+        std::int16_t rightShoulder2 = 0;  // in a vehicle (v19): look right
+        std::int16_t rightStickX = 0;     // in a vehicle (v19): the turret keys, left negative
+        std::int16_t rightStickY = 0;     // in a vehicle (v19): the turret keys, up (numpad 8) negative
     };
 
     constexpr std::int16_t Stick(float a_value)
@@ -319,8 +362,9 @@ namespace AhShitRim::Input
 
     // a_inVehicle: CJ drives or rides, so the keys take San Andreas's vehicle layout (W
     // accelerates, S brakes and reverses, A/D steer, kButtonHandbrake is the handbrake, kButtonHorn
-    // the horn, the up and down arrows lean a bike forward and back). On foot the arrows walk like W
-    // and S.
+    // the horn, the up and down arrows lean a bike forward and back; v19: the mouse buttons fire the
+    // vehicle's weapons, Q and E look left and right, the numpad is the right stick). On foot the arrows
+    // walk like W and S.
     constexpr PadState ToPad(const Protocol::InputState& a_input, bool a_inVehicle = false)
     {
         const auto held = [&](std::uint32_t a_button) -> std::int16_t { return (a_input.buttons & a_button) ? 255 : 0; };
@@ -334,6 +378,15 @@ namespace AhShitRim::Input
             p.buttonSquare = a_input.moveY < 0.0f ? 255 : 0;
             p.rightShoulder1 = held(Protocol::kButtonHandbrake);
             p.shockButtonL = held(Protocol::kButtonHorn);
+            p.buttonCircle = held(Protocol::kButtonFire);
+            p.leftShoulder1 = held(Protocol::kButtonAim);
+            p.leftShoulder2 = held(Protocol::kButtonLookLeft);
+            p.rightShoulder2 = held(Protocol::kButtonLookRight);
+            const auto axis = [&](std::uint32_t a_neg, std::uint32_t a_pos) {
+                return Stick(((a_input.buttons & a_pos) ? 1.0f : 0.0f) - ((a_input.buttons & a_neg) ? 1.0f : 0.0f));
+            };
+            p.rightStickX = axis(Protocol::kButtonTurretLeft, Protocol::kButtonTurretRight);
+            p.rightStickY = axis(Protocol::kButtonTurretUp, Protocol::kButtonTurretDown);
             return p;
         }
         p.leftStickY = Stick(-(a_input.moveY + lean));  // clamped: W and the up arrow together are still full

@@ -1,6 +1,7 @@
 #include "collision/CollisionSampler.h"
 
 #include "collision.h"
+#include "ground.h"
 #include "collision/StaticMeshes.h"
 #include "link/LinkService.h"
 
@@ -13,16 +14,16 @@ namespace AhShitRim::CollisionSampler
 
         constexpr std::uint32_t kCells = 32;          // 64 units (about 0.9 m) between samples
         constexpr std::uint32_t kSamples = (kCells + 1) * (kCells + 1);
-        constexpr int           kRadius = 2;          // chunks around the player's chunk: 5 x 5, about 70 m each way
-        constexpr int           kForgetRadius = kRadius + 1;  // from both centers; San Andreas keeps chunks within 7 of CJ (Ground::kKeepRadius), so a chunk it dropped was forgotten here and is resent
-        constexpr float         kLookAhead = 2.0f;            // seconds of travel the second center sits ahead of the player
-        constexpr float         kMaxAhead = 3.0f * Protocol::kCollisionChunkUnits;  // ... but at most 3 chunks (a car at 50 m/s)
+        constexpr int           kRadius = Ground::kSampleRadius;  // chunks around the player's chunk: 5 x 5, about 70 m each way
+        constexpr int           kForgetRadius = Ground::kForgetRadius;  // from both centers; San Andreas keeps chunks within Ground::kKeepRadius of CJ, so a chunk it dropped was forgotten here and is resent
         constexpr float         kRayAbove = 10000.0f;  // rays run from this far above the player...
-        constexpr float         kRayBelow = 10000.0f;  // ...to this far below
+        constexpr float         kRayBelow = 70000.0f;  // ...to this far below (v19: from an aircraft 1 km up, still down to the land)
         constexpr int           kMaxPassThrough = 32;  // other surfaces a ray may pass through on its way to the terrain (roofs, floors, bridges)
         constexpr auto          kBudget = 2ms;         // sampling time per frame
         constexpr auto          kFastBudget = 4ms;     // ... while the player moves faster than kFast: a car needs a new row of chunks every half second
         constexpr float         kFast = 700.0f;        // units per second, 10 m/s
+        constexpr auto          kFlyingBudget = 6ms;   // v19: ... faster than kVeryFast: an aircraft crosses a chunk every 0.3 s
+        constexpr float         kVeryFast = 2800.0f;   // units per second, 40 m/s
         constexpr auto          kRetryAfter = 2s;      // before sampling an unfinished chunk again
         constexpr auto          kFastRetryAfter = 400ms;  // ... while the player moves faster than kFast: ahead of a fast car Skyrim is often still
                                                           // loading the land (a chunk came with 33 of 1089 land samples at 40 m/s), and 2 s later it was driven over
@@ -55,6 +56,7 @@ namespace AhShitRim::CollisionSampler
         {
             bool          active = false;
             bool          fast = false;  // the player moves faster than kFast
+            bool          veryFast = false;  // ... and than kVeryFast (v19)
             std::uint32_t generation = 0;
             std::uint32_t worldspace = 0;
             std::map<Key, Known> known;
@@ -336,12 +338,12 @@ namespace AhShitRim::CollisionSampler
         }
         auto*      cell = a_player->GetParentCell();
         const auto pos = a_player->GetPosition();
-        state.fast = std::hypot(a_velocity.x, a_velocity.y) > kFast;
+        const float speed = std::hypot(a_velocity.x, a_velocity.y);
+        state.fast = speed > kFast;
+        state.veryFast = speed > kVeryFast;
         const Key  center{ Collision::ChunkIndex(pos.x), Collision::ChunkIndex(pos.y) };
-        RE::NiPoint3 ahead(a_velocity.x * kLookAhead, a_velocity.y * kLookAhead, 0.0f);
-        if (const float length = ahead.Length(); length > kMaxAhead) {
-            ahead *= kMaxAhead / length;
-        }
+        const auto   point = Ground::Ahead(a_velocity.x, a_velocity.y);
+        const RE::NiPoint3 ahead(point[0], point[1], 0.0f);
         const Key aheadKey{ Collision::ChunkIndex(pos.x + ahead.x), Collision::ChunkIndex(pos.y + ahead.y) };
         const auto inRange = [&](const Key& a_key, int a_radius) {
             return Distance(a_key, center) <= a_radius || Distance(a_key, aheadKey) <= a_radius;
@@ -367,7 +369,7 @@ namespace AhShitRim::CollisionSampler
         }
 
         const auto start = Clock::now();
-        const auto budget = state.fast ? kFastBudget : kBudget;
+        const auto budget = state.veryFast ? kFlyingBudget : state.fast ? kFastBudget : kBudget;
         {
             RE::BSReadLockGuard lock(bhk->worldLock);
             auto&               f = state.field;

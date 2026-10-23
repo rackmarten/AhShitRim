@@ -28,9 +28,9 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
-TEST_CASE("protocol v18 constants")
+TEST_CASE("protocol v19 constants")
 {
-    CHECK(kProtocolVersion == 18);
+    CHECK(kProtocolVersion == 19);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);
@@ -67,6 +67,14 @@ TEST_CASE("protocol v18 constants")
     CHECK(kPlayerOnFire == 0x20);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);
+    CHECK(kButtonLookLeft == 0x800);
+    CHECK(kButtonLookRight == 0x1000);
+    CHECK(kButtonTurretLeft == 0x2000);
+    CHECK(kButtonTurretRight == 0x4000);
+    CHECK(kButtonTurretUp == 0x8000);
+    CHECK(kButtonTurretDown == 0x10000);
+    CHECK(kBodyJetpack == 0x10);
+    CHECK(kBodyParachute == 0x20);
     CHECK(kSkinModelWeapon == 2);
     CHECK(kWeaponHandMax == 2);
     CHECK(kWeaponSlotCount == 13);
@@ -89,7 +97,7 @@ TEST_CASE("protocol v18 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8402816);
+    CHECK(kMappingSize == 8404736);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -155,17 +163,20 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 1920);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 1884);
+    CHECK(sizeof(BodyState) == 1892);
     CHECK(offsetof(BodyState, cameraUp) == 1856);
     CHECK(offsetof(BodyState, health) == 1868);
     CHECK(offsetof(BodyState, engine) == 1872);
+    CHECK(offsetof(BodyState, hiddenParts) == 1884);
     CHECK(kOffsetVehicleSlots == 2560);
     CHECK(kOffsetVehicleSlots % 64 == 0);
     CHECK(kOffsetWeaponSlots == 2560 + 4 * 1920);
     CHECK(kOffsetWeaponSlots % 64 == 0);
-    CHECK(kOffsetRingToSanAndreas == 10240 + 2 * 1920);
+    CHECK(kOffsetGearSlot == 10240 + 2 * 1920);
+    CHECK(kOffsetGearSlot % 64 == 0);
+    CHECK(kOffsetRingToSanAndreas == kOffsetGearSlot + 1920);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4208448);
+    CHECK(kOffsetRingToSkyrim == 4210368);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);

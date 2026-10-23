@@ -33,6 +33,9 @@ namespace AhShitRim::SkinBuild
         std::uint32_t        boneCount = 256;        // weights on bones past this are dropped
         std::uint32_t        triangleCount = 0;
         const std::uint16_t* triangles = nullptr;  // RpTriangle: three vertex indices and the material index each
+        bool                 keepWinding = false;  // v19: never turn a triangle round (a model of back-to-back faces sharing
+                                                   // one normal, the parachute's canopy: turning one of each pair made both face
+                                                   // the same way, and drawn one-sided both were culled from below)
     };
 
     struct Stats
@@ -145,7 +148,7 @@ namespace AhShitRim::SkinBuild
                 // against its vertices' normals.
                 const auto face = Body::Cross(Body::Sub(position(corner[1]), position(corner[0])), Body::Sub(position(corner[2]), position(corner[0])));
                 const auto around = Body::Add(Body::Add(normal(corner[0]), normal(corner[1])), normal(corner[2]));
-                if (Body::Dot(face, around) < 0.0f) {
+                if (!a_geometry.keepWinding && Body::Dot(face, around) < 0.0f) {
                     std::swap(corner[1], corner[2]);
                     stats.flipped++;
                 }
