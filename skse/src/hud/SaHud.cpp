@@ -606,6 +606,8 @@ namespace AhShitRim::SaHud
         }
     }
 
+    void HideSubtitle() { state.subtitle.hold = 0.0f; }
+
     void ShowRadioStation(std::string a_name, bool a_retuning)
     {
         const bool same = state.radio.hold > 0.0f && state.radio.text == a_name;

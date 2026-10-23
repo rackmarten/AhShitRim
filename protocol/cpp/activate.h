@@ -130,10 +130,18 @@ namespace AhShitRim::Activate
         return enter;
     }
 
+    enum class Kind : std::uint8_t
+    {
+        Other,
+        Person,     // living
+        Furniture,  // a chair, a throne, a bench, a workbench
+    };
+
     struct Candidate
     {
         Box           box;
         std::uint32_t id = 0;  // the reference's form id, for the caller
+        Kind          kind = Kind::Other;
     };
 
     struct Picked
@@ -142,17 +150,25 @@ namespace AhShitRim::Activate
         float       distance = 0.0f;  // along the ray to the box
     };
 
-    // The candidate the ray enters first within a_reach.
+    // The candidate the ray enters first within a_reach. A person beats furniture the ray enters
+    // before them: someone sitting on a throne or a bench is who CJ means, and the seat's box is
+    // bigger than theirs and sticks out in front.
     inline std::optional<Picked> Pick(const Vec3& a_origin, const Vec3& a_dir, float a_reach, const std::vector<Candidate>& a_candidates)
     {
-        std::optional<Picked> best;
+        std::optional<Picked> best, person;
         for (std::size_t i = 0; i < a_candidates.size(); ++i) {
             const auto t = Hit(a_origin, a_dir, a_candidates[i].box);
-            if (t && *t <= a_reach && (!best || *t < best->distance)) {
+            if (!t || *t > a_reach) {
+                continue;
+            }
+            if (!best || *t < best->distance) {
                 best = Picked{ i, *t };
             }
+            if (a_candidates[i].kind == Kind::Person && (!person || *t < person->distance)) {
+                person = Picked{ i, *t };
+            }
         }
-        return best;
+        return best && person && a_candidates[best->index].kind == Kind::Furniture ? person : best;
     }
 
     // Whether CJ sees the target: the line of sight ray along the pick ray met nothing (a_hit false),

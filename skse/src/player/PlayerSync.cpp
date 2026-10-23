@@ -867,14 +867,16 @@ namespace AhShitRim::PlayerSync
         constexpr int kActivateHook = 11;
 
         // Skyrim's own handlers refuse while San Andreas has the player, but for its movement and
-        // activate keys while the player sits: those stand it up again. Its Shout key isn't blocked.
+        // activate keys while the player sits: those stand it up again. In a dialogue the activate
+        // key skips the speaker's line, as in Skyrim. Its Shout key isn't blocked.
         template <int N>
         struct BlockHook
         {
             static bool thunk(RE::PlayerInputHandler* a_handler, RE::InputEvent* a_event)
             {
                 const bool standUp = (N == kMovementHook || N == kActivateHook) && state.control == Scene::Control::Seated;
-                return (!state.owned || standUp) && original(a_handler, a_event);
+                const bool skip = N == kActivateHook && Conversation::DialogueOpen();
+                return (!state.owned || standUp || skip) && original(a_handler, a_event);
             }
             static inline REL::Relocation<decltype(thunk)> original;
 
@@ -1020,6 +1022,9 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     // A spawn key typed into the console or a menu (or the shop) spawns nothing.
+                    if (code == Input::kDikSpace && state.owned && button->IsDown() && Conversation::DialogueOpen()) {
+                        Conversation::Skip();  // Space skips the speaker's line too
+                    }
                     state.input.SetKey(code, button->IsPressed(), !MenuHasInput() && !AmmuNation::IsOpen());
                     changed = true;
                 }
@@ -1112,6 +1117,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<kActivateHook>::Install(RE::VTABLE_ActivateHandler[0]);
         BlockHook<13>::Install(RE::VTABLE_FirstPersonState[1]);  // its zoom and POV keys
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
+        Conversation::Install();
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 

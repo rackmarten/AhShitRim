@@ -16,6 +16,7 @@ namespace AhShitRim::Conversation
             Dialogue::PickTracker picks;
             int                   side = 0;  // the side of CJ and the speaker the shots keep to; 0 until the first shot
             bool                  subtitlesHidden = false;
+            bool                  subtitleShown = false;  // Skyrim's subtitle is up in San Andreas's style
         } state;
 
         // The speaker of the open dialogue, or nullptr.
@@ -65,21 +66,56 @@ namespace AhShitRim::Conversation
             return !setting || setting->GetBool();
         }
 
-        // The line Skyrim subtitles now (its current speaker's), as its Interface settings allow:
-        // dialogue subtitles while a dialogue is open, general ones otherwise.
-        std::string Subtitle(bool a_dialogue)
+        // The subtitle Skyrim's HUD shows: it gets each one, in dialogue or out of it, as a HUD message to
+        // show it and one to hide it (a skipped line hides at once). Its menu takes them on the UI's
+        // thread, hence the lock.
+        struct HudSubtitle
         {
-            auto* subtitles = RE::SubtitleManager::GetSingleton();
-            if (!subtitles || !Interface(a_dialogue ? "bDialogueSubtitles:Interface" : "bGeneralSubtitles:Interface")) {
-                return {};
-            }
-            RE::BSSpinLockGuard lock(subtitles->lock);
-            for (auto& subtitle : subtitles->subtitles) {
-                if (subtitle.speaker == subtitles->currentSpeaker && !subtitle.subtitle.empty()) {
-                    return subtitle.subtitle.c_str();
+            std::mutex    lock;
+            std::string   text;
+            bool          shown = false;
+            std::uint32_t count = 0;  // messages so far
+        } hudSubtitle;
+
+        struct HudMessageHook
+        {
+            static RE::UI_MESSAGE_RESULTS thunk(RE::HUDMenu* a_menu, RE::UIMessage& a_message)
+            {
+                if (a_message.type == RE::UI_MESSAGE_TYPE::kUpdate && a_message.data) {
+                    if (auto* data = skyrim_cast<RE::HUDData*>(a_message.data)) {
+                        const auto type = data->type.get();
+                        if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
+                            std::scoped_lock guard(hudSubtitle.lock);
+                            hudSubtitle.shown = type == RE::HUD_MESSAGE_TYPE::kShowSubtitle;
+                            hudSubtitle.text = hudSubtitle.shown && data->text.c_str() ? data->text.c_str() : "";
+                            hudSubtitle.count++;
+                        }
+                    }
                 }
+                return original(a_menu, a_message);
             }
-            return {};
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
+        // Shows Skyrim's subtitle in San Andreas's style while Skyrim shows it, as its Interface
+        // settings allow (dialogue subtitles while a dialogue is open, general ones otherwise), and
+        // takes it down the moment Skyrim does.
+        void FollowSubtitle(bool a_dialogue)
+        {
+            std::string text;
+            bool        shown = false;
+            {
+                std::scoped_lock guard(hudSubtitle.lock);
+                shown = hudSubtitle.shown;
+                text = hudSubtitle.text;
+            }
+            shown = shown && !text.empty() && Interface(a_dialogue ? "bDialogueSubtitles:Interface" : "bGeneralSubtitles:Interface");
+            if (shown) {
+                SaHud::HoldSubtitle(std::move(text));
+            } else if (state.subtitleShown) {
+                SaHud::HideSubtitle();
+            }
+            state.subtitleShown = shown;
         }
 
         // Skyrim's own subtitles (a clip of its HUD movie) are hidden while San Andreas draws them.
@@ -169,9 +205,7 @@ namespace AhShitRim::Conversation
             }
         }
         state.director.Tick(a_delta);
-        if (auto text = Subtitle(speaker != nullptr); !text.empty()) {
-            SaHud::HoldSubtitle(std::move(text));
-        }
+        FollowSubtitle(speaker != nullptr);
         return say;
     }
 
@@ -193,10 +227,39 @@ namespace AhShitRim::Conversation
         return true;
     }
 
+    void Install()
+    {
+        REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_HUDMenu[0] };
+        HudMessageHook::original = vtable.write_vfunc(0x4, HudMessageHook::thunk);
+    }
+
+    bool DialogueOpen() { return Speaker(RE::MenuTopicManager::GetSingleton()) != nullptr; }
+
+    void Skip()
+    {
+        auto* controls = RE::PlayerControls::GetSingleton();
+        auto* handler = controls ? controls->GetActivateHandler() : nullptr;
+        auto* events = RE::UserEvents::GetSingleton();
+        if (!handler || !events || !DialogueOpen()) {
+            return;
+        }
+        auto*      map = RE::ControlMap::GetSingleton();
+        const auto key = map ? map->GetMappedKey(events->activate, RE::INPUT_DEVICE::kKeyboard) : 0x12u;  // E
+        // A press and its release, as Skyrim's activate key would send them.
+        for (const auto& [value, held] : { std::pair{ 1.0f, 0.0f }, std::pair{ 0.0f, 0.1f } }) {
+            if (auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, events->activate, key, value, held)) {
+                handler->ProcessButton(event, &controls->data);
+                RE::free(event);
+            }
+        }
+        SKSE::log::info("conversation: Space skips the line");
+    }
+
     void Clear()
     {
         state.director = {};
         state.side = 0;
+        state.subtitleShown = false;
         HideSkyrimSubtitles(false);
     }
 }
