@@ -3,6 +3,10 @@
 #include "../../cpp/cheats.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <ostream>
 #include <set>
 #include <string>
@@ -38,7 +42,7 @@ namespace
     {
         const Cheat* last = nullptr;
         for (char c : a_text) {
-            last = a_typist.Key(Dik(c));
+            last = a_typist.Key(Dik(c)).cheat;
         }
         return last;
     }
@@ -79,11 +83,12 @@ TEST_CASE("cheats: the table")
     std::set<int>           indices;
     for (const auto& cheat : kCheats) {
         CAPTURE(std::string(cheat.code));
-        CHECK(cheat.code.size() >= Typist::kShortest);
+        CHECK(cheat.code.size() >= (cheat.sa == SaCheat::None ? Typist::kShortestOurs : Typist::kShortest));
         CHECK(cheat.code.size() <= Typist::kLength);
         CHECK(std::all_of(cheat.code.begin(), cheat.code.end(), [](char c) { return c >= 'A' && c <= 'Z'; }));
         CHECK(keys.insert(CodeKey(cheat.code)).second);  // no two share a key
         if (cheat.sa == SaCheat::None) {
+            CHECK(cheat.code.size() >= Typist::kShortestOurs);
             CHECK(kSanAndreasKeys.count(CodeKey(cheat.code)) == 0);  // ours can't be one of San Andreas's
         } else {
             CHECK(kSanAndreasKeys.count(CodeKey(cheat.code)) == 1);  // a real San Andreas code
@@ -97,7 +102,8 @@ TEST_CASE("cheats: the table")
             CHECK(cheat.argument >= 1);
             CHECK(cheat.argument <= 3);
         }
-        CHECK(ToSanAndreas(cheat.kind) == (cheat.kind == Kind::Health || cheat.kind == Kind::Invincible || cheat.kind == Kind::SaToggle || cheat.kind == Kind::SaOnce));
+        CHECK(ToSanAndreas(cheat.kind) == (cheat.kind == Kind::Health || cheat.kind == Kind::Invincible || cheat.kind == Kind::SaToggle || cheat.kind == Kind::SaOnce ||
+                                              cheat.kind == Kind::Respray || cheat.kind == Kind::Hydraulics));
     }
     CHECK(Row("NOMERCY").kind == Kind::NoMercy);
     CHECK(Row("JUMPJET").argument == 520);  // Hydra
@@ -124,6 +130,11 @@ TEST_CASE("cheats: letters by their keys' places")
     CHECK(LetterOf(0x19) == 'P');
     CHECK(LetterOf(0x26) == 'L');
     CHECK(LetterOf(0x2C) == 'Z');
+    CHECK(LetterOf(0x02) == '1');  // v20: the top row's digits, for vehicle names (NRG500)
+    CHECK(LetterOf(0x0A) == '9');
+    CHECK(LetterOf(0x0B) == '0');
+    CHECK(LetterOf(0x0C) == 0);  // -
+    CHECK(LetterOf(Input::kDikNumpad8) == 0);  // the numpad's are vehicle keys
     CHECK(LetterOf(Input::kDikEscape) == 0);
     CHECK(LetterOf(Input::kDikSpace) == 0);
     CHECK(LetterOf(0x1A) == 0);  // [
@@ -135,7 +146,7 @@ TEST_CASE("cheats: letters by their keys' places")
             CHECK(letters.insert(c).second);
         }
     }
-    CHECK(letters.size() == 26);
+    CHECK(letters.size() == 36);
 }
 
 TEST_CASE("cheats: typing completes a cheat on its last letter")
@@ -158,7 +169,7 @@ TEST_CASE("cheats: typing completes a cheat on its last letter")
     CHECK(TypeAll(typist, "JYSDSOD") == &Row("BUFFMEUP"));
     CHECK(TypeAll(typist, "NOMERCY") == &Row("NOMERCY"));
     // Keys that aren't letters go nowhere.
-    CHECK(typist.Key(Input::kDikSpace) == nullptr);
+    CHECK_FALSE(typist.Key(Input::kDikSpace));
     CHECK(typist.Count() == 0);
 }
 
@@ -186,12 +197,124 @@ TEST_CASE("cheats: M is a letter, and opens no map while CJ has the player")
     Typist typist;
     // M inside a code is a letter like the rest.
     TypeAll(typist, "UZU");
-    CHECK(typist.Key(Input::kDikM) == nullptr);
+    CHECK_FALSE(typist.Key(Input::kDikM));
     CHECK(TypeAll(typist, "YMW") == &Row("UZUMYMW"));
     // And at the end of one.
     TypeAll(typist, "HESOYA");
-    CHECK(typist.Key(Input::kDikM) == &Row("HESOYAM"));
-    CHECK(typist.Key(Input::kDikM) == nullptr);
+    CHECK(typist.Key(Input::kDikM).cheat == &Row("HESOYAM"));
+    CHECK_FALSE(typist.Key(Input::kDikM));
+}
+
+TEST_CASE("cheats: ours by their letters, MINIGUN, PAINT and LOWRIDER")
+{
+    Typist typist;
+    CHECK(TypeAll(typist, "MINIGUN") == &Row("MINIGUN"));
+    CHECK(Row("MINIGUN").kind == Kind::Weapon);
+    CHECK(Row("MINIGUN").argument == 38);  // San Andreas's minigun
+    CHECK(TypeAll(typist, "PAINT") == &Row("PAINT"));  // 5 letters: shorter than San Andreas's codes can be
+    CHECK(TypeAll(typist, "LOWRIDER") == &Row("LOWRIDER"));
+    CHECK(NeedsVehicle(Row("PAINT").kind));
+    CHECK(NeedsVehicle(Row("LOWRIDER").kind));
+    CHECK_FALSE(NeedsVehicle(Row("MINIGUN").kind));
+    CHECK(CommandFor(Row("PAINT")).cheat == static_cast<std::uint8_t>(SaCheat::None));
+    CHECK(CommandFor(Row("PAINT")).key == CodeKey("PAINT"));
+    // A wrong letter breaks ours like San Andreas's.
+    CHECK(TypeAll(typist, "PAIXNT") == nullptr);
+}
+
+TEST_CASE("cheats: vehicles typed by name, from vehicles.ide")
+{
+    // vehicles.ide's layout (made-up rows): only the cars section counts, comments and short names are left out.
+    const char* ide = "# a comment\r\n"
+                      "objs\n"
+                      "1000, notacar, notacar, 100, 0\n"
+                      "end\n"
+                      "cars\n"
+                      "400, testcar, testcar, car, TESTCAR, TESTCR, null, normal, 10, 0, 0, -1, 0.7, 0.7, -1\r\n"
+                      "  468,\tTestbike, testbike, bike, TESTBIKE, TESTBK, bikev, motorbike, 10, 0, 0, 16, 0.6, 0.6, 1  # a bike\n"
+                      "481, bm, bm, bmx, BM, BM, bmx, bicycle, 10, 0, 0, -1, 0.6, 0.6, -1\n"
+                      "522, nrg500, nrg500, bike, NRG500, NRG500, bikes, motorbike, 10, 0, 0, 16, 0.6, 0.6, 1\n"
+                      "end\n"
+                      "peds\n"
+                      "7, someone, someone, CIVMALE\n"
+                      "end\n";
+    const auto names = ParseVehicleNames(ide);
+    REQUIRE(names.size() == 3);
+    CHECK(names[0].code == "TESTCAR");
+    CHECK(names[0].model == 400);
+    CHECK(names[1].code == "TESTBIKE");
+    CHECK(names[1].model == 468);
+    CHECK(names[2].code == "NRG500");
+
+    Typist typist;
+    typist.SetVehicleNames(names);
+    CHECK(typist.VehicleNameCount() == 3);
+    CHECK(TypeAll(typist, "TESTBIK") == nullptr);
+    CHECK(typist.Key(Dik('E')).model == 468);
+    // Digits from the top row count.
+    for (char c : std::string_view("NRG50")) {
+        CHECK_FALSE(typist.Key(Dik(c)));
+    }
+    CHECK(typist.Key(Dik('0')).model == 522);
+    // San Andreas's codes still win the same way.
+    CHECK(TypeAll(typist, "HESOYAM") == &Row("HESOYAM"));
+}
+
+TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player's own vehicles.ide)")
+{
+    const char* sa = std::getenv("AHSR_SA_PATH");
+    if (!sa || !*sa) {
+        MESSAGE("AHSR_SA_PATH is not set: skipped");
+        return;
+    }
+    std::ifstream file(std::filesystem::path(sa) / "data" / "vehicles.ide", std::ios::binary);
+    REQUIRE(file);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto        names = ParseVehicleNames(text);
+    CHECK(names.size() >= 200);
+    std::vector<std::string_view> codes;
+    for (const auto& cheat : kCheats) {
+        codes.push_back(cheat.code);
+    }
+    for (std::string_view other : { "ROCKETMAN", "WANRLTW", "KANGAROO", "JYSDSOD", "THUGSARMOURY", "PROFESSIONALSKIT", "PROFESSIONALKILLER",
+             "NATURALTALENT", "ICANGOALLNIGHT", "OLDSPEEDDEMON", "NOTFORPUBLICROADS", "JUSTTRYANDSTOPME", "WHERESTHEFUNERAL", "CELEBRITYSTATUS",
+             "TRUEGRIME", "ITSALLBULL", "FLYINGTOSTUNT", "CJPHONEHOME", "STICKLIKEGLUE", "SPEEDFREAK", "GOODBYECRUELWORLD",
+             "WHOATEALLTHEPIES", "LEANANDMEAN", "BUFFMEUP" }) {  // not MONSTERMASH: MONSTER (444) goes off first, a monster truck all the same
+        codes.push_back(other);
+    }
+    for (const auto code : codes) {
+        CAPTURE(std::string(code));
+        Typist typist;
+        typist.SetVehicleNames(names);
+        Typed last;
+        for (std::size_t i = 0; i < code.size(); ++i) {
+            last = typist.Key(Dik(code[i]));
+            if (i + 1 < code.size()) {
+                CHECK_FALSE(last);  // nothing went off on the way
+            }
+        }
+        // The code, or a name at its end that spawns the very same vehicle (FLYINGTOSTUNT ends in STUNT, the Stuntplane).
+        Typist bare;
+        const Cheat* expected = TypeAll(bare, code);
+        REQUIRE(expected != nullptr);
+        if (last.model) {
+            CHECK(expected->kind == Kind::Spawn);
+            CHECK(expected->argument == last.model);
+        } else {
+            CHECK(last.cheat == expected);
+        }
+    }
+    // The names the user asked for.
+    Typist typist;
+    typist.SetVehicleNames(names);
+    for (std::string_view name : { "SANCHEZ", "HYDRA", "RHINO", "MAVERICK", "SPARROW", "SANDKING", "DUNERIDE" }) {
+        CAPTURE(std::string(name));
+        Typed last;
+        for (char c : name) {
+            last = typist.Key(Dik(c));
+        }
+        CHECK(last.model != 0);
+    }
 }
 
 TEST_CASE("cheats: switches")

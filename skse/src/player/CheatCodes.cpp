@@ -1,5 +1,6 @@
 #include "player/CheatCodes.h"
 
+#include "Ini.h"
 #include "cheats.h"
 #include "health.h"
 #include "hud/SaHud.h"
@@ -9,7 +10,10 @@
 #include "vehicle_kinds.h"
 
 #include <chrono>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 
 namespace AhShitRim::CheatCodes
 {
@@ -37,6 +41,15 @@ namespace AhShitRim::CheatCodes
         {
             const auto command = CommandFor(a_cheat, a_on);
             return LinkService::Get().Send(Protocol::MessageType::Cheat, &command, sizeof(command));
+        }
+
+        bool GiveWeapon(unsigned a_type, std::uint32_t a_ammo)
+        {
+            Protocol::WeaponCommand command{};
+            command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon);
+            command.argument = a_type;
+            command.entries[0].ammo = a_ammo;
+            return LinkService::Get().Send(Protocol::MessageType::WeaponCommand, &command, sizeof(command));
         }
 
         bool GiveSet(unsigned a_set)
@@ -152,8 +165,27 @@ namespace AhShitRim::CheatCodes
             }
         }
 
-        void Apply(const Cheat& a_cheat, const std::function<std::string(std::uint16_t)>& a_spawn)
+        // Why a cheat that works on CJ's vehicle can't now, or nothing.
+        std::string VehicleRefusal(Kind a_kind, std::uint16_t a_vehicle)
         {
+            if (!a_vehicle) {
+                return "Get in a vehicle first";
+            }
+            if (a_kind == Kind::Hydraulics && VehicleKinds::KindOf(a_vehicle) != VehicleKinds::Kind::Car) {
+                return "Hydraulics only fit a car";
+            }
+            return {};
+        }
+
+        void Apply(const Cheat& a_cheat, const World& a_world)
+        {
+            if (NeedsVehicle(a_cheat.kind)) {
+                if (const auto refusal = VehicleRefusal(a_cheat.kind, a_world.vehicle()); !refusal.empty()) {
+                    SaHud::ShowHelp(refusal, 4.0f);
+                    SKSE::log::info("cheats: {} typed, but no {}: {}", a_cheat.code, a_cheat.what, refusal);
+                    return;
+                }
+            }
             auto*      player = RE::PlayerCharacter::GetSingleton();
             const bool on = a_cheat.kind == Kind::NoMercy ? !state.mercy.On() : Toggles(a_cheat.kind) ? state.on.Flip(a_cheat) : true;
             bool       sent = true;
@@ -165,8 +197,9 @@ namespace AhShitRim::CheatCodes
                 break;
             case Kind::Invincible: Vitals::SetInvincible(on); break;
             case Kind::Weapons: sent = GiveSet(a_cheat.argument); break;
+            case Kind::Weapon: sent = GiveWeapon(a_cheat.argument, kWeaponAmmo); break;
             case Kind::Spawn:
-                if (const auto refusal = a_spawn(a_cheat.argument); !refusal.empty()) {
+                if (const auto refusal = a_world.spawn(a_cheat.argument); !refusal.empty()) {
                     SaHud::ShowHelp(refusal, 4.0f);
                     SKSE::log::info("cheats: {} typed, but no {}: {}", a_cheat.code, a_cheat.what, refusal);
                     return;
@@ -192,10 +225,34 @@ namespace AhShitRim::CheatCodes
         }
     }
 
-    void Key(std::uint32_t a_dik, const std::function<std::string(std::uint16_t)>& a_spawn)
+    void OnDataLoaded()
     {
-        if (const auto* cheat = state.typist.Key(a_dik)) {
-            Apply(*cheat, a_spawn);
+        const std::filesystem::path sa = Ini::Value("SanAndreas", "Path");
+        const auto                  ide = sa / "data" / "vehicles.ide";
+        std::ifstream               file(ide, std::ios::binary);
+        if (sa.empty() || !file) {
+            SKSE::log::warn("cheats: {} doesn't read, so no vehicle comes by its name", sa.empty() ? "no [SanAndreas] Path" : ide.string());
+            return;
+        }
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        state.typist.SetVehicleNames(ParseVehicleNames(text));
+        SKSE::log::info("cheats: {} vehicles come by their name, from {}", state.typist.VehicleNameCount(), ide.string());
+    }
+
+    void Key(std::uint32_t a_dik, const World& a_world)
+    {
+        const auto typed = state.typist.Key(a_dik);
+        if (typed.cheat) {
+            Apply(*typed.cheat, a_world);
+        } else if (typed.model) {
+            // A vehicle typed by its name (ours): as a spawn cheat, without San Andreas's code.
+            if (const auto refusal = a_world.spawn(typed.model); !refusal.empty()) {
+                SaHud::ShowHelp(refusal, 4.0f);
+                SKSE::log::info("cheats: vehicle {} typed by name, but: {}", typed.model, refusal);
+                return;
+            }
+            SaHud::ShowHelp(std::string(kActivated), 4.0f);
+            SKSE::log::info("cheats: vehicle {} typed by name", typed.model);
         }
     }
 

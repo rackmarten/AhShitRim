@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <format>
 #include <map>
@@ -719,6 +720,62 @@ namespace AhShitRim::Vehicles
         Log(std::format("vehicle: the {} from the save restored in slot {} at ({:.1f},{:.1f},{:.1f}), colours {}/{}/{}/{}, CJ {}", name, index, now.x, now.y, now.z,
             a_car.colours[0], a_car.colours[1], a_car.colours[2], a_car.colours[3], Driven(a_ped) ? "at the wheel" : "could not be seated"));
         return true;
+    }
+
+    void Respray(CPlayerPed* a_ped)
+    {
+        CVehicle* vehicle = Driven(a_ped);
+        if (!vehicle || Wrecked(vehicle)) {
+            Log(vehicle ? "vehicle: PAINT, but CJ's vehicle is a wreck" : "vehicle: PAINT, but CJ is on foot");
+            return;
+        }
+        auto* info = InfoOf(vehicle->m_nModelIndex);
+        unsigned char colours[4] = { vehicle->m_nPrimaryColor, vehicle->m_nSecondaryColor, vehicle->m_nTertiaryColor, vehicle->m_nQuaternaryColor };
+        if (info) {
+            info->ChooseVehicleColour(colours[0], colours[1], colours[2], colours[3], 1);  // the model's next colour set
+        }
+        if (colours[0] == vehicle->m_nPrimaryColor && colours[1] == vehicle->m_nSecondaryColor) {
+            colours[0] = static_cast<unsigned char>((colours[0] + 1 + std::rand() % 125) % 126);  // one set only: any colour of carcols' 126
+            colours[1] = static_cast<unsigned char>(std::rand() % 126);
+        }
+        vehicle->m_nPrimaryColor = colours[0];
+        vehicle->m_nSecondaryColor = colours[1];
+        vehicle->m_nTertiaryColor = colours[2];
+        vehicle->m_nQuaternaryColor = colours[3];
+        vehicle->Fix();
+        vehicle->m_fHealth = 1000.0f;
+        vehicle->ExtinguishCarFire();
+        for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
+            if (Live(i) == vehicle) {
+                state.slots[i].model = 0;  // built again in its new colours
+                state.slots[i].failed = false;
+                Log(std::format("vehicle: the {} in slot {} resprayed {}/{}/{}/{} and mended", state.slots[i].name, i, colours[0], colours[1], colours[2], colours[3]));
+            }
+        }
+    }
+
+    void AddHydraulics(CPlayerPed* a_ped)
+    {
+        constexpr int kHydraulicsUpgrade = 1087;
+        CVehicle*     vehicle = Driven(a_ped);
+        if (!vehicle || vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || vehicle->m_nVehicleSubClass == VEHICLE_HELI ||
+            vehicle->m_nVehicleSubClass == VEHICLE_PLANE) {
+            Log("vehicle: LOWRIDER, but CJ isn't in a car");
+            return;
+        }
+        if (vehicle->m_nHandlingFlags.bHydraulicNone) {
+            Log(std::format("vehicle: LOWRIDER, but the {} can't take hydraulics (its handling says so)", vehicle->m_nModelIndex));
+            return;
+        }
+        if (!vehicle->m_nHandlingFlags.bHydraulicInst) {
+            CStreaming::RequestModel(kHydraulicsUpgrade, 0x2 | 0x8);  // game required, keep in memory
+            CStreaming::LoadAllRequestedModels(false);
+            if (CStreaming::ms_aInfoForModel[kHydraulicsUpgrade].m_nLoadState == 1) {  // LOADSTATE_LOADED
+                vehicle->AddVehicleUpgrade(kHydraulicsUpgrade);
+            }
+        }
+        Log(vehicle->m_nHandlingFlags.bHydraulicInst ? std::format("vehicle: hydraulics on model {}", vehicle->m_nModelIndex) :
+                                                       "vehicle: LOWRIDER: the hydraulics didn't take");
     }
 
     void GetOut(CPlayerPed* a_ped)

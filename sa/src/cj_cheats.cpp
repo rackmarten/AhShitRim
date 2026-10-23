@@ -1,6 +1,7 @@
 #include "cj_cheats.h"
 
 #include "log.h"
+#include "vehicles.h"
 
 #include <plugin.h>
 
@@ -55,8 +56,29 @@ namespace AhShitRim::CjCheats
             Log(std::format("cheats: {} cheats found in San Andreas's table{}", Cheats::kCheatCount, moved ? std::format(", {} not where expected", moved) : std::string()));
         }
 
-        void Apply(const Protocol::CheatCommand& a_command)
+        // AhShitRim's own (v20): found among kCheats' rows by its key.
+        void ApplyOurs(CPlayerPed* a_ped, const Protocol::CheatCommand& a_command)
         {
+            for (const auto& cheat : Cheats::kCheats) {
+                if (cheat.sa != Cheats::SaCheat::None || Cheats::CodeKey(cheat.code) != a_command.key) {
+                    continue;
+                }
+                if (cheat.kind == Cheats::Kind::Respray) {
+                    Vehicles::Respray(a_ped);
+                } else if (cheat.kind == Cheats::Kind::Hydraulics) {
+                    Vehicles::AddHydraulics(a_ped);
+                }
+                return;
+            }
+            Log(std::format("cheats: none of ours has the key {:08X}, ignored", a_command.key));
+        }
+
+        void Apply(CPlayerPed* a_ped, const Protocol::CheatCommand& a_command)
+        {
+            if (a_command.cheat == static_cast<std::uint8_t>(Cheats::SaCheat::None)) {
+                ApplyOurs(a_ped, a_command);
+                return;
+            }
             const int i = IndexOf(a_command.key, a_command.cheat);
             if (i < 0) {
                 Log(std::format("cheats: no San Andreas cheat has the key {:08X} (cheat {}), ignored", a_command.key, a_command.cheat));
@@ -97,7 +119,7 @@ namespace AhShitRim::CjCheats
             return;
         }
         while (!state.commands.empty()) {
-            Apply(state.commands.front());
+            Apply(a_ped, state.commands.front());
             state.commands.pop_front();
         }
     }

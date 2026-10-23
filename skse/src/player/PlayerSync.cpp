@@ -652,11 +652,19 @@ namespace AhShitRim::PlayerSync
             return {};
         }
 
+        // The model of the vehicle CJ is in (the last pose says), 0 on foot.
+        std::uint16_t CjVehicle()
+        {
+            Protocol::PlayerState pose{};
+            return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0 ? pose.vehicleModel : 0;
+        }
+
         // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes).
         void TypeCheat(std::uint32_t a_dik)
         {
             if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && Cheats::LetterOf(a_dik)) {
-                CheatCodes::Key(a_dik, CheatSpawn);
+                static const CheatCodes::World world{ CheatSpawn, CjVehicle };
+                CheatCodes::Key(a_dik, world);
             }
         }
 
@@ -1073,6 +1081,7 @@ namespace AhShitRim::PlayerSync
             state.devKeys ? "on" : "off", devKeys.empty() ? "unset" : devKeys, state.devPicker.Count(), devList.empty() ? " built in" : "",
             devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
         Arms::OnDataLoaded();
+        CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();

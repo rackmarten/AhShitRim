@@ -132,6 +132,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonTurretRight = 0x4000;  // v19: numpad 6
     inline constexpr std::uint32_t kButtonTurretUp = 0x8000;     // v19: numpad 8 or Page Up: the Hydra's nozzles back towards forward flight
     inline constexpr std::uint32_t kButtonTurretDown = 0x10000;  // v19: numpad 2 or Page Down: the Hydra's nozzles down towards hovering
+    inline constexpr std::uint32_t kButtonHydraulics = 0x20000;  // v20: numpad 5, in a vehicle: San Andreas's R3, the hydraulics' jump with the turret keys
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState

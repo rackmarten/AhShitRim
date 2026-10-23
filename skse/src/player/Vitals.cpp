@@ -47,14 +47,21 @@ namespace AhShitRim::Vitals
             auto* skills = a_player->GetInfoRuntimeData().skills;
             auto* data = skills ? skills->data : nullptr;
             if (!data) {
+                static bool logged = false;
+                if (!std::exchange(logged, true)) {
+                    SKSE::log::warn("vitals: no player skills to hold for BAGUVIX");
+                }
                 return;
             }
             for (std::size_t i = 0; i < std::size(kHitSkills); ++i) {
-                auto& xp = data->skills[kHitSkills[i]].xp;
+                auto& skill = data->skills[kHitSkills[i]];
                 if (!state.skillsFrozen) {
-                    state.frozenXp[i] = xp;
-                } else if (xp > state.frozenXp[i]) {
-                    xp = state.frozenXp[i];
+                    state.frozenXp[i] = skill.xp;
+                    SKSE::log::info("vitals: BAGUVIX holds skill {} at level {:.0f}, {:.1f} of {:.1f} xp", static_cast<int>(kHitSkills[i]), skill.level, skill.xp,
+                        skill.levelThreshold);
+                } else if (skill.xp > state.frozenXp[i]) {
+                    SKSE::log::info("vitals: BAGUVIX took back {:.2f} xp of skill {} (level {:.0f})", skill.xp - state.frozenXp[i], static_cast<int>(kHitSkills[i]), skill.level);
+                    skill.xp = state.frozenXp[i];
                 }
             }
             state.skillsFrozen = true;

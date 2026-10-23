@@ -9,6 +9,10 @@
 // It runs on Skyrim's side, which has the keys; San Andreas only hears what a finished code does. M, Skyrim's
 // map key, is a letter like any other while CJ has the player (Input::OpensSkyrimMenu).
 //
+// AhShitRim's own codes (NOMERCY, MINIGUN, PAINT, LOWRIDER) and every vehicle typed by its model name from San
+// Andreas's vehicles.ide (SANCHEZ, HYDRA, MAVERICK: ParseVehicleNames, Typist::SetVehicleNames) match by their
+// letters instead, from 3 long, and digits count (NRG500).
+//
 // What a cheat does is its Kind: San Andreas's own toggles and one-shot cheats go over the ring as a Cheat
 // command (its key and San Andreas's eCheats index), the weapon sets as the weapon commands' GiveSet, the
 // vehicles, the jetpack and the parachute as spawn requests, and the rest is Skyrim's (HESOYAM's health,
@@ -18,7 +22,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "../ahshitrim_protocol.h"
 #include "input.h"
@@ -96,7 +102,7 @@ namespace AhShitRim::Cheats
         SpawnDozer = 87,
         SpawnStuntPlane = 88,
         SpawnMonster = 89,
-        None = 0xFF,  // ours alone (NOMERCY)
+        None = 0xFF,  // ours alone (NOMERCY, MINIGUN, PAINT, LOWRIDER)
     };
     inline constexpr std::uint8_t kSaCheatCount = 92;  // TOTAL_CHEATS
 
@@ -110,7 +116,15 @@ namespace AhShitRim::Cheats
         SaOnce,     // San Andreas's own one-shot cheat (fat, muscle, blow up the vehicles)
         Suicide,    // the player's health gone: Wasted
         NoMercy,    // ours: nobody is essential (protocol/cpp/mercy.h), kept in the save
+        Weapon,     // ours: one weapon (WeaponCommand GiveWeapon, argument its type, kWeaponAmmo rounds)
+        Respray,    // ours: CJ's vehicle in new colours and mended, as a Pay 'n' Spray does (San Andreas's part)
+        Hydraulics, // ours: San Andreas's hydraulics on CJ's car (its upgrade 1087)
     };
+
+    inline constexpr std::uint32_t kWeaponAmmo = 500;  // a weapon cheat's rounds, as weapon set 3 gives the minigun
+
+    // Whether it does something to the vehicle CJ is in, so it needs one.
+    constexpr bool NeedsVehicle(Kind a_kind) { return a_kind == Kind::Respray || a_kind == Kind::Hydraulics; }
 
     // Whether typing it again turns it off (San Andreas's CHEAT8, "Cheat deactivated").
     constexpr bool Toggles(Kind a_kind) { return a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::NoMercy; }
@@ -118,15 +132,15 @@ namespace AhShitRim::Cheats
     // Whether San Andreas gets a Cheat command for it.
     constexpr bool ToSanAndreas(Kind a_kind)
     {
-        return a_kind == Kind::Health || a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::SaOnce;
+        return a_kind == Kind::Health || a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::SaOnce || NeedsVehicle(a_kind);
     }
 
     struct Cheat
     {
-        std::string_view code;      // as typed, San Andreas's PC code
+        std::string_view code;      // as typed, San Andreas's PC code (by its key), or ours (by its letters)
         Kind             kind;
         SaCheat          sa;        // San Andreas's index (SaCheat::None for ours)
-        std::uint16_t    argument;  // the weapon set, or the model a spawn asks for
+        std::uint16_t    argument;  // the weapon set or type, or the model a spawn asks for
         std::string_view what;      // for the log and the README
     };
 
@@ -171,6 +185,9 @@ namespace AhShitRim::Cheats
         { "VQIMAHA", Kind::SaOnce, SaCheat::MaxDrivingSkills, 0, "maximum driving, flying and bike skills" },
         { "SZCMAWO", Kind::Suicide, SaCheat::Suicide, 0, "suicide" },
         { "NOMERCY", Kind::NoMercy, SaCheat::None, 0, "nobody is essential (can break quests)" },
+        { "MINIGUN", Kind::Weapon, SaCheat::None, 38, "a minigun" },
+        { "PAINT", Kind::Respray, SaCheat::None, 0, "CJ's vehicle resprayed and mended" },
+        { "LOWRIDER", Kind::Hydraulics, SaCheat::None, 0, "hydraulics on CJ's car" },
     };
     inline constexpr std::size_t kCheatCount = std::size(kCheats);
     static_assert(kCheatCount <= 64, "Toggles keeps a bit per cheat");
@@ -179,11 +196,15 @@ namespace AhShitRim::Cheats
     inline constexpr std::string_view kActivated = "Cheat activated";
     inline constexpr std::string_view kDeactivated = "Cheat deactivated";
 
-    // The letter a key types into the cheat string, by its place on a US keyboard (DirectInput scan codes
-    // are places, not letters, as are San Andreas's), or 0 for a key that isn't a letter.
+    // The letter (or, v20, the top row's digit) a key types into the cheat string, by its place on a US keyboard
+    // (DirectInput scan codes are places, not letters, as are San Andreas's), or 0 for any other key.
     constexpr char LetterOf(std::uint32_t a_dik)
     {
-        constexpr std::string_view top = "QWERTYUIOP";  // 0x10..0x19
+        constexpr std::string_view digits = "1234567890";  // 0x02..0x0B
+        constexpr std::string_view top = "QWERTYUIOP";     // 0x10..0x19
+        if (a_dik >= 0x02 && a_dik < 0x02 + digits.size()) {
+            return digits[a_dik - 0x02];
+        }
         constexpr std::string_view home = "ASDFGHJKL";  // 0x1E..0x26
         constexpr std::string_view bottom = "ZXCVBNM";  // 0x2C..0x32
         if (a_dik >= 0x10 && a_dik < 0x10 + top.size()) {
@@ -211,40 +232,124 @@ namespace AhShitRim::Cheats
 
     constexpr std::size_t IndexOf(const Cheat& a_cheat) { return static_cast<std::size_t>(&a_cheat - kCheats); }
 
+    // A vehicle typed by its name (v20): San Andreas's model name from vehicles.ide, upper case, letters and digits.
+    struct VehicleName
+    {
+        std::string   code;
+        std::uint16_t model = 0;
+    };
+
+    // The vehicle names in the text of San Andreas's data/vehicles.ide (read from the player's install): each line of
+    // its "cars" section is "id, modelname, txdname, type, ...". Names under 3 letters are left out.
+    inline std::vector<VehicleName> ParseVehicleNames(std::string_view a_ide)
+    {
+        std::vector<VehicleName> out;
+        bool                     cars = false;
+        while (!a_ide.empty()) {
+            const auto       end = a_ide.find('\n');
+            std::string_view line = a_ide.substr(0, end);
+            a_ide = end == std::string_view::npos ? std::string_view{} : a_ide.substr(end + 1);
+            if (const auto hash = line.find('#'); hash != std::string_view::npos) {
+                line = line.substr(0, hash);
+            }
+            while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) {
+                line.remove_prefix(1);
+            }
+            while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r')) {
+                line.remove_suffix(1);
+            }
+            if (line == "cars") {
+                cars = true;
+                continue;
+            }
+            if (line == "end") {
+                cars = false;
+                continue;
+            }
+            const auto comma = line.find(',');
+            if (!cars || comma == std::string_view::npos) {
+                continue;
+            }
+            std::uint32_t id = 0;
+            bool          number = comma > 0;
+            for (const char c : line.substr(0, comma)) {
+                if (c >= '0' && c <= '9') {
+                    id = id * 10 + static_cast<std::uint32_t>(c - '0');
+                } else if (c != ' ' && c != '\t') {
+                    number = false;
+                }
+            }
+            const auto       rest = line.substr(comma + 1);
+            const std::string_view name = rest.substr(0, rest.find(','));
+            std::string      code;
+            for (const char c : name) {
+                if (c >= 'a' && c <= 'z') {
+                    code += static_cast<char>(c - 'a' + 'A');
+                } else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                    code += c;
+                }
+            }
+            if (number && id <= 0xFFFF && code.size() >= 3) {
+                out.push_back({ std::move(code), static_cast<std::uint16_t>(id) });
+            }
+        }
+        return out;
+    }
+
+    // What a key finished: a row of kCheats, or (v20) a vehicle typed by its name.
+    struct Typed
+    {
+        const Cheat*  cheat = nullptr;
+        std::uint16_t model = 0;  // the named vehicle's model
+        explicit operator bool() const { return cheat != nullptr || model != 0; }
+    };
+
     // The cheat string, as San Andreas keeps it (CCheat::m_CheatString, 30 characters with its end).
     class Typist
     {
     public:
         static constexpr std::size_t kLength = 29;
-        static constexpr std::size_t kShortest = 6;  // CHEAT_MIN_HASH_SIZE
+        static constexpr std::size_t kShortest = 6;      // CHEAT_MIN_HASH_SIZE: San Andreas's codes
+        static constexpr std::size_t kShortestOurs = 3;  // ours and the vehicle names
 
-        // A key went down (a scan code): letters go into the string, anything else is ignored. Returns the cheat
-        // it finished, or nullptr.
-        const Cheat* Key(std::uint32_t a_dik)
+        // The vehicle names that spawn their vehicle (v20, ParseVehicleNames).
+        void SetVehicleNames(std::vector<VehicleName> a_names) { _names = std::move(a_names); }
+        std::size_t VehicleNameCount() const { return _names.size(); }
+
+        // A key went down (a scan code): letters and digits go into the string, anything else is ignored. Returns
+        // what it finished, if anything.
+        Typed Key(std::uint32_t a_dik)
         {
             const char letter = LetterOf(a_dik);
-            return letter ? Type(letter) : nullptr;
+            return letter ? Type(letter) : Typed{};
         }
 
-        // San Andreas's AddToCheatString: a_letter goes in front, and the shortest run of the newest letters
-        // whose key is a cheat's completes it, which empties the string.
-        const Cheat* Type(char a_letter)
+        // San Andreas's AddToCheatString: a_letter goes in front, and the shortest run of the newest letters that
+        // is a cheat completes it, which empties the string: San Andreas's codes by their key, ours and the vehicle
+        // names by their letters.
+        Typed Type(char a_letter)
         {
             for (std::size_t i = kLength - 1; i > 0; --i) {
                 _letters[i] = _letters[i - 1];
             }
             _letters[0] = a_letter;
             _count = _count < kLength ? _count + 1 : kLength;
-            for (std::size_t n = kShortest; n <= _count; ++n) {
-                const std::uint32_t key = KeyOf(_letters, n);
+            for (std::size_t n = kShortestOurs; n <= _count; ++n) {
+                const std::uint32_t key = n >= kShortest ? KeyOf(_letters, n) : 0;
                 for (const auto& cheat : kCheats) {
-                    if (CodeKey(cheat.code) == key) {
+                    if (cheat.sa != SaCheat::None ? n >= kShortest && CodeKey(cheat.code) == key : Ends(cheat.code, n)) {
                         Clear();
-                        return &cheat;
+                        return { &cheat, 0 };
+                    }
+                }
+                for (const auto& name : _names) {
+                    if (Ends(name.code, n)) {
+                        Clear();
+                        return { nullptr, name.model };
                     }
                 }
             }
-            return nullptr;
+            return {};
         }
 
         void Clear() { _count = 0; }
@@ -252,6 +357,21 @@ namespace AhShitRim::Cheats
         std::size_t Count() const { return _count; }
 
     private:
+        // Whether the newest a_n letters are a_code.
+        bool Ends(std::string_view a_code, std::size_t a_n) const
+        {
+            if (a_code.size() != a_n) {
+                return false;
+            }
+            for (std::size_t i = 0; i < a_n; ++i) {
+                if (_letters[i] != a_code[a_n - 1 - i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        std::vector<VehicleName> _names;
         char        _letters[kLength] = {};
         std::size_t _count = 0;
     };

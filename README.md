@@ -32,7 +32,8 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
 | H | **Caps Lock or H** | | Horn; a plane's landing gear |
 | Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, search a chest, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome") | Look left / right; an aircraft's rudder |
-| Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Hydra's nozzles between hovering and forward flight |
+| Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car |
+| Numpad 5 | Numpad 5 | | Hydraulics' jump (San Andreas's R3), with the numpad's arrows; H raises and lowers the car |
 | Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air | Skyrim's shout, no gesture |
 | ] | ] | Spawn a Sandking | |
 | [ | [ | Spawn a ZR-350 | |
@@ -83,12 +84,16 @@ Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andre
 | JCNRUAD | Smash'n'boom: cars blow up on contact (toggles) |
 | CPKTNWT | Blow up every vehicle (not wrecks: as in San Andreas, a burnt-out one doesn't go up again) |
 | NOMERCY | Ours: nobody is essential any more (toggles, kept in the save) |
+| MINIGUN | Ours: a minigun with 500 rounds |
+| PAINT | Ours: the vehicle CJ is in gets new colours and is mended, as at a Pay 'n' Spray |
+| LOWRIDER | Ours: hydraulics on the car CJ is in. H raises and lowers it, numpad 5 with the numpad's arrows bounces it |
+| A vehicle's name | Ours: every vehicle by its model name from your San Andreas's `data/vehicles.ide`: SANCHEZ, HYDRA, RHINO, MAVERICK, SPARROW, SANDKING, DUNERIDE, NRG500 (the top row's digits count), and so on. Boats, trains, trailers and RC vehicles are refused as the spawn keys refuse them |
 
 Vehicles come in front of CJ on foot, as the spawn keys bring them (get out of a vehicle first), and the jetpack and the parachute go straight onto him. San Andreas's toggles are off again after a load, as in San Andreas.
 
 **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die for good, and Skyrim's own quests weren't written for that. Typing it again gives exactly those flags back (someone who died meanwhile stays dead). It stays on in your saves until you type it again, so save before you try it.
 
-NOMERCY can only be typed while CJ has the player, and it notes people by form id, so changing your load order with it on can give the essential flag back to the wrong person. Ped, traffic, gang, weather and time cheats aren't in yet (San Andreas's world here has no peds or traffic, and the clock and weather are Skyrim's), nor the wanted level ones.
+Ours are matched by their letters, from 3 long, so a vehicle's name can go off inside something longer: MONSTERMASH brings the Monster (444) at its R rather than the cheat's Monster (556), and MONSTERA and MONSTERB can't be typed past MONSTER. NOMERCY can only be typed while CJ has the player, and it notes people by form id, so changing your load order with it on can give the essential flag back to the wrong person. Ped, traffic, gang, weather and time cheats aren't in yet (San Andreas's world here has no peds or traffic, and the clock and weather are Skyrim's), nor the wanted level ones.
 
 ## How it will work
 
