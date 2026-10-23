@@ -31,8 +31,7 @@ TEST_CASE("the frozen header layout")
 TEST_CASE("protocol v23: the shout's voice")
 {
     CHECK(kProtocolVersion == 23);
-    CHECK(offsetof(InputState, shoutVoice) == 111);
-    CHECK(sizeof(InputState) == 112);
+    CHECK(sizeof(InputState) == 112);  // a shout goes as a lineKind (Thuum::kLineShout), no new field
 }
 
 TEST_CASE("protocol v22: busted")
@@ -153,7 +152,6 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, carHeading) == 104);
     CHECK(offsetof(InputState, lineCount) == 108);
     CHECK(offsetof(InputState, lineKind) == 110);
-    CHECK(offsetof(InputState, shoutVoice) == 111);
     CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 248);
     CHECK(offsetof(PlayerState, skills) == 224);

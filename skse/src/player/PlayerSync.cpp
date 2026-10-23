@@ -55,7 +55,6 @@ namespace AhShitRim::PlayerSync
             float          voiceRecovery = 0.0f;  // the player's shout cooldown last frame
             RE::FormID     seatLogged = 0;        // the furniture whose seat was last logged
             std::uint16_t  shoutCount = 0;
-            std::uint8_t   shoutVoice = 0;  // the last shout and its words (Thuum::Encode)
             bool           wasThirdPerson = false;
             Cosave::Record resume;               // what a loaded save held
             bool           resumePending = false;  // it had San Andreas on the player: take it again once the game is up
@@ -184,7 +183,6 @@ namespace AhShitRim::PlayerSync
             input.anchor[1] = state.anchor.y;
             input.anchor[2] = state.anchor.z;
             input.shoutCount = state.shoutCount;
-            input.shoutVoice = state.shoutVoice;
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
                 const auto feet = player->GetPosition();
                 RE::NiPoint3 at = feet;
@@ -721,7 +719,7 @@ namespace AhShitRim::PlayerSync
             const float recovery = a_player->GetVoiceRecoveryTime();
             if (Scene::ShoutReleased(state.voiceRecovery, recovery)) {
                 state.shoutCount++;
-                state.shoutVoice = Shouting::Released(a_player, recovery);
+                state.input.AddLine(Shouting::Released(a_player, recovery));  // CJ's line for it
                 const auto* power = a_player->GetActorRuntimeData().selectedPower;
                 SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures and shouts", power ? power->GetName() : "?", recovery);
             }

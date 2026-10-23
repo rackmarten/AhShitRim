@@ -12,7 +12,7 @@ namespace AhShitRim::Shouting
     // or gives back the player (a_cjHasPlayer), and notes the shout being charged and how far.
     void Update(RE::PlayerCharacter* a_player, bool a_cjHasPlayer);
 
-    // The shout just released, as InputState.shoutVoice (Thuum::Encode); call it once per release, with
+    // The shout just released, as the lineKind of CJ's line for it (Thuum::Encode); call it once per release, with
     // the cooldown it started (the words when Skyrim didn't say how far it was charged).
     std::uint8_t Released(RE::PlayerCharacter* a_player, float a_recovery);
 }

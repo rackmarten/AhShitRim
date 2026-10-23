@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include "../../cpp/dialogue.h"
 #include "../../cpp/thuum.h"
+#include "../../cpp/wanted.h"
 
 #include <set>
 #include <string>
@@ -45,11 +47,12 @@ TEST_CASE("the shout table finds each shout by its file and form ID, and by its 
     CHECK(Find("no-such-shout") == -1);
 }
 
-TEST_CASE("shoutVoice carries the shout and the words in one byte")
+TEST_CASE("a shout goes as a line kind of its own, with the shout and the words in one byte")
 {
     for (int shout = -1; shout < static_cast<int>(kShouts.size()); ++shout) {
         for (int words = 1; words <= kMaxWords; ++words) {
             const auto voice = Encode(shout, words);
+            CHECK(IsShout(voice));
             CHECK(ShoutOf(voice) == shout);
             CHECK(WordsOf(voice) == words);
         }
@@ -59,6 +62,11 @@ TEST_CASE("shoutVoice carries the shout and the words in one byte")
     CHECK(ShoutOf(Encode(99, 2)) == -1);  // out of the table: generic
     CHECK(ShoutOf(0) == -1);
     CHECK(WordsOf(0) == 1);
+    // Below kLineShout: the conversation's categories and the wanted level's lines.
+    CHECK_FALSE(IsShout(Dialogue::kCategoryCount));
+    CHECK_FALSE(IsShout(Wanted::kLineChased));
+    CHECK_FALSE(IsShout(Wanted::kLineArrested));
+    CHECK(ShoutOf(Wanted::kLineArrested) == -1);
 }
 
 TEST_CASE("the picked shout lines are CJ's, for shouts in the table, and the generic pool isn't empty")

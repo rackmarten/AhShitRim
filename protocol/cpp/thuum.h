@@ -1,5 +1,5 @@
 // CJ's Thu'um (v23), the game-free half: which of Skyrim's shouts the player let out (the shout table,
-// by the master file and form ID it has there), how InputState.shoutVoice carries it with the words
+// by the master file and form ID it has there), how InputState.lineKind carries it with the words
 // charged, and which of CJ's lines answers it: the picks for that shout and word count (voice_lines.h's
 // shout picks), else the shout's picks for the nearest word count, else the generic pool of his angry
 // lines, so no shout goes unanswered. Each pool plays like a deck, never the same line twice in a row.
@@ -111,20 +111,24 @@ namespace AhShitRim::Thuum
 
     constexpr int ClampWords(int a_words) { return std::clamp(a_words, 1, kMaxWords); }
 
-    // InputState.shoutVoice, sent with a new shoutCount: the shout's index in kShouts plus one (0 for
-    // a shout not in it), times four, plus the words charged (1 to 3).
+    // A shout as one of the lines Skyrim asks CJ to say (InputState.lineCount and lineKind): kLineShout
+    // plus the shout's index in kShouts plus one (0 for a shout not in it) times four, plus the words
+    // charged (1 to 3). Lower kinds are the conversation's categories and the wanted level's lines.
+    inline constexpr std::uint8_t kLineShout = 0x80;
+    constexpr bool                IsShout(std::uint8_t a_kind) { return a_kind >= kLineShout; }
+
     constexpr std::uint8_t Encode(int a_shout, int a_words)
     {
         const int slot = a_shout >= 0 && a_shout < static_cast<int>(kShouts.size()) ? a_shout + 1 : 0;
-        return static_cast<std::uint8_t>(slot * 4 + ClampWords(a_words));
+        return static_cast<std::uint8_t>(kLineShout + slot * 4 + ClampWords(a_words));
     }
-    constexpr int ShoutOf(std::uint8_t a_voice)
+    constexpr int ShoutOf(std::uint8_t a_kind)
     {
-        const int slot = a_voice / 4;
+        const int slot = IsShout(a_kind) ? (a_kind - kLineShout) / 4 : 0;
         return slot >= 1 && slot <= static_cast<int>(kShouts.size()) ? slot - 1 : -1;
     }
-    constexpr int WordsOf(std::uint8_t a_voice) { return ClampWords(a_voice % 4); }
-    static_assert(kShouts.size() * 4 + kMaxWords <= 0xFF, "shoutVoice is one byte");
+    constexpr int WordsOf(std::uint8_t a_kind) { return IsShout(a_kind) ? ClampWords((a_kind - kLineShout) % 4) : 1; }
+    static_assert(kLineShout + kShouts.size() * 4 + kMaxWords <= 0xFF, "lineKind is one byte");
 
     // CJ's lines for each shout and word count, dealt like decks.
     class Voice
