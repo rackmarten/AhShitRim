@@ -4,6 +4,8 @@
 #include <functional>
 #include <string>
 
+#include "cheats.h"
+
 // San Andreas's cheat codes typed while CJ has the player (protocol v20; the table, the typing and the M
 // key's rule in protocol/cpp/cheats.h, NOMERCY's bookkeeping in mercy.h).
 // - Every letter key pressed then goes into the cheat string; a code finished shows San Andreas's "Cheat
@@ -37,6 +39,9 @@ namespace AhShitRim::CheatCodes
 
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();
+
+    // Whether the toggle with San Andreas's index a_cheat is on (v22: AEZAKMI, for the wanted level).
+    bool On(Cheats::SaCheat a_cheat);
 
     // A game loads or a new one starts: San Andreas's toggles and BAGUVIX off.
     void OnGameLoad();

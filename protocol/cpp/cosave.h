@@ -3,7 +3,7 @@
 //
 // A record is a version and a run of bytes (SKSE's serialization keeps both). Fields are only ever
 // added at the end, each version's fields behind the version that brought them, and an older record
-// reads with the newer fields at their defaults. Later increments add the wanted level the same way.
+// reads with the newer fields at their defaults. The wanted level has a record of its own (protocol/cpp/wanted.h).
 //
 // Version history: 1 the handover and the armour; 2 the car; 3 the weapons; 4 the weapon skills.
 

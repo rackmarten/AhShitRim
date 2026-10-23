@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 21;
+    inline constexpr std::uint32_t kProtocolVersion = 22;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -114,6 +114,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kInputSeated = 0x10;     // InputState.flags (v9), with kInputScripted: the player sits
     inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas ignores damage; (v14) CJ falls dead on his front
     inline constexpr std::uint32_t kInputWastedCamera = 0x40;  // InputState.flags (v14), with kInputWasted: San Andreas's death camera rises over him
+    inline constexpr std::uint32_t kInputBusted = 0x80;     // InputState.flags (v22): Busted, CJ is arrested: dragged out of the car he is in (the driver's door), knocked off a bike, or on foot his hands up
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;

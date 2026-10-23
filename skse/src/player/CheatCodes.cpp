@@ -292,6 +292,12 @@ namespace AhShitRim::CheatCodes
         }
     }
 
+    bool On(SaCheat a_cheat)
+    {
+        const auto* cheat = Find(a_cheat);
+        return cheat && state.on.On(*cheat);
+    }
+
     void OnGameLoad()
     {
         if (state.on.Any()) {

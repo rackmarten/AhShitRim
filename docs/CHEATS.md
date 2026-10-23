@@ -16,6 +16,7 @@ San Andreas keeps only a key of each code (a checksum of its letters), so every 
 | WANRLTW | FULLCLIP | Toggle. Infinite ammo, no reloading |
 | NCSGDAG | PROFESSIONALKILLER | Hitman in every weapon skill |
 | SZCMAWO | GOODBYECRUELWORLD | Suicide: Wasted (not while BAGUVIX is on, as in San Andreas) |
+| AEZAKMI | IDOASIPLEASE | Toggle. Never wanted: no stars, any bounty a crime would add is put back as it was, and the guards' fight with the player is called off |
 
 ## CJ himself
 
@@ -78,7 +79,7 @@ Matched by their letters as typed.
 
 ## Not in yet
 
-Mega punch (IAVENJQ) and cars floating away (BSXSGGC) come later. San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), nor the wanted level ones (AEZAKMI and the stars) until the wanted level is.
+Mega punch (IAVENJQ) and cars floating away (BSXSGGC) come later. San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), nor the wanted level ones that only set the stars (OSRBLHH, ASNAEB, LJSPQK): here the stars come from Skyrim's bounty.
 
 ## Every vehicle by its name
 

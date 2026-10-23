@@ -4,6 +4,8 @@
 #include "mercy.h"
 #include "player/CheatCodes.h"
 #include "player/PlayerSync.h"
+#include "player/Police.h"
+#include "wanted.h"
 
 namespace AhShitRim::SaveState
 {
@@ -21,6 +23,7 @@ namespace AhShitRim::SaveState
         void Save(SKSE::SerializationInterface* a_intfc)
         {
             CheatCodes::Save(a_intfc);  // NOMERCY, a record of its own
+            Police::Save(a_intfc);      // the wanted level, another
             Cosave::Record record;
             PlayerSync::Snapshot(record);
             const auto bytes = Cosave::Write(record);
@@ -36,7 +39,7 @@ namespace AhShitRim::SaveState
         {
             std::uint32_t type = 0, version = 0, length = 0;
             while (a_intfc->GetNextRecordInfo(type, version, length)) {
-                if (type != Cosave::kRecordType && type != Mercy::kRecordType) {
+                if (type != Cosave::kRecordType && type != Mercy::kRecordType && type != Wanted::kRecordType) {
                     continue;
                 }
                 std::vector<std::uint8_t> bytes(length);
@@ -46,6 +49,10 @@ namespace AhShitRim::SaveState
                 }
                 if (type == Mercy::kRecordType) {
                     CheatCodes::Load(version, bytes.data(), bytes.size());
+                    continue;
+                }
+                if (type == Wanted::kRecordType) {
+                    Police::Load(version, bytes.data(), bytes.size());
                     continue;
                 }
                 Cosave::Record record;
@@ -70,6 +77,7 @@ namespace AhShitRim::SaveState
         {
             PlayerSync::Revert();
             CheatCodes::Revert();
+            Police::Revert();
         }
     }
 

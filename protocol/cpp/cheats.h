@@ -16,7 +16,7 @@
 // What a cheat does is its Kind: San Andreas's own toggles and one-shot cheats go over the ring as a Cheat
 // command (its key and San Andreas's eCheats index), the weapon sets as the weapon commands' GiveSet, the
 // vehicles, the jetpack and the parachute as spawn requests, and the rest is Skyrim's (HESOYAM's health,
-// armour and gold, BAGUVIX's half, NOMERCY). Adding one (AEZAKMI with the wanted level) is a row in kCheats.
+// armour and gold, BAGUVIX's half, NOMERCY, AEZAKMI's wanted level). Adding one is a row in kCheats.
 
 #pragma once
 
@@ -92,6 +92,7 @@ namespace AhShitRim::Cheats
         InfiniteHealth = 61,
         Parachute = 63,
         Jetpack = 64,
+        NeverWanted = 65,  // CHEAT_I_DO_AS_I_PLEASE, AEZAKMI
         InfiniteAmmo = 72,
         MaxStamina = 81,
         HitmanAllWeapons = 82,
@@ -119,6 +120,8 @@ namespace AhShitRim::Cheats
         Weapon,     // ours: one weapon (WeaponCommand GiveWeapon, argument its type, kWeaponAmmo rounds)
         Respray,    // ours: CJ's vehicle in new colours and mended, as a Pay 'n' Spray does (San Andreas's part)
         Hydraulics, // ours: San Andreas's hydraulics (its upgrade 1087) on the car CJ is in, or off it if it has them
+        NeverWanted, // AEZAKMI (v22), Skyrim's: no stars, and a crime's bounty put back (skse/src/player/Police.cpp). San Andreas's
+                     // own is never sent: its wanted level is always 0 here, and its toggle is a function that flips
     };
 
     inline constexpr std::uint32_t kWeaponAmmo = 500;  // a weapon cheat's rounds, as weapon set 3 gives the minigun
@@ -129,7 +132,7 @@ namespace AhShitRim::Cheats
     // Whether typing it again turns it off (San Andreas's CHEAT8, "Cheat deactivated").
     constexpr bool Toggles(Kind a_kind)
     {
-        return a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::NoMercy;
+        return a_kind == Kind::Invincible || a_kind == Kind::SaToggle || a_kind == Kind::NoMercy || a_kind == Kind::NeverWanted;
     }
 
     // Whether San Andreas gets a Cheat command for it.
@@ -187,6 +190,7 @@ namespace AhShitRim::Cheats
         { "VKYPQCF", Kind::SaOnce, SaCheat::MaxStamina, 0, "maximum stamina" },
         { "VQIMAHA", Kind::SaOnce, SaCheat::MaxDrivingSkills, 0, "maximum driving, flying and bike skills" },
         { "SZCMAWO", Kind::Suicide, SaCheat::Suicide, 0, "suicide" },
+        { "AEZAKMI", Kind::NeverWanted, SaCheat::NeverWanted, 0, "never wanted: no stars, and no bounty from crimes" },
         { "NOMERCY", Kind::NoMercy, SaCheat::None, 0, "nobody is essential (can break quests)" },
         { "MINIGUN", Kind::Weapon, SaCheat::None, 38, "a minigun" },
         { "PAINT", Kind::Respray, SaCheat::None, 0, "CJ's vehicle resprayed and mended" },
