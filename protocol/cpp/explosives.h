@@ -426,7 +426,7 @@ namespace AhShitRim::Explosives
     inline constexpr float kSprayHalfAngle = 20.0f;         // degrees
     inline constexpr float kSprayRangeMin = 1.0f * kMeter;
     inline constexpr float kSprayRangeMax = 3.0f * kMeter;
-    inline constexpr float kSprayPerSecond = 10.0f;         // San Andreas health points a second, the tear gas's
+    inline constexpr float kSprayPerSecond = 30.0f;         // San Andreas health points a second, three times the tear gas's
     inline constexpr float kSprayCough = kGasCough;         // seconds between one actor's coughs (a stagger)
     inline constexpr float kHoseHalfAngle = 15.0f;          // degrees
     inline constexpr float kHoseRangeMin = 2.0f * kMeter;

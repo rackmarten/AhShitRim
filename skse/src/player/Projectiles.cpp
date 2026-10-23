@@ -4,6 +4,7 @@
 #include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
+#include "player/Puffs.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
 
@@ -43,11 +44,7 @@ namespace AhShitRim::Projectiles
         constexpr float       kCjFireEvery = 0.2f;  // seconds between the flames put on CJ
         constexpr RE::FormID kGasHazard = 0x00106380;         // DA13PustuleGasCloud: a gas cloud that hurts no one itself
         constexpr RE::FormID kFlames = 0x00012FCD;            // Flames
-        constexpr const char* kSprayModel = "Effects\\ImpactEffects\\MagPoisonSprayImpact.nif";  // the spray can's cloud
-        constexpr const char* kHoseModel = "Effects\\ImpactEffects\\ImpactFrostSmall01.nif";     // the extinguisher's
-        constexpr const char* kSteamModel = "Effects\\ImpactEffects\\FXDragonFireImpactSteam.nif";  // a fire put out
-        constexpr float       kMistEvery = 0.1f;    // seconds between the spray can's or extinguisher's clouds
-        constexpr float       kMistSeconds = 0.6f;  // how long each shows
+        constexpr double      kPutOutPuffEvery = 1.0;  // seconds between the puffs where one actor is put out
 
         struct Projectile
         {
@@ -111,8 +108,8 @@ namespace AhShitRim::Projectiles
             float                                  burnTick = 0.0f;
             double                                 lastFlame = 0.0;
             Damage::Blows                          sprays;  // the spray can's, as the flamethrower's
-            std::map<RE::FormID, double>           coughs;  // when the spray can last made each one cough
-            double                                 lastMist = 0.0;
+            std::map<RE::FormID, double>           coughs;  // when the spray can or extinguisher last made each one cough
+            std::map<RE::FormID, double>           doused;  // when the extinguisher last showed one put out
             RE::BGSExplosion*                      blast = nullptr;
             RE::BGSHazard*                         gas = nullptr;
             RE::SpellItem*                         flamesSpell = nullptr;
@@ -943,20 +940,6 @@ namespace AhShitRim::Projectiles
 
         // ---- The spray can and the extinguisher ----
 
-        // A short-lived cloud of a vanilla effect a_along the puff's axis, not every puff.
-        void Mist(RE::PlayerCharacter* a_player, const char* a_model, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range,
-            std::initializer_list<float> a_along, double a_now)
-        {
-            auto* cell = a_player->GetParentCell();
-            if (!cell || a_now - state.lastMist < kMistEvery) {
-                return;
-            }
-            state.lastMist = a_now;
-            for (const float along : a_along) {
-                RE::BSTempEffectParticle::Spawn(cell, kMistSeconds, a_model, a_dir, a_origin + a_dir * (along * a_range), 1.0f, 7, nullptr);
-            }
-        }
-
         RE::NiPoint3 MiddleOf(RE::Actor* a_actor)
         {
             const auto feet = a_actor->GetPosition();
@@ -968,13 +951,23 @@ namespace AhShitRim::Projectiles
             return InCone(V(a_origin), V(a_dir), a_range, V(MiddleOf(a_actor)), RadiusOf(a_actor) + 0.25f * a_actor->GetHeight(), HalfAngle(a_cone));
         }
 
-        // The spray can: everyone in its cone chokes as in tear gas, hurt a little and coughing (a stagger).
-        void Spray(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range, double a_now)
+        // Someone in the spray can's or the extinguisher's cloud coughs (a stagger) every kSprayCough seconds.
+        void Cough(RE::Actor* a_actor, const RE::NiPoint3& a_from, double a_now)
         {
-            Mist(a_player, kSprayModel, a_origin, a_dir, a_range, { 0.5f, 0.9f }, a_now);
             if (state.coughs.size() > 64) {
                 std::erase_if(state.coughs, [&](const auto& a_entry) { return a_now - a_entry.second >= kSprayCough; });
             }
+            const auto [cough, fresh] = state.coughs.try_emplace(a_actor->GetFormID(), a_now);
+            if ((fresh || a_now - cough->second >= kSprayCough) && !a_actor->IsDead() && Shots::ClassOf(a_actor) == Damage::Class::Normal) {
+                cough->second = a_now;
+                Stagger(a_actor, a_from);
+            }
+        }
+
+        // The spray can: everyone in its cone chokes as in tear gas, hurt a little and coughing.
+        void Spray(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range, double a_now)
+        {
+            Puffs::Puff(Puffs::Kind::Spray, a_origin, a_dir);
             ForActorsNear(a_player, a_origin, [&](RE::Actor* a_actor) {
                 if (a_actor->IsDead() || !InConeOf(a_actor, a_origin, a_dir, a_range, Cone::Spray)) {
                     return;
@@ -983,11 +976,7 @@ namespace AhShitRim::Projectiles
                 if (landed > 0.0f) {
                     Shots::Hurt(a_player, a_actor, Weapons::Spraycan, kSprayPerSecond * landed, MiddleOf(a_actor), a_dir, false);
                 }
-                const auto [cough, fresh] = state.coughs.try_emplace(a_actor->GetFormID(), a_now);
-                if ((fresh || a_now - cough->second >= kSprayCough) && !a_actor->IsDead() && Shots::ClassOf(a_actor) == Damage::Class::Normal) {
-                    cough->second = a_now;
-                    Stagger(a_actor, a_origin);
-                }
+                Cough(a_actor, a_origin, a_now);
             });
         }
 
@@ -1009,24 +998,39 @@ namespace AhShitRim::Projectiles
             for (auto* effect : fire) {
                 effect->Dispel(true);
             }
-            return was || !fire.empty();
+            if (was || !fire.empty()) {
+                // The fire shown on it (the Flames' shader) goes with it, not when the effect runs out.
+                if (auto* lists = RE::ProcessLists::GetSingleton()) {
+                    lists->StopAllMagicEffects(*a_actor);
+                }
+                return true;
+            }
+            return false;
         }
 
         // The extinguisher: whoever burns in its cone is put out, and the Molotovs' fire on the ground it reaches.
-        // San Andreas puts out its own there (and CJ) when it sends the puff.
+        // Whoever is in it coughs as in the spray can's, unhurt and not angered, as in San Andreas. San Andreas
+        // puts out its own there (and CJ) when it sends the puff.
         void Hose(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range, double a_now)
         {
-            Mist(a_player, kHoseModel, a_origin, a_dir, a_range, { 0.3f, 0.6f, 0.9f }, a_now);
-            auto* cell = a_player->GetParentCell();
-            const auto steam = [&](const RE::NiPoint3& a_at) {
-                if (cell) {
-                    RE::BSTempEffectParticle::Spawn(cell, 1.5f, kSteamModel, RE::NiPoint3(0.0f, 0.0f, 1.0f), a_at, 1.0f, 7, nullptr);
-                }
-            };
+            Puffs::Puff(Puffs::Kind::Hose, a_origin, a_dir);
+            if (state.doused.size() > 64) {
+                std::erase_if(state.doused, [&](const auto& a_entry) { return a_now - a_entry.second >= kPutOutPuffEvery; });
+            }
             ForActorsNear(a_player, a_origin, [&](RE::Actor* a_actor) {
-                if (InConeOf(a_actor, a_origin, a_dir, a_range, Cone::Hose) && PutOut(a_actor)) {
-                    steam(MiddleOf(a_actor));
-                    Log(std::format("the extinguisher put out {} ({:08X})", a_actor->GetDisplayFullName(), a_actor->GetFormID()));
+                if (!InConeOf(a_actor, a_origin, a_dir, a_range, Cone::Hose)) {
+                    return;
+                }
+                if (PutOut(a_actor)) {
+                    const auto [doused, fresh] = state.doused.try_emplace(a_actor->GetFormID(), a_now);
+                    if (fresh || a_now - doused->second >= kPutOutPuffEvery) {
+                        doused->second = a_now;
+                        Puffs::PutOut(MiddleOf(a_actor));
+                        SKSE::log::info("explosives: the extinguisher put out {} ({:08X})", a_actor->GetDisplayFullName(), a_actor->GetFormID());
+                    }
+                }
+                if (!a_actor->IsDead()) {
+                    Cough(a_actor, a_origin, a_now);
                 }
             });
             int doused = 0;
@@ -1043,11 +1047,11 @@ namespace AhShitRim::Projectiles
                     }
                 }
                 if (fire.caught) {
-                    steam(fire.at);
+                    Puffs::PutOut(fire.at);
                 }
             }
             if (doused) {
-                Log(std::format("the extinguisher put out {} of a Molotov's fire patches", doused));
+                SKSE::log::info("explosives: the extinguisher put out {} of a Molotov's fire patches", doused);
             }
         }
     }
@@ -1149,6 +1153,7 @@ namespace AhShitRim::Projectiles
             it = Burn(a_player, *it, dt) ? it + 1 : state.fires.erase(it);
         }
         Afterburn(a_player, dt);
+        Puffs::Update(dt);
         if (a_cjBurning) {
             FlamesOnCj(a_player, *a_cjBurning, dt);
         }
@@ -1175,5 +1180,7 @@ namespace AhShitRim::Projectiles
         state.burning.clear();
         state.sprays.Clear();
         state.coughs.clear();
+        state.doused.clear();
+        Puffs::Clear();
     }
 }

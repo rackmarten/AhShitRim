@@ -26,7 +26,7 @@ namespace AhShitRim::Protocol
 //  - lets tear gas out as a gas cloud (DA13PustuleGasCloud, harmless itself) that chokes everyone in it,
 //  - shoots the Flames spell's flames from the nozzle for the flamethrower and burns everyone in its cone,
 //  - chokes everyone in the spray can's cone as tear gas does, and puts out whoever and whatever burns in
-//    the extinguisher's (the afterburn, fire spells, the Molotovs' oil),
+//    the extinguisher's (the afterburn, fire spells, the Molotovs' oil), San Andreas's clouds drawn by Puffs,
 //  - and hurts CJ too when he is caught in his own (Vitals::Hurt),
 //  - tells San Andreas what happened (Effect messages) so its own sounds play: its explosion, a rocket's
 //    roar until it goes off, its fire's crackle where a Molotov burns (where CJ catches fire, as he does
