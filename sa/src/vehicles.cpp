@@ -1,5 +1,6 @@
 #include "vehicles.h"
 
+#include "air_spawn.h"
 #include "cj_cheats.h"
 #include "log.h"
 #include "position_guard.h"
@@ -445,6 +446,16 @@ namespace AhShitRim::Vehicles
             return true;
         }
 
+        // What WARP_CHAR_INTO_CAR does: CJ in the driver's seat at once.
+        void WarpIn(CPlayerPed* a_ped, CVehicle* a_vehicle)
+        {
+            auto* task = new CTaskSimpleCarSetPedInAsDriver(a_vehicle, nullptr);
+            task->m_bWarpingInToCar = true;
+            task->ProcessPed(a_ped);
+            delete task;
+            a_vehicle->bEngineOn = true;
+        }
+
         // ---- The pose ----
 
         // What drawing the vehicle would have done to its frames: its matrix into the clump's frame,
@@ -629,7 +640,47 @@ namespace AhShitRim::Vehicles
         return a_ped && a_ped->bInVehicle ? a_ped->m_pVehicle : nullptr;
     }
 
-    void Spawn(CPlayerPed* a_ped, int a_model)
+    namespace
+    {
+        // AIR + a plane's name: the plane high above CJ, already flying, CJ its pilot. Nothing is in the way up there, and
+        // the ground below is in reach of the ground's rays and the fall rescue.
+        void SpawnFlying(CPlayerPed* a_ped, CVehicleModelInfo* a_info, int a_model, const std::string& a_name)
+        {
+            const int index = FreeSlot();
+            CVehicle* vehicle = index >= 0 ? Create(a_info, a_model) : nullptr;
+            if (!vehicle) {
+                Log(std::format("vehicle: no slot or no way to make the {}, nothing spawned flying", a_name));
+                return;
+            }
+            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
+            const auto&   look = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecFront;
+            vehicle->SetPosn(feet + CVector(0.0f, 0.0f, AirSpawn::kHeight));
+            vehicle->SetHeading(AirSpawn::HeadingOf(look.x, look.y, a_ped->GetHeading()));
+            vehicle->m_nStatus = STATUS_ABANDONED;
+            vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
+            CWorld::Add(vehicle);
+            auto* plane = static_cast<CPlane*>(vehicle);
+            plane->SetGearUp();
+            *reinterpret_cast<float*>(reinterpret_cast<std::uint8_t*>(vehicle) + 0x9C4) = CPlane::PLANE_MAX_PROP_SPEED;  // m_fPropSpeed (SpinOf)
+            const float speed = AirSpawn::LaunchSpeed(vehicle->m_pFlyingHandlingData ? vehicle->m_pFlyingHandlingData->m_fFormLift : 0.0f);
+            vehicle->m_vecMoveSpeed = vehicle->GetForward() * (speed / AirSpawn::kStepsPerSecond);
+            vehicle->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+            Slot& slot = state.slots[index];
+            slot = Slot{};
+            slot.ref = CPools::GetVehicleRef(vehicle);
+            slot.spawned = ++state.spawns;
+            slot.name = a_name;
+            WarpIn(a_ped, vehicle);
+            vehicle->m_fGasPedal = 1.0f;  // full throttle until the player's keys take over, on San Andreas's next step
+            const CVector& at = vehicle->GetPosition();
+            Log(std::format("vehicle: {} spawned flying in slot {} at ({:.1f},{:.1f},{:.1f}), {:.0f} m above CJ, heading {:.2f}, {:.1f} m/s (form lift {:.4f}), "
+                            "gear up, CJ {}",
+                a_name, index, at.x, at.y, at.z, AirSpawn::kHeight, vehicle->GetHeading(), speed,
+                vehicle->m_pFlyingHandlingData ? vehicle->m_pFlyingHandlingData->m_fFormLift : 0.0f, Driven(a_ped) ? "at the controls" : "could not be seated"));
+        }
+    }
+
+    void Spawn(CPlayerPed* a_ped, int a_model, bool a_airborne)
     {
         auto* info = InfoOf(a_model);
         if (!info) {
@@ -650,10 +701,18 @@ namespace AhShitRim::Vehicles
             Log(std::format("vehicle: CJ is in a vehicle, no {} spawned", name));
             return;
         }
+        if (a_airborne && (!AirSpawn::Flies(static_cast<std::uint16_t>(a_model)) || info->m_nVehicleType != VEHICLE_PLANE)) {
+            Log(std::format("vehicle: the {} doesn't come flying, spawned on the ground", name));
+            a_airborne = false;
+        }
         CStreaming::RequestModel(a_model, 0x2 | 0x8);  // game required, keep in memory
         CStreaming::LoadAllRequestedModels(false);
         if (CStreaming::ms_aInfoForModel[a_model].m_nLoadState != 1 || !info->m_pColModel) {  // LOADSTATE_LOADED
             Log(std::format("vehicle: the {} did not load, nothing spawned", name));
+            return;
+        }
+        if (a_airborne) {
+            SpawnFlying(a_ped, info, a_model, name);
             return;
         }
         const auto     size = FootprintOf(info);
@@ -743,12 +802,7 @@ namespace AhShitRim::Vehicles
         slot.ref = CPools::GetVehicleRef(vehicle);
         slot.spawned = ++state.spawns;
         slot.name = name;
-        // What WARP_CHAR_INTO_CAR does: CJ in the driver's seat at once.
-        auto* task = new CTaskSimpleCarSetPedInAsDriver(vehicle, nullptr);
-        task->m_bWarpingInToCar = true;
-        task->ProcessPed(a_ped);
-        delete task;
-        vehicle->bEngineOn = true;
+        WarpIn(a_ped, vehicle);
         const CVector& now = vehicle->GetPosition();
         Log(std::format("vehicle: the {} from the save restored in slot {} at ({:.1f},{:.1f},{:.1f}), colours {}/{}/{}/{}, CJ {}", name, index, now.x, now.y, now.z,
             a_car.colours[0], a_car.colours[1], a_car.colours[2], a_car.colours[3], Driven(a_ped) ? "at the wheel" : "could not be seated"));

@@ -276,6 +276,50 @@ TEST_CASE("cheats: vehicles typed by name, from vehicles.ide")
     CHECK(TypeAll(typist, "HESOYAM") == &Row("HESOYAM"));
 }
 
+TEST_CASE("cheats: AIR before a plane's name spawns it flying")
+{
+    Typist typist;
+    typist.SetVehicleNames({ { "HYDRA", 520 }, { "AT400", 577 }, { "SANCHEZ", 468 }, { "MAVERICK", 487 }, { "VORTEX", 539 } });
+    const auto typed = [&](std::string_view a_text) {
+        Typed last;
+        for (char c : a_text) {
+            last = typist.Key(Dik(c));
+        }
+        return last;
+    };
+    auto t = typed("AIRHYDRA");
+    CHECK(t.model == 520);
+    CHECK(t.airborne);
+    t = typed("HYDRA");  // the name alone: on the ground
+    CHECK(t.model == 520);
+    CHECK_FALSE(t.airborne);
+    t = typed("AIRAT400");
+    CHECK(t.model == 577);
+    CHECK(t.airborne);
+    t = typed("WWWDAIRAT400");  // walking about first doesn't matter
+    CHECK(t.airborne);
+    t = typed("AIRSANCHEZ");  // a motorbike after AIR comes as it always does
+    CHECK(t.model == 468);
+    CHECK_FALSE(t.airborne);
+    t = typed("AIRMAVERICK");  // and so does a helicopter
+    CHECK(t.model == 487);
+    CHECK_FALSE(t.airborne);
+    t = typed("AIRVORTEX");  // and the hovercraft
+    CHECK(t.model == 539);
+    CHECK_FALSE(t.airborne);
+    t = typed("AIXHYDRA");  // a wrong letter in AIR
+    CHECK(t.model == 520);
+    CHECK_FALSE(t.airborne);
+    t = typed("IRHYDRA");  // AIR cut short
+    CHECK_FALSE(t.airborne);
+    // A match empties the string: AIR typed before an earlier match doesn't carry over.
+    typed("AIR");
+    typed("HESOYAM");
+    t = typed("HYDRA");
+    CHECK_FALSE(t.airborne);
+    CHECK_FALSE(typed("HESOYAM").airborne);  // a cheat is never airborne
+}
+
 TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player's own vehicles.ide)")
 {
     const char* sa = std::getenv("AHSR_SA_PATH");
@@ -324,6 +368,23 @@ TEST_CASE("cheats: no vehicle name goes off in the middle of a code (the player'
         } else {
             CHECK(last.cheat == expected);
         }
+    }
+    // AIR + a plane: nothing on the way, then the plane, flying.
+    for (std::string_view code : { "AIRAT400", "AIRBEAGLE", "AIRANDROM", "AIRHYDRA", "AIRNEVADA", "AIRSHAMAL", "AIRDODO", "AIRRUSTLER", "AIRSTUNT",
+             "AIRCROPDUST", "AIRSKIMMER" }) {
+        CAPTURE(std::string(code));
+        Typist typist;
+        typist.SetVehicleNames(names);
+        Typed last;
+        for (std::size_t i = 0; i < code.size(); ++i) {
+            last = typist.Key(Dik(code[i]));
+            if (i + 1 < code.size()) {
+                CHECK_FALSE(last);
+            }
+        }
+        CHECK(last.model != 0);
+        CHECK(last.airborne);
+        CHECK(AirSpawn::Flies(last.model));
     }
     // The names the user asked for.
     Typist typist;

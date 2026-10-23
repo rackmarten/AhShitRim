@@ -163,8 +163,10 @@ namespace AhShitRim::Protocol
         float         carHeading;      // v11: the car's heading, Skyrim radians
         std::uint16_t lineCount;       // v21: counts lines Skyrim asks CJ to say; a new value has him say one of lineKind
         std::uint8_t  lineKind;        // v21: Dialogue::Category (protocol/cpp/dialogue.h): greet, agree, refuse, ask, threaten, joke, goodbye
-        std::uint8_t  reserved1;
+        std::uint8_t  spawnFlags;      // v22 (a reserved byte before): kSpawn*, how the spawn request with spawnCount wants spawnModel
     };
+
+    inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
 
     struct InputSlot
     {
@@ -561,6 +563,7 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, carHeading) == 104);
     static_assert(offsetof(InputState, lineCount) == 108);
     static_assert(offsetof(InputState, lineKind) == 110);
+    static_assert(offsetof(InputState, spawnFlags) == 111);
     static_assert(sizeof(InputSlot) == 144);
     static_assert(sizeof(WeaponEntry) == 8);
     static_assert(sizeof(WeaponCommand) == 8 + kWeaponSlotCount * sizeof(WeaponEntry) + 24);

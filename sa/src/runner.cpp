@@ -372,7 +372,7 @@ namespace AhShitRim::Runner
                 if (VehicleKinds::IsGear(a_input.spawnModel)) {
                     CjGear::Give(a_ped, a_input.spawnModel);  // v19: the jetpack or the parachute
                 } else {
-                    Vehicles::Spawn(a_ped, a_input.spawnModel);
+                    Vehicles::Spawn(a_ped, a_input.spawnModel, (a_input.spawnFlags & Protocol::kSpawnAirborne) != 0);
                 }
             }
             state.spawnCount = a_input.spawnCount;

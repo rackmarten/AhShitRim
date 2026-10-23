@@ -211,6 +211,7 @@ namespace AhShitRim::Input
             const auto model = a_dik == kDikApostrophe ? _devModel : SpawnModelFromScanCode(a_dik);
             if (model && a_down && a_canSpawn && !IsKeyDown(a_dik)) {
                 _spawnModel = model;
+                _spawnFlags = 0;
                 _spawnCount++;
             }
             const std::uint64_t bit = 1ull << (a_dik & 63);
@@ -221,11 +222,13 @@ namespace AhShitRim::Input
             }
         }
 
-        // A spawn request that comes from no key (v20: a cheat typed in Skyrim), as a spawn key's press.
-        void RequestSpawn(std::uint16_t a_model)
+        // A spawn request that comes from no key (v20: a cheat typed in Skyrim), as a spawn key's press; a_flags
+        // Protocol::kSpawn* (AIR + a plane's name: kSpawnAirborne).
+        void RequestSpawn(std::uint16_t a_model, std::uint8_t a_flags = 0)
         {
             if (a_model) {
                 _spawnModel = a_model;
+                _spawnFlags = a_flags;
                 _spawnCount++;
             }
         }
@@ -293,6 +296,7 @@ namespace AhShitRim::Input
             s.mouseY = _mouseY;
             s.spawnModel = _spawnModel;
             s.spawnCount = _spawnCount;
+            s.spawnFlags = _spawnFlags;
             s.radioNext = _radioNext;
             s.radioPrev = _radioPrev;
             s.insultCount = _insultCount;
@@ -354,6 +358,7 @@ namespace AhShitRim::Input
         double        _mouseY = 0.0;
         std::uint16_t _spawnModel = 0;
         std::uint16_t _spawnCount = 0;
+        std::uint8_t  _spawnFlags = 0;
         std::uint16_t _devModel = 0;
         std::uint16_t _radioNext = 0;
         std::uint16_t _radioPrev = 0;

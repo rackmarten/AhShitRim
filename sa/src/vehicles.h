@@ -22,8 +22,11 @@ class CVehicle;
 namespace AhShitRim::Vehicles
 {
     // A spawn request: a_model (a San Andreas vehicle model id) in front of CJ. Refused (logged) while
-    // CJ is in a vehicle or when nothing in front of him will do.
-    void Spawn(CPlayerPed* a_ped, int a_model);
+    // CJ is in a vehicle or when nothing in front of him will do. a_airborne (AIR + a plane's name,
+    // Protocol::kSpawnAirborne): a plane comes AirSpawn::kHeight above CJ instead, facing where the camera
+    // looks, gear up, engine on and fast enough to fly (protocol/cpp/air_spawn.h), with CJ warped in as its
+    // pilot; anything but a plane comes as usual.
+    void Spawn(CPlayerPed* a_ped, int a_model, bool a_airborne = false);
 
     // A new handover or a re-anchor (a load door, fast travel): CJ out of any vehicle and every vehicle
     // removed, so fast travel in a car leaves the car behind.

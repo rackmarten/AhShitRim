@@ -203,7 +203,7 @@ namespace AhShitRim::CheatCodes
             case Kind::Weapons: sent = GiveSet(a_cheat.argument); break;
             case Kind::Weapon: sent = GiveWeapon(a_cheat.argument, kWeaponAmmo); break;
             case Kind::Spawn:
-                if (const auto refusal = a_world.spawn(a_cheat.argument); !refusal.empty()) {
+                if (const auto refusal = a_world.spawn(a_cheat.argument, false); !refusal.empty()) {
                     SaHud::ShowHelp(refusal, 4.0f);
                     SKSE::log::info("cheats: {} typed, but no {}: {}", a_cheat.code, a_cheat.what, refusal);
                     return;
@@ -250,14 +250,15 @@ namespace AhShitRim::CheatCodes
         if (typed.cheat) {
             Apply(*typed.cheat, a_world);
         } else if (typed.model) {
-            // A vehicle typed by its name (ours): as a spawn cheat, without San Andreas's code.
-            if (const auto refusal = a_world.spawn(typed.model); !refusal.empty()) {
+            // A vehicle typed by its name (ours): as a spawn cheat, without San Andreas's code. After AIR, a plane comes flying.
+            const char* how = typed.airborne ? " after AIR, flying" : "";
+            if (const auto refusal = a_world.spawn(typed.model, typed.airborne); !refusal.empty()) {
                 SaHud::ShowHelp(refusal, 4.0f);
-                SKSE::log::info("cheats: vehicle {} typed by name, but: {}", typed.model, refusal);
+                SKSE::log::info("cheats: vehicle {} typed by name{}, but: {}", typed.model, how, refusal);
                 return;
             }
             SaHud::ShowHelp(std::string(kActivated), 4.0f);
-            SKSE::log::info("cheats: vehicle {} typed by name", typed.model);
+            SKSE::log::info("cheats: vehicle {} typed by name{}", typed.model, how);
         }
     }
 

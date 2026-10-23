@@ -667,8 +667,9 @@ namespace AhShitRim::PlayerSync
             return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0;
         }
 
-        // A cheat's vehicle, jetpack or parachute (CheatCodes), asked for as a spawn key asks. Returns why not, or nothing.
-        std::string CheatSpawn(std::uint16_t a_model)
+        // A cheat's vehicle, jetpack or parachute (CheatCodes), asked for as a spawn key asks, or (a_airborne, AIR + a
+        // plane's name) a plane flying with CJ in it. Returns why not, or nothing.
+        std::string CheatSpawn(std::uint16_t a_model, bool a_airborne)
         {
             if (!VehicleKinds::Spawnable(a_model)) {
                 return std::string(VehicleKinds::TraitsOf(VehicleKinds::KindOf(a_model)).refusal);
@@ -676,7 +677,7 @@ namespace AhShitRim::PlayerSync
             if (!VehicleKinds::IsGear(a_model) && InVehicle()) {
                 return "Get out of the vehicle first";  // San Andreas spawns vehicles for CJ on foot
             }
-            state.input.RequestSpawn(a_model);
+            state.input.RequestSpawn(a_model, a_airborne ? Protocol::kSpawnAirborne : 0);
             Publish();
             return {};
         }

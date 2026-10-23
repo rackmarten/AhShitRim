@@ -20,13 +20,14 @@
 //   the co-save in a record of its own (Mercy::kRecordType).
 // - Ours besides (v20): MINIGUN gives the minigun, PAINT resprays and mends CJ's vehicle, LOWRIDER puts hydraulics on the car he
 //   is in, or takes them off it, and every vehicle's model name from San Andreas's vehicles.ide (SANCHEZ, HYDRA) spawns it.
+//   AIR before a plane's name (AIRAT400) spawns it flying, CJ at its controls (protocol/cpp/air_spawn.h).
 // Main thread only.
 namespace AhShitRim::CheatCodes
 {
     // What a cheat needs of the rest of the plugin.
     struct World
     {
-        std::function<std::string(std::uint16_t)> spawn;    // asks for a model in front of CJ; returns why it can't (the help box says so), or nothing
+        std::function<std::string(std::uint16_t, bool)> spawn;  // asks for a model in front of CJ (or, true, a plane flying with him in it); returns why it can't (the help box says so), or nothing
         std::function<std::uint16_t()>            vehicle;  // the model of the vehicle CJ is in, 0 on foot
         std::function<bool()>                     hydraulics;  // whether it has hydraulics (its slot's kBodyHydraulics)
     };
