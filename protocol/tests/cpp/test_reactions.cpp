@@ -10,7 +10,7 @@ using namespace AhShitRim::Reactions;
 TEST_CASE("who reacts: civilians and guards, not followers, fighters or creatures")
 {
     CHECK(RoleOf({}) == Role::Civilian);
-    CHECK(RoleOf({ .guard = true }) == Role::Guard);
+    CHECK(RoleOf({ .guard = true }) == Role::Guard);  // tells CJ off for the "magic"
     CHECK(RoleOf({ .follower = true }) == Role::None);  // followers keep fighting
     CHECK(RoleOf({ .follower = true, .guard = true }) == Role::None);
     CHECK(RoleOf({ .hostile = true }) == Role::None);   // bandits fight on
@@ -61,6 +61,16 @@ TEST_CASE("hearing range per weapon: San Andreas's 45 m for a pistol, the silenc
         CHECK_FALSE(NoiseOf(quiet).noisy());
     }
     CHECK(kBlastHeard > NoiseOf(Weapons::Minigun).heard);
+
+    // What makes a bang is magic to Skyrim.
+    CHECK(IsMagic(Weapons::Pistol));
+    CHECK(IsMagic(Weapons::PistolSilenced));
+    CHECK(IsMagic(Weapons::Flamethrower));
+    CHECK(IsMagic(Weapons::RocketLauncher));
+    CHECK_FALSE(IsMagic(Weapons::Unarmed));
+    CHECK_FALSE(IsMagic(Weapons::Chainsaw));
+    CHECK_FALSE(IsMagic(Weapons::Grenade));
+    CHECK_FALSE(IsMagic(Weapons::Spraycan));
     CHECK(kChainsawCutting > kChainsawRunning);
 }
 
@@ -151,18 +161,17 @@ TEST_CASE("cowering lasts while aimed at, a flee wins over it and is renewed now
     CHECK(s.Size() == 0);
 }
 
-TEST_CASE("a bounty for gunfire: once a minute per hold, never while the player fights")
+TEST_CASE("lines about the magic: one at a time, not the same person over and over")
 {
-    Bounties b;
-    CHECK(b.Due(0x29DB0, false, 0.0));  // Whiterun's crime faction
-    CHECK_FALSE(b.Due(0x29DB0, false, 10.0));
-    CHECK(b.Due(0x28170, false, 10.0));  // another hold's
-    CHECK(b.Due(0x29DB0, false, kBountyEvery));
-    CHECK_FALSE(b.Due(0x267E3, true, 0.0));  // fighting: defending itself
-    CHECK(b.Due(0x267E3, false, 1.0));
-    CHECK_FALSE(b.Due(0, false, 0.0));       // no hold
-    b.Clear();
-    CHECK(b.Due(0x29DB0, false, kBountyEvery + 1.0));
+    Comments c;
+    CHECK(c.Due(1, 0.0));
+    c.Said(1, 0.0);
+    CHECK_FALSE(c.Due(2, kCommentGap - 0.1));  // someone else, too soon after
+    CHECK(c.Due(2, kCommentGap));
+    c.Said(2, kCommentGap);
+    CHECK_FALSE(c.Due(1, kCommentGap * 3.0));  // the first again, too soon for them
+    CHECK(c.Due(1, kCommentRepeat));
+    CHECK(c.Due(3, kCommentRepeat));
 }
 
 TEST_CASE("shots counted across the counter's wrap")

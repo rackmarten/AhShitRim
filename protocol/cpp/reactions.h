@@ -6,6 +6,9 @@
 // San Andreas's own rules (gta-reversed): a gunshot is heard 45 m out (CEventGunShot::AffectsPed); a
 // silenced one only by a ped that faces the shooter and sees him; the player's gunshot is a crime
 // (IsCriminalEvent), so cops come. A ped CJ aims at puts its hands up and cowers (CEventGunAimedAt).
+// Skyrim's people have never seen a gun, though, so to them it is magic: the guards and the people CJ aims
+// at say Skyrim's own lines for a player casting spells ("Whoa, whoa, whoa! Watch the magic!"), and casting
+// spells in town is no crime in Skyrim, so neither is shooting.
 
 #pragma once
 
@@ -45,7 +48,7 @@ namespace AhShitRim::Reactions
     {
         None,      // keeps doing what it does: creatures, the dead, followers, anyone fighting or hostile
         Civilian,  // cowers when aimed at, flees from gunfire and a running chainsaw
-        Guard,     // hears the gunfire and comes for the crime
+        Guard,     // hears the gunfire and tells CJ off for the magic
     };
 
     // Followers keep fighting, bandits and anyone else already fighting carry on as Skyrim has them, and a
@@ -92,7 +95,7 @@ namespace AhShitRim::Reactions
         float heard = 0.0f;   // Skyrim units: civilians this close run and guards come
         float seen = 0.0f;    // further out, those who face CJ and see him still do (the silenced pistol)
         Sound sound = Sound::Silent;
-        bool  noisy() const { return heard > 0.0f || seen > 0.0f; }
+        constexpr bool noisy() const { return heard > 0.0f || seen > 0.0f; }
     };
 
     inline constexpr float kGunshotHeard = 45.0f * kUnitsPerMeter;  // San Andreas's range, for the pistols and SMGs
@@ -126,6 +129,12 @@ namespace AhShitRim::Reactions
         default: return {};
         }
     }
+
+    // To Skyrim, a gun is magic: every weapon that makes a bang (the guns, the flamethrower, the launchers) is
+    // a spell cast when it fires, and Skyrim is told so (its spell cast event, from the player), so whatever in
+    // Skyrim watches the player's magic sees it (a brawl ends on magic). Melee, throws and the rest aren't.
+    constexpr bool IsMagic(std::uint8_t a_type) { return NoiseOf(a_type).noisy(); }
+    inline constexpr double kCastEvery = 0.5;  // a burst is one spell cast every so often, not one per bullet
 
     // The chainsaw, held in CJ's hands on foot, runs: people this close run from it, further while it cuts.
     inline constexpr float kChainsawRunning = 6.0f * kUnitsPerMeter;
@@ -222,8 +231,18 @@ namespace AhShitRim::Reactions
     inline constexpr double kFleeLasts = 20.0;     // a flee is let go this long after the last scare
     inline constexpr double kFleeRenew = 5.0;      // and started over at most this often while scares go on
     inline constexpr double kAlertEvery = 1.0;     // the detection event, at most this often
-    inline constexpr double kBountyEvery = 60.0;   // one bounty per hold for gunfire, at most this often
-    inline constexpr std::int32_t kGunfireBounty = 25;  // the gold, a pickpocket's (default; the ini can change it)
+    inline constexpr double kCommentGap = 4.0;     // one line about the magic at a time, this far apart at least
+    inline constexpr double kCommentRepeat = 30.0; // and the same person says one at most this often
+    inline constexpr float  kCommentRange = 25.0f * kUnitsPerMeter;  // said by someone this close to CJ
+
+    // Skyrim.esm's lines about the player's magic (INFO form ids). The guards' (DialogueGuardsGeneral's
+    // greetings) are for every guard voice: one when the player casts, one when it walks up with a spell
+    // readied. The civilians' (the WICommentMagic greetings) are one per voice type, picked by the line's own
+    // conditions.
+    inline constexpr std::uint32_t kGuardWatchTheMagic = 0x000D27E1;  // "Whoa, whoa, whoa! Watch the magic!"
+    inline constexpr std::uint32_t kGuardFancyMagic = 0x000D27E2;     // "Go cast your fancy magic someplace else."
+    inline constexpr std::uint32_t kCommentMagicColorful = 0x000A9B1B;   // WICommentMagicColorfulHello (a topic): "Is that magic? Careful, please..."
+    inline constexpr std::uint32_t kCommentMagicDangerous = 0x000AB3AF;  // WICommentMagicDangerousHello (a topic): "Would you mind dousing that magic?"
 
     enum class Doing : std::uint8_t
     {
@@ -312,28 +331,29 @@ namespace AhShitRim::Reactions
         std::unordered_map<std::uint32_t, Entry> entries;
     };
 
-    // Gunfire a guard heard is a crime against the guard's hold, but not while the player fights (defending
-    // itself from bandits or a dragon is fine), and once a minute per hold at most.
-    class Bounties
+    // Who may say a line about the magic now: nobody within kCommentGap of the last line, nobody twice within
+    // kCommentRepeat. Say records it.
+    class Comments
     {
     public:
-        bool Due(std::uint32_t a_faction, bool a_playerFighting, double a_now)
+        bool Due(std::uint32_t a_speaker, double a_now) const
         {
-            if (a_faction == 0 || a_playerFighting) {
+            if (a_now - lastAt < kCommentGap) {
                 return false;
             }
-            auto found = last.find(a_faction);
-            if (found != last.end() && a_now - found->second < kBountyEvery) {
-                return false;
-            }
-            last[a_faction] = a_now;
-            return true;
+            const auto found = said.find(a_speaker);
+            return found == said.end() || a_now - found->second >= kCommentRepeat;
         }
 
-        void Clear() { last.clear(); }
+        void Said(std::uint32_t a_speaker, double a_now)
+        {
+            lastAt = a_now;
+            said[a_speaker] = a_now;
+        }
 
     private:
-        std::unordered_map<std::uint32_t, double> last;
+        double                                    lastAt = -1e9;
+        std::unordered_map<std::uint32_t, double> said;
     };
 
     // Shots fired between two reads of the pose's wrapping 16-bit counter.
