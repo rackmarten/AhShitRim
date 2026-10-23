@@ -339,6 +339,13 @@ namespace AhShitRim::Vitals
         if (damage > 0.0f) {
             Apply(a_player, damage);
         }
+        // A guard's hit put the essential player down, but his eased share of it (Police) left it standing: no Wasted.
+        if (Police::TakeSpared() && Bleeding(a_player) && a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {
+            a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            SKSE::log::info("vitals: a guard's eased hit left the player standing, its bleedout stopped");
+            SaHud::SetArmor(state.armor / Health::kSaFullHealth);
+            return false;
+        }
         if (state.essential && OutOfHealth(a_player)) {
             Begin(a_player);
             return true;

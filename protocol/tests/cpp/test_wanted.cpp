@@ -68,10 +68,10 @@ TEST_CASE("one assault is a star; killing guards climbs slowly, as in San Andrea
     CHECK(kills(1) == 1);
     CHECK(kills(1) == 2);  // two
     CHECK(kills(2) == 3);  // four
-    CHECK(kills(5) == 4);  // nine
-    CHECK(kills(9) == 5);  // eighteen
-    CHECK(kills(14) == 5); // thirty-two
-    CHECK(kills(1) == 6);  // thirty-three
+    CHECK(kills(4) == 4);  // eight
+    CHECK(kills(7) == 5);  // fifteen
+    CHECK(kills(13) == 5); // twenty-eight
+    CHECK(kills(1) == 6);  // twenty-nine
 }
 
 TEST_CASE("AEZAKMI: no stars from any crime")
@@ -163,8 +163,7 @@ TEST_CASE("a guard who fights him later knows him: a star, two for a murderer, n
 TEST_CASE("killing the witnesses takes Skyrim's bounty, not the stars")
 {
     Pursuit p;
-    p.Crime(1000, false);
-    p.Crime(1000, false);
+    p.Crime(40, false);
     REQUIRE(p.Stars() == 1);
     CHECK(p.Tick(0.1f, true, false).stars == 1);  // the bounty is gone; the pursuit isn't
     p.Clear();  // the fine paid, Busted, Wasted
@@ -196,7 +195,7 @@ TEST_CASE("the hold's own guards join from 2 stars, further the more there are")
     }
 }
 
-TEST_CASE("the force grows with the stars, faster, tougher, never more than twelve")
+TEST_CASE("the force grows with the stars, faster, never more than twelve")
 {
     CHECK(ForceFor(0).total == 0);
     CHECK(ForceFor(1).total == 0);  // Skyrim's own guards only
@@ -206,7 +205,6 @@ TEST_CASE("the force grows with the stars, faster, tougher, never more than twel
         const auto next = ForceFor(stars + 1);
         CHECK(next.total > now.total);
         CHECK(next.cooldown < now.cooldown);
-        CHECK(next.damage >= now.damage);
         int special = 0;
         for (const int n : now.most) {
             special += n;
@@ -217,10 +215,25 @@ TEST_CASE("the force grows with the stars, faster, tougher, never more than twel
     CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Rider)] > 0);   // riders from 3
     CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Rider)] == 0);
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Wizard)] > 0);  // a guard wizard from 4
-    CHECK(ForceFor(4).damage > 1.0f);                                       // and they hit harder
     CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Soldier)] > 0); // soldiers from 5
     CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
     CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Dragon)] == 1); // the dragon at 6
+}
+
+TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
+{
+    CHECK(GuardDamage(0) == 0.25f);
+    CHECK(GuardDamage(1) == 0.25f);
+    CHECK(GuardDamage(3) == 0.5f);
+    CHECK(GuardDamage(4) == 1.0f);
+    CHECK(GuardDamage(6) == 1.0f);
+    for (int stars = 0; stars < kMaxStars; stars++) {
+        CHECK(GuardDamage(stars + 1) >= GuardDamage(stars));
+    }
+    CHECK(GiveBack(-40.0f, 0.25f) == doctest::Approx(30.0f));  // Skyrim's damage comes negative or positive
+    CHECK(GiveBack(40.0f, 0.5f) == doctest::Approx(20.0f));
+    CHECK(GiveBack(40.0f, 1.0f) == 0.0f);
+    CHECK(GiveBack(std::numeric_limits<float>::quiet_NaN(), 0.5f) == 0.0f);
 }
 
 TEST_CASE("the next unit: the dragon, riders, the captain, wizards, soldiers, then guards")

@@ -18,10 +18,12 @@ namespace AhShitRim::Protocol
 //   who saw him). The fine paid to a guard (PayFine, Actor's vfunc 0xBB, hooked), Busted and Wasted end them.
 // - The response: from 2 stars the hold's guards round about join the fight, and a director keeps a force of ours
 //   after him (Wanted::ForceFor): copies of the hold's guards, riders on saddled horses from 3, a captain and a
-//   guard wizard from 4 (and everyone of ours hits harder), the hold's soldiers from 5, a dragon at 6 (bringing it
+//   guard wizard from 4, the hold's soldiers from 5, a dragon at 6 (bringing it
 //   down is a lot of heat). One spawns per cooldown, never in view: round CJ behind the camera on the ground, or
 //   out of the city's barracks door. Killing them all buys a breather. When the stars go they stop fighting and
 //   are taken out a step a frame once the player can't see them (Sweep).
+// - Guards (any hold's) and ours hit CJ by the stars: a quarter of their damage at 1 star, half at 3, all of it from 4
+//   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
 // - AEZAKMI (CheatCodes) clears every hold's bounty and calls off the fight as it's typed, then keeps the stars
 //   at 0, puts back any bounty a crime adds and stops any guard fighting the player.
 // - Busted in a vehicle: wanted, the car nearly stopped for 1.5 s, a guard of the hold at the driver's door:
@@ -49,6 +51,10 @@ namespace AhShitRim::Police
 
     // Every frame, owned or not: one step of taking out the spawned pursuers that are leaving.
     void Sweep();
+
+    // Whether a guard's hit was eased (Wanted::GuardDamage) and left the player standing since the last call: a bleedout
+    // the whole hit began is then stopped, not Wasted. Taken once.
+    bool TakeSpared();
 
     // A line for CJ (Wanted::kLineChased, kLineArrested) to put in the input, 0 for none; taken once.
     std::uint8_t TakeLine();

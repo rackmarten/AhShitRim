@@ -127,11 +127,11 @@ namespace AhShitRim::Wanted
 
     // What a crime adds, by the bounty Skyrim put on it (its defaults: trespass 5, pickpocketing 25, theft half the value,
     // an assault 40, a murder 1000). An assault is a star on its own; killing a guard (his assault, then his murder) is
-    // 140: two kills are two stars, four three, nine four, about eighteen five and thirty-three six. Petty crimes raise a
-    // star at most (Pursuit::Crime).
+    // 160: two kills are two stars, four three, eight four, fifteen five and twenty-nine six. Petty crimes raise a star
+    // at most (Pursuit::Crime).
     constexpr float HeatForCrime(int a_added)
     {
-        return a_added >= 1000 ? 80.0f : a_added >= 40 ? 60.0f : a_added > 0 ? 15.0f : 0.0f;
+        return a_added >= 1000 ? 100.0f : a_added >= 40 ? 60.0f : a_added > 0 ? 15.0f : 0.0f;
     }
 
     // A guard who fights CJ while no stars show knows him by his bounty: a star, two for a murderer's. No more.
@@ -299,14 +299,12 @@ namespace AhShitRim::Wanted
     }
 
     // The force each star level keeps up: how many pursuers of ours at once, the seconds between one spawning and the
-    // next, how many of them are of each kind besides plain guards, and how much harder they hit (their attack damage
-    // and weapon speed: the SWAT and army of San Andreas's top stars). 1 star is Skyrim's own guards only.
+    // next, and how many of them are of each kind besides plain guards. 1 star is Skyrim's own guards only.
     struct Force
     {
         int   total = 0;
         float cooldown = 0.0f;
         std::array<int, kUnitCount> most{};  // by Unit; Guard's is unused (the rest of total)
-        float damage = 1.0f;
     };
 
     inline constexpr int kForceCap = 12;  // never more of ours alive at once
@@ -315,13 +313,36 @@ namespace AhShitRim::Wanted
     {
         //                                       guard rider captain wizard soldier dragon
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 2: return { 3, 12.0f, { 0, 0, 0, 0, 0, 0 }, 1.0f };
-        case 3: return { 5, 9.0f, { 0, 2, 0, 0, 0, 0 }, 1.0f };
-        case 4: return { 7, 7.0f, { 0, 2, 1, 1, 0, 0 }, 1.25f };
-        case 5: return { 10, 5.0f, { 0, 3, 1, 2, 3, 0 }, 1.5f };
-        case 6: return { kForceCap, 4.0f, { 0, 3, 1, 2, 4, 1 }, 1.75f };
+        case 2: return { 5, 8.0f, { 0, 0, 0, 0, 0, 0 } };
+        case 3: return { 7, 6.0f, { 0, 2, 0, 0, 0, 0 } };
+        case 4: return { 9, 5.0f, { 0, 2, 1, 1, 0, 0 } };
+        case 5: return { 11, 4.0f, { 0, 3, 1, 2, 3, 0 } };
+        case 6: return { kForceCap, 3.0f, { 0, 3, 1, 2, 4, 1 } };
         default: return {};
         }
+    }
+
+    // The share of their damage guards and ours deal CJ, by the stars: Skyrim's guards hit far harder and more often than
+    // San Andreas's cops, who miss most of their shots, so a fight in town starts gentle and gets deadly: a quarter at 1
+    // star (and when they fight him with none, resisting arrest), half at 3, all of it from 4.
+    constexpr float GuardDamage(int a_stars)
+    {
+        switch (std::clamp(a_stars, 0, kMaxStars)) {
+        case 0:
+        case 1: return 0.25f;
+        case 2: return 0.375f;
+        case 3: return 0.5f;
+        default: return 1.0f;
+        }
+    }
+
+    // What to give back of a hit of a_damage so CJ only takes a_share of it.
+    inline float GiveBack(float a_damage, float a_share)
+    {
+        if (!std::isfinite(a_damage) || !std::isfinite(a_share)) {
+            return 0.0f;
+        }
+        return std::abs(a_damage) * (1.0f - std::clamp(a_share, 0.0f, 1.0f));
     }
 
     // How many of ours are alive, by Unit.
@@ -449,9 +470,9 @@ namespace AhShitRim::Wanted
         }
     }
 
-    inline constexpr float kStoppedSpeed = 105.0f;  // Skyrim units per second, 1.5 m/s: nearly stopped
-    inline constexpr float kStoppedFor = 1.5f;      // seconds nearly stopped before a guard can bust him
-    inline constexpr float kReach = 110.0f;         // Skyrim units, 1.5 m: a guard this close to the door (or to CJ on a bike) has him
+    inline constexpr float kStoppedSpeed = 140.0f;  // Skyrim units per second, 2 m/s: nearly stopped
+    inline constexpr float kStoppedFor = 1.0f;      // seconds nearly stopped before a guard can bust him
+    inline constexpr float kReach = 150.0f;         // Skyrim units, about 2 m (a sword's reach): a guard this close to the door (or to CJ on a bike) has him
     inline constexpr float kDoorSide = 95.0f;       // the driver's door: this far left of the car's middle (San Andreas drives on the right, its driver sits left)
     inline constexpr float kDoorAhead = 15.0f;      // and this far forward
 

@@ -95,7 +95,8 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 
 - Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars. A guard who fights CJ later knows him by his bounty, and a star or two come back.
-- The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join and everyone hits harder, from 5 the hold's soldiers, and at 6 a dragon. At most 12 at once.
+- The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join, from 5 the hold's soldiers, and at 6 a dragon. At most 12 at once.
+- Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
 - CJ has his own lines for being chased and busted.
 - In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.

@@ -103,6 +103,7 @@ namespace AhShitRim::Police
             int                      shownStars = -1;  // what the HUD was last told (so the HUD demo's stars stay up)
             bool                     shownFlashing = false;
             std::uint8_t             line = 0;        // a line for CJ to say (Wanted::kLine*), taken by PlayerSync
+            bool                     spared = false;  // a guard's hit was eased and left the player standing, since Vitals last asked
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
         } state;
 
@@ -482,18 +483,7 @@ namespace AhShitRim::Police
             return nullptr;
         }
 
-        // From 4 stars ours hit harder and swing or draw faster.
-        void Toughen(RE::Actor* a_actor, float a_damage)
-        {
-            if (a_damage <= 1.0f) {
-                return;
-            }
-            auto* values = a_actor->AsActorValueOwner();
-            values->SetActorValue(RE::ActorValue::kAttackDamageMult, a_damage);
-            values->SetActorValue(RE::ActorValue::kWeaponSpeedMult, 1.0f + (a_damage - 1.0f) * 0.5f);
-        }
-
-        bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit, float a_damage)
+        bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto*       base = BaseFor(a_player, a_unit);
             const char* from = "?";
@@ -514,7 +504,6 @@ namespace AhShitRim::Police
                     s.horse = horse->CreateRefHandle();
                 }
             }
-            Toughen(actor, a_damage);
             const auto at = actor->GetPosition();
             SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}{}) comes from {} at ({:.0f},{:.0f},{:.0f}), {:.0f} units from CJ", Wanted::NameOf(a_unit),
                 state.hold->name, actor->GetFormID(), base->GetFormID(), a_unit == Wanted::Unit::Rider ? (s.horse ? ", on a horse" : ", no horse") : "", from, at.x,
@@ -573,7 +562,7 @@ namespace AhShitRim::Police
             }
             if (state.director.Tick(a_delta, stars, Wanted::TotalOf(counts))) {
                 const auto force = Wanted::ForceFor(stars);
-                if (!Spawn(a_player, Wanted::NextUnit(force, counts), force.damage)) {
+                if (!Spawn(a_player, Wanted::NextUnit(force, counts))) {
                     state.director.Retry();
                 }
             }
@@ -751,6 +740,32 @@ namespace AhShitRim::Police
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
+        // A guard's (any hold's) or one of ours' hit on the player while CJ has it: only the stars' share of it
+        // (Wanted::GuardDamage), the rest given back as it lands. Bandits, wolves and the rest hit as Skyrim has them.
+        struct HealthDamageHook
+        {
+            static void thunk(RE::PlayerCharacter* a_player, RE::Actor* a_attacker, float a_damage)
+            {
+                original(a_player, a_attacker, a_damage);
+                static bool inside = false;
+                if (!state.owned || inside || !a_attacker || a_attacker->IsPlayerRef() || !(a_attacker->IsGuard() || IsSpawned(a_attacker)) ||
+                    state.sequence.Running()) {
+                    return;
+                }
+                const float share = Wanted::GuardDamage(state.pursuit.Stars());
+                const float back = Wanted::GiveBack(a_damage, share);
+                if (back <= 0.0f) {
+                    return;
+                }
+                inside = true;
+                auto* values = a_player->AsActorValueOwner();
+                values->RestoreActorValue(RE::ActorValue::kHealth, back);
+                inside = false;
+                state.spared = state.spared || values->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
         // The fine paid to a guard: the pursuit is over, as Skyrim's.
         struct PayFineHook
         {
@@ -773,7 +788,9 @@ namespace AhShitRim::Police
         REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_PlayerCharacter[0] };
         GoToPrisonHook::original = vtable.write_vfunc(0xB9, GoToPrisonHook::thunk);
         PayFineHook::original = vtable.write_vfunc(0xBB, PayFineHook::thunk);
-        SKSE::log::info("police: PlayerCharacter::GoToPrison and PayFine hooked: \"go to jail\" is Busted while CJ has the player, the fine ends the stars");
+        HealthDamageHook::original = vtable.write_vfunc(0x104, HealthDamageHook::thunk);
+        SKSE::log::info("police: PlayerCharacter::GoToPrison, PayFine and HandleHealthDamage hooked: \"go to jail\" is Busted while CJ has the player, the fine ends "
+                        "the stars, guards hit CJ by the stars");
     }
 
     bool Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene, float a_delta)
@@ -859,6 +876,8 @@ namespace AhShitRim::Police
     }
 
     std::uint8_t TakeLine() { return std::exchange(state.line, std::uint8_t{ 0 }); }
+
+    bool TakeSpared() { return std::exchange(state.spared, false); }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
 
