@@ -24,6 +24,7 @@ namespace AhShitRim::People
         constexpr float      kLineLongest = 8.0f;              // a spoken line's subtitle goes after this at the latest
         constexpr float      kLineUnvoiced = 3.0f;             // and one with no voice after this
         constexpr double     kVoiceStarts = 0.5;               // a voice isn't playing yet this soon after SpeakSound
+        constexpr float      kLineLingers = 0.5f;              // a subtitle stays this long after its line ends
         constexpr RE::FormID kGunSpell = 0x00012FCD;           // Flames: the spell a gunshot is cast as, to Skyrim
 
         // Actor::SpeakSoundFunction (the console's SpeakSound): the actor says a voice file, lip sync and all, as
@@ -41,6 +42,7 @@ namespace AhShitRim::People
             SpeakSoundFn              speak = nullptr;
             RE::BSSoundHandle         voice;                 // the line being spoken, whose subtitle shows while it plays
             bool                      voiceSubtitle = false;
+            std::string               voiceText;
             double                    voiceAt = -1e9;
             bool                      enabled = true;
             bool                      haveShots = false;
@@ -229,6 +231,7 @@ namespace AhShitRim::People
             // As San Andreas's subtitles: there while the line plays, gone when it ends (Update drops it).
             state.voiceSubtitle = state.voice.IsValid();
             state.voiceAt = a_now;
+            state.voiceText = text;
             if (!text.empty()) {
                 SaHud::ShowSubtitle(text, state.voiceSubtitle ? kLineLongest : kLineUnvoiced);
             }
@@ -399,7 +402,7 @@ namespace AhShitRim::People
         const double now = NowSeconds();
         if (state.voiceSubtitle && now - state.voiceAt > kVoiceStarts && !state.voice.IsPlaying()) {
             state.voiceSubtitle = false;
-            SaHud::ShowSubtitle({}, 0.0f);  // the line ended
+            SaHud::ShowSubtitle(std::move(state.voiceText), kLineLingers);  // the line ended: a moment more, then gone
         }
         for (const auto& [id, doing] : state.scares.Expired(now)) {
             LetGo(id, doing);
