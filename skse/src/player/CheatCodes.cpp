@@ -192,14 +192,11 @@ namespace AhShitRim::CheatCodes
         }
     }
 
-    bool Key(std::uint32_t a_dik, const std::function<std::string(std::uint16_t)>& a_spawn)
+    void Key(std::uint32_t a_dik, const std::function<std::string(std::uint16_t)>& a_spawn)
     {
-        const auto press = state.typist.Key(a_dik);
-        if (!press.cheat) {
-            return false;
+        if (const auto* cheat = state.typist.Key(a_dik)) {
+            Apply(*cheat, a_spawn);
         }
-        Apply(*press.cheat, a_spawn);
-        return press.swallow;
     }
 
     void Update()

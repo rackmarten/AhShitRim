@@ -4,8 +4,8 @@
 // the player:
 //  - keyboard and mouse go to San Andreas as an InputState (WASD, mouse look, sprint, jump, crouch,
 //    Alt walk, in the modern or classic layout of AhShitRim.ini's [Input] KeyLayout), and Skyrim's
-//    own movement, look, sneak, jump, attack, activate and camera controls refuse; Escape, Tab, M and
-//    the console stay Skyrim's, and E activates what CJ faces (Activation);
+//    own movement, look, sneak, jump, attack, activate and camera controls refuse; Escape, Tab and the
+//    console stay Skyrim's (not M, the map: a letter of the cheat codes), and E activates what CJ faces (Activation);
 //  - Skyrim's camera is first person, and every frame the PlayerCharacter::Update hook moves the
 //    player by CJ's offset from the anchor, facing where San Andreas's camera looks;
 //  - CollisionSampler streams Skyrim's collision around the player, which San Andreas builds CJ's

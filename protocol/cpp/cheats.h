@@ -6,8 +6,8 @@
 // newest first, and after each one the key (CKeyGen::GetKey, a CRC-32 without its final flip) of its first
 // 6, 7, ... 29 letters is looked up among the cheats' keys, so San Andreas's alternative codes that share a
 // key (FULLCLIP for WANRLTW, THUGSARMOURY for LXGIWYL) work as they do there. A match empties the string.
-// It runs on Skyrim's side because M is Skyrim's map key: whether the M just pressed completes a cheat has
-// to be known before Skyrim opens its map (Typist::Press::swallow).
+// It runs on Skyrim's side, which has the keys; San Andreas only hears what a finished code does. M, Skyrim's
+// map key, is a letter like any other while CJ has the player (Input::OpensSkyrimMenu).
 //
 // What a cheat does is its Kind: San Andreas's own toggles and one-shot cheats go over the ring as a Cheat
 // command (its key and San Andreas's eCheats index), the weapon sets as the weapon commands' GiveSet, the
@@ -161,7 +161,6 @@ namespace AhShitRim::Cheats
         { "JHJOECW", Kind::SaToggle, SaCheat::HugeBunnyHop, 0, "huge bunny hop" },
         { "PGGOMOY", Kind::SaToggle, SaCheat::PerfectHandling, 0, "perfect handling" },
         { "COXEFGU", Kind::SaToggle, SaCheat::AllCarsNitro, 0, "nitro in every car" },
-        { "BSXSGGC", Kind::SaToggle, SaCheat::CarsFloatAway, 0, "cars float away when hit" },
         { "JCNRUAD", Kind::SaToggle, SaCheat::SmashNBoom, 0, "smash'n'boom (cars blow up on contact)" },
         { "LFGMHAL", Kind::SaToggle, SaCheat::MegaJump, 0, "mega jump" },
         { "CPKTNWT", Kind::SaOnce, SaCheat::BlowUpCars, 0, "blow up every vehicle" },
@@ -219,21 +218,12 @@ namespace AhShitRim::Cheats
         static constexpr std::size_t kLength = 29;
         static constexpr std::size_t kShortest = 6;  // CHEAT_MIN_HASH_SIZE
 
-        struct Press
-        {
-            const Cheat* cheat = nullptr;  // the cheat this letter completed
-            bool         swallow = false;  // the key was M and completed a cheat: Skyrim's map stays shut
-        };
-
-        // A key went down (a scan code): letters go into the string, anything else is ignored.
-        Press Key(std::uint32_t a_dik)
+        // A key went down (a scan code): letters go into the string, anything else is ignored. Returns the cheat
+        // it finished, or nullptr.
+        const Cheat* Key(std::uint32_t a_dik)
         {
             const char letter = LetterOf(a_dik);
-            if (!letter) {
-                return {};
-            }
-            const Cheat* cheat = Type(letter);
-            return { cheat, cheat && a_dik == Input::kDikM };
+            return letter ? Type(letter) : nullptr;
         }
 
         // San Andreas's AddToCheatString: a_letter goes in front, and the shortest run of the newest letters

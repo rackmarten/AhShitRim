@@ -38,7 +38,7 @@ namespace
     {
         const Cheat* last = nullptr;
         for (char c : a_text) {
-            last = a_typist.Key(Dik(c)).cheat;
+            last = a_typist.Key(Dik(c));
         }
         return last;
     }
@@ -158,7 +158,7 @@ TEST_CASE("cheats: typing completes a cheat on its last letter")
     CHECK(TypeAll(typist, "JYSDSOD") == &Row("BUFFMEUP"));
     CHECK(TypeAll(typist, "NOMERCY") == &Row("NOMERCY"));
     // Keys that aren't letters go nowhere.
-    CHECK(typist.Key(Input::kDikSpace).cheat == nullptr);
+    CHECK(typist.Key(Input::kDikSpace) == nullptr);
     CHECK(typist.Count() == 0);
 }
 
@@ -170,33 +170,28 @@ TEST_CASE("cheats: the string keeps San Andreas's 29 newest letters")
     CHECK(TypeAll(typist, "T") == &Row("JUMPJET"));
 }
 
-TEST_CASE("cheats: M finishing a cheat keeps Skyrim's map shut")
+TEST_CASE("cheats: M is a letter, and opens no map while CJ has the player")
 {
+    // Skyrim's map key would open the map in the middle of UZUMYMW: only Escape, Tab and the console open menus.
+    CHECK_FALSE(Input::OpensSkyrimMenu(Input::kDikM));
+    CHECK(Input::OpensSkyrimMenu(Input::kDikEscape));
+    CHECK(Input::OpensSkyrimMenu(Input::kDikTab));
+    CHECK(Input::OpensSkyrimMenu(Input::kDikGrave));
+    for (std::uint32_t dik = 0; dik < 256; ++dik) {
+        if (LetterOf(dik)) {
+            CHECK_FALSE(Input::OpensSkyrimMenu(dik));  // no letter of a code opens a menu
+        }
+    }
+
     Typist typist;
-    TypeAll(typist, "HESOYA");
-    const auto press = typist.Key(Input::kDikM);
-    CHECK(press.cheat == &Row("HESOYAM"));
-    CHECK(press.swallow);
-
-    // M that finishes nothing opens the map as always.
-    const auto lone = typist.Key(Input::kDikM);
-    CHECK(lone.cheat == nullptr);
-    CHECK_FALSE(lone.swallow);
-    TypeAll(typist, "HESOYAX");
-    CHECK_FALSE(typist.Key(Input::kDikM).swallow);
-
-    // Another letter finishing a cheat isn't Skyrim's to begin with.
-    TypeAll(typist, "BAGUVI");
-    const auto x = typist.Key(Input::kDikX);
-    CHECK(x.cheat == &Row("BAGUVIX"));
-    CHECK_FALSE(x.swallow);
-
-    // M inside a code is just a letter until the code is done.
+    // M inside a code is a letter like the rest.
     TypeAll(typist, "UZU");
-    const auto inside = typist.Key(Input::kDikM);
-    CHECK(inside.cheat == nullptr);
-    CHECK_FALSE(inside.swallow);
+    CHECK(typist.Key(Input::kDikM) == nullptr);
     CHECK(TypeAll(typist, "YMW") == &Row("UZUMYMW"));
+    // And at the end of one.
+    TypeAll(typist, "HESOYA");
+    CHECK(typist.Key(Input::kDikM) == &Row("HESOYAM"));
+    CHECK(typist.Key(Input::kDikM) == nullptr);
 }
 
 TEST_CASE("cheats: switches")

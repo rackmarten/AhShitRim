@@ -29,7 +29,8 @@
 namespace AhShitRim::Input
 {
     // Scan codes Skyrim keeps for itself while San Andreas has the player: Escape and Tab open its
-    // menus, M its map, ~ the console, F10 hands the player back.
+    // menus (the map is in Tab's, as San Andreas's is in its pause menu), ~ the console, F10 hands the
+    // player back. M is Skyrim's map key, and (v20) only a letter of the cheat codes here.
     inline constexpr std::uint32_t kDikEscape = 0x01;
     inline constexpr std::uint32_t kDikTab = 0x0F;
     inline constexpr std::uint32_t kDikGrave = 0x29;
@@ -71,6 +72,10 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikNumpad2 = 0x50;
     inline constexpr std::uint32_t kDikPageUp = 0xC9;
     inline constexpr std::uint32_t kDikPageDown = 0xD1;
+
+    // Whether a key still opens one of Skyrim's menus while San Andreas has the player: Escape, Tab and the
+    // console. Not M (v20): codes such as UZUMYMW have it in the middle.
+    constexpr bool OpensSkyrimMenu(std::uint32_t a_dik) { return a_dik == kDikEscape || a_dik == kDikTab || a_dik == kDikGrave; }
 
     enum class KeyLayout : std::uint8_t
     {

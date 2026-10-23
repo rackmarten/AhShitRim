@@ -49,7 +49,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 
 A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him (a bike on its side stand). Any of San Andreas's land and air vehicles can come: bikes and bicycles, quads, monster trucks, the Rhino, helicopters and planes. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ takes it out and skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute, and it's used up once he lands.
 
-**The Hydra is experimental.** Skyrim's cell streaming keeps up with it over land (measured with `[Debug] StreamTest=87`: 3.4 km from Riverwood in 39 s at a steady 60 fps, no frame over 50 ms), but Skyrim only has collision for its land about a second ahead at that speed (88 m; 175 m out never was), so flying low and fast you can outrun the ground San Andreas builds and fly through hills. Out over the Sea of Ghosts, past the north coast, Skyrim dropped to about 5 fps. Fly high, or slow down to land. Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab, M and the console stay Skyrim's.
+**The Hydra is experimental.** Skyrim's cell streaming keeps up with it over land (measured with `[Debug] StreamTest=87`: 3.4 km from Riverwood in 39 s at a steady 60 fps, no frame over 50 ms), but Skyrim only has collision for its land about a second ahead at that speed (88 m; 175 m out never was), so flying low and fast you can outrun the ground San Andreas builds and fly through hills. Out over the Sea of Ghosts, past the north coast, Skyrim dropped to about 5 fps. Fly high, or slow down to land. Up to four exist at once; another one replaces the oldest one CJ isn't in. Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu.
 
 CJ stays the player when the game moves it: through a load door (on foot only), into an interior and back out, by fast travel or a script. San Andreas rebuilds his ground where the player arrives and holds him there until it's in. Fast travelling in a vehicle leaves the vehicle behind.
 
@@ -59,12 +59,12 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). San Andreas's own matching decides, and it keeps only a key of each code, so every spelling that shares the key works as it does there (the table gives the best-known ones). M is Skyrim's map key: an M that finishes a code doesn't open the map.
+Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). San Andreas's own matching decides, and it keeps only a key of each code, so every spelling that shares the key works as it does there (the table gives the best-known ones). M never opens Skyrim's map while CJ has the player, so codes with an M in them type straight through; open the map from Tab's menu.
 
 | Code | What |
 |---|---|
 | HESOYAM | Health bar and armour full, 250,000 gold, CJ's vehicle mended |
-| BAGUVIX | The player's health and armour stay full: San Andreas's damage is dropped and Skyrim's undone at once, so a big hit can still stagger it (toggles) |
+| BAGUVIX | The player's health and armour stay full: San Andreas's damage is dropped and Skyrim's undone at once, so a big hit can still stagger it, and being hit doesn't train Block or armour skills (toggles) |
 | LXGIWYL, KJKSZPJ, UZUMYMW | San Andreas's weapon sets 1, 2 and 3 |
 | WANRLTW or FULLCLIP | Infinite ammo, no reloading (toggles) |
 | NCSGDAG | Hitman in every weapon skill |
@@ -80,8 +80,8 @@ Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andre
 | ROCKETMAN (or YECGAA), AIYPWZQP | Jetpack, parachute |
 | RIPAZHA | Flying cars (toggles): in the air a car flies like a plane, W the throttle, the arrows pitch |
 | JHJOECW, PGGOMOY, COXEFGU | Huge bunny hop, perfect handling, nitro in every car (each toggles) |
-| BSXSGGC, JCNRUAD | Cars float away when hit, smash'n'boom: cars blow up on contact (each toggles) |
-| CPKTNWT | Blow up every vehicle |
+| JCNRUAD | Smash'n'boom: cars blow up on contact (toggles) |
+| CPKTNWT | Blow up every vehicle (not wrecks: as in San Andreas, a burnt-out one doesn't go up again) |
 | NOMERCY | Ours: nobody is essential any more (toggles, kept in the save) |
 
 Vehicles come in front of CJ on foot, as the spawn keys bring them (get out of a vehicle first), and the jetpack and the parachute go straight onto him. San Andreas's toggles are off again after a load, as in San Andreas.

@@ -19,10 +19,9 @@
 // Main thread only.
 namespace AhShitRim::CheatCodes
 {
-    // A key went down while CJ has the player and no menu has the input. Returns whether Skyrim should
-    // drop the key: M that finished a cheat, so the map stays shut. a_spawn asks for a model in front of CJ.
-    // a_spawn returns why it can't (the help box says so), or nothing.
-    bool Key(std::uint32_t a_dik, const std::function<std::string(std::uint16_t)>& a_spawn);
+    // A key went down while CJ has the player and no menu has the input. a_spawn asks for a model in front of
+    // CJ and returns why it can't (the help box says so), or nothing.
+    void Key(std::uint32_t a_dik, const std::function<std::string(std::uint16_t)>& a_spawn);
 
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();

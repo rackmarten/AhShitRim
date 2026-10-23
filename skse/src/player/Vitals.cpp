@@ -33,7 +33,32 @@ namespace AhShitRim::Vitals
             float                      unboundAge = 100.0f;
             bool                       unbound = false;
             bool                       invincible = false;  // BAGUVIX
+            bool                       skillsFrozen = false;  // the hit-trained skills' progress when BAGUVIX went on was noted
+            float                      frozenXp[3] = {};      // kHitSkills' xp then
         } state;
+
+        // The skills being hit trains (Skyrim's own), held where they were while BAGUVIX is on: hits that do nothing
+        // shouldn't level the player up.
+        using Skill = RE::PlayerCharacter::PlayerSkills::Data::Skill;
+        constexpr Skill kHitSkills[] = { Skill::kBlock, Skill::kLightArmor, Skill::kHeavyArmor };
+
+        void HoldHitSkills(RE::PlayerCharacter* a_player)
+        {
+            auto* skills = a_player->GetInfoRuntimeData().skills;
+            auto* data = skills ? skills->data : nullptr;
+            if (!data) {
+                return;
+            }
+            for (std::size_t i = 0; i < std::size(kHitSkills); ++i) {
+                auto& xp = data->skills[kHitSkills[i]].xp;
+                if (!state.skillsFrozen) {
+                    state.frozenXp[i] = xp;
+                } else if (xp > state.frozenXp[i]) {
+                    xp = state.frozenXp[i];
+                }
+            }
+            state.skillsFrozen = true;
+        }
 
         bool UnboundRunning(float a_seconds)
         {
@@ -287,6 +312,7 @@ namespace AhShitRim::Vitals
             if (Bleeding(a_player)) {
                 a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
             }
+            HoldHitSkills(a_player);
             SaHud::SetArmor(state.armor / Health::kSaFullHealth);
             return false;
         }
@@ -311,6 +337,7 @@ namespace AhShitRim::Vitals
     {
         if (a_on != state.invincible) {
             state.invincible = a_on;
+            state.skillsFrozen = false;
             SKSE::log::info("vitals: the player {}", a_on ? "takes no damage (BAGUVIX)" : "takes damage again");
         }
     }

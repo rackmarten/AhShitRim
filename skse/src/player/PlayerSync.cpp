@@ -71,8 +71,6 @@ namespace AhShitRim::PlayerSync
             bool           haveCameraOffset = false;
             bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
-            bool           mTyped = false;        // this press of M went into the cheat string (the menu hook or the input sink, whichever saw it first)
-            bool           mSwallowed = false;    // and finished a cheat: Skyrim's map doesn't get it
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -654,14 +652,12 @@ namespace AhShitRim::PlayerSync
             return {};
         }
 
-        // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes). Returns whether it
-        // was M finishing a cheat, which Skyrim's map then doesn't get.
-        bool TypeCheat(std::uint32_t a_dik)
+        // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes).
+        void TypeCheat(std::uint32_t a_dik)
         {
-            if (!state.owned || MenuHasInput() || Vitals::IsWasted() || !Cheats::LetterOf(a_dik)) {
-                return false;
+            if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && Cheats::LetterOf(a_dik)) {
+                CheatCodes::Key(a_dik, CheatSpawn);
             }
-            return CheatCodes::Key(a_dik, CheatSpawn);
         }
 
         // Skyrim's own Shout key fires the shout from the player, which stands where CJ does and
@@ -843,30 +839,15 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Only Escape, Tab, M and the console open Skyrim's menus while San Andreas has the player, and M not when it
-        // finishes a cheat: it goes into the cheat string here, before Skyrim opens its map with it.
+        // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
+        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
         struct MenuOpenHook
         {
             static bool thunk(RE::MenuOpenHandler* a_handler, RE::InputEvent* a_event)
             {
                 if (state.owned && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
-                    if (auto* button = a_event->AsButtonEvent()) {
-                        const auto key = button->GetIDCode();
-                        if (key == Input::kDikM) {
-                            if (button->IsDown() && !state.mTyped) {
-                                state.mTyped = true;
-                                state.mSwallowed = TypeCheat(key);
-                            }
-                            const bool swallowed = state.mSwallowed;
-                            if (button->IsUp()) {
-                                state.mTyped = state.mSwallowed = false;
-                            }
-                            if (swallowed) {
-                                return false;
-                            }
-                        } else if (key != Input::kDikEscape && key != Input::kDikTab && key != Input::kDikGrave) {
-                            return false;
-                        }
+                    if (auto* button = a_event->AsButtonEvent(); button && !Input::OpensSkyrimMenu(button->GetIDCode())) {
+                        return false;
                     }
                 }
                 return original(a_handler, a_event);
@@ -931,15 +912,9 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
-                    // Every letter goes into San Andreas's cheat string as well (M once a press: the menu hook may have typed it).
-                    if (button->IsDown() && (code != Input::kDikM || !state.mTyped)) {
-                        const bool swallow = TypeCheat(code);
-                        if (code == Input::kDikM) {
-                            state.mTyped = true;
-                            state.mSwallowed = swallow;  // the hook, if it comes after, keeps the map shut
-                        }
-                    } else if (code == Input::kDikM && button->IsUp()) {
-                        state.mTyped = state.mSwallowed = false;
+                    // Every letter goes into San Andreas's cheat string as well.
+                    if (button->IsDown()) {
+                        TypeCheat(code);
                     }
                     if (code == Input::kDikX && state.owned) {
                         // The insult key: CJ insults whoever's about, San Andreas plays it.
