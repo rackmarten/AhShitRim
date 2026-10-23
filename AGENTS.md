@@ -23,9 +23,9 @@ Both games, MSVC and the scripts are here, so build and test locally instead of 
 A headless session runs on Linux with no MSVC and neither game installed, so `scripts/*.ps1` don't run. The game-free tests do, and CI covers the rest:
 
 - Run `scripts/test.sh` before pushing: it builds and runs the protocol tests natively (gcc or clang; see `docs/DEV_SETUP.md`). Everything but the link's tests runs there. No compiler on the host? `docker run --rm -v "$PWD:$PWD" -w "$PWD" ubuntu:24.04 bash -c 'apt-get update -qq && apt-get install -y -qq cmake ninja-build g++ && scripts/test.sh'` does the same (delete the root-owned `protocol/build/linux-tests` afterwards the same way).
-- Every PR gets a quick `protocol-tests-linux` job running `scripts/test.sh`, plus a Windows build of both plugins and `scripts/test.ps1` once it's out of draft (`.github/workflows/build.yml`). Docs-only PRs run nothing, and `main` only builds to refresh the caches.
+- Every PR gets a `protocol-tests-linux` job running `scripts/test.sh` and a `build` job running `scripts/wine/build.sh` (both plugins with MSVC under Wine, then every doctest case, the link's included), on the self-hosted runner `arcade` (`.github/workflows/build.yml`). Docs-only PRs run nothing. The Pester tests and the release zip only run on GitHub's windows-latest, by hand.
 - `gh pr checks` shows the result, `gh run view <run-id> --log-failed` the failing step's log. Fix and push again until it's green.
-- A cold build (no vcpkg cache) can take around 30 minutes; later ones are much quicker.
+- Most builds take a minute or two. Jobs wait while someone streams or plays on arcade, and one in progress then is cancelled: re-run it later (`gh run rerun <run-id> --failed`).
 
 So CI can check your logic, put anything that doesn't need a game in a header under `protocol/cpp/` and cover it with doctest cases in `protocol/tests/cpp/` (add new test files to `protocol/CMakeLists.txt`). Keep the game-facing code in `skse/` and `sa/` a thin layer over it.
 
