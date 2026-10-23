@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
 
@@ -393,6 +394,9 @@ namespace AhShitRim::Shots
             const RE::NiPoint3 facing(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
             const bool         saw = a_shot.weaponType == Weapons::Chainsaw;
             const double       now = NowSeconds();
+            if (saw) {
+                People::ChainsawCut();
+            }
             auto*              lists = RE::ProcessLists::GetSingleton();
             if (!lists) {
                 return;

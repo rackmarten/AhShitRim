@@ -4,6 +4,7 @@
 #include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
+#include "player/People.h"
 #include "player/Puffs.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
@@ -375,6 +376,7 @@ namespace AhShitRim::Projectiles
         {
             const double now = NowSeconds();
             int          caught = 0;
+            People::Blast(a_at);  // heard far and wide
             ForActorsNear(a_player, a_at, [&](RE::Actor* a_actor) {
                 RE::NiPoint3 closest;
                 const float  distance = DistanceTo(a_actor, a_at, &closest);
