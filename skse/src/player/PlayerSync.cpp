@@ -22,6 +22,7 @@
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/GunRewards.h"
+#include "player/Respawns.h"
 #include "player/Looting.h"
 #include "player/Conversation.h"
 #include "player/Projectiles.h"
@@ -907,6 +908,7 @@ namespace AhShitRim::PlayerSync
                 CheatCodes::Update();
                 Police::Sweep();
                 GunRewards::Update();
+                Respawns::Update(state.owned, a_delta);
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -1197,6 +1199,7 @@ namespace AhShitRim::PlayerSync
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
+        Respawns::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -1214,6 +1217,7 @@ namespace AhShitRim::PlayerSync
         state.wasThirdPerson = false;  // the loaded save has its own camera
         state.resumePending = false;
         GunRewards::OnGameLoad();
+        Respawns::OnGameLoad();
         Release("game loading");
         CheatCodes::OnGameLoad();
         Police::OnGameLoad();
