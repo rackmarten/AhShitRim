@@ -75,6 +75,7 @@ namespace AhShitRim::CjShots
             std::set<int>          loggedCombos;
             unsigned               sent = 0;
             unsigned               dropped = 0;
+            std::uint32_t          bullets = 0;  // ever sent, for the pose's shots under infinite ammo
             std::uint64_t          summaryMs = 0;
             CWeapon*               firing = nullptr;  // FireInstantHit runs for this weapon
             CEntity*               firedBy = nullptr;
@@ -99,6 +100,9 @@ namespace AhShitRim::CjShots
                 if (!std::isfinite(v)) {
                     return;
                 }
+            }
+            if (a_shot.kind == Protocol::kShotBullet) {
+                state.bullets++;
             }
             if (GetLink().Send(Protocol::MessageType::Shot, &a_shot, sizeof(a_shot))) {
                 state.sent++;
@@ -396,4 +400,6 @@ namespace AhShitRim::CjShots
         a_handover = state.handover;
         return state.framed;
     }
+
+    std::uint32_t Bullets() { return state.bullets; }
 }

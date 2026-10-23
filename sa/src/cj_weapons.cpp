@@ -2,6 +2,7 @@
 
 #include "body.h"
 #include "cj_body.h"
+#include "cj_cheats.h"
 #include "cj_shots.h"
 #include "log.h"
 #include "model_sender.h"
@@ -105,6 +106,7 @@ namespace AhShitRim::CjWeapons
             std::uint8_t                      lastSlot = 0;
             std::uint32_t                     lastAmmo = 0;
             std::uint16_t                     shots = 0;
+            std::uint32_t                     lastBullets = 0;
             bool                              twin = false;
             Pose::Vec3                        muzzle[2];
             bool                              mouseLogged = false;
@@ -626,9 +628,14 @@ namespace AhShitRim::CjWeapons
         const auto  type = weapon.m_eWeaponType <= Weapons::kLastCarried ? static_cast<std::uint8_t>(weapon.m_eWeaponType) : std::uint8_t{ 0 };
         a_pose.weaponType = type;
         a_pose.weaponSlot = slot;
+        const auto bullets = CjShots::Bullets();
         if (type == state.lastType && slot == state.lastSlot) {
             state.shots = static_cast<std::uint16_t>(state.shots + Weapons::ShotsBetween(state.lastAmmo, weapon.m_nAmmoTotal));
+            if (CjCheats::Active(Cheats::SaCheat::InfiniteAmmo)) {
+                state.shots = static_cast<std::uint16_t>(state.shots + (bullets - state.lastBullets));  // v20: the rounds stay as they are
+            }
         }
+        state.lastBullets = bullets;
         state.lastType = type;
         state.lastSlot = slot;
         state.lastAmmo = weapon.m_nAmmoTotal;

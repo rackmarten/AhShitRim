@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 19;
+    inline constexpr std::uint32_t kProtocolVersion = 20;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -334,6 +334,7 @@ namespace AhShitRim::Protocol
         Shot = 4,            // San Andreas -> Skyrim (v13): a bullet, a shotgun's shot or a blow CJ dealt, for Skyrim to hit test
         Projectile = 5,      // San Andreas -> Skyrim (v15): a rocket, grenade, tear gas or Molotov CJ launched, for Skyrim to fly
         Effect = 6,          // Skyrim -> San Andreas (v15): what CJ's explosives did, for San Andreas's own sound and fire
+        Cheat = 7,           // Skyrim -> San Andreas (v20): a cheat typed in Skyrim that San Andreas has a part in
     };
 
     struct MessageHeader
@@ -442,6 +443,18 @@ namespace AhShitRim::Protocol
         float         at[3];       // relative to InputState.anchor, Skyrim units
         float         seconds;     // Fire only
         std::uint32_t reserved1;
+    };
+
+    inline constexpr std::uint8_t kCheatOn = 0x1;  // CheatCommand.flags (v20): a toggle is on (a one-shot cheat always has it)
+
+    // Payload of a Cheat message (v20): San Andreas's own cheat, found in its tables by its key. One with a function
+    // (CCheat::m_aCheatFunctions) runs it when kCheatOn is set; one without is a toggle, set to kCheatOn.
+    struct CheatCommand
+    {
+        std::uint32_t key;       // San Andreas's key of the code (CCheat::m_aCheatHashKeys, protocol/cpp/cheats.h)
+        std::uint8_t  cheat;     // San Andreas's eCheats index it should be at; the key decides
+        std::uint8_t  flags;     // kCheatOn
+        std::uint16_t reserved;
     };
 
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
@@ -557,6 +570,8 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(ProjectileEvent, parts) == 56);
     static_assert(offsetof(ProjectileEvent, id) == 112);
     static_assert(sizeof(EffectEvent) == 32);
+    static_assert(sizeof(CheatCommand) == 8);
+    static_assert(offsetof(CheatCommand, cheat) == 4);
     static_assert(offsetof(EffectEvent, projectile) == 8);
     static_assert(offsetof(EffectEvent, at) == 12);
     static_assert(offsetof(EffectEvent, seconds) == 24);

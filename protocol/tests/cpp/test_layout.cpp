@@ -28,9 +28,19 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v20: cheats")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::Cheat) == 7);
+    CHECK(sizeof(CheatCommand) == 8);
+    CHECK(offsetof(CheatCommand, key) == 0);
+    CHECK(offsetof(CheatCommand, cheat) == 4);
+    CHECK(offsetof(CheatCommand, flags) == 5);
+    CHECK(kCheatOn == 0x1);
+}
+
 TEST_CASE("protocol v19 constants")
 {
-    CHECK(kProtocolVersion == 19);
+    CHECK(kProtocolVersion == 20);
     CHECK(kWeaponSkillCount == 11);
     CHECK(static_cast<std::uint16_t>(MessageType::Shot) == 4);
     CHECK(static_cast<std::uint32_t>(WeaponCommandKind::Hit) == 4);

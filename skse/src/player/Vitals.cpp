@@ -32,6 +32,7 @@ namespace AhShitRim::Vitals
             std::vector<RE::TESFaction*> hunters;  // the crime factions of those fighting the player as it fell
             float                      unboundAge = 100.0f;
             bool                       unbound = false;
+            bool                       invincible = false;  // BAGUVIX
         } state;
 
         bool UnboundRunning(float a_seconds)
@@ -226,7 +227,7 @@ namespace AhShitRim::Vitals
 
     void Hurt(RE::PlayerCharacter* a_player, float a_damage)
     {
-        if (a_player && a_damage > 0.0f && !state.sequence.Running()) {
+        if (a_player && a_damage > 0.0f && !state.sequence.Running() && !state.invincible) {
             Apply(a_player, a_damage);
         }
     }
@@ -276,6 +277,19 @@ namespace AhShitRim::Vitals
             Run(a_player, seconds, a_cjDrawn);
             return state.sequence.Running();
         }
+        if (state.invincible) {
+            // BAGUVIX: San Andreas's damage is dropped, and whatever Skyrim's people did to the player this frame undone.
+            auto*       values = a_player->AsActorValueOwner();
+            const float max = MaxHealth(a_player);
+            if (const float now = values->GetActorValue(RE::ActorValue::kHealth); now < max) {
+                values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
+            }
+            if (Bleeding(a_player)) {
+                a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
+            }
+            SaHud::SetArmor(state.armor / Health::kSaFullHealth);
+            return false;
+        }
         if (damage > 0.0f) {
             Apply(a_player, damage);
         }
@@ -292,6 +306,14 @@ namespace AhShitRim::Vitals
     bool IsDown() { return state.sequence.Running() && state.frame.down; }
 
     bool HasDeathCamera() { return state.sequence.Running() && state.frame.camera; }
+
+    void SetInvincible(bool a_on)
+    {
+        if (a_on != state.invincible) {
+            state.invincible = a_on;
+            SKSE::log::info("vitals: the player {}", a_on ? "takes no damage (BAGUVIX)" : "takes damage again");
+        }
+    }
 
     float Armor() { return state.armor; }
 

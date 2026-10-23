@@ -213,6 +213,15 @@ namespace AhShitRim::Input
             }
         }
 
+        // A spawn request that comes from no key (v20: a cheat typed in Skyrim), as a spawn key's press.
+        void RequestSpawn(std::uint16_t a_model)
+        {
+            if (a_model) {
+                _spawnModel = a_model;
+                _spawnCount++;
+            }
+        }
+
         // The model ' spawns (v19): the dev pick, a vehicle or the gear (VehicleKinds); 0 spawns nothing.
         void          SetDevModel(std::uint16_t a_model) { _devModel = a_model; }
         std::uint16_t DevModel() const { return _devModel; }

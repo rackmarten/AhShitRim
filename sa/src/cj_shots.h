@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 class CVector;
 
 // What CJ's weapons hit is Skyrim's to say (protocol v13). San Andreas's world has no one in it, so this
@@ -25,4 +27,7 @@ namespace AhShitRim::CjShots
 
     // The frame SetFrame last gave (false before the first): CjProjectiles sends from it too.
     bool Frame(CVector& a_spawnFeet, unsigned& a_handover);
+
+    // Counts the bullets (and shotgun shots) sent, wrapping: with infinite ammo (v20) the pose counts shots by it.
+    std::uint32_t Bullets();
 }

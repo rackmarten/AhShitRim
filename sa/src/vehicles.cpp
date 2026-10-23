@@ -1,5 +1,6 @@
 #include "vehicles.h"
 
+#include "cj_cheats.h"
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
@@ -569,8 +570,8 @@ namespace AhShitRim::Vehicles
                 return;
             }
             if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || type == VEHICLE_HELI || type == VEHICLE_PLANE ||
-                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0) {
-                return;
+                static_cast<CAutomobile*>(a_vehicle)->m_nNumContactWheels != 0 || CjCheats::Active(Cheats::SaCheat::CarsFly)) {
+                return;  // flying cars (v20) take San Andreas's own flight controls in the air
             }
             const auto& mouse = CPad::NewMouseControllerState;
             const auto  steer = Vehicle::AirSteering(pad->GetSteeringLeftRight(), pad->GetSteeringUpDown(), CCamera::m_bUseMouse3rdPerson, mouse.x, mouse.y);

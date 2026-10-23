@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "chunk_world.h"
 #include "cj_body.h"
+#include "cj_cheats.h"
 #include "cj_gear.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
@@ -470,6 +471,7 @@ namespace AhShitRim::Runner
                 wanted->m_nWantedLevel = 0;
             }
             ChunkWorld::Receive();
+            CjCheats::Update(ped);
             ChunkWorld::Update(ped, state.spawn, Scenes::Following());
             Scenes::Update(ped, state.spawn);
             if (state.carPending && state.owned && ChunkWorld::Ready() && ++state.carReadyFrames >= 20) {  // the chunks around him too
