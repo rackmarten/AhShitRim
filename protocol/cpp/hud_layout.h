@@ -316,8 +316,8 @@ namespace AhShitRim::HudLayout
     inline constexpr Colour kMenuWindow{ 0, 0, 0, 190 };
     inline constexpr float  kMenuX = 29.0f;
     inline constexpr float  kMenuY = 150.0f;
-    inline constexpr float  kMenuNameWidth = 150.0f;
-    inline constexpr float  kMenuPriceWidth = 60.0f;
+    inline constexpr float  kMenuNameWidth = 205.0f;  // "Sawn-off shotgun ammo", the longest row, with room to spare
+    inline constexpr float  kMenuPriceWidth = 75.0f;   // "$15000"
     inline constexpr float  kMenuRowHeight = 16.0f;
     inline constexpr float  kMenuFirstRow = 26.0f;  // under the title
 
