@@ -59,25 +59,25 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). San Andreas's own matching decides, so its alternative codes (FULLCLIP for WANRLTW, THUGSARMOURY for LXGIWYL) work as well. M is Skyrim's map key: an M that finishes a code doesn't open the map.
+Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). San Andreas's own matching decides, and it keeps only a key of each code, so every spelling that shares the key works as it does there (the table gives the best-known ones). M is Skyrim's map key: an M that finishes a code doesn't open the map.
 
 | Code | What |
 |---|---|
 | HESOYAM | Health bar and armour full, 250,000 gold, CJ's vehicle mended |
 | BAGUVIX | The player's health and armour stay full: San Andreas's damage is dropped and Skyrim's undone at once, so a big hit can still stagger it (toggles) |
 | LXGIWYL, KJKSZPJ, UZUMYMW | San Andreas's weapon sets 1, 2 and 3 |
-| FULLCLIP | Infinite ammo, no reloading (toggles) |
+| WANRLTW or FULLCLIP | Infinite ammo, no reloading (toggles) |
 | NCSGDAG | Hitman in every weapon skill |
 | VKYPQCF, VQIMAHA | Maximum stamina; maximum driving, flying and bike skills |
-| BTCDBCB, BUFFMEUP, KVGYZQK | Fat, muscular or skinny CJ |
-| LFGMHAL | Mega jump (toggles) |
+| BTCDBCB, JYSDSOD (or BUFFMEUP), KVGYZQK | Fat, muscular or skinny CJ |
+| KANGAROO or LFGMHAL | Mega jump (toggles) |
 | SZCMAWO | Suicide: Wasted (not while BAGUVIX is on, as in San Andreas) |
 | JUMPJET, OHDUDE, AIWPRTON | Hydra, Hunter, Rhino |
 | KGGGDKP, URKQSRK, AKJJYGLC, AGBDLCID | Vortex, Stuntplane, Quad, Monster |
 | EEGCYXT, AMOMHRER | Dozer, Tanker (without its trailer) |
 | CQZIJMB, JQNTDMH, PDNEJOH, VPJTQWV | Bloodring Banger, Rancher, Hotring Racer, Hotring Racer 2 |
 | AQTBCODX, KRIJEBR, UBHYZHQ, RZHSUEW | Romero, Stretch, Trashmaster, Caddy |
-| YECGAA, AIYPWZQP | Jetpack, parachute |
+| ROCKETMAN (or YECGAA), AIYPWZQP | Jetpack, parachute |
 | RIPAZHA | Flying cars (toggles): in the air a car flies like a plane, W the throttle, the arrows pitch |
 | JHJOECW, PGGOMOY, COXEFGU | Huge bunny hop, perfect handling, nitro in every car (each toggles) |
 | BSXSGGC, JCNRUAD | Cars float away when hit, smash'n'boom: cars blow up on contact (each toggles) |

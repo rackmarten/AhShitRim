@@ -153,6 +153,9 @@ TEST_CASE("cheats: typing completes a cheat on its last letter")
     CHECK(TypeAll(typist, "FULLCLIP") == &Row("FULLCLIP"));
     CHECK(TypeAll(typist, "WANRLTW") == &Row("FULLCLIP"));
     CHECK(TypeAll(typist, "THUGSARMOURY") == &Row("LXGIWYL"));
+    CHECK(TypeAll(typist, "ROCKETMAN") == &Row("YECGAA"));
+    CHECK(TypeAll(typist, "KANGAROO") == &Row("LFGMHAL"));
+    CHECK(TypeAll(typist, "JYSDSOD") == &Row("BUFFMEUP"));
     CHECK(TypeAll(typist, "NOMERCY") == &Row("NOMERCY"));
     // Keys that aren't letters go nowhere.
     CHECK(typist.Key(Input::kDikSpace).cheat == nullptr);
