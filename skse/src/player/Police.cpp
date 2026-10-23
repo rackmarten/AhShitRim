@@ -25,6 +25,7 @@ namespace AhShitRim::Police
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kSpawnRise = 300.0f;    // a spawn spot more than this above or below the player is a tower or a ledge: not used
         constexpr float      kOnMarker = 150.0f;     // after the move, the player this far from the barracks' marker is moved there again
+        constexpr float      kSettle = 2.0f;         // seconds after a game loads before the crimes and the guards are looked at
 
         struct Spawned
         {
@@ -67,7 +68,8 @@ namespace AhShitRim::Police
             RE::TESFaction*          jailAsked = nullptr;  // GoToPrison came while CJ has the player: Busted next frame
             bool                     moveAsked = false;
             bool                     arrived = false;
-            bool                     movedAgain = false;  // the player was moved to the marker a second time, its ground in
+            bool                     movedAgain = false;
+            float                    settle = 0.0f;  // seconds left before the loaded world is looked at  // the player was moved to the marker a second time, its ground in
             int                      loggedStars = 0;
             int                      shownStars = -1;  // what the HUD was last told (so the HUD demo's stars stay up)
             bool                     shownFlashing = false;
@@ -108,7 +110,7 @@ namespace AhShitRim::Police
         // Whether a_actor is one of the pursuit's: a guard of its hold, or one we spawned.
         bool Pursues(RE::Actor* a_actor)
         {
-            if (!a_actor || a_actor->IsDead() || a_actor->IsPlayerRef()) {
+            if (!a_actor || a_actor->IsDead() || a_actor->IsPlayerRef() || !a_actor->Is3DLoaded()) {
                 return false;
             }
             if (IsSpawned(a_actor)) {
@@ -171,7 +173,7 @@ namespace AhShitRim::Police
             const auto feet = a_player->GetPosition();
             const bool never = NeverWanted();
             lists->ForEachHighActor([&](RE::Actor* a_actor) {
-                if (!a_actor || a_actor->IsDead() || a_actor->GetPosition().GetDistance(feet) > Wanted::kSightRange) {
+                if (!a_actor || a_actor->IsDead() || !a_actor->Is3DLoaded() || a_actor->GetPosition().GetDistance(feet) > Wanted::kSightRange) {
                     return RE::BSContainer::ForEachResult::kContinue;
                 }
                 if (state.pursuit.Stars() == 0) {
@@ -579,6 +581,11 @@ namespace AhShitRim::Police
             return state.sequence.Running();
         }
 
+        if (state.settle > 0.0f) {
+            state.settle -= a_delta;  // a loaded world's actors are still coming in
+            Show(state.pursuit.Stars());
+            return false;
+        }
         WatchCrimes(a_player);
         if (auto* faction = std::exchange(state.jailAsked, nullptr)) {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
@@ -642,6 +649,7 @@ namespace AhShitRim::Police
     {
         state.spawned.clear();  // the save's own references now
         state.leaving.clear();
+        state.settle = kSettle;
         state.clearOut = false;
         state.seeded = false;
         state.sequence.Cancel();
