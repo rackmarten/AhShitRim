@@ -79,6 +79,7 @@ namespace AhShitRim::Vehicles
             std::uint64_t spawns = 0;
             std::uint32_t builds = 0;
             std::uint64_t drivenLogMs = 0;
+            int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -896,6 +897,19 @@ namespace AhShitRim::Vehicles
         if (driven) {
             AirControl(driven, a_ped);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
+            // A plane's landing gear (R3, v23), as it finishes going up or down.
+            if (driven->m_nVehicleSubClass == VEHICLE_PLANE) {
+                const float angle = static_cast<CPlane*>(driven)->m_fLandingGearStatus;
+                const int   gear = angle >= 1.0f ? 1 : angle <= 0.0f ? 0 : state.planeGear;
+                if (gear != state.planeGear) {
+                    if (state.planeGear >= 0) {
+                        Log(std::format("vehicle: landing gear {} (model {})", gear ? "up" : "down", driven->m_nModelIndex));
+                    }
+                    state.planeGear = gear;
+                }
+            } else {
+                state.planeGear = -1;
+            }
             // What the vehicle makes of the input and the ground, every 5 s while CJ drives.
             if (const std::uint64_t now = ::GetTickCount64(); now - state.drivenLogMs >= 5000) {
                 state.drivenLogMs = now;

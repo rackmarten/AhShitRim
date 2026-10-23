@@ -581,9 +581,10 @@ namespace AhShitRim::CjBody
         }
         CVector front = cam.m_vecFront;
         CVector camUp = cam.m_vecUp;
-        // A vehicle's look left, right or behind (v23): CCam::LookRight and LookBehind move the active camera aside
-        // (to its follow distance off the vehicle's side), and San Andreas draws with the matrix CCamera::Process
-        // ends up with. Skyrim's camera takes that one then, as it's what San Andreas itself shows.
+        // A vehicle's look left, right or behind (v23): the active camera's front turns aside but its source stays at
+        // the follow spot behind the vehicle; only the matrix CCamera::Process ends up with, which San Andreas draws
+        // with, moves beside it (measured on an NRG-500: 7.5 m apart looking left, 11.3 m looking behind). Skyrim's
+        // camera takes that one then: from the source it looked sideways from behind the vehicle.
         if (a_ped->bInVehicle && (cam.m_bLookingLeft || cam.m_bLookingRight || cam.m_bLookingBehind)) {
             const CMatrix& final = TheCamera.m_mCameraMatrix;  // forward on its y row, up on its z row
             source = final.GetPosition();
