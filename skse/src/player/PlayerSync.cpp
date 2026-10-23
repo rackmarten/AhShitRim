@@ -13,12 +13,14 @@
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
 #include "input.h"
+#include "knock.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/AmmuNation.h"
 #include "player/Arms.h"
 #include "player/CheatCodes.h"
 #include "player/People.h"
+#include "player/Police.h"
 #include "player/GunRewards.h"
 #include "player/Respawns.h"
 #include "player/Looting.h"
@@ -77,6 +79,7 @@ namespace AhShitRim::PlayerSync
             bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
             bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
+            bool           knocked = false;       // the player is knocked down (ragdolled) in Skyrim
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -158,11 +161,14 @@ namespace AhShitRim::PlayerSync
             if (!link.IsUp()) {
                 return;
             }
-            const bool wasted = state.owned && Vitals::IsWasted();  // the player is dying: CJ stands still
+            const bool wasted = state.owned && (Vitals::IsWasted() || Police::IsBusted());  // the player is dying or arrested: CJ stands still
             // In Ammu-Nation the keys are the shop's: CJ stands still.
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted && !AmmuNation::IsOpen(), a_paused);
             if (state.owned && Vitals::IsDown()) {
                 input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
+            }
+            if (state.owned && Police::IsArrested()) {
+                input.flags |= Protocol::kInputBusted;  // v22: dragged out, knocked off, or his hands up
             }
             if (state.owned && state.carHandover == state.handover && state.carRequest.model) {
                 input.carModel = state.carRequest.model;
@@ -477,6 +483,7 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             state.control = Scene::Control::Cj;
             Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
+            Police::OnRelease();
             CollisionSampler::Stop();
             Activation::Clear();
             AmmuNation::Close();
@@ -566,6 +573,7 @@ namespace AhShitRim::PlayerSync
             AmmuNation::Close();
             state.reanchoring = true;
             Vitals::OnReanchor();
+            Police::OnReanchor();
             AnchorAt(a_player);
             auto* cell = a_player->GetParentCell();
             SKSE::log::info("player sync: the player {}, CJ re-anchored (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f}, {} {:08X}, from ({:.0f},{:.0f},{:.0f}))",
@@ -696,7 +704,7 @@ namespace AhShitRim::PlayerSync
         // A key pressed while CJ has the player goes into San Andreas's cheat string (CheatCodes).
         void TypeCheat(std::uint32_t a_dik)
         {
-            if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && Cheats::LetterOf(a_dik)) {
+            if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && !Police::IsBusted() && Cheats::LetterOf(a_dik)) {
                 static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
                 CheatCodes::Key(a_dik, world);
             }
@@ -715,6 +723,35 @@ namespace AhShitRim::PlayerSync
             state.voiceRecovery = recovery;
         }
 
+        // Whether a blow knocked the player down in Skyrim (a giant's club, a mammoth, a shout): ragdolled, or getting up.
+        bool KnockedDown(RE::PlayerCharacter* a_player)
+        {
+            const auto* actorState = a_player->AsActorState();
+            return (actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) || a_player->IsInRagdollState();
+        }
+
+        // San Andreas throws CJ away from the blow (Knock), as its explosions throw peds.
+        void ThrowCj(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose)
+        {
+            RE::NiPoint3 from;
+            const RE::NiPoint3 feet = a_pose ? state.anchor + RE::NiPoint3(a_pose->offset[0], a_pose->offset[1], a_pose->offset[2]) : a_player->GetPosition();
+            if (!Police::LastBlow(Knock::kBlowSeconds, from)) {
+                const float heading = a_player->GetAngleZ();
+                from = feet + RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * 100.0f;  // no blow seen: from in front
+            }
+            Protocol::EffectEvent effect{};
+            effect.handover = state.handover;
+            effect.kind = static_cast<std::uint8_t>(Protocol::EffectKind::KnockCj);
+            const auto at = from - state.anchor;
+            effect.at[0] = at.x;
+            effect.at[1] = at.y;
+            effect.at[2] = at.z;
+            effect.seconds = Knock::kSpeed;
+            const bool sent = LinkService::Get().Send(Protocol::MessageType::Effect, &effect, sizeof(effect));
+            SKSE::log::info("player sync: a blow from ({:.0f},{:.0f}) knocked the player down: it falls out of sight, San Andreas throws CJ{}", from.x, from.y,
+                sent ? "" : " (the link is down)");
+        }
+
         void Drive(RE::PlayerCharacter* a_player, float a_delta)
         {
             auto& link = LinkService::Get();
@@ -729,8 +766,8 @@ namespace AhShitRim::PlayerSync
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
-            // Dying, the player is nobody's to move: CJ stands where he is.
-            if (const auto control = Vitals::IsWasted() ? Scene::Control::Cj : ControlOf(a_player); control != state.control) {
+            // Dying or arrested, the player is nobody's to move: CJ stands where he is.
+            if (const auto control = Vitals::IsWasted() || Police::IsBusted() ? Scene::Control::Cj : ControlOf(a_player); control != state.control) {
                 state.control = control;
                 state.seatLogged = 0;
                 Activation::Clear();
@@ -753,7 +790,19 @@ namespace AhShitRim::PlayerSync
             // The angles Skyrim built this frame's camera for, before Place changes them.
             const float fromHeading = a_player->GetAngleZ();
             const float fromPitch = a_player->data.angle.x;
-            if (valid && !scene) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            // Knocked down, Skyrim's player falls and gets up out of sight, unpinned (pinned to CJ every frame its ragdoll never
+            // settled and its camera stuck), while San Andreas throws CJ; then it goes back to where he is.
+            const bool knocked = KnockedDown(a_player);
+            if (knocked && !state.knocked) {
+                ThrowCj(a_player, valid ? &pose : nullptr);
+            } else if (!knocked && state.knocked) {
+                SKSE::log::info("player sync: the player is up again, back where CJ is");
+            }
+            state.knocked = knocked;
+            if (knocked) {
+                state.lastPlaced = a_player->GetPosition();  // its fall isn't the game moving it
+            }
+            if (valid && !scene && !knocked) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -762,15 +811,21 @@ namespace AhShitRim::PlayerSync
                 }
             }
             Vitals::Update(a_player, valid ? &pose : nullptr, !state.reanchoring);
-            if (Vitals::IsWasted()) {
-                // Bleeding out, Skyrim may take its camera elsewhere; San Andreas's drives the view.
+            Police::Update(a_player, state.anchor, valid ? &pose : nullptr, !state.reanchoring, scene, a_delta);
+            if (const auto line = Police::TakeLine(); line && !Vitals::IsDown()) {
+                state.input.AddLine(line);  // CJ chased or arrested
+            }
+            const bool held = Vitals::IsWasted() || Police::IsBusted();  // dying or arrested
+            if (held || ((knocked || state.control == Scene::Control::Cj) && !MenuHasInput())) {
+                // Bleeding out, busted or knocked down, Skyrim may take its camera elsewhere (its ragdoll and bleedout cameras);
+                // San Andreas's drives the view whenever CJ is his own.
                 if (auto* camera = RE::PlayerCamera::GetSingleton(); camera && !camera->IsInFirstPerson()) {
                     camera->ForceFirstPerson();
                 }
             }
             CollisionSampler::Update(a_player, valid ? RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]) : RE::NiPoint3());
             // Ammu-Nation: open until CJ leaves it (or walks off, or Skyrim takes the player over, or he dies).
-            if (AmmuNation::IsOpen() && (scene || Vitals::IsWasted())) {
+            if (AmmuNation::IsOpen() && (scene || held)) {
                 AmmuNation::Close();
             }
             if (AmmuNation::IsOpen() && !MenuHasInput()) {
@@ -788,7 +843,7 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
-            Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !Vitals::IsWasted() && !MenuHasInput(), a_delta);
+            Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
                 valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
@@ -851,6 +906,7 @@ namespace AhShitRim::PlayerSync
                 }
                 Arms::Update();
                 CheatCodes::Update();
+                Police::Sweep();
                 GunRewards::Update();
                 Respawns::Update(state.owned, a_delta);
                 Protocol::PlayerState pose{};
@@ -985,7 +1041,7 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     if (code == Input::kDikE && state.owned && !InVehicle()) {
-                        if (button->IsDown() && !MenuHasInput()) {
+                        if (button->IsDown() && !MenuHasInput() && !Police::IsBusted()) {
                             if (AmmuNation::IsOpen()) {
                                 state.shopActivate = true;  // buys, in the shop
                             } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -1117,6 +1173,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<13>::Install(RE::VTABLE_FirstPersonState[1]);  // its zoom and POV keys
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
         Conversation::Install();
+        Police::Install();
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 
@@ -1163,6 +1220,7 @@ namespace AhShitRim::PlayerSync
         Respawns::OnGameLoad();
         Release("game loading");
         CheatCodes::OnGameLoad();
+        Police::OnGameLoad();
     }
 
     void Snapshot(Cosave::Record& a_out)

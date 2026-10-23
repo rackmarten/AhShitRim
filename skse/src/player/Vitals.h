@@ -44,6 +44,8 @@ namespace AhShitRim::Vitals
     bool IsDown();
     bool HasDeathCamera();
 
+    // Busted (v22, Police): from the arrest on the player takes no damage either, so the guards can't turn it into Wasted.
+
     // BAGUVIX (v20, CheatCodes): while on, nothing San Andreas or Skyrim does takes the player's health or CJ's armour, the
     // health bar stays full, and being hit doesn't train Block, Light Armor or Heavy Armor.
     void SetInvincible(bool a_on);

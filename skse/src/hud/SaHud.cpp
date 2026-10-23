@@ -109,6 +109,7 @@ namespace AhShitRim::SaHud
             float            letterbox = 0.0f;  // 0..1, how far the bars are in
             bool             letterboxOn = false;
             int              wanted = 0;
+            bool             wantedFlashing = false;
             float            armor = 0.0f;
             int              demo = 0;
             std::uint32_t    frame = 0;
@@ -299,8 +300,10 @@ namespace AhShitRim::SaHud
             a_frame.Text(kMoney, MoneyText(gold), MoneyColour(gold));
 
             if (state.wanted > 0) {
+                // Flashing, the gold ones go black every other 8 frames, as the health bar's flash.
+                const bool lit = !state.wantedFlashing || (state.frame / 8) % 2 == 0;
                 for (int i = 0; i < kStarCount; i++) {
-                    a_frame.Text(kWantedStar, "]", i < state.wanted ? kGold : kBlack, StarRight(a_frame.screen, i));
+                    a_frame.Text(kWantedStar, "]", i < state.wanted && lit ? kGold : kBlack, StarRight(a_frame.screen, i));
                 }
             }
         }
@@ -635,6 +638,8 @@ namespace AhShitRim::SaHud
     void SetLetterbox(bool a_on) { state.letterboxOn = a_on; }
 
     void SetWantedLevel(int a_stars) { state.wanted = std::clamp(a_stars, 0, kStarCount); }
+
+    void SetWantedFlashing(bool a_flashing) { state.wantedFlashing = a_flashing; }
 
     void SetArmor(float a_fraction) { state.armor = std::clamp(a_fraction, 0.0f, 1.0f); }
 

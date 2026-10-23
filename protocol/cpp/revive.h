@@ -1,4 +1,4 @@
-// Coming back (v21), the game-free half: the unique people CJ kills (Ammu-Nation's blacksmiths, the main
+// Coming back (v22), the game-free half: the unique people CJ kills (Ammu-Nation's blacksmiths, the main
 // quest's people, every named NPC) get up again an in-game hour later, at their editor spot, once neither
 // their body nor that spot is anywhere CJ could see. NOMERCY or not: it lets him kill the essential ones,
 // this brings them back. Only CJ's kills: the player killed them while San Andreas had the player. Skyrim's

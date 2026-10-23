@@ -4,6 +4,7 @@
 #include "cj_shots.h"
 #include "cj_weapons.h"
 #include "explosives.h"
+#include "knock.h"
 #include "log.h"
 #include "model_sender.h"
 #include "pose.h"
@@ -17,6 +18,7 @@
 #include <CCamera.h>
 #include <CExplosion.h>
 #include <CFireManager.h>
+#include <CPedIntelligence.h>
 #include <CPlayerPed.h>
 #include <CProjectile.h>
 #include <CProjectileInfo.h>
@@ -49,6 +51,10 @@ namespace AhShitRim::CjProjectiles
         constexpr std::uint32_t  kSlots = 32;                // gaProjectileInfo, CProjectileInfo::ms_apProjectile
         constexpr std::uintptr_t kExplosionAudio = 0xC888D0;     // CExplosion::m_ExplosionAudioEntity
         constexpr std::uintptr_t kAddExplosionAudio = 0x4DCBE0;  // CAEExplosionAudioEntity::AddAudioEvent (thiscall)
+        constexpr std::uintptr_t kFallAndGetUpCtor = 0x678700;   // CTaskComplexFallAndGetUp(int dir, int fallDownTime) (gta-reversed)
+        constexpr unsigned       kFallAndGetUpSize = 0x18;
+        constexpr int            kFallDownMs = 1500;              // on the ground this long before he gets up
+        constexpr int            kTaskPrimary = 3;                // TASK_PRIMARY_PRIMARY
         constexpr int            kAeExplosion = 0x81;            // AE_EXPLOSION
         constexpr std::uintptr_t kReportObjectDestruction = 0x506ED0;  // CAudioEngine::ReportObjectDestruction (thiscall): a Molotov's bottle smashing
         constexpr std::uint32_t  kStandInGrace = 2000;  // ms a rocket's stand-in outlives its fuse if Skyrim never says it went off
@@ -280,6 +286,22 @@ namespace AhShitRim::CjProjectiles
             case Protocol::EffectKind::BurnCj:
                 if (a_ped && !a_ped->m_pFire) {
                     gFireManager.StartFire(a_ped, nullptr, 0.8f, 1, 7000, 0);
+                }
+                break;
+            case Protocol::EffectKind::KnockCj:
+                // v22: a blow knocked Skyrim's player down (a giant's club): CJ thrown away from it, as San Andreas's own
+                // blasts throw peds, with its fall and get-up. In a vehicle he stays in it.
+                if (a_ped && !a_ped->bInVehicle) {
+                    const CVector& pos = a_ped->GetPosition();
+                    const CVector& face = a_ped->GetForward();
+                    const auto     launch = Knock::Launch({ pos.x, pos.y, pos.z }, { at.x, at.y, at.z }, face.x, face.y, (std::max)(a_effect.seconds, 1.0f));
+                    const int      fall = Knock::FallFor(face.x, face.y, launch.x, launch.y);
+                    auto*          task = static_cast<CTask*>(CTask::operator new(kFallAndGetUpSize));
+                    reinterpret_cast<void(__thiscall*)(CTask*, int, int)>(kFallAndGetUpCtor)(task, fall, kFallDownMs);
+                    a_ped->m_pIntelligence->m_TaskMgr.SetTask(task, kTaskPrimary, false);
+                    a_ped->m_vecMoveSpeed = CVector(launch.x, launch.y, launch.z) / 50.0f;  // metres a step, 50 steps a second
+                    TheCamera.CamShake(0.4f, pos.x, pos.y, pos.z);
+                    Log(std::format("projectiles: a blow in Skyrim throws CJ at ({:.1f},{:.1f},{:.1f}) m/s, falling {}", launch.x, launch.y, launch.z, fall));
                 }
                 break;
             default: break;

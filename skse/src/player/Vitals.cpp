@@ -3,6 +3,7 @@
 #include "health.h"
 #include "pose.h"
 #include "hud/SaHud.h"
+#include "player/Police.h"
 #include "wasted.h"
 
 #include <chrono>
@@ -309,6 +310,18 @@ namespace AhShitRim::Vitals
             Run(a_player, seconds, a_cjDrawn);
             return state.sequence.Running();
         }
+        if (Police::IsBusted()) {
+            // Busted (v22): an arrested man isn't shot dead; San Andreas's damage is dropped and Skyrim's undone, as for BAGUVIX.
+            auto*       values = a_player->AsActorValueOwner();
+            const float max = MaxHealth(a_player);
+            if (const float now = values->GetActorValue(RE::ActorValue::kHealth); now < max) {
+                values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
+            }
+            if (Bleeding(a_player)) {
+                a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            }
+            return false;
+        }
         if (state.invincible) {
             // BAGUVIX: San Andreas's damage is dropped, and whatever Skyrim's people did to the player this frame undone.
             auto*       values = a_player->AsActorValueOwner();
@@ -325,6 +338,13 @@ namespace AhShitRim::Vitals
         }
         if (damage > 0.0f) {
             Apply(a_player, damage);
+        }
+        // A guard's hit put the essential player down, but his eased share of it (Police) left it standing: no Wasted.
+        if (Police::TakeSpared() && Bleeding(a_player) && a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {
+            a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            SKSE::log::info("vitals: a guard's eased hit left the player standing, its bleedout stopped");
+            SaHud::SetArmor(state.armor / Health::kSaFullHealth);
+            return false;
         }
         if (state.essential && OutOfHealth(a_player)) {
             Begin(a_player);
