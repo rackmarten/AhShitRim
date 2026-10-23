@@ -284,7 +284,7 @@ namespace AhShitRim::CjBody
         // A skinned clump's model as a SkinModel of kind a_kind, its bones the skin's; empty (logged, a_what names it) when
         // it can't be read.
         std::vector<std::uint8_t> ReadSkinned(RpClump* a_clump, const std::string& a_what, const std::string& a_name, std::uint32_t a_kind,
-            std::uint32_t& a_boneCount, RpGeometry** a_geometry = nullptr, bool a_blend = false)
+            std::uint32_t& a_boneCount, RpGeometry** a_geometry = nullptr, bool a_keepWinding = false)
         {
             const auto        start = std::chrono::steady_clock::now();
             int               atomics = 0;
@@ -346,7 +346,7 @@ namespace AhShitRim::CjBody
                         byRaster[texture->raster] = out.texture;
                     }
                     if (out.texture >= 0 && TextureDecode::HasAlpha(model.textures[out.texture].rgba)) {
-                        out.flags |= a_blend ? Protocol::kSkinMeshBlend : Protocol::kSkinMeshCutout;
+                        out.flags |= Protocol::kSkinMeshCutout;
                     }
                 }
                 materials.push_back(out);
@@ -362,6 +362,7 @@ namespace AhShitRim::CjBody
             in.boneCount = bones;
             in.triangleCount = static_cast<std::uint32_t>(geometry->numTriangles);
             in.triangles = reinterpret_cast<const std::uint16_t*>(geometry->triangles);
+            in.keepWinding = a_keepWinding;
             SkinBuild::Stats stats;
             model.meshes = SkinBuild::Meshes(in, materials, &stats);
 
@@ -452,9 +453,9 @@ namespace AhShitRim::CjBody
         return true;
     }
 
-    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount, bool a_blend)
+    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount, bool a_keepWinding)
     {
-        return ReadSkinned(a_clump, "the " + a_name, a_name, a_kind, a_boneCount, nullptr, a_blend);
+        return ReadSkinned(a_clump, "the " + a_name, a_name, a_kind, a_boneCount, nullptr, a_keepWinding);
     }
 
     bool PoseSkinned(RpClump* a_clump, std::uint32_t a_boneCount, const CVector& a_feet, Protocol::BodyState& a_out)

@@ -40,9 +40,9 @@ namespace AhShitRim::CjBody
     std::uint32_t NowMs();
 
     // Another skinned clump read the way CJ's is (v19: the parachute's canopy): its model as a SkinModel of kind
-    // a_kind, empty (logged) when it can't be read, and its bone count. a_blend: a texture with alpha is blended
-    // rather than cut out (the canopy's half-transparent cloth).
-    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount, bool a_blend = false);
+    // a_kind, empty (logged) when it can't be read, and its bone count. a_keepWinding: San Andreas's own winding kept
+    // (SkinBuild::Geometry::keepWinding: the canopy's back-to-back faces).
+    std::vector<std::uint8_t> ReadSkinnedModel(RpClump* a_clump, const std::string& a_name, std::uint32_t a_kind, std::uint32_t& a_boneCount, bool a_keepWinding = false);
 
     // That clump's bones as its skeleton has them now, relative to a_feet (San Andreas metres) as CJ's are, into
     // a_out.bones; false when it has no skeleton or skin.

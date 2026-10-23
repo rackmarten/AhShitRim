@@ -12,6 +12,7 @@
 
 #include <plugin.h>
 
+#include <CAnimBlendHierarchy.h>
 #include <CAnimBlock.h>
 #include <CAnimManager.h>
 #include <CClumpModelInfo.h>
@@ -39,6 +40,7 @@ namespace AhShitRim::CjGear
     namespace
     {
         constexpr int kMoveIdle = 3;               // ANIM_ID_IDLE
+        constexpr std::uint16_t kBlendAutoRemove = 0x4;  // removed once blended out (gta-reversed's ANIMATION_IS_BLEND_AUTO_REMOVE)
         constexpr int kTaskPrimary = 3;            // TASK_PRIMARY_PRIMARY, over CJ's own on-foot task (where the jetpack cheat puts its task)
         constexpr int kJetpackModel = 370;         // MODEL_JETPACK
         constexpr std::uintptr_t kJetpackCtor = 0x67B4E0;  // CTaskSimpleJetPack::CTaskSimpleJetPack(const CVector*, float, int, CEntity*) (thiscall)
@@ -276,6 +278,7 @@ namespace AhShitRim::CjGear
                 for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(a_ped->m_pRwClump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
                     if (assoc->m_pHierarchy == state.hierarchy) {
                         assoc->m_fBlendDelta = -8.0f;
+                        assoc->m_nFlags |= kBlendAutoRemove;
                     }
                 }
                 CAnimManager::BlendAnimation(a_ped->m_pRwClump, a_ped->m_nAnimGroup, kMoveIdle, 8.0f);
@@ -517,6 +520,16 @@ namespace AhShitRim::CjGear
             }
             Log(std::format("gear: {} over CJ's animations (group/id flags blend):{}", state.playing, list));
         }
+        // San Andreas updates only a ped's first 11 animations a frame, the newest first: every parachute animation kept
+        // at none would push his idle, the last, out of it, and with nothing on his face's bones it grinned (on S or D,
+        // whichever came 12th). So the ones he is done with go, the way San Andreas removes a blended-out one.
+        const CAnimBlendHierarchy* first = &CAnimManager::ms_aAnimations[block->startAnimation];
+        const CAnimBlendHierarchy* last = first + block->animationCount;
+        for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            if (assoc != ours && assoc->m_pHierarchy >= first && assoc->m_pHierarchy < last) {
+                assoc->m_nFlags |= kBlendAutoRemove;
+            }
+        }
         bool haveIdle = false;
         for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
             haveIdle = haveIdle || Parachute::HoldOf(false, assoc->m_nAnimGroup, assoc->m_nAnimId, (assoc->m_nFlags & 0x10) != 0, a_ped->m_nAnimGroup) ==
@@ -532,7 +545,9 @@ namespace AhShitRim::CjGear
             case Parachute::Hold::Keep: continue;
             case Parachute::Hold::None: assoc->m_fBlendAmount = 0.0f; break;
             }
-            assoc->m_fBlendDelta = 0.0f;
+            // An old parachute animation blends out and so is removed in this update; the rest stay where they are put.
+            const bool old = assoc != ours && (assoc->m_nFlags & kBlendAutoRemove) && assoc->m_pHierarchy >= first && assoc->m_pHierarchy < last;
+            assoc->m_fBlendDelta = old ? -1.0f : 0.0f;
         }
     }
 

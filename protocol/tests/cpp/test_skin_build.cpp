@@ -73,6 +73,19 @@ TEST_CASE("triangles face the way their normals do, in Skyrim's winding")
     CHECK(stats.flipped == 1);
 }
 
+TEST_CASE("a model kept in its own winding turns no triangle round")
+{
+    Square              square;
+    SkinBuild::Stats    stats;
+    SkinBuild::Geometry geometry = square.Geometry();
+    geometry.keepWinding = true;
+    const auto meshes = SkinBuild::Meshes(geometry, std::vector<SkinBuild::Material>(2), &stats);
+    REQUIRE(meshes.size() == 2);
+    CHECK(Face(meshes[0], 0).z > 0.0f);
+    CHECK(Face(meshes[1], 0).z < 0.0f);  // back to back with the first, as authored
+    CHECK(stats.flipped == 0);
+}
+
 TEST_CASE("bone indices unpack lowest byte first, weights add up to one, and an unweighted vertex follows bone 0")
 {
     Square           square;
