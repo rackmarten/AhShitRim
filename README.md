@@ -69,7 +69,7 @@ While CJ has the player, San Andreas plays his, his vehicles' and his speech's s
 
 ## Shouts as CJ
 
-CJ has the Thu'um his own way. Shouting works as in Skyrim (learn the words, hold the Shout key for more of them, wait out the cooldown), and the shout's effect is Skyrim's: Unrelenting Force still throws a bandit. But the Dragonborn's dragon words are gone: when the shout goes off, CJ yells one of his San Andreas lines instead, picked for that shout and how many words you charged, so a tap and a full Fus Ro Dah sound different. A shout with no lines of its own gets one of his generic angry lines, so he's never silent. Only the player's voice changes; dragons, draugr and the Greybeards still shout in theirs.
+CJ has the Thu'um his own way. Shouting works as in Skyrim (learn the words, hold the Shout key for more of them, wait out the cooldown), and the shout's effect is Skyrim's: Unrelenting Force still throws a bandit. But the Dragonborn's dragon words are gone: when the shout goes off, CJ yells one of his San Andreas lines instead, picked for that shout and how many words you charged, so a tap and a full Fus Ro Dah sound different. A shout with no lines of its own gets one of his generic angry lines, so he's never silent. Only the player's voice changes; dragons, draugr and the Greybeards still shout in theirs. Whirlwind Sprint carries CJ along with the dash, and WANRLTW (infinite ammo) also means infinite shouting: no cooldown while it's on.
 
 Which lines go with which shout is picked by ear in the voice picker ([`scripts/voice-picker`](scripts/voice-picker/README.md)), which builds a local page from your own San Andreas install.
 

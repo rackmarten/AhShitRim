@@ -13,7 +13,7 @@ San Andreas keeps only a key of each code (a checksum of its letters), so every 
 | LXGIWYL | THUGSARMOURY | Weapon set 1 (thug's tools) |
 | KJKSZPJ | PROFESSIONALSKIT | Weapon set 2 (professional tools) |
 | UZUMYMW | | Weapon set 3 (nutter tools) |
-| WANRLTW | FULLCLIP | Toggle. Infinite ammo, no reloading |
+| WANRLTW | FULLCLIP | Toggle. Infinite ammo, no reloading, and infinite shouting: no shout cooldown |
 | NCSGDAG | PROFESSIONALKILLER | Hitman in every weapon skill |
 | SZCMAWO | GOODBYECRUELWORLD | Suicide: Wasted (not while BAGUVIX is on, as in San Andreas) |
 | AEZAKMI | IDOASIPLEASE | Toggle. Never wanted: every bounty cleared and the guards' fight called off as it's typed; after that no stars, and any bounty a crime would add is put back as it was |

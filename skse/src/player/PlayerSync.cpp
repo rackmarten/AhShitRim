@@ -52,6 +52,7 @@ namespace AhShitRim::PlayerSync
             RE::NiPoint3   lastPlaced;
             RE::TESObjectCELL* cell = nullptr;
             Scene::Control control = Scene::Control::Cj;  // who moves the player this frame
+            Scene::Dash    dash;  // a shout carrying the player (Whirlwind Sprint)
             float          voiceRecovery = 0.0f;  // the player's shout cooldown last frame
             RE::FormID     seatLogged = 0;        // the furniture whose seat was last logged
             std::uint16_t  shoutCount = 0;
@@ -769,8 +770,15 @@ namespace AhShitRim::PlayerSync
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
+            // A shout carrying the player (Whirlwind Sprint) moves it from where CJ put it last frame: CJ follows it.
+            const auto moved = a_player->GetPosition() - state.lastPlaced;
+            const bool dashing = state.dash.Update(std::sqrt(moved.x * moved.x + moved.y * moved.y), a_delta, !InVehicle(), Shouting::InProgress(a_player));
+            if (dashing != (state.control == Scene::Control::Dashing)) {
+                SKSE::log::info("player sync: {}", dashing ? "a shout carries the player (a dash), CJ follows it" : "the dash is over, CJ moves the player again");
+            }
             // Dying or arrested, the player is nobody's to move: CJ stands where he is.
-            if (const auto control = Vitals::IsWasted() || Police::IsBusted() ? Scene::Control::Cj : ControlOf(a_player); control != state.control) {
+            if (const auto control = Vitals::IsWasted() || Police::IsBusted() ? Scene::Control::Cj : dashing ? Scene::Control::Dashing : ControlOf(a_player);
+                control != state.control) {
                 state.control = control;
                 state.seatLogged = 0;
                 Activation::Clear();
