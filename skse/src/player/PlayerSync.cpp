@@ -80,7 +80,7 @@ namespace AhShitRim::PlayerSync
             bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
             bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
-            bool           knocked = false;       // the player is knocked down (ragdolled) in Skyrim
+            Knock::Down    down;                  // the player knocked down (ragdolled) in Skyrim, and for how long
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -548,6 +548,7 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = true;
             state.control = Scene::Control::Cj;
+            state.down.Reset();
             Vitals::OnTakeOver(a_player);
             state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
@@ -736,6 +737,29 @@ namespace AhShitRim::PlayerSync
             return (actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) || a_player->IsInRagdollState();
         }
 
+        const char* KnockStateName(RE::PlayerCharacter* a_player)
+        {
+            static constexpr const char* kNames[] = { "normal", "explode", "explode lead-in", "out", "out lead-in", "queued", "get-up", "down", "waiting" };
+            const auto* actorState = a_player->AsActorState();
+            const auto  knock = actorState ? static_cast<std::size_t>(actorState->GetKnockState()) : 0;
+            return knock < std::size(kNames) ? kNames[knock] : "?";
+        }
+
+        // Down too long (Knock::kDownMost): Skyrim's own fix for an actor stuck in its ragdoll, and its knock state put back to
+        // normal (in game the player was stuck queued and ragdolled, and only the reset got it up). The log says which state
+        // it was stuck in and whether it took.
+        void GetUp(RE::PlayerCharacter* a_player, int a_try)
+        {
+            const char* before = KnockStateName(a_player);
+            const bool  ragdoll = a_player->IsInRagdollState();
+            a_player->PotentiallyFixRagdollState();
+            if (auto* actorState = a_player->AsActorState(); actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
+                actorState->actorState1.knockState = RE::KNOCK_STATE_ENUM::kNormal;
+            }
+            SKSE::log::info("player sync: the player is still down after {:.1f} s (knock state {}{}), made to get up (try {}): now {}{}, back where CJ is",
+                state.down.Seconds(), before, ragdoll ? ", ragdolled" : "", a_try, KnockStateName(a_player), a_player->IsInRagdollState() ? ", still ragdolled" : "");
+        }
+
         // San Andreas throws CJ away from the blow (Knock), as its explosions throw peds.
         void ThrowCj(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose)
         {
@@ -797,18 +821,27 @@ namespace AhShitRim::PlayerSync
             const float fromHeading = a_player->GetAngleZ();
             const float fromPitch = a_player->data.angle.x;
             // Knocked down, Skyrim's player falls and gets up out of sight, unpinned (pinned to CJ every frame its ragdoll never
-            // settled and its camera stuck), while San Andreas throws CJ; then it goes back to where he is.
+            // settled and its camera stuck), while San Andreas throws CJ; then it goes back to where he is. It may stay down
+            // no longer than CJ does (Knock::Down): then it's made to get up and goes back to him anyway, so the pursuers
+            // don't keep swinging at where it lies.
             const bool knocked = KnockedDown(a_player);
-            if (knocked && !state.knocked) {
-                ThrowCj(a_player, valid ? &pose : nullptr);
-            } else if (!knocked && state.knocked) {
+            switch (state.down.Tick(a_delta, knocked)) {
+            case Knock::Step::Fell: ThrowCj(a_player, valid ? &pose : nullptr); break;
+            case Knock::Step::Force:
+                GetUp(a_player, state.down.Tries());
+                Police::Retarget(a_player);
+                break;
+            case Knock::Step::Up:
                 SKSE::log::info("player sync: the player is up again, back where CJ is");
+                Police::Retarget(a_player);
+                break;
+            default: break;
             }
-            state.knocked = knocked;
-            if (knocked) {
+            const bool unpinned = state.down.Unpinned();
+            if (unpinned) {
                 state.lastPlaced = a_player->GetPosition();  // its fall isn't the game moving it
             }
-            if (valid && !scene && !knocked) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
