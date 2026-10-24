@@ -452,6 +452,64 @@ TEST_CASE("never in view: behind the camera is hidden, in front isn't")
     CHECK(west.x < -kSpawnNear);
 }
 
+namespace
+{
+    // Ticks a leash a_seconds in 0.1 s frames on a_target; returns how often it pulled.
+    int Pulls(Leash& a_leash, Target a_target, float a_seconds)
+    {
+        int pulls = 0;
+        for (float t = 0.0f; t < a_seconds - 1e-4f; t += 0.1f) {
+            pulls += a_leash.Tick(0.1f, a_target) ? 1 : 0;
+        }
+        return pulls;
+    }
+}
+
+TEST_CASE("the leash: on CJ never pulled, a stray after a while, a lost one sooner, none more often than the gap")
+{
+    Leash leash;
+    CHECK(Pulls(leash, Target::Cj, 60.0f) == 0);
+    CHECK(Pulls(leash, Target::Other, kStrayFor - 0.5f) == 0);  // a short fight with someone else is left alone
+    CHECK(Pulls(leash, Target::Other, 1.0f) == 1);
+    CHECK(Pulls(leash, Target::Other, 60.0f) <= static_cast<int>(60.0f / kLeashGap) + 1);  // at most once a gap
+    CHECK(Pulls(leash, Target::Other, 60.0f) >= static_cast<int>(60.0f / (kStrayFor + 0.2f)) - 1);
+
+    Leash lost;
+    CHECK(Pulls(lost, Target::None, kLostFor - 0.3f) == 0);
+    CHECK(Pulls(lost, Target::None, 0.5f) == 1);
+    CHECK(Pulls(lost, Target::None, kLeashGap - 0.5f) == 0);  // not again before the gap
+
+    Leash back;
+    Pulls(back, Target::Other, kStrayFor - 1.0f);
+    Pulls(back, Target::Cj, 0.5f);  // back on CJ: the time away starts over
+    CHECK(Pulls(back, Target::Other, kStrayFor - 1.0f) == 0);
+
+    Leash pulled;
+    pulled.Pulled();  // a rejoin just set it on CJ
+    CHECK(Pulls(pulled, Target::None, kLeashGap - 0.5f) == 0);
+    CHECK(Pulls(pulled, Target::None, 1.0f) == 1);
+    CHECK(kLeashGap >= 3.0f);  // a path takes a moment to build
+}
+
+TEST_CASE("ours are one side: the hold's guards' factions, their own left, the crime faction always")
+{
+    const std::vector<std::uint32_t> guards = { 0x10, 0x11, 0x12 };  // say GuardFaction, IsGuardFaction, the hold's guards
+    const std::uint32_t              crime = 0x267EA;
+    const auto giant = Enlist({ 0x50, 0x51 }, guards, crime);  // GiantFaction, CreatureFaction
+    CHECK(giant.join == std::vector<std::uint32_t>{ 0x10, 0x11, 0x12, crime });
+    CHECK(giant.leave == std::vector<std::uint32_t>{ 0x50, 0x51 });
+
+    const auto guard = Enlist({ 0x10, 0x11, 0x12, crime }, guards, crime);  // a copy of a guard: already one of them
+    CHECK(guard.leave.empty());
+    CHECK(guard.join.size() == 4);
+
+    const auto noCrime = Enlist({ 0x50, 0x50 }, { 0x10, crime }, crime);  // no doubles either way
+    CHECK(noCrime.join == std::vector<std::uint32_t>{ 0x10, crime });
+    CHECK(noCrime.leave == std::vector<std::uint32_t>{ 0x50 });
+    CHECK(Enlist({}, {}, 0).join.empty());
+    CHECK(kOursAggression == 1.0f);  // the player (an enemy), not everyone
+}
+
 TEST_CASE("ours copy generic guards only, never a unique or named NPC")
 {
     CHECK(Copyable(false, "Whiterun Guard", "Whiterun Guard"));

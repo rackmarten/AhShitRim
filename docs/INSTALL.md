@@ -92,4 +92,4 @@ The full list is in the [README](../README.md#keys).
 - **Both games go silent and stay silent**: if your sound comes from the monitor's speakers (HDMI or DisplayPort audio), the display turning off takes that audio device with it, and neither game reconnects when it comes back; restart both games to get sound again. While San Andreas has the player, AhShitRim keeps the display on, but with Skyrim in control (or the screen locked) Windows's display timeout still applies. Headphones or speakers on the PC's own audio jack don't go away, or set "Turn off my screen" in Windows's power settings to Never while you play.
 - **Skyrim crashes at start, or SKSE says the plugin is incompatible**: the game updated. Update SKSE and Address Library to match.
 
-The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, San Andreas's in its `scripts\AhShitRim.log`.
+The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`, so a crash's log survives starting the game again), San Andreas's in its `scripts\AhShitRim.log`.

@@ -159,13 +159,15 @@ namespace AhShitRim::Knock
     // Whoever was fighting the player as it went down fights it again once it's back at CJ. Their fights are never
     // stopped for it: stopping and starting one in the same frame left Skyrim's guards out of it (stopping is what calls
     // them off), and the pursuers lost interest in CJ. And the AI may drop a target it lost sight of while it lay out of
-    // sight, a while after. So for kRejoinSeconds after the player is up, every kRejoinEvery anyone of them who isn't
-    // fighting it any more is set on it again.
+    // sight, a while after. So for kRejoinSeconds after the player is up, every kRejoinEvery anyone of them who is in no
+    // fight any more is set on it again.
     inline constexpr float kRejoinSeconds = 8.0f;
-    inline constexpr float kRejoinEvery = 0.5f;
+    inline constexpr float kRejoinEvery = 1.0f;
 
-    // Whether one who fought the player as it went down is set on it again: alive, about, and not fighting it now.
-    constexpr bool Rejoins(bool a_alive, bool a_loaded, bool a_fightingPlayer) { return a_alive && a_loaded && !a_fightingPlayer; }
+    // Whether one who fought the player as it went down is set on it again: alive, about, and in no fight at all now. One
+    // fighting someone else is the leash's (Wanted::Leash), and one fighting the player is left alone: a fight started
+    // over and over throws away the path being built for it.
+    constexpr bool Rejoins(bool a_alive, bool a_loaded, bool a_inAFight) { return a_alive && a_loaded && !a_inAFight; }
 
     class Rejoin
     {

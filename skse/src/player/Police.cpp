@@ -28,7 +28,7 @@ namespace AhShitRim::Police
         constexpr float      kJoinEvery = 1.0f;   // seconds between calls for the hold's guards to join
         constexpr float      kCalmEvery = 0.5f;   // seconds between calling the fight off, while busted or never wanted
         constexpr float      kFightAfter = 0.5f;  // one of ours goes for CJ this long after it's in
-        constexpr float      kRetargetEvery = 1.0f;  // seconds between pulling ours back onto CJ from whoever else they fight
+        constexpr float      kSnapFar = 600.0f;     // a spawn spot's navmesh further than this from it is somewhere else: not used
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
         constexpr float      kSpawnRise = 300.0f;    // a spawn spot more than this above or below the player is a tower or a ledge: not used
@@ -56,8 +56,8 @@ namespace AhShitRim::Police
             RE::ObjectRefHandle actor;
             Wanted::Unit        unit = Wanted::Unit::Guard;
             float               age = 0.0f;  // seconds since it was in (3D loaded)
-            float               retarget = 0.0f;  // seconds since its target was last checked
             float               speedMult = 100.0f;  // a wolf's SpeedMult as last set
+            Wanted::Leash       leash;              // when it's set on CJ again, fighting someone else
             bool                fighting = false;
         };
 
@@ -342,7 +342,7 @@ namespace AhShitRim::Police
             std::vector<RE::NiPointer<RE::Actor>> back;  // not while looking: a fight started may change who fights whom
             for (const auto& handle : state.downFighters) {
                 auto actor = handle.get();
-                if (actor && Knock::Rejoins(!actor->IsDead(), actor->Is3DLoaded(), Fights(actor.get(), a_player))) {
+                if (actor && Knock::Rejoins(!actor->IsDead(), actor->Is3DLoaded(), static_cast<bool>(actor->GetActorRuntimeData().currentCombatTarget.get()))) {
                     back.push_back(actor);
                 }
             }
@@ -469,6 +469,8 @@ namespace AhShitRim::Police
             if (state.spawned.empty()) {
                 return;
             }
+            state.rejoin.Reset();  // the next pursuit starts clean: nobody of this one is set on the player again
+            state.downFighters.clear();
             for (auto& s : state.spawned) {
                 if (auto ref = s.actor.get()) {
                     if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead()) {
@@ -711,6 +713,14 @@ namespace AhShitRim::Police
             const bool found = marker->MoveToNearestNavmesh();
             a_out = marker->GetPosition();
             state.leaving.push_back({ marker->CreateRefHandle(), 0 });
+            // The nearest navmesh may be far off (another island of it) or in a cell that isn't loaded: Skyrim's path
+            // search to and from such a spot is what crashed. Only a spot on loaded navmesh close to the one asked for.
+            auto*       cell = marker->GetParentCell();
+            const float off = std::hypot(a_out.x - a_at.x, a_out.y - a_at.y);
+            if (found && (off > kSnapFar || !cell || !cell->IsAttached())) {
+                SKSE::log::info("police: a spawn spot given up (its navmesh {:.0f} units off{})", off, cell && cell->IsAttached() ? "" : ", in a cell not loaded");
+                return false;
+            }
             return found;
         }
 
@@ -765,6 +775,42 @@ namespace AhShitRim::Police
             return nullptr;
         }
 
+        // One of ours joins the hold's guards' side (Wanted::Enlist): their factions and the hold's crime faction, its own
+        // left, aggressive only to enemies. Then no giant, dragon or guard of ours turns on another, or on the hold's guards.
+        void Enlist(RE::Actor* a_actor)
+        {
+            auto* guard = RE::TESForm::LookupByID<RE::TESNPC>(state.hold->guard);
+            std::vector<std::uint32_t> guards;
+            if (guard) {
+                for (const auto& rank : guard->factions) {
+                    if (rank.faction && rank.rank >= 0) {
+                        guards.push_back(rank.faction->GetFormID());
+                    }
+                }
+            }
+            std::vector<std::uint32_t> own;
+            a_actor->VisitFactions([&](RE::TESFaction* a_faction, std::int8_t a_rank) {
+                if (a_faction && a_rank >= 0) {
+                    own.push_back(a_faction->GetFormID());
+                }
+                return false;
+            });
+            const auto plan = Wanted::Enlist(own, guards, state.hold->faction);
+            for (const auto id : plan.leave) {
+                if (auto* faction = RE::TESForm::LookupByID<RE::TESFaction>(id)) {
+                    a_actor->RemoveFromFaction(faction);
+                }
+            }
+            for (const auto id : plan.join) {
+                if (auto* faction = RE::TESForm::LookupByID<RE::TESFaction>(id)) {
+                    a_actor->AddToFaction(faction, 0);
+                }
+            }
+            a_actor->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, Wanted::kOursAggression);
+            SKSE::log::info("police: {:08X} enlisted: {} faction(s) of {}'s guards joined, {} of its own left", a_actor->GetFormID(), plan.join.size(),
+                state.hold->name, plan.leave.size());
+        }
+
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto* base = BaseFor(a_player, a_unit);
@@ -789,6 +835,7 @@ namespace AhShitRim::Police
                     ref ? ", and it made no actor" : "");
                 return false;
             }
+            Enlist(actor);
             Spawned s;
             s.actor = actor->CreateRefHandle();
             s.unit = a_unit;
@@ -867,16 +914,15 @@ namespace AhShitRim::Police
                 if (s.unit == Wanted::Unit::Wolf) {
                     Pace(actor, s, feet);
                 }
-                // Ours are after CJ alone: a giant swatting at the dragon, or a dragon burning guards, is pulled back onto him.
-                s.retarget += a_delta;
-                if (s.fighting && s.retarget >= kRetargetEvery && actor->GetFormID() != state.doorRun.Runner()) {  // not the one running for the door
-                    s.retarget = 0.0f;
-                    if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
-                        SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());
-                        actor->StopCombat();
-                        actor->StartCombat(a_player);
-                    } else if (!target) {
-                        actor->StartCombat(a_player);  // its fight ended (lost him, or won against someone else): after him again
+                // Ours are after CJ: a giant swatting at the dragon, or a dragon burning guards, is set on him again, gently
+                // (Wanted::Leash: after a while of it, never more often than every few seconds, no fight stopped).
+                if (s.fighting && actor->GetFormID() != state.doorRun.Runner()) {  // not the one running for the door
+                    const auto target = actor->GetActorRuntimeData().currentCombatTarget.get();
+                    const auto on = target ? (target.get() == a_player ? Wanted::Target::Cj : Wanted::Target::Other) : Wanted::Target::None;
+                    if (s.leash.Tick(a_delta, on)) {
+                        const bool fights = actor->StartCombat(a_player);
+                        SKSE::log::info("police: {} {:08X} {}, set on CJ again{}", Wanted::NameOf(s.unit), actor->GetFormID(),
+                            target ? std::format("fights {:08X}", target->GetFormID()) : std::string("fights nobody"), fights ? "" : " (refused)");
                     }
                 }
             }
@@ -1324,7 +1370,7 @@ namespace AhShitRim::Police
             state.rejoin.Start();
             Rejoin(a_player);
             for (auto& s : state.spawned) {
-                s.retarget = 0.0f;
+                s.leash.Pulled();
             }
         }
 

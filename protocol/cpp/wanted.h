@@ -511,6 +511,84 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // ---- One side ----
+
+    // Every one of ours (the guards, captain, wizards and soldiers, the giants, the mammoth, the dragon) is enlisted in the
+    // hold's guards' factions, its crime faction among them, and taken out of its own (the giants', the dragons', the
+    // predators'): friends with each other and with the hold's guards, with the criminal player their only enemy. Left as
+    // they were, the giants and the dragon fought the guards and each other, and nobody fought CJ.
+    inline constexpr float kOursAggression = 1.0f;  // aggressive: attacks enemies (the player) on sight, not everyone (a dragon's)
+
+    struct Enlistment
+    {
+        std::vector<std::uint32_t> join;   // the factions it joins (rank 0)
+        std::vector<std::uint32_t> leave;  // and those it leaves
+    };
+
+    // One of ours in factions a_own, the hold's guard in a_guards, the hold's crime faction a_crime (0 for none).
+    inline Enlistment Enlist(const std::vector<std::uint32_t>& a_own, const std::vector<std::uint32_t>& a_guards, std::uint32_t a_crime)
+    {
+        Enlistment out;
+        const auto add = [](std::vector<std::uint32_t>& a_to, std::uint32_t a_id) {
+            if (a_id != 0 && std::find(a_to.begin(), a_to.end(), a_id) == a_to.end()) {
+                a_to.push_back(a_id);
+            }
+        };
+        for (const auto id : a_guards) {
+            add(out.join, id);
+        }
+        add(out.join, a_crime);
+        for (const auto id : a_own) {
+            if (std::find(out.join.begin(), out.join.end(), id) == out.join.end()) {
+                add(out.leave, id);
+            }
+        }
+        return out;
+    }
+
+    // Ours are after CJ, but gently: one fighting someone else (a giant at its camp, the dragon) is set on CJ again only
+    // after kStrayFor seconds of it, one out of any fight after kLostFor, and none more often than every kLeashGap. Their
+    // fights are never stopped for it: stopping and starting everyone's every second, in a camp brawl, threw away the path
+    // each one was having built, and Skyrim's path search crashed (a navmesh search on a tasklet thread).
+    inline constexpr float kStrayFor = 6.0f;
+    inline constexpr float kLostFor = 2.0f;
+    inline constexpr float kLeashGap = 5.0f;
+
+    enum class Target : std::uint8_t
+    {
+        Cj,     // fighting CJ (the player)
+        Other,  // fighting someone else
+        None,   // in no fight
+    };
+
+    class Leash
+    {
+    public:
+        // A frame of a_delta seconds with one of ours fighting a_target. Returns whether to set it on CJ now.
+        bool Tick(float a_delta, Target a_target)
+        {
+            _since += a_delta;
+            if (a_target == Target::Cj) {
+                _away = 0.0f;
+                return false;
+            }
+            _away += a_delta;
+            if (_away >= (a_target == Target::None ? kLostFor : kStrayFor) && _since >= kLeashGap) {
+                _away = 0.0f;
+                _since = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        // It was just set on CJ some other way (a knock-down's rejoin): the gap starts again.
+        void Pulled() { _since = 0.0f; }
+
+    private:
+        float _away = 0.0f;         // seconds not on CJ
+        float _since = kLeashGap;   // seconds since it was last set on him
+    };
+
     // Ours are copies of the hold's generic guards, never of anyone with a life of his own: not a unique NPC (Commander
     // Caius, a jarl's housecarl, who counts as a guard of the hold: four of him came down the street at 4 stars), and not
     // one called by his name rather than by what he is. Copies of a unique base are also references Skyrim doesn't
