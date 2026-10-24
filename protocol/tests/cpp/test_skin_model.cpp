@@ -200,3 +200,25 @@ TEST_CASE("triangles back to back over the same corners are twins, whatever thei
     REQUIRE(twoModel);
     CHECK(SkinModel::OneSided(twoModel->meshes[0]));
 }
+
+TEST_CASE("model ids are odd and never the same twice, also within one tick of San Andreas's clock")
+{
+    std::uint32_t last = 0;
+    std::uint32_t ids[5];
+    for (auto& id : ids) {
+        last = id = SkinModel::NextId(last, 1000);  // five models in one tick (the pickups near one spot, asked for in one frame)
+    }
+    for (int i = 0; i < 5; ++i) {
+        CHECK(ids[i] % 2 == 1);
+        for (int j = 0; j < i; ++j) {
+            CHECK(ids[i] != ids[j]);
+        }
+    }
+    CHECK(ids[1] > ids[0]);
+    // A later tick starts from the clock again, still above the last.
+    const auto later = SkinModel::NextId(last, 1016);
+    CHECK(later > last);
+    CHECK(later == (1016u << 4 | 1u));
+    // The old rule, (tick << 4 | n) | 1, gave the 2nd and the 3rd model of a tick the same id.
+    CHECK(((1000u << 4 | 2u) | 1u) == ((1000u << 4 | 3u) | 1u));
+}

@@ -37,9 +37,9 @@ namespace AhShitRim::Parachute
     inline constexpr float kFreefallFall = 40.0f;  // terminal speed, flat
     inline constexpr float kDiveFall = 55.0f;      // W: head down
     inline constexpr float kSlowFall = 32.0f;      // S: spread out
-    inline constexpr float kFreefallForward = 4.0f;
-    inline constexpr float kDiveForward = 14.0f;
-    inline constexpr float kSlowForward = 1.0f;
+    inline constexpr float kFreefallForward = 8.0f;   // (v23: twice what it was, to clear a mountainside before opening)
+    inline constexpr float kDiveForward = 28.0f;
+    inline constexpr float kSlowForward = 2.0f;
     inline constexpr float kFreefallTurn = 1.5f;   // radians a second, A and D
 
     inline constexpr float kOpenSeconds = 1.1f;    // PARA_open
@@ -136,6 +136,19 @@ namespace AhShitRim::Parachute
         return a_value + (a_target - a_value) * (std::min)(1.0f, a_rate * a_dt);
     }
 
+    // One a_dt of a fall towards a_terminal, as San Andreas's own physics falls: gravity less a drag that grows with the
+    // square of the speed (CPhysical::ApplyAirResistance), so it eases into the terminal speed rather than reaching it
+    // at a constant pull and stopping dead. For a ped (m_fAirResistance 1/175) that gives about 19 m/s after a second,
+    // 36 after two and 47 after three, towards 59. Faster than a_terminal (out of a dive) the air brakes him to it.
+    inline float FallStep(float a_fall, float a_terminal, float a_dt)
+    {
+        if (a_fall > a_terminal) {
+            return Toward(a_fall, a_terminal, kBrake, a_dt);
+        }
+        const float ratio = a_fall / a_terminal;
+        return (std::min)(a_fall + kGravity * (1.0f - ratio * ratio) * a_dt, a_terminal);
+    }
+
     inline void Enter(State& a_state, Phase a_phase)
     {
         a_state.phase = a_phase;
@@ -174,8 +187,7 @@ namespace AhShitRim::Parachute
                 const float terminal = pitch > 0.0f ? kFreefallFall + (kDiveFall - kFreefallFall) * pitch : kFreefallFall + (kFreefallFall - kSlowFall) * pitch;
                 const float ahead = pitch > 0.0f ? kFreefallForward + (kDiveForward - kFreefallForward) * pitch
                                                  : kFreefallForward + (kFreefallForward - kSlowForward) * pitch;
-                // Gravity up to the terminal speed of how he lies; faster than that (out of a dive) the air brakes him.
-                a_state.fall = a_state.fall > terminal ? Toward(a_state.fall, terminal, kBrake, a_dt) : (std::min)(a_state.fall + kGravity * a_dt, terminal);
+                a_state.fall = FallStep(a_state.fall, terminal, a_dt);
                 a_state.forward = Toward(a_state.forward, ahead, kBrake, a_dt);
                 a_state.turn = steer * kFreefallTurn;
             }

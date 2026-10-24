@@ -95,7 +95,7 @@ TEST_CASE("a street pickup is back 30 s after it was taken, once CJ is 10 m off"
     CHECK(board.Tick(pistol, 132.0, 0.0f));  // one that is out stays out
 }
 
-TEST_CASE("armour waits 6 minutes, a one-off for good")
+TEST_CASE("armour and the heavy weapons wait 6 minutes, a one-off for good")
 {
     const auto& armour = Find(20);
     REQUIRE(armour.respawn == Respawn::Slow);
@@ -105,29 +105,36 @@ TEST_CASE("armour waits 6 minutes, a one-off for good")
     CHECK(board.Tick(armour, 361.0, 100.0f * M));
 
     const auto& minigun = Find(81);
-    REQUIRE(minigun.respawn == Respawn::Once);
+    REQUIRE(minigun.respawn == Respawn::Slow);
     board.Take(minigun, 0.0);
-    CHECK_FALSE(board.Tick(minigun, 1e9, 1e6f));
-    CHECK_FALSE(board.Shows(minigun.id));
+    CHECK(board.Tick(minigun, 361.0, 100.0f * M));
+
+    const auto& gold = Find(82);
+    REQUIRE(gold.respawn == Respawn::Once);
+    board.Take(gold, 0.0);
+    CHECK_FALSE(board.Tick(gold, 1e9, 1e6f));
+    CHECK_FALSE(board.Shows(gold.id));
 }
 
 TEST_CASE("the co-save keeps the one-offs taken, and only those")
 {
     Board board;
-    board.Take(Find(80), 10.0);
+    board.Take(Find(83), 10.0);
     board.Take(Find(82), 20.0);
+    board.Take(Find(81), 25.0);  // the minigun: it comes back by itself
     board.Take(Find(1), 30.0);   // a parachute: it comes back by itself
     board.Take(Find(20), 40.0);  // armour too
-    CHECK(board.Once() == std::vector<std::uint16_t>{ 80, 82 });
+    CHECK(board.Once() == std::vector<std::uint16_t>{ 82, 83 });
 
     Board loaded;
     loaded.Take(Find(60), 0.0);
-    loaded.Restore({ 80, 82, 1, 9999 });  // a street spot and an id no spot has any more are left out
-    CHECK_FALSE(loaded.Shows(80));
+    loaded.Restore({ 81, 82, 83, 1, 9999 });  // the minigun (a one-off before), a street spot and an id no spot has any more are left out
+    CHECK(loaded.Shows(81));
+    CHECK_FALSE(loaded.Shows(83));
     CHECK_FALSE(loaded.Shows(82));
     CHECK(loaded.Shows(1));
     CHECK(loaded.Shows(60));  // what was taken before the load is back
-    CHECK(loaded.Once() == std::vector<std::uint16_t>{ 80, 82 });
+    CHECK(loaded.Once() == std::vector<std::uint16_t>{ 82, 83 });
 }
 
 TEST_CASE("a heart turns up under a quarter of CJ's health, at most once every 3 minutes")
@@ -189,6 +196,9 @@ TEST_CASE("the spot table")
         if (spot.kind == Kind::Weapon) {
             CHECK(Weapons::Carried(spot.weapon));
             CHECK(!Weapons::ModelName(spot.weapon).empty());
+        }
+        if (spot.kind == Kind::Weapon) {
+            CHECK(spot.respawn != Respawn::Once);  // a weapon always comes back, as in San Andreas
         }
         if (spot.kind == Kind::Money) {
             CHECK(spot.amount > 0);

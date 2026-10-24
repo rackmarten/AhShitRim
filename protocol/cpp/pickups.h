@@ -32,7 +32,8 @@ namespace AhShitRim::Pickups
 
     // ---- How one looks ----
 
-    inline constexpr float kFloat = 0.6f * kMeter;       // its middle over the ground it rests on
+    inline constexpr float kSize = 2.0f;                 // drawn at twice San Andreas's size: in Skyrim's wide world they were too small to spot
+    inline constexpr float kFloat = 1.0f * kMeter;       // its middle over the ground it rests on
     inline constexpr float kTurnSeconds = 2.0f;           // a whole turn round its upright, as San Andreas's spin
     inline constexpr float kDrawRange = 100.0f * kMeter;  // drawn this close to CJ (CPickup::IsVisible's 100 m)
 
@@ -95,7 +96,7 @@ namespace AhShitRim::Pickups
     {
         Once,    // taken for good, and the co-save remembers it
         Street,  // San Andreas's PICKUP_ON_STREET: back 30 s after it was taken
-        Slow,    // armour: back after 6 minutes, so a hold's armour isn't there for every fight
+        Slow,    // armour and the heavy weapons: back after 6 minutes, so they aren't there for every fight
     };
 
     inline constexpr float kStreetSeconds = 30.0f;
@@ -188,9 +189,11 @@ namespace AhShitRim::Pickups
         { 64, Kind::Weapon, Weapons::SniperRifle, 0, Respawn::Street, World::Tamriel, { -57305.0f, -62109.0f, 1767.0f }, false, "Bannermist Tower" },
         { 65, Kind::Weapon, Weapons::Molotov, 0, Respawn::Street, World::Tamriel, { 16500.0f, 18919.0f, -4177.0f }, false, "Halted Stream Camp" },
 
-        // One-offs: taken for good.
-        { 80, Kind::Weapon, Weapons::RocketLauncher, 10, Respawn::Once, World::Tamriel, { -18641.0f, 42159.0f, -7849.0f }, false, "Labyrinthian" },
-        { 81, Kind::Weapon, Weapons::Minigun, 500, Respawn::Once, World::Tamriel, { -5431.0f, 48292.0f, 344.0f }, false, "Skyborn Altar" },
+        // The heavy weapons, back like armour: as in San Andreas a weapon comes back once CJ has been away.
+        { 80, Kind::Weapon, Weapons::RocketLauncher, 10, Respawn::Slow, World::Tamriel, { -18641.0f, 42159.0f, -7849.0f }, false, "Labyrinthian" },
+        { 81, Kind::Weapon, Weapons::Minigun, 500, Respawn::Slow, World::Tamriel, { -5431.0f, 48292.0f, 344.0f }, false, "Skyborn Altar" },
+
+        // One-offs, taken for good: stashes of gold.
         { 82, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, { -89950.0f, -36677.0f, 1868.0f }, false, "Lost Valley Redoubt" },
         { 83, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, { -23080.0f, 88177.0f, -13778.0f }, false, "Ustengrav" },
         { 84, Kind::Money, 0, 300, Respawn::Once, World::Tamriel, { 100514.0f, 5878.0f, -7900.0f }, false, "Gallows Rock" },

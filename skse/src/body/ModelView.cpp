@@ -542,7 +542,7 @@ namespace AhShitRim::ModelView
         return Find(a_model) != nullptr;
     }
 
-    bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin)
+    bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale)
     {
         auto* built = Find(a_pose.model);
         auto* context = Context();
@@ -592,6 +592,7 @@ namespace AhShitRim::ModelView
 
         built->node->local.translate = a_origin;
         built->node->local.rotate = RE::NiMatrix3();
+        built->node->local.scale = a_scale;
         RE::NiUpdateData update{};
         built->node->Update(update);
         built->shownFrame = state.frame;

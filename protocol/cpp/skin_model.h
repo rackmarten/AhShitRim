@@ -19,6 +19,18 @@
 
 namespace AhShitRim::SkinModel
 {
+    // ---- Model ids (San Andreas side) ----
+
+    // The id for a new model: odd (Skyrim's own copies are even), from San Andreas's clock so a San Andreas that started
+    // again doesn't hand out ids a running Skyrim built already, and above a_last, the one given out before. Skyrim builds
+    // an id once, so two models must never share one: (tick << 4 | n) | 1 did for the 2nd and 3rd built in one tick
+    // (the 15.6 ms one of GetTickCount64), and the next pickup drew as the one before.
+    constexpr std::uint32_t NextId(std::uint32_t a_last, std::uint64_t a_tickMs)
+    {
+        const std::uint32_t fromClock = static_cast<std::uint32_t>(a_tickMs) << 4 | 1u;
+        return fromClock > a_last ? fromClock : (a_last + 2u) | 1u;
+    }
+
     // ---- Building a blob (San Andreas side) ----
 
     struct TextureIn
