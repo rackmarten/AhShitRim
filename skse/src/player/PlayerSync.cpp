@@ -29,6 +29,7 @@
 #include "player/Shots.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
+#include "standing.h"
 #include "pose.h"
 #include "scene.h"
 #include "vehicle_kinds.h"
@@ -80,6 +81,7 @@ namespace AhShitRim::PlayerSync
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
             bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
             bool           knocked = false;       // the player is knocked down (ragdolled) in Skyrim
+            bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -600,6 +602,37 @@ namespace AhShitRim::PlayerSync
             return move;
         }
 
+        const char* StateName(RE::hkpCharacterStateType a_state)
+        {
+            switch (a_state) {
+            case RE::hkpCharacterStateType::kOnGround: return "on the ground";
+            case RE::hkpCharacterStateType::kJumping: return "jumping";
+            case RE::hkpCharacterStateType::kInAir: return "in the air";
+            case RE::hkpCharacterStateType::kClimbing: return "climbing";
+            case RE::hkpCharacterStateType::kFlying: return "flying";
+            case RE::hkpCharacterStateType::kSwimming: return "swimming";
+            default: return "?";
+            }
+        }
+
+        // The player's character controller on the ground, not jumping, not falling: what Skyrim asks before it fast
+        // travels. Returns the state it was in.
+        RE::hkpCharacterStateType Stand(RE::PlayerCharacter* a_player)
+        {
+            auto* controller = a_player->GetCharController();
+            if (!controller) {
+                return RE::hkpCharacterStateType::kOnGround;
+            }
+            const auto was = controller->context.currentState;
+            if (was != RE::hkpCharacterStateType::kSwimming) {
+                controller->context.currentState = RE::hkpCharacterStateType::kOnGround;
+            }
+            controller->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+            controller->fallStartHeight = a_player->GetPosition().z;
+            controller->fallTime = 0.0f;
+            return was;
+        }
+
         void Place(RE::PlayerCharacter* a_player, const Protocol::PlayerState& a_pose)
         {
             state.lastPlaced = state.anchor + RE::NiPoint3(a_pose.offset[0], a_pose.offset[1], a_pose.offset[2]);
@@ -614,6 +647,18 @@ namespace AhShitRim::PlayerSync
                 // Skyrim's own fall damage on landing (a jetpack, a parachute, a jump off a bike) would come on top.
                 controller->fallStartHeight = state.lastPlaced.z;
                 controller->fallTime = 0.0f;
+            }
+            // Its controller rarely finds the ground under CJ's feet (or his seat) and calls it falling, which stops
+            // fast travel: it stands whenever he does.
+            Standing::Frame frame;
+            frame.valid = true;
+            frame.grounded = (a_pose.flags & Protocol::kPlayerGrounded) != 0;
+            frame.inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
+            frame.vehicle = frame.inVehicle ? VehicleKinds::KindOf(a_pose.vehicleModel) : VehicleKinds::Kind::Unknown;
+            frame.rise = a_pose.velocity[2];
+            state.standing = Standing::Stands(frame);
+            if (state.standing) {
+                Stand(a_player);
             }
 
             // CJ crouching: Skyrim sneaks. As in PerkeleRim, the actor state and the animation graph
@@ -802,6 +847,7 @@ namespace AhShitRim::PlayerSync
             if (knocked) {
                 state.lastPlaced = a_player->GetPosition();  // its fall isn't the game moving it
             }
+            state.standing = false;  // Place says whether CJ stands
             if (valid && !scene && !knocked) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
@@ -1136,6 +1182,15 @@ namespace AhShitRim::PlayerSync
                 if (state.owned && a_event) {
                     if (a_event->opening) {
                         Looting::OnMenuOpening(a_event->menuName.c_str());  // no inventory, barter or container menu as CJ
+                        // The map pauses the game: nothing moves the player until it fast travels, so it stands as CJ does.
+                        if (a_event->menuName == RE::MapMenu::MENU_NAME && state.standing && !state.knocked) {
+                            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                                const auto was = Stand(player);
+                                SKSE::log::info("player sync: the map opens with CJ standing: the player stands too (it was {})", StateName(was));
+                            }
+                        } else if (a_event->menuName == RE::MapMenu::MENU_NAME) {
+                            SKSE::log::info("player sync: the map opens with CJ not standing{}: fast travel is Skyrim's call", state.knocked ? " (knocked down)" : "");
+                        }
                         auto* ui = RE::UI::GetSingleton();
                         auto  menu = ui ? ui->GetMenu(a_event->menuName) : nullptr;
                         pauses = menu && menu->PausesGame();
