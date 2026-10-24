@@ -170,6 +170,7 @@ namespace AhShitRim::Collision
             }
         }
 
+        const auto landVertices = static_cast<std::uint32_t>(vertices.size() / 3);
         std::map<std::array<float, 3>, std::uint32_t> shared;
         std::uint32_t                                 dropped = 0;
         for (std::size_t t = 0; t + 9 <= a_statics.size(); t += 9) {
@@ -190,6 +191,7 @@ namespace AhShitRim::Collision
             *a_dropped = dropped;
         }
 
+        header.landVertexCount = landVertices;
         header.vertexCount = static_cast<std::uint32_t>(vertices.size() / 3);
         header.indexCount = static_cast<std::uint32_t>(indices.size());
 

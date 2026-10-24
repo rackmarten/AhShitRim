@@ -299,3 +299,58 @@ TEST_CASE("the point ahead goes 2 s out, at most as far as San Andreas keeps wha
     a = Ahead(0.0f, 0.0f);
     CHECK(a[0] == 0.0f);
 }
+
+// ---- The land under CJ ----
+
+TEST_CASE("the land's height comes from the land samples alone, through the origin")
+{
+    // A slope rising 1 unit per unit east over chunk (0, 0), and a static slab 300 units over it.
+    Collision::Heightfield field;
+    field.Reset(0, 0, Protocol::kCollisionChunkCells);
+    for (std::uint32_t k = 0; k < field.Samples(); k++) {
+        field.heights[k] = 1000.0f + field.X(k % field.Side());
+        field.hit[k] = 1;
+    }
+    const std::vector<float> slab = { 0, 0, 5000, 2048, 0, 5000, 0, 2048, 5000 };
+    const auto               payload = Collision::BuildChunkPayload(field, 0x3C, 1, slab);
+    Chunk                    chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    CHECK(chunk.header.landVertexCount == field.Samples());
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    const Origin origin = At(0.0f, 0.0f, 1000.0f);
+    for (const float x : { 100.0f, 1000.0f, 1500.0f }) {
+        const auto z = map.HeightAt(origin, origin.ToSanAndreas(x, 700.0, 0.0));
+        REQUIRE(z);
+        CHECK(*z == doctest::Approx(kHeight + x * Pose::kMetersPerUnit).epsilon(0.001));
+    }
+    CHECK_FALSE(map.HeightAt(origin, origin.ToSanAndreas(-100.0, 700.0, 0.0)));  // chunk (-1, 0): none
+}
+
+TEST_CASE("a missed land sample leaves no height on the triangles touching it")
+{
+    auto field = Flat(0, 0, Protocol::kCollisionChunkCells, 0.0f);
+    field.hit[0] = 0;
+    const auto payload = Collision::BuildChunkPayload(field, 0x3C, 1);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    const Origin origin = At(0.0f, 0.0f, 0.0f);
+    CHECK_FALSE(map.HeightAt(origin, origin.ToSanAndreas(10.0, 10.0, 0.0)));
+    CHECK(map.HeightAt(origin, origin.ToSanAndreas(300.0, 300.0, 0.0)));
+}
+
+TEST_CASE("the land goes with the chunks: far ones and a new handover's")
+{
+    const auto payload = Collision::BuildChunkPayload(Flat(0, 0, Protocol::kCollisionChunkCells, 0.0f), 0x3C, 1);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    map.Set({ 20, 0 }, LandOf(chunk));
+    map.DropFar({ 1, 0 });
+    CHECK(map.Count() == 1);
+    map.Clear();
+    CHECK(map.Count() == 0);
+}
