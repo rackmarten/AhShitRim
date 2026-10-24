@@ -31,4 +31,8 @@ namespace AhShitRim::PlayerSync
     void Snapshot(Cosave::Record& a_out);
     void Restore(const Cosave::Record& a_record);
     void Revert();
+
+    // The hit test (debug, v24): San Andreas takes the player (again, if it had it), with CJ in a new vehicle of model a_model
+    // where it stands.
+    void TakeOverInVehicle(std::uint16_t a_model);
 }

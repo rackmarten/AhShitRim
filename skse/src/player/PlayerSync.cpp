@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
+#include "debug/HitTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
@@ -928,6 +929,7 @@ namespace AhShitRim::PlayerSync
                 if (!state.owned) {
                     StreamTest::Update(a_player, a_delta);
                 }
+                HitTest::Update(a_player, a_delta);
                 Arms::Update();
                 CheatCodes::Update();
                 Police::Sweep();
@@ -1271,6 +1273,23 @@ namespace AhShitRim::PlayerSync
         state.resumePending = a_record.handover;
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
+    }
+
+    void TakeOverInVehicle(std::uint16_t a_model)
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return;
+        }
+        if (state.owned) {
+            Release("the hit test hands it over again, in a vehicle");
+        }
+        state.carRequest = {};
+        state.carRequest.model = a_model;
+        state.carRequest.heading = player->GetAngleZ();
+        state.carForNext = true;
+        TakeOver(player);
+        state.carForNext = false;
     }
 
     void Revert()
