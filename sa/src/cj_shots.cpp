@@ -175,10 +175,10 @@ namespace AhShitRim::CjShots
         void __cdecl HandleGunShotHook(const CVector* a_start, const CVector* a_end)
         {
             // The guns of the vehicle CJ drives are his too (v19: the Hunter's, CVehicle::FireFixedMachineGuns, fired with the
-            // vehicle as the shooter): their bullets go as they are, with his skill.
+            // vehicle as the shooter): their bullets go as they are, with his skill, and (v26) Skyrim flashes them.
             auto* cj = FindPlayerPed(0);
             if (state.firing && cj && cj->bInVehicle && state.firedBy && state.firedBy == cj->m_pVehicle && a_start && a_end) {
-                SendBullet(cj, state.firing->m_eWeaponType, *a_start, *a_end - *a_start, 0);
+                SendBullet(cj, state.firing->m_eWeaponType, *a_start, *a_end - *a_start, Protocol::kShotVehicleGun);
             } else if (state.firing && IsCj(state.firedBy) && a_start && a_end) {
                 const auto type = state.firing->m_eWeaponType;
                 const bool shotgun = type == WEAPONTYPE_SHOTGUN || type == WEAPONTYPE_SAWNOFF || type == WEAPONTYPE_SPAS12;

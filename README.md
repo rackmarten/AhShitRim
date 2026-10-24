@@ -131,7 +131,7 @@ San Andreas loads collision as static per-sector files, so Skyrim's ground is bu
 
 - While San Andreas has the player, the view is San Andreas's third-person camera only. First person isn't supported yet.
 - CJ and the vehicles cast no shadow in Skyrim yet, and CJ always wears his starting clothes (vest, jeans, sneakers).
-- Vehicles: damage isn't shown (dents, broken windows and lost doors stay as they were), and lights and exhaust smoke aren't drawn.
+- Vehicles: damage isn't shown (dents, broken windows and lost doors stay as they were), and lights aren't drawn. Of San Andreas's vehicle particles the Hydra's jet exhaust, the heat haze over hot exhausts and jets, a submerged exhaust's bubbles and the rotor dust's sand and water versions aren't drawn yet (the dust is always the plain kind), and the muzzle flashes are round where San Andreas stretches them along the barrel.
 - Radio Sovngarde plays the bards' instrumentals, not their sung songs: those are voice lines split by verse, which Skyrim can't play from a file.
 - Vehicles live only while San Andreas has the player: they're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them.
 - CJ sits on anything Skyrim's player uses as furniture, in the same chair pose: at a forge, an alchemy table, a bed or on a horse too. A scene that leaves the player standing or kneeling (Helgen's execution block) shows CJ standing.

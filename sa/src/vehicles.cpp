@@ -2,6 +2,7 @@
 
 #include "air_spawn.h"
 #include "cj_cheats.h"
+#include "fx_model.h"
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
@@ -60,6 +61,7 @@ namespace AhShitRim::Vehicles
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
         constexpr float kFloatRise = 0.02f;                        // BSXSGGC: a car hit rises at least this fast (San Andreas's speed a step, 1 m/s)
+        constexpr float kDustReach = 40.0f;                        // metres down to look for the ground under a rotor's dust (San Andreas's reaches 30)
 
         struct Slot
         {
@@ -505,6 +507,57 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // What San Andreas's particles on it come from (v26, protocol/cpp/fx_model.h). San Andreas runs its
+        // exhaust smoke (AddExhaustParticles), nitro (NitrousControl) and rotor dust (DoHeliDustEffect) hidden
+        // too, but draws none of it, so Skyrim lets the sprites out itself from these.
+        void Fx(CVehicle* a_vehicle, const CVector& a_at, Protocol::BodyFx& a_fx)
+        {
+            const float gas = std::isfinite(a_vehicle->m_fGasPedal) ? a_vehicle->m_fGasPedal : 0.0f;
+            a_fx.gas = FxModel::GasToByte(gas);
+            if (a_vehicle->m_nCurrentGear < 3) {
+                a_fx.flags |= Protocol::kFxLowGear;
+            }
+            // Its exhausts: the exhaust dummy (m_avDummyPos[6], DUMMY_EXHAUST), mirrored for a double exhaust, in
+            // the vehicle's frame (a bike's leaned one), letting out backwards.
+            auto*      info = InfoOf(a_vehicle->m_nModelIndex);
+            const bool bike = a_vehicle->m_nVehicleClass == VEHICLE_BIKE;
+            const auto& m = bike ? static_cast<CMatrix&>(static_cast<CBike*>(a_vehicle)->m_mLeanMatrix) : static_cast<CMatrix&>(*a_vehicle->m_matrix);
+            if (info && info->m_pVehicleStruct && a_vehicle->m_pHandlingData && !a_vehicle->m_pHandlingData->m_bNoExhaust && a_vehicle->bEngineOn &&
+                !Wrecked(a_vehicle)) {
+                const CVector& dummy = info->m_pVehicleStruct->m_avDummyPos[6];
+                if (dummy.x != 0.0f || dummy.y != 0.0f || dummy.z != 0.0f) {
+                    const int  count = a_vehicle->m_pHandlingData->m_bDoubleExhaust ? 2 : 1;
+                    const CVector back = m.up * -1.0f;
+                    for (int i = 0; i < count; i++) {
+                        const float   x = i == 0 ? dummy.x : -dummy.x;
+                        const CVector at = (m.pos + m.right * x + m.up * dummy.y + m.at * dummy.z - a_at) * Pose::kUnitsPerMeter;
+                        a_fx.at[i][0] = at.x;
+                        a_fx.at[i][1] = at.y;
+                        a_fx.at[i][2] = at.z;
+                        a_fx.along[i][0] = back.x;
+                        a_fx.along[i][1] = back.y;
+                        a_fx.along[i][2] = back.z;
+                    }
+                }
+            }
+            if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE) {
+                return;  // the nitro and the dust are CAutomobile's (a helicopter and a plane are too)
+            }
+            auto* car = static_cast<CAutomobile*>(a_vehicle);
+            if (car->m_pNitroParticle[0]) {
+                a_fx.level = FxModel::ToByte(FxModel::NitroLevel(car->m_fNitroValue, gas));
+            }
+            // The rotor dust's strength as DoHeliDustEffect last stepped it, on the ground under it.
+            if (a_vehicle->m_pDustParticle && car->m_heliDustFxTimeConst > 0.0f) {
+                CColPoint point;
+                CEntity*  entity = nullptr;
+                if (CWorld::ProcessVerticalLine(a_at, a_at.z - kDustReach, point, entity, true, false, false, false, false, false, nullptr)) {
+                    a_fx.dust = FxModel::ToByte(car->m_heliDustFxTimeConst);
+                    a_fx.ground = (point.m_vecPoint.z - a_at.z) * Pose::kUnitsPerMeter;
+                }
+            }
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -529,6 +582,7 @@ namespace AhShitRim::Vehicles
             s.engine[0] = engine.x;
             s.engine[1] = engine.y;
             s.engine[2] = engine.z;
+            Fx(a_vehicle, at, s.fx);
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
