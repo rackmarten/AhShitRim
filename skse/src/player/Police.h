@@ -66,8 +66,11 @@ namespace AhShitRim::Police
     // Where the last hit on the player came from (anyone's, through the same hook), if it landed within a_seconds.
     bool LastBlow(float a_seconds, RE::NiPoint3& a_from);
 
-    // The player is back where CJ is after a knock-down: everyone fighting it starts its fight over, so they come for it
-    // there and stop swinging at where it lay.
+    // The player was knocked down: who is fighting it now (Skyrim's and ours) is noted.
+    void OnKnockedDown(RE::PlayerCharacter* a_player);
+
+    // The player is back where CJ is after a knock-down: for a while (Knock::Rejoin) anyone noted who dropped it is set on
+    // it again. Nobody's fight is stopped.
     void Retarget(RE::PlayerCharacter* a_player);
 
     // A line for CJ (Wanted::kLineChased, kLineArrested) to put in the input, 0 for none; taken once.

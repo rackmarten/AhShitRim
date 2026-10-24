@@ -153,4 +153,50 @@ namespace AhShitRim::Knock
         float _fixTimer = 0.0f;
         int   _tries = 0;
     };
+
+    // ---- The pursuers after a knock-down ----
+
+    // Whoever was fighting the player as it went down fights it again once it's back at CJ. Their fights are never
+    // stopped for it: stopping and starting one in the same frame left Skyrim's guards out of it (stopping is what calls
+    // them off), and the pursuers lost interest in CJ. And the AI may drop a target it lost sight of while it lay out of
+    // sight, a while after. So for kRejoinSeconds after the player is up, every kRejoinEvery anyone of them who isn't
+    // fighting it any more is set on it again.
+    inline constexpr float kRejoinSeconds = 8.0f;
+    inline constexpr float kRejoinEvery = 0.5f;
+
+    // Whether one who fought the player as it went down is set on it again: alive, about, and not fighting it now.
+    constexpr bool Rejoins(bool a_alive, bool a_loaded, bool a_fightingPlayer) { return a_alive && a_loaded && !a_fightingPlayer; }
+
+    class Rejoin
+    {
+    public:
+        // The player is back at CJ: a check now, then every kRejoinEvery for kRejoinSeconds.
+        void Start()
+        {
+            _left = kRejoinSeconds;
+            _timer = kRejoinEvery;
+        }
+
+        // A frame of a_delta seconds. Returns whether to check now.
+        bool Tick(float a_delta)
+        {
+            if (_left <= 0.0f) {
+                return false;
+            }
+            _left -= a_delta;
+            _timer += a_delta;
+            if (_timer >= kRejoinEvery) {
+                _timer = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        bool Active() const { return _left > 0.0f; }
+        void Reset() { _left = 0.0f; }
+
+    private:
+        float _left = 0.0f;
+        float _timer = 0.0f;
+    };
 }

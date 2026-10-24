@@ -820,7 +820,10 @@ namespace AhShitRim::PlayerSync
             // don't keep swinging at where it lies.
             const bool knocked = KnockedDown(a_player);
             switch (state.down.Tick(a_delta, knocked)) {
-            case Knock::Step::Fell: ThrowCj(a_player, valid ? &pose : nullptr); break;
+            case Knock::Step::Fell:
+                ThrowCj(a_player, valid ? &pose : nullptr);
+                Police::OnKnockedDown(a_player);
+                break;
             case Knock::Step::Force:
                 GetUp(a_player, state.down.Tries());
                 Police::Retarget(a_player);
