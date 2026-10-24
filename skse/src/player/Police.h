@@ -24,7 +24,7 @@ namespace AhShitRim::Protocol
 //   breather, over before a star would go for nobody seeing him. They fight CJ alone: once a second, one fighting
 //   anyone else is pulled back onto him. When the stars go they stop fighting and
 //   are taken out a step a frame once the player can't see them (Sweep).
-// - Guards (any hold's) and ours hit CJ by the stars: a quarter of their damage at 1 star, half at 3, all of it from 4
+// - Guards (any hold's) and ours hit CJ by the stars: 0.4 of their damage at 1 star up to all of it from 5
 //   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
 // - AEZAKMI (CheatCodes) clears every hold's bounty and calls off the fight as it's typed, then keeps the stars
 //   at 0, puts back any bounty a crime adds and stops any guard fighting the player.

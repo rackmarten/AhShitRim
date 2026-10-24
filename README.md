@@ -126,8 +126,13 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 
 - Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars. A guard who fights CJ later knows him by his bounty, and a star or two come back.
+<<<<<<< HEAD
 - The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars the hold sets its tamed wolves on CJ, a couple at first and a pack of four by 5 stars (ice wolves from 5): they fight on the guards' side and are fast enough to catch him sprinting, and the further behind they are the faster they run, so even a car doesn't shake them for long. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth that run CJ down if he stays on foot (dragons, giants and mammoths only out in the open world, not in a city). At most 12 at once.
 - Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
+=======
+- The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth that run CJ down if he stays on foot (dragons, giants and mammoths only out in the open world, not in a city). At most 12 at once.
+- Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: 0.4 of their damage at 1 star, rising by 0.15 a star to all of it from 5. Bandits, wolves and everyone else hit as usual.
+>>>>>>> origin/add-pursuit-director
 - CJ has his own lines for being chased and busted.
 - A giant's club or a mammoth throws CJ through the air as a car's blast does, and he gets back up San Andreas's way.
 - In a car, stop for a second or two and the nearest guard puts his weapon away and runs round to the driver's door, then drags CJ out: Busted. On a bike he runs to CJ and knocks him off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
