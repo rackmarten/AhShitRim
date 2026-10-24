@@ -556,12 +556,34 @@ namespace AhShitRim::Police
             s.actor = actor->CreateRefHandle();
             s.unit = a_unit;
             if (a_unit == Wanted::Unit::Wolf) {
-                // The hold's tamed wolves: in its crime faction, so the guards and its people are their friends, and
+                // The hold's tamed wolves: out of their own factions (predators, enemies of the guards), and
                 // aggressive to enemies only (a wild wolf goes for anyone about).
-                if (auto* faction = FactionOf(*state.hold)) {
-                    actor->AddToFaction(faction, 0);
+                if (auto* npc = actor->GetActorBase()) {
+                    for (const auto& rank : npc->factions) {
+                        if (rank.faction) {
+                            actor->AddToFaction(rank.faction, -1);  // rank -1 is out, as Papyrus's RemoveFromFaction
+                        }
+                    }
                 }
                 actor->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, 1.0f);
+            }
+            if (!Wanted::OpenWorldOnly(a_unit) && a_unit != Wanted::Unit::Guard) {
+                // The hold's own (wolves, the captain, wizards, soldiers) take the factions of the guards ours copy, so
+                // they're all allies through the guards' civil war and guard factions, which are allied to themselves.
+                // The crime faction isn't, and the captain isn't in his side's civil war faction: a stray blow between
+                // him and a wolf, only neutral to each other, started a fight the guards joined on the wolf's side.
+                int   took = 0;
+                auto* guard = GuardBase(a_player);
+                if (auto* guardNpc = guard ? guard->As<RE::TESNPC>() : nullptr) {
+                    for (const auto& rank : guardNpc->factions) {
+                        if (rank.faction && rank.rank >= 0) {
+                            actor->AddToFaction(rank.faction, rank.rank);
+                            took++;
+                        }
+                    }
+                }
+                SKSE::log::info("police: {} {:08X} takes the {} faction(s) of guard base {:08X}", Wanted::NameOf(a_unit), actor->GetFormID(), took,
+                    guard ? guard->GetFormID() : 0);
             }
             const auto at = actor->GetPosition();
             SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}) comes from {} at ({:.0f},{:.0f},{:.0f}), {:.0f} units from CJ", Wanted::NameOf(a_unit),
@@ -582,7 +604,7 @@ namespace AhShitRim::Police
             values->SetActorValue(RE::ActorValue::kSpeedMult, mult);
             values->ModActorValue(RE::ACTOR_VALUE_MODIFIERS::kPermanent, RE::ActorValue::kCarryWeight, 0.1f);
             values->ModActorValue(RE::ACTOR_VALUE_MODIFIERS::kPermanent, RE::ActorValue::kCarryWeight, -0.1f);
-            if ((mult > 100.0f) != (a_s.speedMult > 100.0f) || (mult >= 200.0f) != (a_s.speedMult >= 200.0f)) {
+            if ((mult > 100.0f) != (a_s.speedMult > 100.0f)) {
                 SKSE::log::info("police: wolf {:08X} at {:.0f} units, CJ at {:.0f} a second: speed {:.0f}%", a_wolf->GetFormID(), a_wolf->GetPosition().GetDistance(a_feet),
                     state.cjSpeed, mult);
             }
