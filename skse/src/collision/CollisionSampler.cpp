@@ -12,7 +12,7 @@ namespace AhShitRim::CollisionSampler
         using Clock = std::chrono::steady_clock;
         using Layer = RE::COL_LAYER;
 
-        constexpr std::uint32_t kCells = 32;          // 64 units (about 0.9 m) between samples
+        constexpr std::uint32_t kCells = Protocol::kCollisionChunkCells;  // 64 units (about 0.9 m) between samples
         constexpr std::uint32_t kSamples = (kCells + 1) * (kCells + 1);
         constexpr int           kRadius = Ground::kSampleRadius;  // chunks around the player's chunk: 5 x 5, about 70 m each way
         constexpr int           kForgetRadius = Ground::kForgetRadius;  // from both centers; San Andreas keeps chunks within Ground::kKeepRadius of CJ, so a chunk it dropped was forgotten here and is resent

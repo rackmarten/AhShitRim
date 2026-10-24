@@ -104,3 +104,46 @@ TEST_CASE("the remembered spot moves with the origin, and a handover forgets it"
     w.Reset();
     CHECK_FALSE(w.HaveStood());
 }
+
+TEST_CASE("under the sampled land, CJ or his vehicle goes on top of it, even standing on something buried")
+{
+    Watch w;
+    w.Update(0.1f, Standing({ 0, 0, 10 }));
+    // A crash pushed it through the land; it stands on the buried part of a rock, 2 m under.
+    Around buried = Standing({ 30, 0, 8 });
+    buried.landZ = 10.0f;
+    CHECK_FALSE(w.Update(0.1f, buried));
+    CHECK_FALSE(w.Update(0.1f, buried));
+    const auto to = w.Update(0.1f, buried);
+    REQUIRE(to);
+    CHECK(to->x == 30.0f);
+    CHECK(to->z == 10.0f);
+
+    // Never remembered: through a hole next, it goes back to the spot on top, not the buried one.
+    Around onTop = Standing({ 30, 0, 10 });
+    onTop.landZ = 10.0f;
+    w.Update(0.1f, onTop);
+    w.Update(0.1f, buried);
+    Around hole;
+    hole.feet = { 31, 0, 5 };
+    std::optional<Vec3> back;
+    for (int i = 0; i < 5 && !back; i++) {
+        back = w.Update(0.1f, hole);
+    }
+    REQUIRE(back);
+    CHECK(back->z == 10.0f);
+}
+
+TEST_CASE("a little under the land, or no land known, is left to the other rules")
+{
+    Watch  w;
+    Around a = Standing({ 0, 0, 9.7f });
+    a.landZ = 10.0f;  // within kUnderLand: a foot on a slope, rounding
+    for (int i = 0; i < 10; i++) {
+        CHECK_FALSE(w.Update(0.1f, a));
+    }
+    Around unknown = Standing({ 0, 0, 0 });
+    for (int i = 0; i < 10; i++) {
+        CHECK_FALSE(w.Update(0.1f, unknown));
+    }
+}

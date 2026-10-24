@@ -189,6 +189,15 @@ namespace AhShitRim::Vehicles
                 if (!z) {
                     continue;
                 }
+                const auto edges = Vehicle::EdgePoints(spot, a_size);
+                std::array<bool, Vehicle::kEdgeSamples>  edgeHit{};
+                std::array<float, Vehicle::kEdgeSamples> edgeZ{};
+                for (int i = 0; i < Vehicle::kEdgeSamples; i++) {
+                    edgeHit[i] = GroundAt(edges[i], feet.z, edgeZ[i]);
+                }
+                if (!Vehicle::EdgesHold(edgeHit, edgeZ, *z, a_maxUneven)) {
+                    continue;  // a drop-off just past it: it would roll off and hang
+                }
                 const float h = *z + kClearHeight;
                 const auto  at = [&](int i) { return CVector(points[i].x, points[i].y, h); };
                 if (!Clear(chest, CVector(spot.center.x, spot.center.y, h)) || !Clear(at(0), at(3)) || !Clear(at(1), at(2))) {

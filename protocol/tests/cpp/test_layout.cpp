@@ -28,9 +28,16 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v34: the land in a collision chunk")
+{
+    CHECK(kProtocolVersion == 34);
+    CHECK(kCollisionChunkCells == 32);
+    CHECK(offsetof(CollisionChunkHeader, landVertexCount) == 36);
+    CHECK(sizeof(CollisionChunkHeader) == 40);
+}
+
 TEST_CASE("protocol v33: fist fights and lock-on")
 {
-    CHECK(kProtocolVersion == 33);
     CHECK(kProxyTarget == 0x4);
     CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
 }

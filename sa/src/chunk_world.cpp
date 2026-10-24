@@ -68,6 +68,7 @@ namespace AhShitRim::ChunkWorld
         {
             Ground::Origin    origin;
             Ground::ChunkBook book{ kSlots };
+            Ground::LandMap   land;  // v34: the land of the chunks built, for the fall rescue
             Slot              slots[kSlots];
             int               nextModel = kLastBorrowedModel;
             std::deque<std::vector<std::uint8_t>> waiting;
@@ -190,6 +191,7 @@ namespace AhShitRim::ChunkWorld
             slot.building->SetPosn(CVector(mesh.position.x, mesh.position.y, mesh.position.z));
             CWorld::Add(slot.building);
             slot.inWorld = true;
+            state.land.Set(key, Ground::LandOf(a_chunk));
             state.built++;
             state.replaced += replaced;
             state.triangles += static_cast<int>(mesh.triangles.size() / 3);
@@ -355,20 +357,23 @@ namespace AhShitRim::ChunkWorld
             float below = 0.0f;
             around.surfaceBelow = Line(from, from.z - FallRescue::kBelowReach, below);
             around.surfaceAbove = Line(from, from.z + FallRescue::kAboveReach, around.aboveZ);
+            around.landZ = state.land.HeightAt(state.origin, ToVec(feet));
+            const bool underLand = FallRescue::UnderLand(around);
             const auto to = state.fall.Update(CTimer::ms_fTimeStep / 50.0f, around);
             if (!to) {
                 return;
             }
             if (vehicle) {
-                // Back where its middle was, or onto the surface over it, its wheels on it.
-                const bool onto = around.surfaceAbove && std::abs(to->z - around.aboveZ) < 0.001f;
+                // Back where its middle was, or onto the surface over it (or the land), its wheels on it.
+                const bool onto = underLand || (around.surfaceAbove && std::abs(to->z - around.aboveZ) < 0.001f);
                 vehicle->Teleport(CVector(to->x, to->y, to->z + (onto ? lift : 0.0f) + 0.05f), false);  // also stops it and resets its suspension
             } else {
                 a_ped->SetPosn(CVector(to->x, to->y, to->z + lift + 0.05f));
                 a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
             }
-            Log(std::format("ground: {} was below the ground at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})",
-                vehicle ? "CJ's vehicle" : "CJ", feet.x, feet.y, feet.z, to->x, to->y, to->z));
+            Log(std::format("ground: {} was {} at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})", vehicle ? "CJ's vehicle" : "CJ",
+                underLand ? std::format("under the land ({:.1f} m down)", *around.landZ - feet.z) : std::string(around.surfaceAbove ? "below the ground" : "over a hole"),
+                feet.x, feet.y, feet.z, to->x, to->y, to->z));
         }
     }
 
@@ -377,6 +382,7 @@ namespace AhShitRim::ChunkWorld
         for (int slot : state.book.Begin(a_handover)) {
             TakeOut(state.slots[slot]);
         }
+        state.land.Clear();
         if (!state.origin.Reset(a_anchor)) {
             Log("ground: the handover's anchor isn't a number, the origin stays where it was");
         }
@@ -435,6 +441,7 @@ namespace AhShitRim::ChunkWorld
 
         const auto cj = state.origin.ToSkyrim(ToVec(a_ped->GetPosition()));
         const auto distant = state.book.DropFar(Ground::KeyOf(cj[0], cj[1]));
+        state.land.DropFar(Ground::KeyOf(cj[0], cj[1]));
         for (int slot : distant) {
             TakeOut(state.slots[slot]);
         }

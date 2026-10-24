@@ -17,7 +17,9 @@
 #include <compare>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "../ahshitrim_protocol.h"
@@ -329,5 +331,87 @@ namespace AhShitRim::Ground
         std::uint32_t         _generation = 0;
         std::map<Key, int>    _chunks;
         std::vector<std::uint8_t> _free;  // 1: slot free
+    };
+
+    // ---- The land under CJ ----
+
+    // v34: the land of the chunks San Andreas keeps, as Skyrim sampled it (the payload's first landVertexCount
+    // vertices), apart from the statics. A thin San Andreas triangle mesh can be driven or pushed through in a hard
+    // crash, and below it the buried part of a rock passed for ground; the land says where the top is.
+    inline constexpr int   kLandSide = static_cast<int>(Protocol::kCollisionChunkCells) + 1;
+    inline constexpr float kLandStep = static_cast<float>(Protocol::kCollisionChunkUnits) / static_cast<float>(Protocol::kCollisionChunkCells);
+
+    // One chunk's land samples, Skyrim world heights; NaN where a ray missed.
+    struct Land
+    {
+        std::array<float, kLandSide * kLandSide> z;
+
+        Land() { z.fill(std::numeric_limits<float>::quiet_NaN()); }
+    };
+
+    inline Land LandOf(const Chunk& a_chunk)
+    {
+        const auto& h = a_chunk.header;
+        Land        land;
+        // The land vertices sit on the grid from header.origin, the chunk's corner.
+        const double cornerX = static_cast<double>(h.chunkX) * Protocol::kCollisionChunkUnits, cornerY = static_cast<double>(h.chunkY) * Protocol::kCollisionChunkUnits;
+        const auto   count = (std::min)(h.landVertexCount, h.vertexCount);
+        for (std::uint32_t v = 0; v < count; ++v) {
+            const float* p = a_chunk.vertices + v * 3;
+            const long   i = std::lround((h.origin[0] + p[0] - cornerX) / kLandStep);
+            const long   j = std::lround((h.origin[1] + p[1] - cornerY) / kLandStep);
+            if (i >= 0 && j >= 0 && i < kLandSide && j < kLandSide) {
+                land.z[j * kLandSide + i] = h.origin[2] + p[2];
+            }
+        }
+        return land;
+    }
+
+    // The land of the chunks San Andreas keeps, by chunk; heights where CJ is, through the origin.
+    class LandMap
+    {
+    public:
+        void Set(const Key& a_key, const Land& a_land) { _land[a_key] = a_land; }
+        void Clear() { _land.clear(); }
+
+        // Forgets the chunks more than a_radius from a_center, as ChunkBook::DropFar does.
+        void DropFar(const Key& a_center, int a_radius = kKeepRadius)
+        {
+            std::erase_if(_land, [&](const auto& a_entry) { return Distance(a_entry.first, a_center) > a_radius; });
+        }
+
+        // The land's height under a San Andreas position (metres), on the triangles San Andreas has (a-b-c and
+        // b-d-c a cell); nothing where no chunk is or a corner was missed.
+        std::optional<float> HeightAt(const Origin& a_origin, const Vec3& a_at) const
+        {
+            const auto sky = a_origin.ToSkyrim(a_at);
+            const auto key = KeyOf(sky[0], sky[1]);
+            const auto it = _land.find(key);
+            if (it == _land.end()) {
+                return std::nullopt;
+            }
+            const double u = (sky[0] - static_cast<double>(key.x) * Protocol::kCollisionChunkUnits) / kLandStep;
+            const double w = (sky[1] - static_cast<double>(key.y) * Protocol::kCollisionChunkUnits) / kLandStep;
+            const int    i = std::clamp(static_cast<int>(std::floor(u)), 0, kLandSide - 2);
+            const int    j = std::clamp(static_cast<int>(std::floor(w)), 0, kLandSide - 2);
+            const float  fx = static_cast<float>(u - i), fy = static_cast<float>(w - j);
+            const auto&  z = it->second.z;
+            const float  a = z[j * kLandSide + i], b = z[j * kLandSide + i + 1], c = z[(j + 1) * kLandSide + i], d = z[(j + 1) * kLandSide + i + 1];
+            float        height;
+            if (fx + fy <= 1.0f) {
+                height = a + fx * (b - a) + fy * (c - a);
+            } else {
+                height = d + (1.0f - fx) * (c - d) + (1.0f - fy) * (b - d);
+            }
+            if (!std::isfinite(height)) {
+                return std::nullopt;  // a corner it needs was missed
+            }
+            return a_origin.ToSanAndreas(sky[0], sky[1], height).z;
+        }
+
+        std::size_t Count() const { return _land.size(); }
+
+    private:
+        std::map<Key, Land> _land;
     };
 }

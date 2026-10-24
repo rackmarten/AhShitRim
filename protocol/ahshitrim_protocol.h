@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 33;
+    inline constexpr std::uint32_t kProtocolVersion = 34;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -29,6 +29,8 @@ namespace AhShitRim::Protocol
     // Collision chunks are squares of this many Skyrim units (about 29 m) on a grid anchored at
     // Skyrim's world (0, 0): chunk (x, y) starts at (x * size, y * size).
     inline constexpr std::uint32_t kCollisionChunkUnits = 2048;
+    // A chunk's land is a heightfield of this many cells a side, so (cells + 1) squared samples, 64 units apart.
+    inline constexpr std::uint32_t kCollisionChunkCells = 32;
 
     // CJ's skeleton has 32 bones; room for any San Andreas ped's. A vehicle's parts (chassis, wheels,
     // doors, ...) go in the same 64 (v6).
@@ -453,7 +455,7 @@ namespace AhShitRim::Protocol
         float         origin[3];   // Skyrim world units
         std::uint32_t vertexCount;
         std::uint32_t indexCount;
-        std::uint32_t reserved;
+        std::uint32_t landVertexCount;  // v34: the first this many vertices are the land's heightfield samples, the rest the statics'
     };
 
     enum class WeaponCommandKind : std::uint32_t
