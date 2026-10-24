@@ -739,14 +739,15 @@ namespace AhShitRim::PlayerSync
             return knock < std::size(kNames) ? kNames[knock] : "?";
         }
 
-        // Down too long (Knock::kDownMost): Skyrim's own fix for an actor stuck in its ragdoll, and from the second try its
-        // knock state put back to normal. The log says which state it was stuck in and whether it took.
+        // Down too long (Knock::kDownMost): Skyrim's own fix for an actor stuck in its ragdoll, and its knock state put back to
+        // normal (in game the player was stuck queued and ragdolled, and only the reset got it up). The log says which state
+        // it was stuck in and whether it took.
         void GetUp(RE::PlayerCharacter* a_player, int a_try)
         {
             const char* before = KnockStateName(a_player);
             const bool  ragdoll = a_player->IsInRagdollState();
             a_player->PotentiallyFixRagdollState();
-            if (auto* actorState = a_player->AsActorState(); a_try >= 2 && actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
+            if (auto* actorState = a_player->AsActorState(); actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
                 actorState->actorState1.knockState = RE::KNOCK_STATE_ENUM::kNormal;
             }
             SKSE::log::info("player sync: the player is still down after {:.1f} s (knock state {}{}), made to get up (try {}): now {}{}, back where CJ is",
