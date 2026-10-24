@@ -14,6 +14,17 @@
       }
     },
     {
+      "name": "tools",
+      "displayName": "Tools in Release (Ninja, MSVC, vcpkg): the radar map generator",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/tools",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+      }
+    },
+    {
       "name": "linux-tests",
       "displayName": "Protocol tests (Ninja, gcc or clang, doctest fetched)",
       "generator": "Ninja",
@@ -26,6 +37,7 @@
   ],
   "buildPresets": [
     { "name": "tests", "configurePreset": "tests" },
+    { "name": "tools", "configurePreset": "tools" },
     { "name": "linux-tests", "configurePreset": "linux-tests" }
   ],
   "testPresets": [
