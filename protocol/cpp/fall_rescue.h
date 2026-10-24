@@ -10,7 +10,9 @@
 // v23: below the land Skyrim sampled (Ground::LandMap) by more than kUnderLand, he goes back on top of it, right
 // above where he is, whatever is under him: a hard crash pushed a car through the land's thin triangles and the
 // buried part of a rock under it passed for ground, so the spot he "last stood" was under the land too and every
-// rescue put him back there. A spot under the land is never remembered.
+// rescue put him back there. A spot under the land is never remembered. On top of the land only where San Andreas
+// has that ground (the lowest surface over him is the land's): where its chunk was missing, a car put on the land's
+// height fell straight through again, every 0.7 s for minutes; there he goes back where he last stood instead.
 
 #pragma once
 
@@ -29,6 +31,7 @@ namespace AhShitRim::FallRescue
     inline constexpr float kBelowReach = 500.0f;  // how far down San Andreas looks for a surface
     inline constexpr float kAboveReach = 200.0f;  // ... and up
     inline constexpr float kUnderLand = 0.5f;     // metres below the sampled land that count as under it
+    inline constexpr float kLandMatch = 0.5f;     // the lowest surface over him this close to the land's height is the land
 
     // What San Andreas sees around CJ this frame. Positions are his feet, San Andreas metres.
     struct Around
@@ -47,6 +50,12 @@ namespace AhShitRim::FallRescue
         return a_around.landZ && a_around.feet.z < *a_around.landZ - kUnderLand;
     }
 
+    // Whether San Andreas has the sampled land over him: something to put him on.
+    inline bool LandBuilt(const Around& a_around)
+    {
+        return a_around.landZ && a_around.surfaceAbove && std::abs(a_around.aboveZ - *a_around.landZ) <= kLandMatch;
+    }
+
     class Watch
     {
     public:
@@ -59,7 +68,10 @@ namespace AhShitRim::FallRescue
                     return std::nullopt;
                 }
                 _below = 0.0f;
-                return Vec3{ a_around.feet.x, a_around.feet.y, *a_around.landZ };
+                if (LandBuilt(a_around) || !_haveStood) {
+                    return Vec3{ a_around.feet.x, a_around.feet.y, *a_around.landZ };
+                }
+                return _stood;
             }
             if (a_around.standing && a_around.surfaceBelow) {
                 _stood = a_around.feet;
