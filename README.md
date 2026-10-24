@@ -1,12 +1,34 @@
 # AhShitRim
 
-> **Thane of Grove Street.** San Andreas in Skyrim.
+<p align="center">
+  <b>Thane of Grove Street.</b> San Andreas in Skyrim.<br>
+  <a href="https://github.com/rackmarten/AhShitRim/releases/latest"><b>Download</b></a> ·
+  <a href="docs/INSTALL.md"><b>Install</b></a> ·
+  <a href="#reporting-a-problem"><b>Report a bug</b></a>
+</p>
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=kBfgl2EbtLo"><img src="https://img.youtube.com/vi/kBfgl2EbtLo/maxresdefault.jpg" alt="Watch the AhShitRim teaser on YouTube" width="800"></a><br>
+  <sub>▶ Watch the teaser on YouTube. The full montage comes later.</sub>
+</p>
 
 CJ from **Grand Theft Auto: San Andreas** plays through **Skyrim Anniversary Edition**. Both games run at once: Skyrim owns the world and draws everything, San Andreas runs hidden and simulates CJ, his cars, his guns and his cheat codes. Hijack a cart outside Helgen, do a drive-by on the Thalmor, and outrun Whiterun's guards with five stars on your head.
 
 Version 0.1 takes you from the Helgen cart to the Greybeards. A sibling of [PerkeleRim](https://github.com/rackmarten/PerkeleRim) (My Summer Car in Skyrim), built the same way.
 
-**Install it:** [docs/INSTALL.md](docs/INSTALL.md), step by step. You need your own copies of both games (see [Requirements](#requirements)).
+You need your own copies of both games: nothing from either is in this repository or its download.
+
+<!-- Screenshots: a short gallery from docs/media/ goes here once the picks are approved. -->
+
+## Download and install
+
+Download `AhShitRim-0.1.0.zip` from [Releases](https://github.com/rackmarten/AhShitRim/releases/latest) and follow [docs/INSTALL.md](docs/INSTALL.md), step by step. You need:
+
+- Windows 10/11 and a PC that can run both games at once (San Andreas is light)
+- [The Elder Scrolls V: Skyrim Anniversary Edition](https://store.steampowered.com/app/489830/) (latest Steam version) with [SKSE64](https://skse.silverlock.org) and [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
+- [Grand Theft Auto: San Andreas](https://store.steampowered.com/app/12120/) (Steam), **downgraded to 1.0 US** with a downgrader, plus an ASI loader. One exe version means one set of memory addresses. The Definitive Edition is a different engine and won't work.
+
+The Skyrim part goes in with your mod manager. The launcher, `Start AhShitRim.bat`, checks both games, puts San Andreas's part in place, paints the radar's map from your own plugins, and starts both games.
 
 ## What you can do
 
@@ -170,15 +192,9 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 - **Memory**: Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
 - **Saving while wanted**: as in San Andreas, F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about. Lose the stars, or ASNAEB, then save.
 
-Found something else? Open an issue with what you did, what you expected, and both logs: `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`) and `scripts\AhShitRim.log` in your San Andreas folder.
+## Reporting a problem
 
-## Requirements
-
-Setting them up, step by step: [docs/INSTALL.md](docs/INSTALL.md).
-
-- Windows 10/11 and a PC that can run both games at once (San Andreas is light)
-- [The Elder Scrolls V: Skyrim Anniversary Edition](https://store.steampowered.com/app/489830/) (latest Steam version) with [SKSE64](https://skse.silverlock.org) and [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
-- [Grand Theft Auto: San Andreas](https://store.steampowered.com/app/12120/) (Steam), **downgraded to 1.0 US** with a downgrader, plus an ASI loader. One exe version means one set of memory addresses. The Definitive Edition is a different engine and won't work.
+Found something else? Open an [issue](https://github.com/rackmarten/AhShitRim/issues) with what you did, what you expected, and both logs: `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`) and `scripts\AhShitRim.log` in your San Andreas folder.
 
 ## Game assets
 
@@ -194,8 +210,15 @@ The one exception will be our own music: Sweetroll FM's tracks, CC0 (public doma
 
 Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESIGN.md](docs/DESIGN.md). The link between the games: [docs/PROTOCOL.md](docs/PROTOCOL.md). What changed: [CHANGELOG.md](CHANGELOG.md).
 
+## Credits
+
+- [CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG) for the SKSE plugin, and [plugin-sdk](https://github.com/DK22Pac/plugin-sdk) for the San Andreas one.
+- [gta-reversed](https://github.com/gta-reversed/gta-reversed), whose reading of San Andreas's code this mod leans on everywhere.
+- [DirectXTK](https://github.com/microsoft/DirectXTK) for the overlay, [doctest](https://github.com/doctest/doctest) for the tests.
+- [PerkeleRim](https://github.com/rackmarten/PerkeleRim), the My Summer Car mod whose two-games-at-once design this one follows.
+
 ## License
 
-Not chosen yet.
+[MIT](LICENSE) © Marek Uncik ([rackmarten](https://github.com/rackmarten)). The license covers AhShitRim's own code and docs only: no Rockstar or Bethesda assets are included, and the plugins read what they need from your own installs at play time.
 
 Not affiliated with or endorsed by Rockstar Games, Take-Two Interactive or Bethesda Softworks. Grand Theft Auto, San Andreas and Skyrim are trademarks of their respective owners.
