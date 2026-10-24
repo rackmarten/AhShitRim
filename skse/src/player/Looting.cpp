@@ -5,6 +5,7 @@
 #include "menus.h"
 
 #include <atomic>
+#include <thread>
 
 namespace AhShitRim::Looting
 {
@@ -20,6 +21,11 @@ namespace AhShitRim::Looting
 
         // ---- Skyrim's menus (UI tasks, on Skyrim's UI processing) ----
 
+        // A UI task must never queue another from inside itself: SKSE runs the UI task queue until it is empty,
+        // so a task that queues itself spins there for good and Skyrim hangs (it did, closing a barter). A pacer
+        // thread queues one tick at a time instead, every kTickEvery, while there is something to watch.
+        constexpr auto kTickEvery = std::chrono::milliseconds(50);
+
         constexpr std::string_view kClosed[] = { RE::InventoryMenu::MENU_NAME, RE::ContainerMenu::MENU_NAME, RE::BarterMenu::MENU_NAME };
         constexpr std::size_t      kBarter = 2;
 
@@ -29,9 +35,11 @@ namespace AhShitRim::Looting
         {
             Menus::Closer                         closers[std::size(kClosed)];
             Menus::DialogueWatch                  watch;
-            bool                                  ticking = false;
             std::chrono::steady_clock::time_point last;
         } menus;  // UI tasks only
+
+        std::atomic<bool> ticking = false;  // the pacer thread runs
+        std::atomic<bool> posted = false;   // a tick is queued and hasn't run yet
 
         bool Talking()
         {
@@ -50,12 +58,13 @@ namespace AhShitRim::Looting
         // have settled, and shows a dialogue's menu again if it was left without it.
         void Tick()
         {
+            posted = false;
             auto*      ui = RE::UI::GetSingleton();
             const auto now = std::chrono::steady_clock::now();
             const float seconds = (std::min)(std::chrono::duration<float>(now - menus.last).count(), 0.25f);
             menus.last = now;
             if (!ui) {
-                menus.ticking = false;
+                ticking = false;
                 return;
             }
             const bool dialogueMenu = ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
@@ -76,21 +85,24 @@ namespace AhShitRim::Looting
                 Send(RE::DialogueMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow);
                 SKSE::log::warn("looting: the dialogue was left without its menu after a barter, shown again");
             }
-            menus.ticking = anyOpen || menus.watch.Armed();
-            if (menus.ticking) {
-                SKSE::GetTaskInterface()->AddUITask(Tick);
+            if (!anyOpen && !menus.watch.Armed()) {
+                ticking = false;  // nothing left to watch: the pacer stops
             }
         }
 
         void StartTicking()
         {
-            SKSE::GetTaskInterface()->AddUITask([] {
-                if (!menus.ticking) {
-                    menus.ticking = true;
-                    menus.last = std::chrono::steady_clock::now();
-                    Tick();
+            if (ticking.exchange(true)) {
+                return;
+            }
+            std::thread([] {
+                while (ticking) {
+                    std::this_thread::sleep_for(kTickEvery);
+                    if (ticking && !posted.exchange(true)) {
+                        SKSE::GetTaskInterface()->AddUITask(Tick);
+                    }
                 }
-            });
+            }).detach();
         }
 
         // Takes a_ref's gold and quest items into the player's inventory. a_steal: from an owned container, as
