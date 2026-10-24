@@ -35,9 +35,11 @@ TEST_CASE("protocol v23: the vehicle keymap")
     CHECK(kButtonVehicleFireAlt == 0x80000);
     CHECK(kButtonLookBehind == 0x100000);
     CHECK(kButtonCameraView == 0x200000);
+    CHECK(kButtonAccelerate == 0x400000);
+    CHECK(kButtonBrake == 0x800000);
     const std::uint32_t before = 0x3FFFF;  // every button up to v22's kButtonHydraulics
     CHECK((before & kButtonHydraulics) != 0);
-    CHECK(((kButtonVehicleFire | kButtonVehicleFireAlt | kButtonLookBehind | kButtonCameraView) & before) == 0);
+    CHECK(((kButtonVehicleFire | kButtonVehicleFireAlt | kButtonLookBehind | kButtonCameraView | kButtonAccelerate | kButtonBrake) & before) == 0);
 }
 
 TEST_CASE("protocol v22: busted")

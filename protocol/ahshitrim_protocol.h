@@ -138,6 +138,8 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonVehicleFireAlt = 0x80000;  // v23: Left Ctrl or numpad 0, in a vehicle: its second weapon and a bicycle's bunny hop, as the right mouse button (L1)
     inline constexpr std::uint32_t kButtonLookBehind = 0x100000;     // v23: the middle mouse button, in a vehicle: look behind (L2 and R2 together)
     inline constexpr std::uint32_t kButtonCameraView = 0x200000;     // v23: V or Home, in a vehicle: San Andreas's next camera distance (select)
+    inline constexpr std::uint32_t kButtonAccelerate = 0x400000;     // v23: W held, whatever S does (moveY cancels the two): in a vehicle Cross
+    inline constexpr std::uint32_t kButtonBrake = 0x800000;          // v23: S held: in a vehicle Square; with W, San Andreas's burnout
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState
