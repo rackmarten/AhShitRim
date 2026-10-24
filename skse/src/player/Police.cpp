@@ -25,7 +25,8 @@ namespace AhShitRim::Police
         constexpr float      kJoinEvery = 1.0f;   // seconds between calls for the hold's guards to join
         constexpr float      kCalmEvery = 0.5f;   // seconds between calling the fight off, while busted or never wanted
         constexpr float      kMountAfter = 0.5f;  // a rider gets on his horse this long after both are in
-        constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that
+        constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that, once he's on it
+        constexpr float      kMountWait = 5.0f;   // or this long after, on it or not
         constexpr float      kRetargetEvery = 1.0f;  // seconds between pulling ours back onto CJ from whoever else they fight
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
@@ -56,6 +57,7 @@ namespace AhShitRim::Police
             float               retarget = 0.0f;  // seconds since its target was last checked
             bool                mounted = false;
             bool                fighting = false;
+            bool                onHorse = false;    // a rider seen on his horse
             bool                offLogged = false;  // logged a rider found off his horse
         };
 
@@ -438,6 +440,26 @@ namespace AhShitRim::Police
             return found ? found : RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
         }
 
+        // A levelled list (the soldiers' LCharSoldier*) as one of its NPCs (Wanted::PickLeveled, a few lists deep): a reference
+        // made straight from a list is no actor. Anything else as it is.
+        RE::TESBoundObject* Resolve(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base)
+        {
+            static unsigned roll = 0;
+            for (int depth = 0; depth < 4 && a_base; depth++) {
+                auto* list = a_base->As<RE::TESLevCharacter>();
+                if (!list) {
+                    return a_base->Is(RE::FormType::NPC) ? a_base : nullptr;
+                }
+                std::vector<std::uint16_t> levels;
+                for (const auto& entry : list->entries) {
+                    levels.push_back(entry.level);
+                }
+                const int i = Wanted::PickLeveled(levels.data(), static_cast<int>(levels.size()), a_player->GetLevel(), roll++);
+                a_base = i >= 0 && list->entries[static_cast<std::size_t>(i)].form ? list->entries[static_cast<std::size_t>(i)].form->As<RE::TESBoundObject>() : nullptr;
+            }
+            return a_base && a_base->Is(RE::FormType::NPC) ? a_base : nullptr;
+        }
+
         RE::TESBoundObject* BaseFor(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             const bool imperial = state.hold->side == Wanted::Side::Imperial;
@@ -451,7 +473,7 @@ namespace AhShitRim::Police
             case Wanted::Unit::Mammoth: id = Wanted::kMammoth; break;
             default: return GuardBase(a_player);
             }
-            return RE::TESForm::LookupByID<RE::TESBoundObject>(id);
+            return Resolve(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(id));
         }
 
         // The hold's barracks door's spot outside.
@@ -555,12 +577,21 @@ namespace AhShitRim::Police
 
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
-            auto*       base = BaseFor(a_player, a_unit);
+            auto* base = BaseFor(a_player, a_unit);
+            if (!base && a_unit != Wanted::Unit::Guard) {
+                SKSE::log::info("police: no {} to send for {}, a guard instead", Wanted::NameOf(a_unit), state.hold->name);
+                a_unit = Wanted::Unit::Guard;
+                base = BaseFor(a_player, a_unit);
+            }
             const char* from = "?";
             auto*       ref = base ? PlaceSomewhere(a_player, base, a_unit, from) : nullptr;
             auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
             if (!actor) {
-                SKSE::log::info("police: no spot for a {} of {} (base {:08X})", Wanted::NameOf(a_unit), state.hold->name, base ? base->GetFormID() : 0);
+                if (ref) {
+                    state.leaving.push_back({ ref->CreateRefHandle(), {}, 0 });  // made, but no actor: it goes again
+                }
+                SKSE::log::info("police: no spot for a {} of {} (base {:08X}{})", Wanted::NameOf(a_unit), state.hold->name, base ? base->GetFormID() : 0,
+                    ref ? ", and it made no actor" : "");
                 return false;
             }
             Spawned s;
@@ -601,7 +632,11 @@ namespace AhShitRim::Police
                     const bool took = horse->ActivateRef(actor, 0, nullptr, 0, false);
                     SKSE::log::info("police: rider {:08X} gets on horse {:08X} ({})", actor->GetFormID(), horse->GetFormID(), took ? "activated" : "the horse refused");
                 }
-                if (!s.fighting && s.age >= (horse ? kMountAfter + kFightAfter : kMountAfter)) {
+                // A rider goes for CJ once he's on his horse (getting on takes a moment, and a fight started before then
+                // has him get off again), or after kMountWait whatever.
+                s.onHorse = s.onHorse || (horse && actor->IsOnMount());
+                const bool ready = !horse || (s.age >= kMountAfter + kFightAfter && s.onHorse) || s.age >= kMountAfter + kMountWait;
+                if (!s.fighting && s.age >= kMountAfter && ready) {
                     s.fighting = true;
                     const bool fights = actor->StartCombat(a_player);
                     SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
@@ -611,9 +646,10 @@ namespace AhShitRim::Police
                 s.retarget += a_delta;
                 if (s.fighting && s.retarget >= kRetargetEvery) {
                     s.retarget = 0.0f;
-                    if (horse && s.mounted && !s.offLogged && !actor->IsOnMount()) {
-                        s.offLogged = true;  // Skyrim's AI got him off after all (or he never got on)
-                        SKSE::log::info("police: rider {:08X} fights on foot, his horse {:08X} left behind", actor->GetFormID(), horse->GetFormID());
+                    if (horse && !s.offLogged && !actor->IsOnMount()) {
+                        s.offLogged = true;  // Skyrim's AI got him off after all, or he never got on
+                        SKSE::log::info("police: rider {:08X} fights on foot ({}), his horse {:08X} left behind", actor->GetFormID(),
+                            s.onHorse ? "he got off" : "he never got on", horse->GetFormID());
                     }
                     if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
                         SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());

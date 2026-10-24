@@ -480,6 +480,32 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // The soldiers' bases are levelled lists (LCharSoldier*, LVLN), and a reference made straight from one is no actor:
+    // one of its entries is picked instead, as Skyrim levels a list (anyone up to the player's level; with nobody that
+    // low, the lowest). a_levels are the entries' levels, a_roll any number (which of those it is). -1 for an empty list.
+    inline int PickLeveled(const std::uint16_t* a_levels, int a_count, int a_playerLevel, unsigned a_roll)
+    {
+        if (!a_levels || a_count <= 0) {
+            return -1;
+        }
+        int fits = 0;
+        int lowest = 0;
+        for (int i = 0; i < a_count; i++) {
+            fits += a_levels[i] <= a_playerLevel ? 1 : 0;
+            lowest = a_levels[i] < a_levels[lowest] ? i : lowest;
+        }
+        if (fits == 0) {
+            return lowest;
+        }
+        int pick = static_cast<int>(a_roll % static_cast<unsigned>(fits));
+        for (int i = 0; i < a_count; i++) {
+            if (a_levels[i] <= a_playerLevel && pick-- == 0) {
+                return i;
+            }
+        }
+        return lowest;
+    }
+
     // ---- Busted in a vehicle ----
 
     enum class Bust : std::uint8_t

@@ -402,6 +402,21 @@ TEST_CASE("never in view: behind the camera is hidden, in front isn't")
     CHECK(west.x < -kSpawnNear);
 }
 
+TEST_CASE("a levelled list's soldier: anyone up to the player's level, else the lowest")
+{
+    const std::uint16_t levels[] = { 1, 10, 25, 40 };
+    for (unsigned roll = 0; roll < 20; roll++) {
+        const int i = PickLeveled(levels, 4, 12, roll);
+        CHECK((i == 0 || i == 1));
+    }
+    CHECK(PickLeveled(levels, 4, 12, 0) != PickLeveled(levels, 4, 12, 1));  // the roll picks among them
+    CHECK(PickLeveled(levels, 4, 50, 3) == 3);
+    const std::uint16_t high[] = { 30, 20, 40 };
+    CHECK(PickLeveled(high, 3, 5, 7) == 1);  // nobody that low: the lowest
+    CHECK(PickLeveled(levels, 0, 10, 0) == -1);
+    CHECK(PickLeveled(nullptr, 3, 10, 0) == -1);
+}
+
 TEST_CASE("CJ's pursuit lines come after the conversation's categories")
 {
     CHECK(kLineChased >= 16);
