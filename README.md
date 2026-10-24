@@ -95,7 +95,7 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 
 While CJ has the player, San Andreas's radar stands in for Skyrim's compass, bottom left as in San Andreas. It turns with the camera and zooms out when CJ drives fast. On it: the marker you put on Skyrim's map (San Andreas's red waypoint), your quest targets (the compass's markers, as San Andreas's yellow squares, a triangle up or down when the target is above or below CJ), Ammu-Nation's gun icon near the blacksmiths who keep one, and red dots for whoever is fighting you. Far targets sit on the rim. Indoors it goes dark with only the markers on it.
 
-The map is a San Andreas-style map of Skyrim generated from your own files (`radar-map.png` and `radar-map.json` in `Documents\My Games\AhShitRim`); without it the radar shows plain grey ground. To keep Skyrim's compass up as well, put `Compass=1` under `[Hud]` in `Data/SKSE/Plugins/AhShitRim.ini`.
+The map is a San Andreas-style map of Skyrim the launcher paints from your own plugins (`radar-map.png` and `radar-map.json` in `Documents\My Games\AhShitRim`; `scripts/radar-map.ps1` in a checkout); without it the radar shows plain grey ground. To keep Skyrim's compass up as well, put `Compass=1` under `[Hud]` in `Data/SKSE/Plugins/AhShitRim.ini`.
 
 ## Wanted level and Busted
 

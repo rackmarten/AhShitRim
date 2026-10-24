@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
 #include "../../cpp/radar.h"
+#include "../../cpp/radar_map.h"
+
+#include <string>
 
 using namespace AhShitRim;
 using namespace AhShitRim::Radar;
@@ -267,4 +270,26 @@ TEST_CASE("the radar map's JSON gives the image's place in the world")
     CHECK_FALSE(ParseMapJson(R"({ "width": 10, "height": 10, "unitsPerPixel": 128 })"));  // no origin
     CHECK_FALSE(ParseMapJson(R"({ "width": 0, "height": 10, "unitsPerPixel": 128, "origin": { "x": 0, "y": 0 } })"));
     CHECK_FALSE(ParseMapJson(R"({ "width": "big", "height": 10, "unitsPerPixel": 128, "origin": { "x": 0, "y": 0 } })"));
+}
+
+TEST_CASE("the radar lays the map where the map generator painted it")
+{
+    // Tamriel's cells, as the generator writes them into radar-map.json.
+    RadarMap::Mapping mapping;
+    mapping.minCellX = -57;
+    mapping.minCellY = -43;
+    mapping.maxCellX = 61;
+    mapping.maxCellY = 50;
+    const auto json = "{ \"width\": " + std::to_string(mapping.Width()) + ", \"height\": " + std::to_string(mapping.Height()) +
+                      ", \"unitsPerPixel\": " + std::to_string(mapping.UnitsPerPixel()) + ", \"origin\": { \"x\": " +
+                      std::to_string(static_cast<long long>(mapping.OriginX())) + ", \"y\": " + std::to_string(static_cast<long long>(mapping.OriginY())) + " } }";
+    const auto map = ParseMapJson(json);
+    REQUIRE(map);
+    // Whiterun's Dragonsreach, and a corner of the map.
+    for (const Vec2 world : { Vec2{ 21000.0f, -8000.0f }, Vec2{ -200000.0f, 150000.0f } }) {
+        const auto [px, py] = mapping.WorldToPixel(world.x, world.y);
+        const auto uv = UvOf(*map, world);
+        CHECK(uv.x * static_cast<float>(mapping.Width()) == doctest::Approx(static_cast<float>(px)).epsilon(1e-4));
+        CHECK(uv.y * static_cast<float>(mapping.Height()) == doctest::Approx(static_cast<float>(py)).epsilon(1e-4));
+    }
 }

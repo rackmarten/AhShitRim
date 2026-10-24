@@ -49,6 +49,7 @@ Either way, AhShitRim has no `.esp`: there's nothing to add to the load order.
 3. The first time, it finds Skyrim through Steam and asks for the San Andreas folder: pick the downgraded copy from step 2. Both are kept in `launcher.ini` next to it (delete that file to pick them again).
 4. It checks Skyrim's version, SKSE, Address Library and AhShitRim's Skyrim part, then that `gta_sa.exe` is 1.0 US and the ASI loader is there. Anything missing is listed in red with where to get it; fix it and run it again.
 5. It copies `AhShitRim.asi` into San Andreas's `scripts` folder and tells AhShitRim where San Andreas is (`Data\SKSE\Plugins\AhShitRim.ini` in Skyrim's folder, which it writes).
+   It also paints the radar's San Andreas-style map of Skyrim from your own plugins into `Documents\My Games\AhShitRim` (a few seconds the first time, then again only when your plugins change).
 6. It starts San Andreas, which stays minimized, and waits until it's ready (up to two minutes).
 7. Then it starts Skyrim through SKSE. With **Mod Organizer 2**, it starts Skyrim through MO2, so Skyrim sees MO2's mods: it asks MO2 to run the instance's SKSE executable (the one pointing at this Skyrim's `skse64_loader.exe`), whether MO2 is open already or not. The first time, it may ask where `ModOrganizer.exe` is. If the instance has no SKSE executable, it says so and leaves it to you: start **SKSE** from MO2's executables list.
 

@@ -196,6 +196,17 @@ if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") 
 }
 Write-Host "Screenshots (F11) go to $shots"
 
+# The radar's map, painted from this Skyrim's plugins into Documents\My Games\AhShitRim (a few seconds, and
+# nothing while it's up to date). The release zip carries the painter; a repo checkout takes the tools build.
+$painter = Join-Path $Root 'radar_map.exe'
+if (-not (Test-Path $painter)) { $painter = Join-Path (Split-Path $Root) 'protocol\build\tools\radar_map.exe' }
+if (Test-Path $painter) {
+    & $painter --skyrim $skyrim
+    if ($LASTEXITCODE -ne 0) { Write-Host "The radar's map couldn't be painted (exit code $LASTEXITCODE): the radar shows plain ground." -ForegroundColor Yellow }
+} else {
+    Write-Host "radar_map.exe is missing next to this launcher: the radar shows plain ground until there's a map." -ForegroundColor Yellow
+}
+
 if ($NoStart) { Write-Host 'Checked and installed, not starting the games (-NoStart).'; return }
 
 # --- Start San Andreas ----------------------------------------------------------------------
