@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 22;
+    inline constexpr std::uint32_t kProtocolVersion = 23;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -133,7 +133,11 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kButtonTurretRight = 0x4000;  // v19: numpad 6
     inline constexpr std::uint32_t kButtonTurretUp = 0x8000;     // v19: numpad 8 or Page Up: the Hydra's nozzles back towards forward flight
     inline constexpr std::uint32_t kButtonTurretDown = 0x10000;  // v19: numpad 2 or Page Down: the Hydra's nozzles down towards hovering
-    inline constexpr std::uint32_t kButtonHydraulics = 0x20000;  // v20: numpad 5, in a vehicle: San Andreas's R3, the hydraulics' jump with the turret keys
+    inline constexpr std::uint32_t kButtonHydraulics = 0x20000;  // v20: numpad 5 (v23: also 2 and numpad +), in a vehicle: San Andreas's R3 (its sub-mission key): the hydraulics' jump with the turret keys, a plane's landing gear, the crop duster's smoke
+    inline constexpr std::uint32_t kButtonVehicleFire = 0x40000;     // v23: Left Alt or Right Ctrl, in a vehicle: its weapon, as the left mouse button (San Andreas's circle)
+    inline constexpr std::uint32_t kButtonVehicleFireAlt = 0x80000;  // v23: Left Ctrl or numpad 0, in a vehicle: its second weapon and a bicycle's bunny hop, as the right mouse button (L1)
+    inline constexpr std::uint32_t kButtonLookBehind = 0x100000;     // v23: the middle mouse button, in a vehicle: look behind (L2 and R2 together)
+    inline constexpr std::uint32_t kButtonCameraView = 0x200000;     // v23: V or Home, in a vehicle: San Andreas's next camera distance (select)
 
     // Skyrim -> San Andreas: what the player does with CJ, as actions rather than keys.
     struct InputState

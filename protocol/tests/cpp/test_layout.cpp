@@ -28,9 +28,20 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v23: the vehicle keymap")
+{
+    CHECK(kProtocolVersion == 23);
+    CHECK(kButtonVehicleFire == 0x40000);
+    CHECK(kButtonVehicleFireAlt == 0x80000);
+    CHECK(kButtonLookBehind == 0x100000);
+    CHECK(kButtonCameraView == 0x200000);
+    const std::uint32_t before = 0x3FFFF;  // every button up to v22's kButtonHydraulics
+    CHECK((before & kButtonHydraulics) != 0);
+    CHECK(((kButtonVehicleFire | kButtonVehicleFireAlt | kButtonLookBehind | kButtonCameraView) & before) == 0);
+}
+
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);

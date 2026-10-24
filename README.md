@@ -26,14 +26,14 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Mouse | Mouse | Look around | Look around |
 | Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
 | Space | **Left Shift or Right Ctrl** | Jump | |
-| Space | **Space or Right Ctrl** | | Handbrake |
+| Space | **Space or Right Ctrl** | | Handbrake; in the Hydra, held, its lock-on (see the left and right mouse buttons) |
 | Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
-| H | **Caps Lock or H** | | Horn; a plane's landing gear |
-| Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop | Look left / right; an aircraft's rudder |
+| H or Caps Lock | Caps Lock or H | | Horn; with hydraulics (LOWRIDER), raise and lower the car; a police helicopter's searchlight |
+| Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop | Look left / right (both together: look behind); an aircraft's rudder |
 | Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car |
-| Numpad 5 | Numpad 5 | | Hydraulics' jump (San Andreas's R3), with the numpad's arrows; H raises and lowers the car |
+| Numpad 5, 2 or numpad + | Same | | San Andreas's sub-mission key (R3): a plane's landing gear up and down (the Hydra's too, in the air), the crop duster's and Stuntplane's smoke, the hydraulics' jump with the numpad's arrows |
 | Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air | Skyrim's shout, no gesture |
 | ] | ] | Spawn a Sandking | |
 | [ | [ | Spawn a ZR-350 | |
@@ -41,10 +41,14 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | `;` | `;` | Dev key: pick the next vehicle for `'` (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute); the help box names it. `[Debug] Vehicles=` in `AhShitRim.ini` sets your own list of model ids, `[Debug] VehicleKeys=0` turns both keys off; they go once cheats exist | Same |
 | `'` | `'` | Dev key: spawn the pick (the jetpack goes on CJ's back, the parachute into his hands). Boats, trains, trailers and RC vehicles are refused, and the help box says why | |
 | Mouse wheel | Mouse wheel | Next or previous weapon (San Andreas's slots) | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) |
-| Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | The vehicle's second weapon (the Hunter's rockets) |
-| Left mouse button | Left mouse button | Fire (a melee weapon attacks); with the parachute in the air, open it | The vehicle's weapon: the Hunter's guns, the Hydra's missiles, the Rhino's cannon (its turret follows the camera) |
+| Insert or 4 / Delete or R | Same | | Next / previous radio station |
+| Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | The vehicle's second weapon (San Andreas's secondary fire, L1): the Hunter's machine gun, the Hydra's missiles (heat-seeking once Space has held a dragon, mammoth, giant, centurion or rider in view until its marker turns red), the Rustler's and Seasparrow's guns; on a BMX or mountain bike the bunny hop (hold to crouch, let go to jump) |
+| Left Ctrl or numpad 0 | Left Ctrl or numpad 0 | Left Ctrl: crouch (modern layout) | Same as the right mouse button |
+| Left mouse button | Left mouse button | Fire (a melee weapon attacks); with the parachute in the air, open it | The vehicle's weapon (San Andreas's fire): the Hunter's rockets, the Hydra's flares, the Rhino's cannon (its turret follows the camera, either mouse button fires it); a car's nitro |
+| Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
-| Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Same |
+| Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |
+| V or Home | V or Home | | Change the camera distance (San Andreas's camera key) |
 | W / S, arrows up / down | W / S, arrows up / down | In Ammu-Nation: browse | |
 | E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | |
 | F or Enter | F or Enter | In Ammu-Nation: back, then leave | |

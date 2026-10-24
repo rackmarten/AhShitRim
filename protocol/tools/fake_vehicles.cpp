@@ -1,6 +1,7 @@
 // Checks every kind of vehicle and CJ's gear against a running San Andreas without Skyrim (protocol v19): links up as
 // the Skyrim side, hands the player over on flat ground streamed around CJ as Skyrim's sampler does, and through the dev
-// key (' with a pick) spawns, boards and drives or flies an NRG-500, a BMX, a Hunter (its rotor, its guns), a Hydra
+// key (' with a pick) spawns, boards and drives or flies an NRG-500, a BMX (v23: its bunny hop on Left Ctrl), a Hunter
+// (its rotor, its guns; v23: Left Alt and Left Ctrl apart), a Hydra
 // (hover, then forward flight on the nozzle keys, its missiles) and a Rhino (its shell), refuses a boat, then puts the
 // jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands. Prints what it sees and exits
 // non-zero when a check fails. Built with the protocol tests; run it through scripts/fake-vehicles.ps1 while San
@@ -261,6 +262,46 @@ int main()
         const float rode = std::hypot(moved.feet[0] - bike.feet[0], moved.feet[1] - bike.feet[1]) * Pose::kMetersPerUnit;
         std::printf("%s: rode %.1f m in 3 s, %s\n", name, rode, (moved.flags & Protocol::kBodyDriven) ? "ridden" : "NOT RIDDEN");
         failed += !(in && rode > metres && (moved.flags & Protocol::kBodyDriven));
+        if (model == 522 && in) {
+            // v23: where the camera sits looking ahead, left (Q), right (E) and behind (the middle mouse button), from the bike.
+            const auto cameraOff = [&] {
+                Protocol::BodyState body{}, now{};
+                link.ReadBody(body);
+                find(name, now);
+                return std::hypot(body.cameraPosition[0] - now.feet[0], body.cameraPosition[1] - now.feet[1]) * Pose::kMetersPerUnit;
+            };
+            wait(1.0);
+            const float ahead = cameraOff();
+            float       look[3] = {};
+            for (int k = 0; k < 3; k++) {
+                if (k == 2) {
+                    input.SetLookBehind(true);
+                } else {
+                    input.SetKey(k == 0 ? Input::kDikQ : Input::kDikE, true);
+                }
+                wait(1.0);
+                look[k] = cameraOff();
+                input.SetLookBehind(false);
+                input.SetKey(Input::kDikQ, false);
+                input.SetKey(Input::kDikE, false);
+                wait(0.5);
+            }
+            std::printf("%s: camera %.1f m off ahead, %.1f looking left, %.1f right, %.1f behind\n", name, ahead, look[0], look[1], look[2]);
+        }
+        if (model == 481 && in) {
+            // v23: the bunny hop on Left Ctrl (L1, as the right mouse button): held to crouch, let go to jump.
+            const float ground = height();
+            input.SetKey(Input::kDikLeftCtrl, true);
+            wait(0.5);
+            input.SetKey(Input::kDikLeftCtrl, false);
+            float top = 0.0f;
+            run(1.5, [&] {
+                top = (std::max)(top, height() - ground);
+                return false;
+            });
+            std::printf("BMX: bunny hop on Left Ctrl, %.2f m up%s\n", top, top > 0.2f ? "" : " (NO HOP)");
+            failed += !(top > 0.2f);
+        }
         fresh();
     }
 
@@ -296,6 +337,19 @@ int main()
         wait(1.5);
         input.SetAim(false);
         std::printf("HUNTER: firing sent %zu projectiles and %d shots\n", received.projectiles.size(), received.shots);
+        // v23: San Andreas's keyboard fire keys, apart: Left Alt (circle) its rockets, Left Ctrl (L1) its machine gun.
+        const auto mouseProjectiles = received.projectiles.size();
+        const int  mouseShots = received.shots;
+        input.SetKey(Input::kDikLeftAlt, true);
+        wait(1.5);
+        input.SetKey(Input::kDikLeftAlt, false);
+        const auto altProjectiles = received.projectiles.size() - mouseProjectiles;
+        const int  altShots = received.shots - mouseShots;
+        input.SetKey(Input::kDikLeftCtrl, true);
+        wait(1.5);
+        input.SetKey(Input::kDikLeftCtrl, false);
+        std::printf("HUNTER: Left Alt sent %zu projectiles and %d shots, Left Ctrl %zu and %d\n", altProjectiles, altShots,
+            received.projectiles.size() - mouseProjectiles - altProjectiles, received.shots - mouseShots - altShots);
         failed += !(in && lifted && parked != flying.hiddenParts && (received.projectiles.size() + received.shots) > 0);
         fresh();
     }
@@ -309,6 +363,12 @@ int main()
         input.SetKey(Input::kDikW, true);
         const bool hovered = run(15.0, [&] { return height() - ground > 15.0f; });
         std::printf("HYDRA: %s, %.1f m up at %.1f m/s\n", hovered ? "hovered up" : "DID NOT HOVER UP", height() - ground, speed());
+        // v23: 2 (San Andreas's sub-mission key, R3) puts the gear up and then down: San Andreas's log says "landing gear up".
+        for (int k = 0; k < 2; k++) {
+            press(Input::kDik2);
+            wait(2.0);
+        }
+        std::printf("HYDRA: pressed 2 twice (the log should say landing gear up, then down)\n");
         float fastest = 0.0f;
         const char* forwardKey = "none";
         for (const auto& [dik, keyName] : { std::pair{ Input::kDikNumpad8, "numpad 8" }, std::pair{ Input::kDikNumpad2, "numpad 2" } }) {

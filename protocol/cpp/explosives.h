@@ -476,6 +476,17 @@ namespace AhShitRim::Explosives
         return has("horse") || has("mammoth") || has("centurion") || (has("giant") && !has("spider"));
     }
 
+    inline constexpr std::uint16_t kModelHydra = 520;
+
+    // Whether Skyrim's lock steers the rockets CJ launches (v23): the heat seeker in his hands on foot, the Hydra in
+    // a vehicle (its rockets, not the Hunter's). The Hydra's own lock (R1 held, CVehicle::GetPlaneWeaponFiringStatus)
+    // looks for San Andreas's vehicles, so it never locks and fires plain rockets: Skyrim's lock, aimed while the
+    // handbrake key is held, steers them instead.
+    constexpr bool SeeksHeat(std::uint8_t a_cjWeapon, std::uint16_t a_vehicleModel)
+    {
+        return a_vehicleModel ? a_vehicleModel == kModelHydra : a_cjWeapon == Weapons::RocketLauncherHs;
+    }
+
     inline constexpr float kHsReach = 250.0f;         // metres: San Andreas's aim line is this long
     inline constexpr float kHsLockSeconds = 1.5f;     // a target held this long in sight is locked
     inline constexpr float kHsLosEvery = 1.0f;        // seconds between line of sight tests, as San Andreas's

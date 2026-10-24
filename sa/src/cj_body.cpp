@@ -579,13 +579,25 @@ namespace AhShitRim::CjBody
                 source += offset;
             }
         }
+        CVector front = cam.m_vecFront;
+        CVector camUp = cam.m_vecUp;
+        // A vehicle's look left, right or behind (v23): the active camera's front turns aside but its source stays at
+        // the follow spot behind the vehicle; only the matrix CCamera::Process ends up with, which San Andreas draws
+        // with, moves beside it (measured on an NRG-500: 7.5 m apart looking left, 11.3 m looking behind). Skyrim's
+        // camera takes that one then: from the source it looked sideways from behind the vehicle.
+        if (a_ped->bInVehicle && (cam.m_bLookingLeft || cam.m_bLookingRight || cam.m_bLookingBehind)) {
+            const CMatrix& final = TheCamera.m_mCameraMatrix;  // forward on its y row, up on its z row
+            source = final.GetPosition();
+            front = final.GetForward();
+            camUp = final.at;
+        }
         toSkyrim(source, body.cameraPosition);
-        const auto forward = Body::Normalize(Vec(cam.m_vecFront), { 0.0f, 1.0f, 0.0f });
+        const auto forward = Body::Normalize(Vec(front), { 0.0f, 1.0f, 0.0f });
         body.cameraForward[0] = forward.x;
         body.cameraForward[1] = forward.y;
         body.cameraForward[2] = forward.z;
         // Its roll: the death camera looks straight down with a fixed up, sliding from side to side.
-        const auto up = Body::Normalize(Vec(cam.m_vecUp), { 0.0f, 0.0f, 1.0f });
+        const auto up = Body::Normalize(Vec(camUp), { 0.0f, 0.0f, 1.0f });
         body.cameraUp[0] = up.x;
         body.cameraUp[1] = up.y;
         body.cameraUp[2] = up.z;

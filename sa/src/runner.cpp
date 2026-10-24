@@ -405,7 +405,8 @@ namespace AhShitRim::Runner
                 s.LeftShoulder2 = presses.prev || pad.leftShoulder2 ? 255 : 0;    // the previous one; look left
                 s.RightStickX = pad.rightStickX;  // v19, in a vehicle: the turret keys
                 s.RightStickY = pad.rightStickY;
-                s.ShockButtonR = pad.shockButtonR;  // v20, in a vehicle: the hydraulics' jump
+                s.ShockButtonR = pad.shockButtonR;  // v20, in a vehicle: the hydraulics' jump; a plane's landing gear
+                s.Select = pad.select;              // v23, in a vehicle: the next camera distance
             }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
