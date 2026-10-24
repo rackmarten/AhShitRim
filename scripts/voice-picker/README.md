@@ -26,7 +26,8 @@ CJ only ever says his own San Andreas lines. This folder builds a local page for
 
    - **X** and **MMB**: the insult and swear keys.
    - The **talk** menu: CJ's answers in Skyrim's conversations, by category (a line goes in one).
-   - **+**: the shout column chosen in "Picking for shouts" above the list, one per shout and word count (Unrelenting Force with 1, 2 or 3 words, and so on, from `protocol/cpp/thuum.h`), plus **any shout without lines of its own**. That's what CJ yells instead of the dragon words. A shout with no picks for the words charged uses its picks for the nearest word count, then the generic pool, which holds his angry fight lines until you pick some. The chooser shows how many each column has, and each line lists the shout columns it's in.
+   - **+ shout**: the shout column chosen in "Picking for shouts" above the list, one per shout and word count (Unrelenting Force with 1, 2 or 3 words, and so on, from `protocol/cpp/thuum.h`), plus **any shout without lines of its own**. That's what CJ yells instead of the dragon words. A shout with no picks for the words charged uses its picks for the nearest word count, then the generic pool, which holds his angry fight lines until you pick some. The chooser shows how many each column has, and each line lists the shout columns it's in.
+   - **+ own**: the situation chosen in "Picking for situations", where CJ talks on his own (`protocol/cpp/situations.h`): a blow that lands, a burst that hits, pulling a gun, a stealth kill, singing, looting gold, buying in a shop, leaving it after buying, running from a fight, a crash. San Andreas's own speech context for each is the place to start (FIGHT, SHOOT, PULL_GUN, STEALTH_KILL, SINGING, PICKUP_CASH, SHOP_BUY, SHOP_LEAVE, CHASED, CRASH_CAR). A situation with no picks has San Andreas pick for it in CJ's mood, except the stealth kill and the shop ones, which San Andreas has no pick of CJ's for: those hold his calm lines (CR, CR2) of their context until you pick some. Shop lines come with Ammu-Nation: Skyrim's barter menu closes as it opens while CJ has the player.
 
    Picks are kept in that browser; **Download voice-picks.json** when you're done.
 
@@ -36,12 +37,12 @@ CJ only ever says his own San Andreas lines. This folder builds a local page for
    node scripts/voice-picker/apply.mjs
    ```
 
-   It reads `voice-picks.json` from your Downloads folder (or a path you pass) and writes the picks into `protocol/cpp/voice_lines.h`. Blocks the file has no picks for stay as they are; `--defaults` resets the conversation and shout blocks to their defaults. Commit that header: it only holds ids.
+   It reads `voice-picks.json` from your Downloads folder (or a path you pass) and writes the picks into `protocol/cpp/voice_lines.h`. Blocks the file has no picks for stay as they are; `--defaults` resets the conversation, shout and situation blocks to their defaults (`--dialogue-defaults` and `--situation-defaults` only one of them). Commit that header: it only holds ids.
 
 ## Files
 
 - `extract.mjs`: reads `audio/SFX/SPC_PA` through `audio/CONFIG/BankLkup.dat` and writes the WAVs and the page.
 - `transcribe.py`: the Whisper pass (a uv script; its dependencies are in its header).
-- `picker.html`: the page template; `extract.mjs` fills in the line table and the shouts. Its `groups` list holds every column a line can be picked for (keys, conversation, shouts); a new kind of pick adds a group there and its arrays in `apply.mjs`.
+- `picker.html`: the page template; `extract.mjs` fills in the line table, the shouts and the situations. Its `groups` list holds every column a line can be picked for (keys, conversation, shouts, situations); a new kind of pick adds a group there and its arrays in `apply.mjs`.
 - `apply.mjs`: writes downloaded picks into `voice_lines.h`.
 - `ply-speech.json`: which sounds of each bank belong to which of San Andreas's speech contexts (from gta-reversed's `gPlySpeechLookup`).

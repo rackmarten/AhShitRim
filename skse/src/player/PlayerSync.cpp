@@ -19,6 +19,7 @@
 #include "player/Activation.h"
 #include "player/AmmuNation.h"
 #include "player/Arms.h"
+#include "player/Chatter.h"
 #include "player/CheatCodes.h"
 #include "player/People.h"
 #include "player/Police.h"
@@ -557,6 +558,8 @@ namespace AhShitRim::PlayerSync
             state.frames = state.placed = state.newPoses = state.drawn = 0;
             state.body.Reset();
             state.cjLogged = false;
+            Chatter::Seed();
+            state.input.SetHostileNear(false);
             Publish();  // before the chunks: San Andreas takes this anchor's chunks once it has read it
             auto* worldspace = a_player->GetWorldspace();
             CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
@@ -848,6 +851,7 @@ namespace AhShitRim::PlayerSync
                 state.input.AddLine(static_cast<std::uint8_t>(line));
             }
             ReleaseStuckKeys();
+            Chatter::Update(a_player, state.input, a_delta);  // v29: what may have CJ talk on his own
             Publish();
 
             Protocol::PlayerState pose{};

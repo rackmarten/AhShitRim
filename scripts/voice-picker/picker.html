@@ -60,7 +60,7 @@
 <body>
 <header>
   <h1>CJ voice picker</h1>
-  <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key, give it a category for CJ's answers in Skyrim's conversations (greet, agree, refuse, ask, threaten, joke, goodbye), or press <b>+</b> to pick it for the shout column chosen above: what CJ yells for that shout and number of words, in place of the dragon words. A shout with no picks of its own falls back to its nearest word count, then to <b>any shout</b>. Your picks are kept in this browser; download them when you're done.</p>
+  <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key, give it a category for CJ's answers in Skyrim's conversations (greet, agree, refuse, ask, threaten, joke, goodbye), or press <b>+</b> to pick it for the shout column chosen above: what CJ yells for that shout and number of words, in place of the dragon words. A shout with no picks of its own falls back to its nearest word count, then to <b>any shout</b>. <b>+ own</b> picks it for the situation chosen above, where CJ talks on his own: a blow that lands, a burst that hits, pulling a gun, a stealth kill, singing, looting gold, buying in a shop and leaving it, running from a fight, a crash. A situation with no picks has San Andreas pick for it (the stealth kill and shop ones hold his calm lines of their context until you pick some). Your picks are kept in this browser; download them when you're done.</p>
   <p id="transcripts"></p>
   <p>In AhShitRim CJ is always in the <b>CR</b> mood (no wanted level, no mission just passed), so the game on its own only plays the CR lines. Your picks play whatever the mood.</p>
   <div class="controls">
@@ -103,10 +103,12 @@ const groups = [
     { id: 'swear', label: 'MMB', title: 'the swear key (middle mouse)', css: 'm' },
   ] },
   { name: 'Conversation', kind: 'menu', none: 'talk', columns: ['greet', 'agree', 'refuse', 'ask', 'threaten', 'joke', 'goodbye'].map(c => ({ id: c, label: c, title: `conversations: ${c}` })) },
-  { name: 'Shouts', kind: 'column', columns: [
+  { name: 'Shouts', kind: 'column', mark: 'shout', columns: [
     { id: 'shout.generic', label: 'any shout', title: 'any shout without lines of its own', part: 'Generic' },
     ...(data.shouts || []).flatMap(s => [1, 2, 3].map(w => ({ id: `shout.${s.key}.${w}`, label: `${s.name} ${w}`, title: `${s.name}, ${words(w)}`, part: s.name, words: w }))),
   ] },
+  // CJ talking on his own (protocol/cpp/situations.h's kTriggers): one column per trigger.
+  { name: 'Situations', kind: 'column', mark: 'own', columns: (data.situations || []).map(s => ({ id: `situation.${s.key}`, label: s.name, title: `on his own: ${s.name}`, part: 'On his own' })) },
 ];
 const columns = groups.flatMap(g => g.columns);
 const byId = new Map(columns.map(c => [c.id, c]));
@@ -119,7 +121,7 @@ for (const key of store.x || []) picks.get('insult').add(key);
 for (const key of store.m || []) picks.get('swear').add(key);
 for (const [key, c] of Object.entries(store.d || {})) picks.get(c)?.add(key);
 const current = {};
-for (const g of groups.filter(g => g.kind === 'column')) current[g.name] = byId.has(store.current?.[g.name]) ? store.current[g.name] : g.columns[0].id;
+for (const g of groups.filter(g => g.kind === 'column')) current[g.name] = byId.has(store.current?.[g.name]) ? store.current[g.name] : g.columns[0]?.id;
 const save = () => { try { localStorage.setItem('cj-voice-picks', JSON.stringify({ picks: Object.fromEntries([...picks].map(([id, set]) => [id, [...set]])), current })); } catch {} };
 const picked = key => columns.some(c => picks.get(c.id).has(key));
 let moodsOn = new Set(Object.keys(moodNames));
@@ -214,7 +216,7 @@ function controls(box, tags, key) {
         const c = byId.get(current[g.name]);
         const on = picks.get(c.id).has(key);
         chip.classList.toggle('on', on);
-        chip.textContent = on ? '✓' : '+';
+        chip.textContent = `${on ? '✓' : '+'} ${g.mark}`;
         chip.title = `${on ? 'Take it out of' : 'Pick it for'} ${c.title}`;
       });
       box.append(chip);

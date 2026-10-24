@@ -28,9 +28,21 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v29: CJ talking on his own")
+{
+    CHECK(kProtocolVersion == 29);
+    CHECK(sizeof(InputState) == 124);
+    CHECK(offsetof(InputState, stealthKillCount) == 116);
+    CHECK(offsetof(InputState, cashCount) == 118);
+    CHECK(offsetof(InputState, shopBuyCount) == 120);
+    CHECK(offsetof(InputState, shopLeaveCount) == 122);
+    CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
+    CHECK(kInputHostileNear == 0x100);
+    CHECK((kInputHostileNear & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera | kInputBusted)) == 0);
+}
+
 TEST_CASE("protocol v28: running people over and passengers")
 {
-    CHECK(kProtocolVersion == 28);
     CHECK(kProxyMax == 16);
     CHECK(kSeatMax == 3);
     CHECK(static_cast<std::uint16_t>(MessageType::Impact) == 10);
@@ -59,6 +71,8 @@ TEST_CASE("protocol v28: running people over and passengers")
 
 TEST_CASE("protocol v27: pickups")
 {
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupCommand) == 8);  // the payloads are checked with the v19 constants
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupEvent) == 9);
 }
 
 TEST_CASE("protocol v26: particles")
@@ -81,7 +95,7 @@ TEST_CASE("protocol v26: particles")
 
 TEST_CASE("protocol v25: the shout's voice")
 {
-    CHECK(sizeof(InputState) == 116);  // a shout goes as a lineKind (Thuum::kLineShout), no new field
+    CHECK(offsetof(InputState, lineKind) == 110);  // a shout goes as a lineKind (Thuum::kLineShout), no new field
 }
 
 TEST_CASE("protocol v24: sound cues")
@@ -217,7 +231,7 @@ TEST_CASE("the v28 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 116);
+    CHECK(sizeof(InputState) == 124);
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);

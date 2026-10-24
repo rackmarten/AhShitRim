@@ -7,6 +7,7 @@
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
+#include "scenes.h"
 #include "skin_build.h"
 #include "skin_model.h"
 #include "texture_decode.h"
@@ -197,8 +198,12 @@ namespace AhShitRim::CjWeapons
         // Skyrim's hits raise CJ's skill with the weapon as San Andreas's own hits would.
         void Hits(CPlayerPed* a_ped, std::uint32_t a_type, std::uint32_t a_count)
         {
-            if (a_type > 0xFF || !Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
+            if (a_type > 0xFF) {
                 return;
+            }
+            Scenes::OnHit(a_ped, static_cast<std::uint8_t>(a_type));  // v29: a fight or shoot line now and then, fists too
+            if (!Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
+                return;  // fists: no skill to raise
             }
             const auto type = static_cast<eWeaponType>(a_type);
             const auto before = a_ped->GetWeaponSkill(type);

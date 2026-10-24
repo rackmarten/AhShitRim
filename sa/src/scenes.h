@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 class CPlayerPed;
 class CVector;
 
@@ -24,6 +26,12 @@ namespace AhShitRim::Protocol
 //   (protocol/cpp/dialogue.h's categories: greet, agree, refuse, ask, threaten, joke, goodbye), cutting
 //   off his last line, also while he follows Skyrim's player in a scene.
 // - Crashing (v28): CarHits has him say a CRASH_CAR line when his vehicle hits someone.
+// - Talking on his own (v29, the rules in protocol/cpp/situations.h): a blow of his that lands, the first
+//   hit of a burst of gunfire, aiming a gun on foot, a stealth kill, looting gold, buying in a shop and
+//   leaving it, sprinting with a hostile near (kInputHostileNear) and his vehicle crashing each may have
+//   him say a line, 4 s after his last at the soonest and never over one; settled in a vehicle with the
+//   radio off, or idle on foot, with nothing said for 90 s, he sings until he moves off or the radio
+//   comes on. The keys above always cut in.
 // Game thread only.
 namespace AhShitRim::Scenes
 {
@@ -46,4 +54,8 @@ namespace AhShitRim::Scenes
 
     // CJ's vehicle hit someone (v28, CarHits): he says one of his CRASH_CAR lines now, San Andreas's pick.
     void SayCrash(CPlayerPed* a_ped);
+
+    // A hit of CJ's that Skyrim counted (the Hit command, v13): a fight line for a blow, a shoot line for
+    // a burst's first hit, now and then.
+    void OnHit(CPlayerPed* a_ped, std::uint8_t a_weapon);
 }
