@@ -179,14 +179,16 @@ $ini = Join-Path $realPlugins 'AhShitRim.ini'
 # F11 screenshots go to Screenshots next to this script.
 $shots = Join-Path $Root 'Screenshots'
 $ansi = [Text.Encoding]::Default
-# The player's own settings stay: the key layout, and whether misc quests are odd jobs (on unless set to 0).
+# The player's own settings stay: the key layout, whether misc quests are odd jobs (on unless set to 0), and [Hud] Compass.
 $oldLines = if (Test-Path $ini) { [IO.File]::ReadAllLines($ini, $ansi) } else { @() }
 $layout = $oldLines | Where-Object { $_ -match '^\s*KeyLayout\s*=' } | Select-Object -First 1
 $misc = $oldLines | Where-Object { $_ -match '^\s*MiscPassed\s*=' } | Select-Object -First 1
+$compass = $oldLines | Where-Object { $_ -match '^\s*Compass\s*=' } | Select-Object -First 1
 $iniLines = [System.Collections.Generic.List[string]]::new()
 $iniLines.AddRange([string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots"))
 if ($layout) { $iniLines.AddRange([string[]] @('[Input]', $layout.Trim())) }
 $iniLines.AddRange([string[]] @('[Missions]', $(if ($misc) { $misc.Trim() } else { 'MiscPassed=1' })))
+if ($compass) { $iniLines.AddRange([string[]] @('[Hud]', $compass.Trim())) }
 $iniLines = $iniLines.ToArray()
 if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") -ne ($iniLines -join "`n")) {
     New-Item -ItemType Directory -Force $realPlugins | Out-Null
@@ -195,6 +197,17 @@ if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") 
     Write-Host "Wrote $ini"
 }
 Write-Host "Screenshots (F11) go to $shots"
+
+# The radar's map, painted from this Skyrim's plugins into Documents\My Games\AhShitRim (a few seconds, and
+# nothing while it's up to date). The release zip carries the painter; a repo checkout takes the tools build.
+$painter = Join-Path $Root 'radar_map.exe'
+if (-not (Test-Path $painter)) { $painter = Join-Path (Split-Path $Root) 'protocol\build\tools\radar_map.exe' }
+if (Test-Path $painter) {
+    & $painter --skyrim $skyrim
+    if ($LASTEXITCODE -ne 0) { Write-Host "The radar's map couldn't be painted (exit code $LASTEXITCODE): the radar shows plain ground." -ForegroundColor Yellow }
+} else {
+    Write-Host "radar_map.exe is missing next to this launcher: the radar shows plain ground until there's a map." -ForegroundColor Yellow
+}
 
 if ($NoStart) { Write-Host 'Checked and installed, not starting the games (-NoStart).'; return }
 

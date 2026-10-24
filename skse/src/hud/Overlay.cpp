@@ -9,8 +9,12 @@
 #include <wincodec.h>
 
 #include <CommonStates.h>
+#include <DirectXHelpers.h>
+#include <Effects.h>
+#include <PrimitiveBatch.h>
 #include <ScreenGrab.h>
 #include <SpriteBatch.h>
+#include <VertexTypes.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -37,6 +41,7 @@ namespace AhShitRim::Overlay
         // Main thread to Present, under the lock.
         std::mutex                            lock;
         std::vector<Quad>                     quads;
+        std::vector<Shape>                    shapes;
         std::chrono::steady_clock::time_point submitted;
         std::vector<Image>                    pendingImages;
         bool                                  imagesPending = false;
@@ -49,16 +54,27 @@ namespace AhShitRim::Overlay
         struct Texture
         {
             ComPtr<ID3D11ShaderResourceView> view;
+            ComPtr<ID3D11SamplerState>       border;  // shapes past its edges, when it has a border colour
             std::uint32_t                    width = 0, height = 0;
         };
+        using Vertex = DirectX::VertexPositionColorTexture;
         ComPtr<ID3D11Device>                 device;
         ComPtr<ID3D11DeviceContext>          context;
         std::unique_ptr<DirectX::SpriteBatch>  batch;
         std::unique_ptr<DirectX::CommonStates> states;
+        std::unique_ptr<DirectX::PrimitiveBatch<Vertex>> prims;  // the shapes
+        std::unique_ptr<DirectX::BasicEffect>  effect;
+        ComPtr<ID3D11InputLayout>            primLayout;
         std::vector<Texture>                 textures;  // [0] = white
         std::vector<Quad>                    drawing;
+        std::vector<Shape>                   drawingShapes;
 
-        Texture MakeTexture(std::uint32_t a_width, std::uint32_t a_height, const std::uint8_t* a_rgba)
+        DirectX::XMFLOAT4 ColourOf(std::uint32_t a_colour)
+        {
+            return { (a_colour & 0xFF) / 255.0f, ((a_colour >> 8) & 0xFF) / 255.0f, ((a_colour >> 16) & 0xFF) / 255.0f, ((a_colour >> 24) & 0xFF) / 255.0f };
+        }
+
+        Texture MakeTexture(std::uint32_t a_width, std::uint32_t a_height, const std::uint8_t* a_rgba, std::uint32_t a_border = 0)
         {
             Texture              out;
             D3D11_TEXTURE2D_DESC desc{};
@@ -77,6 +93,20 @@ namespace AhShitRim::Overlay
                 out.width = a_width;
                 out.height = a_height;
             }
+            if (a_border) {
+                const auto         colour = ColourOf(a_border);
+                D3D11_SAMPLER_DESC sampler{};
+                sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+                sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+                sampler.MaxAnisotropy = 1;
+                sampler.ComparisonFunc = D3D11_COMPARISON_NEVER;
+                sampler.BorderColor[0] = colour.x;
+                sampler.BorderColor[1] = colour.y;
+                sampler.BorderColor[2] = colour.z;
+                sampler.BorderColor[3] = colour.w;
+                sampler.MaxLOD = D3D11_FLOAT32_MAX;
+                device->CreateSamplerState(&sampler, &out.border);
+            }
             return out;
         }
 
@@ -89,6 +119,13 @@ namespace AhShitRim::Overlay
                 device->GetImmediateContext(&context);
                 batch = std::make_unique<DirectX::SpriteBatch>(context.Get());
                 states = std::make_unique<DirectX::CommonStates>(device.Get());
+                prims = std::make_unique<DirectX::PrimitiveBatch<Vertex>>(context.Get());
+                effect = std::make_unique<DirectX::BasicEffect>(device.Get());
+                effect->SetTextureEnabled(true);
+                effect->SetVertexColorEnabled(true);
+                if (FAILED(DirectX::CreateInputLayoutFromEffect<Vertex>(device.Get(), effect.get(), primLayout.ReleaseAndGetAddressOf()))) {
+                    spdlog::warn("overlay: no input layout for shapes, they won't be drawn");
+                }
                 const std::uint8_t white[4] = { 255, 255, 255, 255 };
                 textures.assign(1, MakeTexture(1, 1, white));
             }
@@ -96,7 +133,7 @@ namespace AhShitRim::Overlay
                 textures.resize(1);
                 for (const auto& image : pendingImages) {
                     textures.push_back(image.rgba.size() >= static_cast<std::size_t>(image.width) * image.height * 4 && image.width && image.height ?
-                                           MakeTexture(image.width, image.height, image.rgba.data()) :
+                                           MakeTexture(image.width, image.height, image.rgba.data(), image.border) :
                                            Texture{});
                 }
                 pendingImages.clear();
@@ -133,6 +170,7 @@ namespace AhShitRim::Overlay
             ID3D11ClassInstance*      gsInstances[256]{};
             UINT                      psInstanceCount = 256, vsInstanceCount = 256, gsInstanceCount = 256;
             ID3D11Buffer*             vsConstants = nullptr;
+            ID3D11Buffer*             psConstants = nullptr;
             D3D11_PRIMITIVE_TOPOLOGY  topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
             ID3D11Buffer*             indexBuffer = nullptr;
             DXGI_FORMAT               indexFormat = DXGI_FORMAT_UNKNOWN;
@@ -158,6 +196,7 @@ namespace AhShitRim::Overlay
                 ctx->HSGetShader(&hs, nullptr, nullptr);
                 ctx->DSGetShader(&ds, nullptr, nullptr);
                 ctx->VSGetConstantBuffers(0, 1, &vsConstants);
+                ctx->PSGetConstantBuffers(0, 1, &psConstants);
                 ctx->IAGetPrimitiveTopology(&topology);
                 ctx->IAGetIndexBuffer(&indexBuffer, &indexFormat, &indexOffset);
                 ctx->IAGetVertexBuffers(0, 1, &vertexBuffer, &vertexStride, &vertexOffset);
@@ -180,6 +219,7 @@ namespace AhShitRim::Overlay
                 ctx->HSSetShader(hs, nullptr, 0);
                 ctx->DSSetShader(ds, nullptr, 0);
                 ctx->VSSetConstantBuffers(0, 1, &vsConstants);
+                ctx->PSSetConstantBuffers(0, 1, &psConstants);
                 ctx->IASetPrimitiveTopology(topology);
                 ctx->IASetIndexBuffer(indexBuffer, indexFormat, indexOffset);
                 ctx->IASetVertexBuffers(0, 1, &vertexBuffer, &vertexStride, &vertexOffset);
@@ -209,6 +249,7 @@ namespace AhShitRim::Overlay
                 for (UINT i = 0; i < vsInstanceCount; i++) release(vsInstances[i]);
                 for (UINT i = 0; i < gsInstanceCount; i++) release(gsInstances[i]);
                 release(vsConstants);
+                release(psConstants);
                 release(indexBuffer);
                 release(vertexBuffer);
                 release(layout);
@@ -221,6 +262,7 @@ namespace AhShitRim::Overlay
                 std::scoped_lock guard(lock);
                 const bool fresh = std::chrono::steady_clock::now() - submitted < kStale;
                 drawing.assign(fresh ? quads.begin() : quads.end(), quads.end());
+                drawingShapes.assign(fresh ? shapes.begin() : shapes.end(), shapes.end());
                 if (!Ready(a_swapChain)) {
                     return;
                 }
@@ -248,10 +290,58 @@ namespace AhShitRim::Overlay
             context->GSSetShader(nullptr, nullptr, 0);
             context->HSSetShader(nullptr, nullptr, 0);
             context->DSSetShader(nullptr, nullptr, 0);
-            batch->Begin(DirectX::SpriteSortMode_Deferred, states->NonPremultiplied(), states->LinearClamp(), states->DepthNone(), states->CullNone());
+            // Runs of quads go through SpriteBatch and runs of shapes through PrimitiveBatch, in the order they came.
+            const auto    projection = DirectX::XMMatrixOrthographicOffCenterRH(0.0f, static_cast<float>(desc.Width), static_cast<float>(desc.Height), 0.0f, 0.0f, 1.0f);
+            bool          sprites = false, shaping = false;
+            std::uint32_t shapeTexture = 0;
+            const auto    endShapes = [&]() {
+                if (shaping) {
+                    prims->End();
+                    shaping = false;
+                }
+            };
             for (const auto& quad : drawing) {
                 if (quad.texture >= textures.size() || !textures[quad.texture].view) {
                     continue;
+                }
+                if (quad.shape >= 0) {
+                    if (static_cast<std::size_t>(quad.shape) >= drawingShapes.size() || !primLayout) {
+                        continue;
+                    }
+                    if (sprites) {
+                        batch->End();
+                        sprites = false;
+                    }
+                    const auto& shape = drawingShapes[quad.shape];
+                    if (!shaping || shapeTexture != shape.texture) {
+                        endShapes();
+                        const auto& texture = textures[shape.texture];
+                        effect->SetProjection(projection);
+                        effect->SetTexture(texture.view.Get());
+                        effect->Apply(context.Get());
+                        ID3D11SamplerState* sampler = texture.border ? texture.border.Get() : states->LinearClamp();
+                        context->PSSetSamplers(0, 1, &sampler);
+                        context->IASetInputLayout(primLayout.Get());
+                        context->OMSetBlendState(states->NonPremultiplied(), nullptr, 0xFFFFFFFF);
+                        context->OMSetDepthStencilState(states->DepthNone(), 0);
+                        context->RSSetState(states->CullNone());
+                        prims->Begin();
+                        shaping = true;
+                        shapeTexture = shape.texture;
+                    }
+                    const auto colour = ColourOf(shape.colour);
+                    Vertex     corners[4];
+                    for (int i = 0; i < 4; i++) {
+                        const auto& c = shape.corners[i];
+                        corners[i] = Vertex(DirectX::XMFLOAT3(c.x, c.y, 0.0f), colour, DirectX::XMFLOAT2(c.u, c.v));
+                    }
+                    prims->DrawQuad(corners[0], corners[1], corners[2], corners[3]);
+                    continue;
+                }
+                if (!sprites) {
+                    endShapes();
+                    batch->Begin(DirectX::SpriteSortMode_Deferred, states->NonPremultiplied(), states->LinearClamp(), states->DepthNone(), states->CullNone());
+                    sprites = true;
                 }
                 const auto& texture = textures[quad.texture];
                 // A quad with its corners the other way round (u1 < u0) is the texture mirrored: San Andreas draws the
@@ -278,7 +368,10 @@ namespace AhShitRim::Overlay
                         scale, effects, 0.0f);
                 }
             }
-            batch->End();
+            if (sprites) {
+                batch->End();
+            }
+            endShapes();
         }
 
         // 2026-10-22_16-46-44.png (_2, _3 for more in the same second) in a_folder: a relative one under
@@ -288,13 +381,11 @@ namespace AhShitRim::Overlay
         {
             std::filesystem::path folder(a_folder);
             if (a_folder.empty()) {
-                PWSTR documents = nullptr;
-                if (FAILED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents))) {
-                    CoTaskMemFree(documents);
+                const auto games = MyGamesFolder();
+                if (games.empty()) {
                     return {};
                 }
-                folder = std::filesystem::path(documents) / "My Games" / "AhShitRim" / "Screenshots";
-                CoTaskMemFree(documents);
+                folder = games / "Screenshots";
             } else if (folder.is_relative()) {
                 wchar_t exe[MAX_PATH]{};
                 GetModuleFileNameW(nullptr, exe, MAX_PATH);
@@ -388,10 +479,11 @@ namespace AhShitRim::Overlay
         imagesPending = true;
     }
 
-    void Submit(std::vector<Quad> a_quads)
+    void Submit(std::vector<Quad> a_quads, std::vector<Shape> a_shapes)
     {
         std::scoped_lock guard(lock);
         quads = std::move(a_quads);
+        shapes = std::move(a_shapes);
         submitted = std::chrono::steady_clock::now();
     }
 
@@ -414,5 +506,48 @@ namespace AhShitRim::Overlay
     bool ScreenshotSaved()
     {
         return screenshotSaved.exchange(false);
+    }
+
+    std::filesystem::path MyGamesFolder()
+    {
+        PWSTR documents = nullptr;
+        if (FAILED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents))) {
+            CoTaskMemFree(documents);
+            return {};
+        }
+        auto folder = std::filesystem::path(documents) / "My Games" / "AhShitRim";
+        CoTaskMemFree(documents);
+        return folder;
+    }
+
+    bool ReadImage(const std::filesystem::path& a_path, Image& a_out)
+    {
+        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);  // Skyrim may have it already, in its own mode
+        bool          read = false;
+        {
+            ComPtr<IWICImagingFactory>    factory;
+            ComPtr<IWICBitmapDecoder>     decoder;
+            ComPtr<IWICBitmapFrameDecode> frame;
+            ComPtr<IWICFormatConverter>   converter;
+            UINT                          width = 0, height = 0;
+            if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+                SUCCEEDED(factory->CreateDecoderFromFilename(a_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+                SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(frame->GetSize(&width, &height)) && width > 0 && height > 0 &&
+                width <= 8192 && height <= 8192 &&  // a quarter of a gigabyte at most
+                SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+                SUCCEEDED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom))) {
+                a_out.width = width;
+                a_out.height = height;
+                a_out.rgba.resize(static_cast<std::size_t>(width) * height * 4);
+                read = SUCCEEDED(converter->CopyPixels(nullptr, width * 4, static_cast<UINT>(a_out.rgba.size()), a_out.rgba.data()));
+            }
+        }
+        if (SUCCEEDED(com)) {
+            CoUninitialize();
+        }
+        if (!read) {
+            a_out = {};
+        }
+        return read;
     }
 }

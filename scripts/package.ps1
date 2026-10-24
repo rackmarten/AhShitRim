@@ -6,7 +6,8 @@
         music/sweetrollfm/*.xwm at Music/AhShitRim/SweetrollFM/ with music/CREDITS.md
       - San Andreas/scripts/AhShitRim.asi, which the launcher copies into San Andreas
       - the launcher (launcher/: "Start AhShitRim.bat", AhShitRim.ps1, checks.ps1) and INSTALL.md
-    Run scripts/build.ps1 first. The zip's version is the SKSE plugin's (skse/CMakeLists.txt).
+      - radar_map.exe, which the launcher runs to paint the radar's map from the player's own plugins
+    Run scripts/build.ps1 first; this builds radar_map itself (the tools preset). The zip's version is the SKSE plugin's (skse/CMakeLists.txt).
 .EXAMPLE
     scripts/package.ps1
 #>
@@ -58,6 +59,13 @@ Remove-Item -Recurse -Force $skyrimStage
 # --- The San Andreas part, the launcher and the guide ---
 Add-File (Join-Path $RepoRoot 'sa/build/Release/AhShitRim.asi') $stage 'San Andreas/scripts'
 foreach ($file in 'Start AhShitRim.bat', 'AhShitRim.ps1', 'checks.ps1') { Add-File (Join-Path $RepoRoot "launcher/$file") $stage '.' }
+Enter-DevShell
+Push-Location (Join-Path $RepoRoot 'protocol')
+try {
+    Invoke-Checked cmake @('--preset', 'tools')
+    Invoke-Checked cmake @('--build', '--preset', 'tools', '--target', 'radar_map')
+} finally { Pop-Location }
+Add-File (Join-Path $RepoRoot 'protocol/build/tools/radar_map.exe') $stage '.'
 Add-File (Join-Path $RepoRoot 'docs/INSTALL.md') $stage '.'
 
 New-Zip $stage $zip $true

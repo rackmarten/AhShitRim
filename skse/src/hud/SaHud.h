@@ -6,8 +6,9 @@
 //
 // While San Andreas has the player: the HUD top right as San Andreas lays it out (clock on Skyrim's
 // game time, weapon icon, armour bar hidden at 0, health bar on the Skyrim player's health, money
-// on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), and Skyrim's compass, attribute bars
-// and crosshair hidden. The text styles below show whenever something asks for them.
+// on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), San Andreas's radar
+// bottom left (#900: protocol/cpp/radar.h, RadarScene), and Skyrim's compass, attribute bars and crosshair hidden (the compass stays
+// with [Hud] Compass=1). The text styles below show whenever something asks for them.
 #include "hud_sounds.h"
 
 namespace AhShitRim::Protocol
@@ -28,7 +29,8 @@ namespace AhShitRim::SaHud
     void Load();  // reads the San Andreas files and hooks the overlay; call on kDataLoaded
 
     // The weapon in CJ's hands (protocol v12), once a frame: its icon and ammo in the HUD, and the crosshair or scope
-    // San Andreas's camera puts up. nullptr when San Andreas has no pose for the player.
+    // San Andreas's camera puts up; and CJ's speed, heading and camera for the radar. nullptr when San Andreas has no
+    // pose for the player.
     void SetWeapon(const Protocol::PlayerState* a_pose);
 
     // Every frame from PlayerCharacter::Update: a_owned while San Andreas has the player, a_menu
