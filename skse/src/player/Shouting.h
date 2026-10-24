@@ -8,6 +8,8 @@
 // charging and cooldown stay Skyrim's.
 namespace AhShitRim::Shouting
 {
+    void OnDataLoaded();  // logs any line of the Dragonborn's voice the player still says
+
     // Every frame on the main thread: mutes or brings back the Dragonborn's voice as San Andreas takes
     // or gives back the player (a_cjHasPlayer), and notes the shout being charged and how far.
     void Update(RE::PlayerCharacter* a_player, bool a_cjHasPlayer);

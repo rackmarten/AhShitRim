@@ -1204,6 +1204,7 @@ namespace AhShitRim::PlayerSync
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
+        Shouting::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

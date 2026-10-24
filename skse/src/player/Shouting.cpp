@@ -2,6 +2,7 @@
 
 #include "thuum.h"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -87,6 +88,25 @@ namespace AhShitRim::Shouting
             SKSE::log::info("thuum: the Dragonborn's voice {}", a_silent ? "muted, CJ shouts" : "back");
         }
 
+        // A line of the Dragonborn's voice the player says anyway: the mute missed it (logged, so a test
+        // can tell without listening). Script events come on the main thread.
+        struct VoiceSink : RE::BSTEventSink<RE::TESTopicInfoEvent>
+        {
+            RE::BSEventNotifyControl ProcessEvent(const RE::TESTopicInfoEvent* a_event, RE::BSTEventSource<RE::TESTopicInfoEvent>*) override
+            {
+                if (!a_event || a_event->type != RE::TESTopicInfoEvent::TopicInfoEventType::kTopicBegin || a_event->speakerRef.get() != RE::PlayerCharacter::GetSingleton()) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+                const auto* info = RE::TESForm::LookupByID<RE::TESTopicInfo>(a_event->topicInfoFormID);
+                const auto* topic = info ? info->parentTopic : nullptr;
+                if (topic && std::find(kVoiceTopics.begin(), kVoiceTopics.end(), topic->GetFormID()) != kVoiceTopics.end()) {
+                    SKSE::log::warn("thuum: the player said the Dragonborn's line {:08X} ({}){}", a_event->topicInfoFormID, topic->GetFormEditorID(),
+                        state.silent ? " although it's muted" : "");
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+
         // The words of a shout released with no variation seen: the one whose cooldown is nearest.
         int WordsByCooldown(const RE::TESShout* a_shout, float a_recovery)
         {
@@ -100,6 +120,14 @@ namespace AhShitRim::Shouting
                 }
             }
             return best;
+        }
+    }
+
+    void OnDataLoaded()
+    {
+        static VoiceSink voice;
+        if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
+            events->AddEventSink<RE::TESTopicInfoEvent>(&voice);
         }
     }
 
