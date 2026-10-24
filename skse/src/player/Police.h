@@ -17,9 +17,9 @@ namespace AhShitRim::Protocol
 // - Skyrim drops a bounty when the witnesses die; the stars stay (San Andreas's don't go because CJ shot the cops
 //   who saw him). The fine paid to a guard (PayFine, Actor's vfunc 0xBB, hooked), Busted and Wasted end them.
 // - The response: from 2 stars the hold's guards round about join the fight, and a director keeps a force of ours
-//   after him (Wanted::ForceFor): copies of the hold's guards, riders on saddled horses from 3 (their races allowed
-//   mounted combat while they ride, so they stay on), a captain and a guard wizard from 4, the hold's soldiers and a
-//   dragon from 5 (bringing it down is a lot of heat), giants and a mammoth at 6. One spawns per cooldown, never in
+//   after him (Wanted::ForceFor): copies of the hold's guards, the hold's wolves from 3 (in its crime faction, sped up
+//   to keep CJ's pace on foot or in a car, Wanted::ChaseSpeedMult), a captain and a guard wizard from 4, the hold's
+//   soldiers and a dragon from 5 (bringing it down is a lot of heat), giants and a mammoth at 6. One spawns per cooldown, never in
 //   view: round CJ behind the camera on the ground, or out of the city's barracks door. Killing them all buys a
 //   breather, over before a star would go for nobody seeing him. They fight CJ alone: once a second, one fighting
 //   anyone else is pulled back onto him. When the stars go they stop fighting and
