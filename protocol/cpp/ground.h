@@ -148,6 +148,10 @@ namespace AhShitRim::Ground
     // chunk's vertices must lie within 256 m of where its collision object stands.
     inline constexpr float kVertexScale = 128.0f;
     inline constexpr float kVertexReach = 255.0f;
+    // A triangle reaching further (a mountain's or a cliff's, edges up to 285 m) is cut in four, up to this many times
+    // over, and the parts in reach kept: dropped whole, thousands went at once at speed, rock faces by the road with them.
+    inline constexpr int           kMaxSplits = 5;
+    inline constexpr std::uint32_t kMaxMeshVertices = 65535;  // San Andreas indexes them with 16 bits
 
     // A chunk in San Andreas's collision format.
     struct Mesh
@@ -156,7 +160,7 @@ namespace AhShitRim::Ground
         std::vector<std::int16_t>  vertices;   // x, y, z per vertex, 1/128 m relative to position
         std::vector<std::uint16_t> triangles;  // a, b, c per triangle
         Vec3                       min, max;   // bounding box relative to position, metres
-        std::uint32_t              dropped = 0;  // triangles too far out (past kVertexReach) or flat after compression
+        std::uint32_t              dropped = 0;  // triangles flat after compression, or parts still past kVertexReach after kMaxSplits cuts
     };
 
     // San Andreas faces a triangle where cross(c - a, b - a) points (gta-reversed's
@@ -197,16 +201,69 @@ namespace AhShitRim::Ground
         // Only the vertices kept triangles use go in, renumbered.
         std::vector<std::uint32_t> remap(h.vertexCount, UINT32_MAX);
         bool                       any = false;
+        const auto                 grow = [&](const Vec3& a_p) {
+            if (!any) {
+                mesh.min = mesh.max = a_p;
+                any = true;
+            }
+            mesh.min = { (std::min)(mesh.min.x, a_p.x), (std::min)(mesh.min.y, a_p.y), (std::min)(mesh.min.z, a_p.z) };
+            mesh.max = { (std::max)(mesh.max.x, a_p.x), (std::max)(mesh.max.y, a_p.y), (std::max)(mesh.max.z, a_p.z) };
+        };
+        // Flat after compression: San Andreas would normalise a zero normal.
+        const auto flat = [](const std::array<std::int16_t, 3>& a_a, const std::array<std::int16_t, 3>& a_b, const std::array<std::int16_t, 3>& a_c) {
+            const std::int64_t e1[3] = { a_b[0] - a_a[0], a_b[1] - a_a[1], a_b[2] - a_a[2] };
+            const std::int64_t e2[3] = { a_c[0] - a_a[0], a_c[1] - a_a[1], a_c[2] - a_a[2] };
+            return e1[1] * e2[2] - e1[2] * e2[1] == 0 && e1[2] * e2[0] - e1[0] * e2[2] == 0 && e1[0] * e2[1] - e1[1] * e2[0] == 0;
+        };
+        const auto inside = [](const Vec3& a_r) { return std::abs(a_r.x) <= kVertexReach && std::abs(a_r.y) <= kVertexReach && std::abs(a_r.z) <= kVertexReach; };
+        const auto relative = [&](std::uint32_t a_v) { return Vec3{ sa[a_v].x - mesh.position.x, sa[a_v].y - mesh.position.y, sa[a_v].z - mesh.position.z }; };
+        // A part of a cut triangle, its corners relative to the position (metres): kept with corners of its own once in
+        // reach, cut again while it isn't, left out when it lies wholly past one side of the reach (nowhere near the chunk).
+        const auto cut = [&](auto&& a_self, const Vec3& a_a, const Vec3& a_b, const Vec3& a_c, int a_depth) -> void {
+            const auto past = [&](float Vec3::* a_axis) {
+                return (a_a.*a_axis > kVertexReach && a_b.*a_axis > kVertexReach && a_c.*a_axis > kVertexReach) ||
+                       (a_a.*a_axis < -kVertexReach && a_b.*a_axis < -kVertexReach && a_c.*a_axis < -kVertexReach);
+            };
+            if (past(&Vec3::x) || past(&Vec3::y) || past(&Vec3::z)) {
+                return;
+            }
+            if (!inside(a_a) || !inside(a_b) || !inside(a_c)) {
+                if (a_depth >= kMaxSplits) {
+                    mesh.dropped++;
+                    return;
+                }
+                const auto mid = [](const Vec3& a_p, const Vec3& a_q) { return Vec3{ (a_p.x + a_q.x) * 0.5f, (a_p.y + a_q.y) * 0.5f, (a_p.z + a_q.z) * 0.5f }; };
+                const Vec3 ab = mid(a_a, a_b), bc = mid(a_b, a_c), ca = mid(a_c, a_a);
+                a_self(a_self, a_a, ab, ca, a_depth + 1);
+                a_self(a_self, ab, a_b, bc, a_depth + 1);
+                a_self(a_self, ca, bc, a_c, a_depth + 1);
+                a_self(a_self, ab, bc, ca, a_depth + 1);
+                return;
+            }
+            const Vec3*                                 in[3] = { &a_a, &a_b, &a_c };
+            std::array<std::array<std::int16_t, 3>, 3> corners{};
+            for (int k = 0; k < 3; ++k) {
+                corners[k] = { static_cast<std::int16_t>(std::lround(in[k]->x * kVertexScale)), static_cast<std::int16_t>(std::lround(in[k]->y * kVertexScale)),
+                    static_cast<std::int16_t>(std::lround(in[k]->z * kVertexScale)) };
+            }
+            if (flat(corners[0], corners[1], corners[2]) || mesh.vertices.size() / 3 + 3 > kMaxMeshVertices) {
+                mesh.dropped++;
+                return;
+            }
+            for (const auto& corner : corners) {
+                mesh.triangles.push_back(static_cast<std::uint16_t>(mesh.vertices.size() / 3));
+                mesh.vertices.insert(mesh.vertices.end(), corner.begin(), corner.end());
+                grow({ corner[0] / kVertexScale, corner[1] / kVertexScale, corner[2] / kVertexScale });
+            }
+        };
         for (std::uint32_t t = 0; t + 3 <= h.indexCount; t += 3) {
             const std::uint32_t a = a_chunk.indices[t], b = a_chunk.indices[t + 2], c = a_chunk.indices[t + 1];  // b and c swapped
             if (!inReach[a] || !inReach[b] || !inReach[c]) {
-                mesh.dropped++;
+                cut(cut, relative(a), relative(b), relative(c), 0);
                 continue;
             }
-            // Flat after compression: San Andreas would normalise a zero normal.
-            const std::int64_t e1[3] = { packed[b][0] - packed[a][0], packed[b][1] - packed[a][1], packed[b][2] - packed[a][2] };
-            const std::int64_t e2[3] = { packed[c][0] - packed[a][0], packed[c][1] - packed[a][1], packed[c][2] - packed[a][2] };
-            if (e1[1] * e2[2] - e1[2] * e2[1] == 0 && e1[2] * e2[0] - e1[0] * e2[2] == 0 && e1[0] * e2[1] - e1[1] * e2[0] == 0) {
+            const std::uint32_t fresh = (remap[a] == UINT32_MAX) + (remap[b] == UINT32_MAX) + (remap[c] == UINT32_MAX);
+            if (flat(packed[a], packed[b], packed[c]) || mesh.vertices.size() / 3 + fresh > kMaxMeshVertices) {
                 mesh.dropped++;
                 continue;
             }
@@ -214,13 +271,7 @@ namespace AhShitRim::Ground
                 if (remap[v] == UINT32_MAX) {
                     remap[v] = static_cast<std::uint32_t>(mesh.vertices.size() / 3);
                     mesh.vertices.insert(mesh.vertices.end(), packed[v].begin(), packed[v].end());
-                    const Vec3 p{ packed[v][0] / kVertexScale, packed[v][1] / kVertexScale, packed[v][2] / kVertexScale };
-                    if (!any) {
-                        mesh.min = mesh.max = p;
-                        any = true;
-                    }
-                    mesh.min = { (std::min)(mesh.min.x, p.x), (std::min)(mesh.min.y, p.y), (std::min)(mesh.min.z, p.z) };
-                    mesh.max = { (std::max)(mesh.max.x, p.x), (std::max)(mesh.max.y, p.y), (std::max)(mesh.max.z, p.z) };
+                    grow({ packed[v][0] / kVertexScale, packed[v][1] / kVertexScale, packed[v][2] / kVertexScale });
                 }
                 mesh.triangles.push_back(static_cast<std::uint16_t>(remap[v]));
             }

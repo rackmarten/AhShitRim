@@ -200,21 +200,43 @@ TEST_CASE("vertices keep about a centimetre of precision on a slope")
     }
 }
 
-TEST_CASE("triangles out of the 256 m reach and flat ones are dropped and counted")
+TEST_CASE("a triangle reaching past 256 m is cut and the parts in reach kept; flat ones are dropped and counted")
 {
     Collision::Heightfield f;
     f.Reset(0, 0, 1);
     const std::vector<float> statics = {
         0, 0, 0, 100, 0, 0, 0, 100, 0,                // kept
-        0, 0, 0, 100, 0, 30000, 0, 100, 0,           // a corner 430 m up the median: out of reach
+        0, 0, 0, 100, 0, 30000, 0, 100, 0,           // a corner 430 m up the median: its lower part kept
         0, 0, 0, 0.1f, 0, 0, 0, 0.1f, 0,             // under 1/128 m across: flat once compressed
     };
     const auto payload = Collision::BuildChunkPayload(f, 0, 1, statics);
     Chunk      chunk;
     REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
     const Mesh mesh = BuildMesh(chunk, At(0.0f, 0.0f, 0.0f));
-    CHECK(mesh.triangles.size() == 3);
-    CHECK(mesh.dropped == 2);
+    CHECK(mesh.triangles.size() > 6);  // the first, and parts of the second
+    CHECK(mesh.dropped >= 1);         // the flat one (and slivers of the cut one's edge)
+    CHECK(mesh.max.z > 200.0f);       // the second goes up to the reach
+    CHECK(mesh.max.z <= kVertexReach + 0.01f);
+}
+
+TEST_CASE("a mountain's huge face over the chunk is kept where it is near it")
+{
+    // One triangle 1000 m across (Skyrim units 70000), its middle over chunk (0, 0): every corner out of reach.
+    Collision::Heightfield f;
+    f.Reset(0, 0, 1);
+    const std::vector<float> statics = { -35000, -35000, 500, 35000, -35000, 500, 0, 35000, 500 };
+    const auto payload = Collision::BuildChunkPayload(f, 0, 1, statics);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    const Mesh mesh = BuildMesh(chunk, At(0.0f, 0.0f, 0.0f));
+    REQUIRE_FALSE(mesh.triangles.empty());
+    // The kept parts cover the chunk's square round its middle, all inside the reach.
+    CHECK(mesh.min.x < -14.0f);
+    CHECK(mesh.max.x > 14.0f);
+    CHECK(mesh.min.y < -14.0f);
+    CHECK(mesh.max.y > 14.0f);
+    CHECK(mesh.max.x <= kVertexReach + 0.01f);
+    CHECK(mesh.vertices.size() / 3 < kMaxMeshVertices);
 }
 
 // ---- Which chunks San Andreas keeps ----
