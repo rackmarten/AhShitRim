@@ -564,6 +564,10 @@ namespace AhShitRim::Vehicles
             if (VehicleDamage::EngineBurns(a_vehicle->m_fHealth, wrecked, a_vehicle->bIsDrowning) || (wrecked && a_vehicle->m_pFire)) {
                 s.flags |= Protocol::kBodyBurning;
             }
+            // Its proofs (v24): what Skyrim's attacks can't do to it, nor to anyone in it (the Rhino's bullets and blasts).
+            const bool spared = !a_vehicle->bCanBeDamaged;
+            s.flags |= (spared || a_vehicle->bBulletProof ? Protocol::kBodyBulletProof : 0) | (spared || a_vehicle->bFireProof ? Protocol::kBodyFireProof : 0) |
+                       (spared || a_vehicle->bExplosionProof ? Protocol::kBodyExplosionProof : 0) | (spared || a_vehicle->bMeleeProof ? Protocol::kBodyMeleeProof : 0);
             if (a_vehicle->m_nHandlingFlags.bHydraulicInst) {
                 s.flags |= Protocol::kBodyHydraulics;  // v20: LOWRIDER takes them off again
             }

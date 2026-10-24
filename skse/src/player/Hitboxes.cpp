@@ -53,6 +53,9 @@ namespace AhShitRim::Hitboxes
             VehicleHits::Box     box;
             VehicleHits::Frame   frame;
             VehicleHits::Cover   cover = VehicleHits::Cover::None;
+            VehicleHits::Proofs  proofs;          // San Andreas's proofs of CJ's vehicle (the Rhino's), from its slot
+            float                cjLeast = 1.0f;     // the least share of Skyrim's damage CJ keeps any hit on him since Vitals last asked (a blast: none)
+            float                riderLeast = 1.0f;  // the same for his passengers, since the last Update
             std::mutex           lock;  // reported, filled by the event sink
             std::vector<Reported> reported;
             std::vector<Swing>   swings;
@@ -114,7 +117,7 @@ namespace AhShitRim::Hitboxes
             if (a_blow.attack == VehicleHits::Attack::None || !state.gate.Lands(a_id, a_now)) {
                 return;
             }
-            const auto  split = VehicleHits::SplitOf(state.cover, a_blow.attack);
+            const auto  split = VehicleHits::SplitOf(state.cover, a_blow.attack, state.proofs);
             const float damage = VehicleHits::DamageOf(a_blow) * split.vehicle;
             if (!(damage > 0.0f)) {
                 return;
@@ -167,6 +170,10 @@ namespace AhShitRim::Hitboxes
                 if (state.reported.size() < kQueueMax) {
                     state.reported.push_back(hit);
                 }
+                // What of it the one hit keeps: none of a blast, nor of anything the vehicle is proof against.
+                const float keeps = VehicleHits::SplitOf(state.cover, hit.blow.attack, state.proofs).cj;
+                float&      least = target == player ? state.cjLeast : state.riderLeast;
+                least = (std::min)(least, keeps);
                 return RE::BSEventNotifyControl::kContinue;
             }
         } hitSink;
@@ -175,7 +182,11 @@ namespace AhShitRim::Hitboxes
         // all of it in a closed vehicle, half on a bike's pillion.
         void CoverRiders(const std::vector<RE::FormID>& a_riding)
         {
-            const float share = VehicleHits::SplitOf(state.cover, VehicleHits::Attack::Melee).cj;
+            float share = VehicleHits::SplitOf(state.cover, VehicleHits::Attack::Melee, state.proofs).cj;
+            {
+                std::lock_guard guard(state.lock);
+                share = (std::min)(share, std::exchange(state.riderLeast, 1.0f));
+            }
             std::unordered_map<RE::FormID, float> health;
             for (const auto id : a_riding) {
                 auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
@@ -318,6 +329,7 @@ namespace AhShitRim::Hitboxes
             state.counted.clear();
             state.attacks.clear();
             state.cover = VehicleHits::Cover::None;
+            state.proofs = {};
         }
     }
 
@@ -336,6 +348,7 @@ namespace AhShitRim::Hitboxes
             return;
         }
         state.box = { { a_pose->boxMin[0], a_pose->boxMin[1], a_pose->boxMin[2] }, { a_pose->boxMax[0], a_pose->boxMax[1], a_pose->boxMax[2] } };
+        state.proofs = VehicleHits::ProofsOf(a_pose->flags);
         state.frame = VehicleHits::FrameOf(a_pose->vehicleFrame, V(a_feet));
     }
 
@@ -385,11 +398,19 @@ namespace AhShitRim::Hitboxes
 
     float CjShare(const Protocol::PlayerState* a_pose)
     {
+        float least = 1.0f;
+        {
+            std::lock_guard guard(state.lock);
+            least = std::exchange(state.cjLeast, 1.0f);
+        }
         if (!g_active.load() || !a_pose || !(a_pose->flags & Protocol::kPlayerInVehicle)) {
             return 1.0f;
         }
-        return VehicleHits::SplitOf(VehicleHits::CoverOf(VehicleKinds::KindOf(a_pose->vehicleModel)), VehicleHits::Attack::Melee).cj;
+        const float share = VehicleHits::SplitOf(VehicleHits::CoverOf(VehicleKinds::KindOf(a_pose->vehicleModel)), VehicleHits::Attack::Melee, state.proofs).cj;
+        return (std::min)(share, least);
     }
+
+    bool Shields() { return g_active.load(); }
 
     void Clear()
     {

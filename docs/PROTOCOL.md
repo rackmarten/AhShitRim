@@ -201,7 +201,7 @@ Four vehicle slots (v6), one per vehicle San Andreas keeps (`kVehicleMax`), each
 
 | Field | For a vehicle |
 |---|---|
-| `flags` | `kBodyValid` (0x1); `kBodyDriven` (0x2) while CJ is in it; (v18) `kBodyWrecked` (0x4) once it blew up (`STATUS_WRECKED`), (v20) `kBodyHydraulics` (0x40) while it has San Andreas's hydraulics (LOWRIDER); `kBodyBurning` (0x8) while it burns: its engine (health under 250, not wrecked or drowning, as `CAutomobile::ProcessCarOnFireAndExplode` tests) or the wreck (San Andreas's fire on it, `m_pFire`). 0 once the vehicle is gone: Skyrim draws nothing for the slot |
+| `flags` | `kBodyValid` (0x1); `kBodyDriven` (0x2) while CJ is in it; (v18) `kBodyWrecked` (0x4) once it blew up (`STATUS_WRECKED`), (v20) `kBodyHydraulics` (0x40) while it has San Andreas's hydraulics (LOWRIDER); (v24) its proofs, San Andreas's physical flags: `kBodyBulletProof` (0x80), `kBodyFireProof` (0x100), `kBodyExplosionProof` (0x200), `kBodyMeleeProof` (0x400), all four when it can't be damaged (`bCanBeDamaged` off); the Rhino is bullet and explosion proof; `kBodyBurning` (0x8) while it burns: its engine (health under 250, not wrecked or drowning, as `CAutomobile::ProcessCarOnFireAndExplode` tests) or the wreck (San Andreas's fire on it, `m_pFire`). 0 once the vehicle is gone: Skyrim draws nothing for the slot |
 | `model` | the vehicle's `ModelChunkHeader.model` |
 | `boneCount` | its parts (one per drawn atomic: chassis, wheels, doors, bonnet, a bike's forks and handlebars) |
 | `feet[3]` | the vehicle's position, relative to where the handover put CJ's feet |

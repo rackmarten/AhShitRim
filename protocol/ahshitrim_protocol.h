@@ -276,6 +276,10 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kBodyBurning = 0x8;  // BodyState.flags, vehicle slots (v18): it burns: its engine (health under 250, about to blow up) or the wreck
     inline constexpr std::uint32_t kBodyJetpack = 0x10;    // BodyState.flags, the gear slot (v19): the jetpack on CJ's back
     inline constexpr std::uint32_t kBodyParachute = 0x20;  // BodyState.flags, the gear slot (v19): the parachute, open
+    inline constexpr std::uint32_t kBodyBulletProof = 0x80;      // BodyState.flags, vehicle slots (v24): San Andreas's bBulletProof (the Rhino), or it can't be damaged at all
+    inline constexpr std::uint32_t kBodyFireProof = 0x100;       // (v24) bFireProof
+    inline constexpr std::uint32_t kBodyExplosionProof = 0x200;  // (v24) bExplosionProof (the Rhino)
+    inline constexpr std::uint32_t kBodyMeleeProof = 0x400;      // (v24) bMeleeProof
     inline constexpr std::uint32_t kBodyHydraulics = 0x40;  // BodyState.flags, vehicle slots (v20): it has San Andreas's hydraulics (LOWRIDER)
 
     // One bone's skinning transform (v5): takes a vertex of the model (bind pose, Skyrim units) to

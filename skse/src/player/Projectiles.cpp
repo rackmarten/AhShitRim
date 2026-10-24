@@ -4,8 +4,10 @@
 #include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
+#include "player/Hitboxes.h"
 #include "player/People.h"
 #include "player/Puffs.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
 
@@ -377,7 +379,13 @@ namespace AhShitRim::Projectiles
             const double now = NowSeconds();
             int          caught = 0;
             People::Blast(a_at);  // heard far and wide
+            // In a vehicle (v24) the blast doesn't reach CJ or his passengers, as San Andreas's explosions skip a ped in one: the
+            // vehicle takes it (San Andreas's own when it blows up), or nothing in the Rhino.
+            const bool inside = Hitboxes::Shields();
             ForActorsNear(a_player, a_at, [&](RE::Actor* a_actor) {
+                if (inside && Riders::Rides(a_actor->GetFormID())) {
+                    return;
+                }
                 RE::NiPoint3 closest;
                 const float  distance = DistanceTo(a_actor, a_at, &closest);
                 const float  damage = BlastDamage(a_kind, distance);
@@ -401,7 +409,7 @@ namespace AhShitRim::Projectiles
                 }
             });
             // CJ in his own blast.
-            const float self = a_hurtCj ? BlastDamage(a_kind, DistanceTo(a_player, a_at)) : 0.0f;
+            const float self = a_hurtCj && !inside ? BlastDamage(a_kind, DistanceTo(a_player, a_at)) : 0.0f;
             if (self > 0.0f) {
                 Vitals::Hurt(a_player, self);
             }
