@@ -463,10 +463,15 @@ namespace AhShitRim::People
 
     void ChainsawCut() { state.cutAt = NowSeconds(); }
 
-    void Clear()
+    void Clear(bool a_letGo)
     {
-        for (const auto& [id, doing] : state.scares.All()) {
-            LetGo(id, doing);
+        const auto scared = state.scares.All();  // forgotten either way
+        if (a_letGo) {
+            for (const auto& [id, doing] : scared) {
+                LetGo(id, doing);
+            }
+        } else if (!scared.empty()) {
+            SKSE::log::info("people: a load: {} scared left as they are, no AI of theirs reset", scared.size());
         }
         state.blasts.clear();
         state.haveShots = false;

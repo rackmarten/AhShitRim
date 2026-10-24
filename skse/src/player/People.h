@@ -41,5 +41,7 @@ namespace AhShitRim::People
     void ChainsawCut();
 
     // Back to Skyrim's own player: everyone cowering stands up and everyone fleeing goes back to what it did.
-    void Clear();
+    // a_letGo false for a load or a new game: the scared are only forgotten, no AI of theirs touched while Skyrim tears its
+    // world down.
+    void Clear(bool a_letGo = true);
 }

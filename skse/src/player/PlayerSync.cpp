@@ -510,7 +510,9 @@ namespace AhShitRim::PlayerSync
             }
         }
 
-        void Release(const char* a_reason)
+        // a_loading: a load or a new game, whose world Skyrim is about to tear down: nobody's AI is touched (no flee let
+        // go, no AI reset, no animation event), only our own state is dropped.
+        void Release(const char* a_reason, bool a_loading = false)
         {
             if (!state.owned) {
                 return;
@@ -530,7 +532,7 @@ namespace AhShitRim::PlayerSync
             WorldPickups::Clear();
             VehicleFx::Clear();
             Particles::Clear();
-            People::Clear();
+            People::Clear(!a_loading);
             CarHits::Clear();
             LockOn::Clear();
             Riders::Clear();
@@ -538,7 +540,7 @@ namespace AhShitRim::PlayerSync
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
-            if (auto* player = RE::PlayerCharacter::GetSingleton(); player && (state.sneak || player->IsSneaking())) {
+            if (auto* player = RE::PlayerCharacter::GetSingleton(); player && !a_loading && (state.sneak || player->IsSneaking())) {
                 player->AsActorState()->actorState1.sneaking = false;
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
@@ -1459,7 +1461,7 @@ namespace AhShitRim::PlayerSync
         GunRewards::OnGameLoad();
         Respawns::OnGameLoad();
         Missions::OnGameLoad();
-        Release("game loading");
+        Release("game loading", true);
         CheatCodes::OnGameLoad();
         Police::OnGameLoad();
     }
