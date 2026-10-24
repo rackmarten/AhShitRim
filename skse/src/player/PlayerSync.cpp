@@ -23,6 +23,7 @@
 #include "player/Police.h"
 #include "player/GunRewards.h"
 #include "player/Respawns.h"
+#include "player/LockOn.h"
 #include "player/Looting.h"
 #include "player/Conversation.h"
 #include "player/CarHits.h"
@@ -505,6 +506,7 @@ namespace AhShitRim::PlayerSync
             VehicleFx::Clear();
             People::Clear();
             CarHits::Clear();
+            LockOn::Clear();
             Riders::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
@@ -584,6 +586,7 @@ namespace AhShitRim::PlayerSync
             VehicleFx::Clear();
             People::Clear();
             CarHits::Clear();
+            LockOn::Clear();
             Riders::Clear();
             Activation::Clear();
             AmmuNation::Close();
@@ -858,8 +861,11 @@ namespace AhShitRim::PlayerSync
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
+            // On foot CJ bumps into Skyrim's actors, and with fists or a melee weapon the right mouse button locks on to one.
+            const bool onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held;
+            const auto target = LockOn::Update(a_player, cjFeet, pose.heading, onFoot && (pose.weaponFlags & Protocol::kWeaponMelee) && state.input.Aiming() && !MenuHasInput());
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
                 valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));

@@ -2,6 +2,7 @@
 
 #include "body.h"
 #include "link/LinkService.h"
+#include "melee.h"
 #include "player/Riders.h"
 #include "player/Shots.h"
 #include "run_over.h"
@@ -70,7 +71,9 @@ namespace AhShitRim::CarHits
 
         // Who San Andreas tests CJ's vehicle against: the living, loaded actors nearest the player, not its
         // passengers, nor children (Skyrim never lets them come to harm), nor anyone riding (the mount is hit).
-        void SendProxies(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover)
+        // On foot (a_onFoot), who CJ bumps into: the nearest within Melee::kFootRange, children too, followers
+        // not (they'd hem him in), and a_target, his lock-on, flagged among them.
+        void SendProxies(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_onFoot, RE::FormID a_target)
         {
             auto* lists = RE::ProcessLists::GetSingleton();
             if (!lists) {
@@ -80,12 +83,18 @@ namespace AhShitRim::CarHits
             const auto                   centre = a_player->GetPosition();
             std::vector<RE::Actor*>      actors;
             std::vector<RunOver::Candidate> candidates;
+            std::size_t                     target = SIZE_MAX;
             for (auto& handle : lists->highActorHandles) {
                 auto  ptr = handle.get();
                 auto* actor = ptr.get();
-                if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->IsChild() || actor->IsOnMount() ||
-                    Riders::Rides(actor->GetFormID())) {
+                if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->IsOnMount()) {
                     continue;
+                }
+                if (a_onFoot ? actor->IsPlayerTeammate() || actor->IsCommandedActor() : actor->IsChild() || Riders::Rides(actor->GetFormID())) {
+                    continue;
+                }
+                if (actor->GetFormID() == a_target) {
+                    target = actors.size();
                 }
                 actors.push_back(actor);
                 candidates.push_back({ actor->GetFormID(), actor->GetPosition().GetDistance(centre) });
@@ -93,7 +102,7 @@ namespace AhShitRim::CarHits
             Protocol::ProxyState out{};
             out.frame = ++state.frame;
             out.handover = a_handover;
-            for (const auto i : RunOver::Nearest(candidates)) {
+            for (const auto i : a_onFoot ? Melee::OnFoot(candidates, target) : RunOver::Nearest(candidates)) {
                 auto*       actor = actors[i];
                 const auto  build = BuildOf(actor);
                 const auto  shape = RunOver::ShapeOf(build, actor->GetScale(), actor->GetHeight());
@@ -102,7 +111,8 @@ namespace AhShitRim::CarHits
                 const auto  velocity = VelocityOf(actor, now);
                 auto&       proxy = out.proxies[out.count++];
                 proxy.id = actor->GetFormID();
-                proxy.flags = static_cast<std::uint8_t>((shape.heavy ? Protocol::kProxyHeavy : 0) | (build == RunOver::Build::Person ? Protocol::kProxyPerson : 0));
+                proxy.flags = static_cast<std::uint8_t>((shape.heavy ? Protocol::kProxyHeavy : 0) | (build == RunOver::Build::Person ? Protocol::kProxyPerson : 0) |
+                                                        (i == target ? Protocol::kProxyTarget : 0));
                 proxy.a[0] = capsule.a.x;
                 proxy.a[1] = capsule.a.y;
                 proxy.a[2] = capsule.a.z;
@@ -177,10 +187,10 @@ namespace AhShitRim::CarHits
         state.queue.push_back(pending);
     }
 
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle)
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle, bool a_onFoot, RE::FormID a_target)
     {
-        if (a_inVehicle) {
-            SendProxies(a_player, a_anchor, a_handover);
+        if (a_inVehicle || a_onFoot) {
+            SendProxies(a_player, a_anchor, a_handover, !a_inVehicle, a_target);
         } else if (state.sending) {
             LinkService::Get().WriteProxies(Protocol::ProxyState{});
             state.sending = false;

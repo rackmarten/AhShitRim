@@ -217,7 +217,7 @@ Any land or air vehicle spawns (v19): cars, monster trucks, quads, bikes and bic
 
 ### Proxies (Skyrim to San Andreas)
 
-`ProxyState`, 1,040 bytes (v23), in a 1,088-byte slot. Written every Skyrim frame while CJ is in a vehicle (`kPlayerInVehicle`, no scene), with `count` 0 once he is out and on F10 (`skse/src/player/CarHits.cpp`, the rules in `protocol/cpp/run_over.h`). San Andreas reads it once a frame after its physics step and sweeps CJ's vehicle against each proxy (`sa/src/car_hits.cpp`).
+`ProxyState`, 1,040 bytes (v23), in a 1,088-byte slot. Written every Skyrim frame while CJ is in a vehicle (`kPlayerInVehicle`, no scene), and since #895 also while he is on foot (no scene, not dying or arrested), with `count` 0 otherwise and on F10 (`skse/src/player/CarHits.cpp`, the rules in `protocol/cpp/run_over.h` and `melee.h`). San Andreas reads it once a frame after its physics step and sweeps CJ's vehicle against each proxy (`sa/src/car_hits.cpp`), or on foot pushes CJ out of them and turns him to the flagged target (`sa/src/cj_melee.cpp`).
 
 | Offset | Field | Meaning |
 |---|---|---|
@@ -226,7 +226,7 @@ Any land or air vehicle spawns (v19): cars, monster trucks, quads, bikes and bic
 | 8 | `count` | proxies in use, at most 16 (`kProxyMax`) |
 | 16 | `proxies[16]` | `ActorProxy`, 64 bytes each, nearest first |
 
-`ActorProxy`: `id` u32 (the actor's form id, which an `ImpactEvent` names), `flags` u8 (`kProxyHeavy` 0x1: a giant, mammoth or dragon, which stops a vehicle like a wall; `kProxyPerson` 0x2: a humanoid race), 3 reserved bytes, `a[3]` and `b[3]` (the capsule's segment, Skyrim units relative to `InputState.anchor`), `radius` (Skyrim units), `mass` (kilograms), `velocity[3]` (Skyrim units a second), 12 reserved bytes. Skyrim sends the 16 living, loaded actors nearest the player within 40 m, not its passengers, children or anyone riding (their mount is sent); each actor's capsule comes from its race and scale (`RunOver::ShapeOf`: a person upright, a horse, a mammoth or a dragon lying along its heading).
+`ActorProxy`: `id` u32 (the actor's form id, which an `ImpactEvent` names), `flags` u8 (`kProxyHeavy` 0x1: a giant, mammoth or dragon, which stops a vehicle like a wall; `kProxyPerson` 0x2: a humanoid race; `kProxyTarget` 0x4: on foot, the one CJ locks on to with fists or a melee weapon), 3 reserved bytes, `a[3]` and `b[3]` (the capsule's segment, Skyrim units relative to `InputState.anchor`), `radius` (Skyrim units), `mass` (kilograms), `velocity[3]` (Skyrim units a second), 12 reserved bytes. Skyrim sends the 16 living, loaded actors nearest the player within 40 m, not its passengers, children or anyone riding (their mount is sent); on foot the 16 nearest within 12 m, children too, followers and riders not, and always the lock-on target; each actor's capsule comes from its race and scale (`RunOver::ShapeOf`: a person upright, a horse, a mammoth or a dragon lying along its heading).
 
 ### Gear (San Andreas to Skyrim)
 

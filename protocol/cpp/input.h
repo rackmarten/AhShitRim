@@ -249,6 +249,7 @@ namespace AhShitRim::Input
         // The mouse buttons (v12): the left one fires, the right one aims, on foot.
         void SetFire(bool a_down) { _fire = a_down; }
         void SetAim(bool a_down) { _aim = a_down; }
+        bool Aiming() const { return _aim; }
 
         // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before; on
         // foot (v12) up switches to the next weapon and down to the previous one. San Andreas acts on
