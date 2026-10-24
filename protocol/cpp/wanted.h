@@ -511,6 +511,27 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // Ours are copies of the hold's generic guards, never of anyone with a life of his own: not a unique NPC (Commander
+    // Caius, a jarl's housecarl, who counts as a guard of the hold: four of him came down the street at 4 stars), and not
+    // one called by his name rather than by what he is. Copies of a unique base are also references Skyrim doesn't
+    // expect, for an NPC it keeps one of for its dialogue and quests. a_name is the actor's, a_generic the hold's
+    // guard's ("Whiterun Guard").
+    inline bool Copyable(bool a_unique, std::string_view a_name, std::string_view a_generic)
+    {
+        if (a_unique || a_name.empty()) {
+            return false;
+        }
+        if (a_name == a_generic) {
+            return true;
+        }
+        for (const std::string_view role : { "Guard", "Soldier", "Battlemage" }) {  // "Windhelm Guard", "Imperial Soldier"
+            if (a_name == role || (a_name.size() > role.size() && a_name.ends_with(role) && a_name[a_name.size() - role.size() - 1] == ' ')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // The soldiers' bases are levelled lists (LCharSoldier*, LVLN), and a reference made straight from one is no actor:
     // one of its entries is picked instead, as Skyrim levels a list (anyone up to the player's level; with nobody that
     // low, the lowest). a_levels are the entries' levels, a_roll any number (which of those it is). -1 for an empty list.

@@ -452,6 +452,22 @@ TEST_CASE("never in view: behind the camera is hidden, in front isn't")
     CHECK(west.x < -kSpawnNear);
 }
 
+TEST_CASE("ours copy generic guards only, never a unique or named NPC")
+{
+    CHECK(Copyable(false, "Whiterun Guard", "Whiterun Guard"));
+    CHECK(Copyable(false, "Windhelm Guard", "Whiterun Guard"));  // a hold's guards by another name of the same kind
+    CHECK(Copyable(false, "Guard", "Whiterun Guard"));
+    CHECK(Copyable(false, "Imperial Soldier", "Whiterun Guard"));
+    CHECK(Copyable(false, "Stormcloak Battlemage", "Whiterun Guard"));
+    CHECK_FALSE(Copyable(true, "Whiterun Guard", "Whiterun Guard"));     // flagged unique, whatever he's called
+    CHECK_FALSE(Copyable(false, "Commander Caius", "Whiterun Guard"));   // a name of his own
+    CHECK_FALSE(Copyable(true, "Commander Caius", "Whiterun Guard"));
+    CHECK_FALSE(Copyable(false, "Irileth", "Whiterun Guard"));
+    CHECK_FALSE(Copyable(false, "Guard Captain", "Whiterun Guard"));
+    CHECK_FALSE(Copyable(false, "Lifeguard", "Whiterun Guard"));         // a word that only ends like one
+    CHECK_FALSE(Copyable(false, "", "Whiterun Guard"));
+}
+
 TEST_CASE("a levelled list's soldier: anyone up to the player's level, else the lowest")
 {
     const std::uint16_t levels[] = { 1, 10, 25, 40 };

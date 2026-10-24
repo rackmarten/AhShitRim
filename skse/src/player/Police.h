@@ -47,11 +47,13 @@ namespace AhShitRim::Police
     void Install();  // the GoToPrison hook
 
     // Every frame while San Andreas has the player, after Vitals (a_pose null while it isn't valid). a_cjDrawn: CJ
-    // is drawn at the player's place. a_scene: Skyrim moves the player. Returns whether Busted is running.
+    // is drawn at the player's place. a_scene: Skyrim moves the player. Returns whether Busted is running. The frame
+    // itself (crimes, sight, the director, spawning, fights, removals) runs from an SKSE task at Skyrim's next safe
+    // point on the main thread, never inside the player's update while other actors' AI runs.
     bool Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene,
         float a_delta);
 
-    // Every frame, owned or not: one step of taking out the spawned pursuers that are leaving.
+    // Every frame, owned or not: one step of taking out the spawned pursuers that are leaving (in the same task).
     void Sweep();
 
     // Whether a guard's hit was eased (Wanted::GuardDamage) and left the player standing since the last call: a bleedout
@@ -88,7 +90,8 @@ namespace AhShitRim::Police
     // The game moved the player and CJ was re-anchored there.
     void OnReanchor();
 
-    // A game loads: the bounties are seeded again, nothing spawned is ours any more.
+    // A game loads or a new one starts (kPreLoadGame, kNewGame): the bounties are seeded again, nothing spawned is ours
+    // any more, no task queued before it runs, and nothing is done to any actor from here.
     void OnGameLoad();
 
     // The co-save record.

@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <mutex>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -496,7 +497,33 @@ namespace AhShitRim::Police
             return !a_player->HasLineOfSight(a_ref, unused);
         }
 
-        // One step a frame of the first leaving pursuer that can go.
+        // Before one of ours goes: nobody is left fighting it (Skyrim drops a disabled actor later, and a fight with it
+        // kept in someone's AI is a freed actor then), and it fights nobody.
+        void Unlink(RE::Actor* a_gone)
+        {
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!a_gone || !lists) {
+                return;
+            }
+            std::vector<RE::NiPointer<RE::Actor>> fighting;
+            lists->ForEachHighActor([&](RE::Actor* a_actor) {
+                if (a_actor && a_actor != a_gone && a_actor->GetActorRuntimeData().currentCombatTarget.get().get() == a_gone) {
+                    fighting.emplace_back(a_actor);
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+            for (const auto& actor : fighting) {
+                actor->StopCombat();
+            }
+            if (!a_gone->IsDead()) {
+                a_gone->StopCombat();
+            }
+            if (!fighting.empty()) {
+                SKSE::log::info("police: {} stop fighting {:08X} before it goes", fighting.size(), a_gone->GetFormID());
+            }
+        }
+
+        // One step a frame of the first leaving pursuer that can go (from the police's task, at a safe point).
         void SweepLeaving()
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
@@ -511,6 +538,7 @@ namespace AhShitRim::Police
                 }
                 if (ref) {
                     if (it->step == 0) {
+                        Unlink(ref->As<RE::Actor>());
                         ref->Disable();
                     } else if (!ref->As<RE::Actor>()) {
                         ref->SetDelete(true);  // a ground probe
@@ -572,19 +600,33 @@ namespace AhShitRim::Police
         }
 
         // A guard of the hold about, whose base ours copy (the hold's guards as the war left them), else the table's.
+        bool Unique(RE::TESBoundObject* a_base)
+        {
+            auto* npc = a_base ? a_base->As<RE::TESNPC>() : nullptr;
+            return npc && npc->IsUnique();
+        }
+
+        // A generic guard of the hold about (Wanted::Copyable: never a unique or named one, such as Commander Caius, who
+        // counts as a guard), whose base ours copy (the hold's guards as the war left them), else the table's.
         RE::TESBoundObject* GuardBase(RE::PlayerCharacter* a_player)
         {
+            auto*               table = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+            const char*         tableName = table ? table->GetName() : nullptr;
             RE::TESBoundObject* found = nullptr;
             if (auto* lists = RE::ProcessLists::GetSingleton()) {
                 lists->ForEachHighActor([&](RE::Actor* a_actor) {
                     if (Pursues(a_actor) && !IsSpawned(a_actor) && a_actor != a_player) {
-                        found = a_actor->GetObjectReference();
-                        return RE::BSContainer::ForEachResult::kStop;
+                        auto*       npc = a_actor->GetActorBase();
+                        const char* name = a_actor->GetName();
+                        if (npc && Wanted::Copyable(npc->IsUnique(), name ? name : "", tableName ? tableName : "")) {
+                            found = a_actor->GetObjectReference();
+                            return RE::BSContainer::ForEachResult::kStop;
+                        }
                     }
                     return RE::BSContainer::ForEachResult::kContinue;
                 });
             }
-            return found ? found : RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+            return found && !Unique(found) ? found : table;
         }
 
         // A levelled list (the soldiers' LCharSoldier*) as one of its NPCs (Wanted::PickLeveled, a few lists deep): a reference
@@ -726,6 +768,11 @@ namespace AhShitRim::Police
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto* base = BaseFor(a_player, a_unit);
+            if (Unique(base)) {
+                SKSE::log::warn("police: {:08X} for a {} is a unique NPC: never copied, the hold's guard instead", base->GetFormID(), Wanted::NameOf(a_unit));
+                base = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+                a_unit = Wanted::Unit::Guard;
+            }
             if (!base && a_unit != Wanted::Unit::Guard) {
                 SKSE::log::info("police: no {} to send for {}, a guard instead", Wanted::NameOf(a_unit), state.hold->name);
                 a_unit = Wanted::Unit::Guard;
@@ -1153,94 +1200,219 @@ namespace AhShitRim::Police
                         "the stars, guards hit CJ by the stars");
     }
 
-    bool Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene, float a_delta)
+    namespace
     {
-        state.owned = true;
-        state.chasedTimer += a_delta;
-        if (Vitals::IsWasted()) {
+        // The police's frame, run from an SKSE task (RunFrame), not from the player's update: creating, disabling and setting
+        // actors on each other there, while Skyrim updates the other actors' AI on its job threads, left a freed actor in
+        // someone's AI that crashed the game a while later (a quickload after a fight).
+        bool UpdateFrame(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene,
+            float a_delta)
+        {
+            state.chasedTimer += a_delta;
+            if (Vitals::IsWasted()) {
+                if (state.sequence.Running()) {
+                    state.sequence.Cancel();
+                    SaHud::HideBigMessage();
+                    SKSE::log::info("police: Busted gave way to Wasted");
+                }
+                if (state.pursuit.Stars() > 0) {
+                    state.pursuit.Clear();  // San Andreas clears the wanted level with Wasted
+                    Dismiss("Wasted");
+                    SKSE::log::info("police: Wasted: the stars go");
+                }
+                state.jailAsked = nullptr;
+                state.stop.Reset();
+                EndRun(a_player, false);
+                Show(0);
+                return false;
+            }
             if (state.sequence.Running()) {
-                state.sequence.Cancel();
-                SaHud::HideBigMessage();
-                SKSE::log::info("police: Busted gave way to Wasted");
+                state.jailAsked = nullptr;
+                Run(a_player, a_delta, a_cjDrawn);
+                Show(state.sequence.Running() ? state.pursuit.Stars() : 0);
+                return state.sequence.Running();
             }
-            if (state.pursuit.Stars() > 0) {
-                state.pursuit.Clear();  // San Andreas clears the wanted level with Wasted
-                Dismiss("Wasted");
-                SKSE::log::info("police: Wasted: the stars go");
-            }
-            state.jailAsked = nullptr;
-            state.stop.Reset();
-            EndRun(a_player, false);
-            Show(0);
-            return false;
-        }
-        if (state.sequence.Running()) {
-            state.jailAsked = nullptr;
-            Run(a_player, a_delta, a_cjDrawn);
-            Show(state.sequence.Running() ? state.pursuit.Stars() : 0);
-            return state.sequence.Running();
-        }
 
-        if (state.settle > 0.0f) {
-            state.settle -= a_delta;  // a loaded world's actors are still coming in
-            Show(state.pursuit.Stars());
-            return false;
-        }
-        const bool never = NeverWanted();
-        if (never && !state.neverWanted) {
-            ForgiveAll(a_player);
-        }
-        state.neverWanted = never;
-        if (never) {
-            state.calmTimer += a_delta;
-            if (state.calmTimer >= kCalmEvery) {
-                state.calmTimer = 0.0f;
-                Calm(a_player, false);
+            if (state.settle > 0.0f) {
+                state.settle -= a_delta;  // a loaded world's actors are still coming in
+                Show(state.pursuit.Stars());
+                return false;
             }
-        }
-        WatchCrimes(a_player);
-        if (const int cheat = g_cheat.exchange(-1); cheat >= 0) {
-            ApplyCheat(a_player, cheat);
-        }
-        if (auto* faction = std::exchange(state.jailAsked, nullptr)) {
-            const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
-            const auto bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
-            if (const auto* hold = Wanted::HoldOf(faction->GetFormID())) {
-                state.hold = hold;
+            const bool never = NeverWanted();
+            if (never && !state.neverWanted) {
+                ForgiveAll(a_player);
             }
-            Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : bust == Wanted::Bust::KnockOff ? Wanted::Arrest::KnockOff : Wanted::Arrest::OnFoot, faction);
-            return true;
-        }
+            state.neverWanted = never;
+            if (never) {
+                state.calmTimer += a_delta;
+                if (state.calmTimer >= kCalmEvery) {
+                    state.calmTimer = 0.0f;
+                    Calm(a_player, false);
+                }
+            }
+            WatchCrimes(a_player);
+            if (const int cheat = g_cheat.exchange(-1); cheat >= 0) {
+                ApplyCheat(a_player, cheat);
+            }
+            if (auto* faction = std::exchange(state.jailAsked, nullptr)) {
+                const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
+                const auto bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
+                if (const auto* hold = Wanted::HoldOf(faction->GetFormID())) {
+                    state.hold = hold;
+                }
+                Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : bust == Wanted::Bust::KnockOff ? Wanted::Arrest::KnockOff : Wanted::Arrest::OnFoot, faction);
+                return true;
+            }
 
-        state.lookTimer += a_delta;
-        if (state.lookTimer >= kLookEvery) {
-            state.lookTimer = 0.0f;
-            Look(a_player);
-        }
-        const auto look = state.pursuit.Tick(a_delta, state.seen, never);
-        Show(look.stars, look.flashing);
-        if (look.stars != state.loggedStars) {
-            SKSE::log::info("police: {} star(s){}", look.stars, look.stars < state.loggedStars && look.stars == 0 ? " (lost them)" : "");
-            // A star gained: CJ has something to say about it, now and then while they keep after him.
-            if (look.stars > state.loggedStars && state.chasedTimer >= kChasedAfterRise) {
+            state.lookTimer += a_delta;
+            if (state.lookTimer >= kLookEvery) {
+                state.lookTimer = 0.0f;
+                Look(a_player);
+            }
+            const auto look = state.pursuit.Tick(a_delta, state.seen, never);
+            Show(look.stars, look.flashing);
+            if (look.stars != state.loggedStars) {
+                SKSE::log::info("police: {} star(s){}", look.stars, look.stars < state.loggedStars && look.stars == 0 ? " (lost them)" : "");
+                // A star gained: CJ has something to say about it, now and then while they keep after him.
+                if (look.stars > state.loggedStars && state.chasedTimer >= kChasedAfterRise) {
+                    Say(Wanted::kLineChased);
+                }
+                state.loggedStars = look.stars;
+            } else if (look.stars > 0 && state.seen && state.chasedTimer >= Wanted::kChasedEvery) {
                 Say(Wanted::kLineChased);
             }
-            state.loggedStars = look.stars;
-        } else if (look.stars > 0 && state.seen && state.chasedTimer >= Wanted::kChasedEvery) {
-            Say(Wanted::kLineChased);
-        }
-        state.cjSpeed = a_pose ? std::hypot(a_pose->velocity[0], a_pose->velocity[1]) : 0.0f;
-        if (state.rejoin.Tick(a_delta)) {
-            Rejoin(a_player);
-        }
-        Respond(a_player, a_delta, a_scene);
+            state.cjSpeed = a_pose ? std::hypot(a_pose->velocity[0], a_pose->velocity[1]) : 0.0f;
+            if (state.rejoin.Tick(a_delta)) {
+                Rejoin(a_player);
+            }
+            Respond(a_player, a_delta, a_scene);
 
-        Wanted::Bust bust = Wanted::Bust::None;
-        if (!a_scene && CheckVehicle(a_player, a_anchor, a_pose, a_delta, bust) && state.hold) {
-            Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : Wanted::Arrest::KnockOff, FactionOf(*state.hold));
-            return true;
+            Wanted::Bust bust = Wanted::Bust::None;
+            if (!a_scene && CheckVehicle(a_player, a_anchor, a_pose, a_delta, bust) && state.hold) {
+                Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : Wanted::Arrest::KnockOff, FactionOf(*state.hold));
+                return true;
+            }
+            return false;
         }
-        return false;
+
+        // Who fights the player as it's knocked down (Skyrim's and ours), for Rejoin.
+        void KnockedDownNow(RE::PlayerCharacter* a_player)
+        {
+            state.downFighters.clear();
+            state.rejoin.Reset();
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            const auto feet = a_player->GetPosition();
+            lists->ForEachHighActor([&](RE::Actor* a_actor) {
+                if (a_actor && !a_actor->IsDead() && a_actor->Is3DLoaded() && Fights(a_actor, a_player) && a_actor->GetPosition().GetDistance(feet) <= Wanted::kSightRange) {
+                    state.downFighters.push_back(a_actor->GetHandle());
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+            for (const auto& s : state.spawned) {  // ours too, whoever they were fighting this moment
+                if (auto ref = s.actor.get(); ref && ref->As<RE::Actor>()) {
+                    state.downFighters.push_back(ref->As<RE::Actor>()->GetHandle());
+                }
+            }
+            SKSE::log::info("police: the player is knocked down with {} fighting it (and ours)", state.downFighters.size());
+        }
+
+        void RetargetNow(RE::PlayerCharacter* a_player)
+        {
+            state.rejoin.Start();
+            Rejoin(a_player);
+            for (auto& s : state.spawned) {
+                s.retarget = 0.0f;
+            }
+        }
+
+        // What the player's update asked for since the last task ran.
+        struct Pending
+        {
+            bool                  update = false;  // a frame while CJ has the player
+            RE::NiPoint3          anchor;
+            bool                  hasPose = false;
+            Protocol::PlayerState pose{};
+            bool                  cjDrawn = false;
+            bool                  scene = false;
+            float                 delta = 0.0f;  // the frames' since the last task, added up
+            bool                  knocked = false;
+            bool                  retarget = false;
+            bool                  release = false;  // Skyrim has the player back: ours leave
+        };
+
+        std::mutex    g_pendingLock;
+        Pending       g_pending;
+        bool          g_taskQueued = false;
+        std::uint32_t g_generation = 0;  // a load or a new game makes the tasks queued before it do nothing
+
+        void RunFrame()
+        {
+            Pending p;
+            {
+                std::scoped_lock lock(g_pendingLock);
+                p = std::exchange(g_pending, Pending{});
+                g_taskQueued = false;
+            }
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return;
+            }
+            if (p.release) {
+                EndRun(player, false);  // the door runner's offset and script object go first
+                Dismiss("Skyrim has the player back", true);
+            }
+            if (p.knocked) {
+                KnockedDownNow(player);
+            }
+            if (p.update && state.owned) {
+                UpdateFrame(player, p.anchor, p.hasPose ? &p.pose : nullptr, p.cjDrawn, p.scene, p.delta);
+            }
+            if (p.retarget && state.owned) {
+                RetargetNow(player);
+            }
+            Unbind(false);
+            SweepLeaving();
+        }
+
+        // Asks for a task (one at a time) to run the police's frame at Skyrim's next safe point on the main thread. Call
+        // with g_pendingLock held.
+        void QueueLocked()
+        {
+            if (g_taskQueued) {
+                return;
+            }
+            auto* tasks = SKSE::GetTaskInterface();
+            if (!tasks) {
+                return;
+            }
+            g_taskQueued = true;
+            const auto generation = g_generation;
+            tasks->AddTask([generation] {
+                if (generation == g_generation) {
+                    RunFrame();
+                }
+            });
+        }
+    }
+
+    bool Update(RE::PlayerCharacter*, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene, float a_delta)
+    {
+        state.owned = true;
+        std::scoped_lock lock(g_pendingLock);
+        g_pending.update = true;
+        g_pending.anchor = a_anchor;
+        g_pending.hasPose = a_pose != nullptr;
+        if (a_pose) {
+            g_pending.pose = *a_pose;
+        }
+        g_pending.cjDrawn = a_cjDrawn;
+        g_pending.scene = a_scene;
+        g_pending.delta += a_delta;
+        QueueLocked();
+        return state.sequence.Running();
     }
 
     std::uint8_t TakeLine() { return std::exchange(state.line, std::uint8_t{ 0 }); }
@@ -1259,36 +1431,18 @@ namespace AhShitRim::Police
         return true;
     }
 
-    void OnKnockedDown(RE::PlayerCharacter* a_player)
+    void OnKnockedDown(RE::PlayerCharacter*)
     {
-        state.downFighters.clear();
-        state.rejoin.Reset();
-        auto* lists = RE::ProcessLists::GetSingleton();
-        if (!lists || !a_player) {
-            return;
-        }
-        const auto feet = a_player->GetPosition();
-        lists->ForEachHighActor([&](RE::Actor* a_actor) {
-            if (a_actor && !a_actor->IsDead() && a_actor->Is3DLoaded() && Fights(a_actor, a_player) && a_actor->GetPosition().GetDistance(feet) <= Wanted::kSightRange) {
-                state.downFighters.push_back(a_actor->GetHandle());
-            }
-            return RE::BSContainer::ForEachResult::kContinue;
-        });
-        for (const auto& s : state.spawned) {  // ours too, whoever they were fighting this moment
-            if (auto ref = s.actor.get(); ref && ref->As<RE::Actor>()) {
-                state.downFighters.push_back(ref->As<RE::Actor>()->GetHandle());
-            }
-        }
-        SKSE::log::info("police: the player is knocked down with {} fighting it (and ours)", state.downFighters.size());
+        std::scoped_lock lock(g_pendingLock);
+        g_pending.knocked = true;
+        QueueLocked();
     }
 
-    void Retarget(RE::PlayerCharacter* a_player)
+    void Retarget(RE::PlayerCharacter*)
     {
-        state.rejoin.Start();
-        Rejoin(a_player);
-        for (auto& s : state.spawned) {
-            s.retarget = 0.0f;
-        }
+        std::scoped_lock lock(g_pendingLock);
+        g_pending.retarget = true;
+        QueueLocked();
     }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
@@ -1307,10 +1461,12 @@ namespace AhShitRim::Police
         state.jailAsked = nullptr;
         state.line = 0;
         EndShow();
-        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-            EndRun(player, false);
+        {
+            std::scoped_lock lock(g_pendingLock);  // ours leave in the next task, at a safe point
+            g_pending.update = false;
+            g_pending.release = true;
+            QueueLocked();
         }
-        Dismiss("Skyrim has the player back", true);
         state.stop.Reset();
         Show(0);
     }
@@ -1324,12 +1480,25 @@ namespace AhShitRim::Police
 
     void Sweep()
     {
-        Unbind(false);
-        SweepLeaving();
+        if (!state.leaving.empty() || !state.bound.empty()) {
+            std::scoped_lock lock(g_pendingLock);
+            QueueLocked();
+        }
     }
 
     void OnGameLoad()
     {
+        // A load or a new game: Skyrim clears its world, ours with it. Nothing of ours is done to any actor from here (no
+        // fight stopped, nothing disabled), no task queued before now runs, and no handle of ours outlives it.
+        {
+            std::scoped_lock lock(g_pendingLock);
+            g_generation++;
+            g_pending = {};
+            g_taskQueued = false;
+        }
+        if (!state.spawned.empty() || !state.leaving.empty()) {
+            SKSE::log::info("police: a load: {} of ours and {} leaving are left to Skyrim's own clearing", state.spawned.size(), state.leaving.size());
+        }
         state.downFighters.clear();
         state.rejoin.Reset();
         state.spawned.clear();  // the save's own references now
