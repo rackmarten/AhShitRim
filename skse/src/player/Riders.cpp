@@ -80,7 +80,9 @@ namespace AhShitRim::Riders
         {
             for (const auto& rider : state.riders) {
                 auto* actor = ActorOf(rider);
-                if (!actor) {
+                if (!actor || actor->IsDisabled() || !actor->Is3DLoaded()) {
+                    // Gone, or unloading (a load that began with them seated): nothing of theirs is touched, they're just let go.
+                    SKSE::log::info("riders: {:08X} is let go without standing up (not loaded)", rider.id);
                     continue;
                 }
                 if (a_out && !actor->IsDead()) {
