@@ -1049,6 +1049,8 @@ namespace AhShitRim::PlayerSync
                         if (button->IsDown() && !MenuHasInput() && !Police::IsBusted()) {
                             if (AmmuNation::IsOpen()) {
                                 state.shopActivate = true;  // buys, in the shop
+                            } else if (WorldPickups::Activate()) {
+                                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
                             } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                                 Activation::Activate(player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
                             }

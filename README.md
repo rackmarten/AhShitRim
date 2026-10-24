@@ -31,7 +31,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
 | H | **Caps Lock or H** | | Horn; a plane's landing gear |
-| Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop | Look left / right; an aircraft's rudder |
+| Q / E | Q / E | E: activate what CJ faces, through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop; standing on a weapon pickup while CJ carries another gun of its kind, it swaps his for it (the help box says so) | Look left / right; an aircraft's rudder |
 | Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car |
 | Numpad 5 | Numpad 5 | | Hydraulics' jump (San Andreas's R3), with the numpad's arrows; H raises and lowers the car |
 | Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air | Skyrim's shout, no gesture |

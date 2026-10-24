@@ -18,6 +18,8 @@ namespace AhShitRim::Protocol
 //  - brings a taken one back as San Andreas does (30 s, armour and the heavy weapons 6 minutes, once CJ is 10 m
 //    away), the one-offs (the gold) never: the co-save keeps those,
 //  - draws them at twice San Andreas's size,
+//  - leaves a weapon where it is when CJ holds another in its slot (its rounds into his shotgun, SMG or rifle), offers
+//    the swap in the help box and makes it on E, as San Andreas does,
 //  - puts a heart in front of CJ, where the camera sees it, when he is down to a quarter of his health (at most
 //    once every 3 minutes),
 //  - and keeps the pickups San Andreas drops (the jetpack CJ takes off) where they fell, until he takes them again
@@ -32,6 +34,10 @@ namespace AhShitRim::WorldPickups
     // takes nothing (Wasted, or being re-anchored).
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta,
         const Protocol::PlayerState* a_pose, bool a_held);
+
+    // E while San Andreas has the player: true when CJ stands on a weapon he can swap the one in its slot for (the help
+    // box offered it); the swap is made in the next Update, and Skyrim's own activation must not run.
+    bool Activate();
 
     // Back to Skyrim's own player: the heart and San Andreas's dropped ones are gone.
     void Clear();

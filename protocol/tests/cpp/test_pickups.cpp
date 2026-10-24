@@ -237,3 +237,54 @@ TEST_CASE("San Andreas's models for each kind")
     CHECK(ModelKey(Kind::Health, 7) == ModelKey(Kind::Health, 0));
     CHECK(ModelKey(Kind::Health, 0) != ModelKey(Kind::Armour, 0));
 }
+
+TEST_CASE("walking into a weapon: what CJ holds in its slot decides, as in San Andreas")
+{
+    using Weapons::Type;
+    const auto held = [](std::uint8_t a_type, std::uint32_t a_ammo) {
+        Protocol::WeaponEntry e{};
+        e.type = a_type;
+        e.ammo = a_ammo;
+        return e;
+    };
+    // A loaded Desert Eagle and a pistol lying there: he keeps his gun, and E offers the swap.
+    CHECK(OnWalk(held(Weapons::DesertEagle, 70), Weapons::Pistol, false) == Walk::Offer);
+    // The same weapon, or nothing in the slot: taken, the rounds on top.
+    CHECK(OnWalk(held(Weapons::Pistol, 17), Weapons::Pistol, false) == Walk::Take);
+    CHECK(OnWalk(held(Weapons::Unarmed, 0), Weapons::Pistol, false) == Walk::Take);
+    // A handgun with no rounds left is swapped by walking over.
+    CHECK(OnWalk(held(Weapons::DesertEagle, 0), Weapons::Pistol, false) == Walk::Take);
+    // Shotguns, SMGs and rifles: the pickup's rounds go into his gun first, then the offer; empty, only the offer.
+    CHECK(OnWalk(held(Weapons::Mp5, 90), Weapons::MicroUzi, false) == Walk::Ammo);
+    CHECK(OnWalk(held(Weapons::Mp5, 90), Weapons::MicroUzi, true) == Walk::Offer);
+    CHECK(OnWalk(held(Weapons::Mp5, 0), Weapons::MicroUzi, false) == Walk::Ammo);
+    CHECK(OnWalk(held(Weapons::M4, 50), Weapons::Ak47, false) == Walk::Ammo);
+    CHECK(OnWalk(held(Weapons::Shotgun, 8), Weapons::Spas12, false) == Walk::Ammo);
+    // Heavy weapons and the rest: the plain offer.
+    CHECK(OnWalk(held(Weapons::RocketLauncher, 3), Weapons::Minigun, false) == Walk::Offer);
+    CHECK(OnWalk(held(Weapons::SniperRifle, 10), Weapons::CountryRifle, false) == Walk::Offer);
+}
+
+TEST_CASE("a swap keeps the old gun's rounds only in the shotgun, SMG and rifle slots")
+{
+    Protocol::WeaponEntry deagle{};
+    deagle.type = Weapons::DesertEagle;
+    deagle.ammo = 70;
+    const auto pistol = AfterSwap(deagle, Weapons::Pistol, StreetAmmo(Weapons::Pistol));
+    CHECK(pistol.type == Weapons::Pistol);
+    CHECK(pistol.ammo == 30);  // the Desert Eagle's rounds go with it
+
+    Protocol::WeaponEntry mp5{};
+    mp5.type = Weapons::Mp5;
+    mp5.ammo = 90;
+    const auto uzi = AfterSwap(mp5, Weapons::MicroUzi, 0);  // its rounds went into the MP5 when he walked in
+    CHECK(uzi.type == Weapons::MicroUzi);
+    CHECK(uzi.ammo == 90);
+    CHECK(AfterSwap(mp5, Weapons::MicroUzi, 60).ammo == 150);
+    mp5.ammo = Weapons::kAmmoMax;
+    CHECK(AfterSwap(mp5, Weapons::MicroUzi, 60).ammo == Weapons::kAmmoMax);
+    CHECK(SharesRounds(Shop::SlotOf(Weapons::Spas12)));
+    CHECK(SharesRounds(Shop::SlotOf(Weapons::Ak47)));
+    CHECK_FALSE(SharesRounds(Shop::SlotOf(Weapons::Pistol)));
+    CHECK_FALSE(SharesRounds(Shop::SlotOf(Weapons::SniperRifle)));
+}

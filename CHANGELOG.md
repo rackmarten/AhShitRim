@@ -55,6 +55,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Walking over a weapon pickup no longer swaps CJ's gun for it: as in San Andreas, when he carries another gun of its kind the help box offers the swap and E makes it (Skyrim's activation stays out of it). A shotgun, SMG or rifle pickup first tops up the one he has, and a swap keeps its rounds; a swapped handgun goes with its rounds, as in San Andreas. The same gun, or an empty slot, is still taken by walking in, its rounds on top.
 - Every model San Andreas sends gets an id of its own: two built in one tick of its clock could share one, and Skyrim drew the second as the first (a pistol pickup as a heart). The jetpack put on again after it was dropped is drawn again (only its flames showed).
 - The skydive eases into its falling speed as San Andreas's own fall does, instead of a constant pull up to it, and goes twice as fast ahead, so a base jump clears the mountainside before the chute opens.
 - Walking or jumping off something high on foot with the parachute now starts the skydive, so the chute can be opened (it only started when CJ bailed out of a helicopter or the Hydra). A fall with the parachute that still starts none is logged in San Andreas's log with why.
