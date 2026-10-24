@@ -28,9 +28,13 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v27: pickups")
+{
+    CHECK(kProtocolVersion == 27);  // the pickups' ring messages and payloads are checked with the v19 constants
+}
+
 TEST_CASE("protocol v26: particles")
 {
-    CHECK(kProtocolVersion == 26);
     CHECK(sizeof(BodyFx) == 56);
     CHECK(offsetof(BodyFx, at) == 0);
     CHECK(offsetof(BodyFx, along) == 24);
@@ -121,6 +125,21 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(EffectEvent, projectile) == 8);
     CHECK(offsetof(EffectEvent, at) == 12);
     CHECK(offsetof(EffectEvent, seconds) == 24);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupCommand) == 8);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupEvent) == 9);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Health) == 1);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Jetpack) == 6);
+    CHECK(static_cast<std::uint8_t>(PickupCommandKind::Collected) == 2);
+    CHECK(static_cast<std::uint8_t>(PickupEventKind::Dropped) == 2);
+    CHECK(sizeof(PickupCommand) == 16);
+    CHECK(sizeof(PickupEvent) == 144);
+    CHECK(kPickupPartMax == 4);
+    CHECK(offsetof(PickupEvent, kind) == 4);
+    CHECK(offsetof(PickupEvent, partCount) == 7);
+    CHECK(offsetof(PickupEvent, model) == 8);
+    CHECK(offsetof(PickupEvent, amount) == 12);
+    CHECK(offsetof(PickupEvent, at) == 16);
+    CHECK(offsetof(PickupEvent, parts) == 28);
     CHECK(kPlayerOnFire == 0x20);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);

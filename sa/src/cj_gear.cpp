@@ -64,6 +64,8 @@ namespace AhShitRim::CjGear
         struct State
         {
             Parachute::State chute;
+            Parachute::FallWatch fallWatch;   // his feet through a fall with the parachute
+            bool             fallLogged = false;  // a fall with it that started no skydive, logged once
             std::string      playing;          // CJ's parachute.ifp animation now, empty for none (HoldCjAnim)
             bool             loop = false;
             CAnimBlendHierarchy* hierarchy = nullptr;  // its hierarchy, once found
@@ -397,17 +399,32 @@ namespace AhShitRim::CjGear
             keys.open = pad.ButtonCircle && !old.ButtonCircle;
             Parachute::Around around;
             around.holdsChute = CarriesChute(a_ped);
-            around.standing = a_ped->bIsStanding;
             // In a vehicle is bInVehicle alone: m_pVehicle stays on the last one he got out of.
             around.free = a_free && !a_ped->bInVehicle && !Jetpack(a_ped);
-            around.fall = -a_ped->m_vecMoveSpeed.z * 50.0f;
-            // The line down is only tested when it can matter: he could start a skydive, or he is in one.
-            const bool mayStart = around.holdsChute && !around.standing && around.fall >= Parachute::kStartFall;
-            around.height = state.chute.phase != Parachute::Phase::Off || mayStart ? HeightAboveGround(a_feet) : 0.0f;
-            const auto before = state.chute.phase;
             const float dt = CTimer::m_UserPause ? 0.0f : CTimer::ms_fTimeStep / 50.0f;
+            // The line down is only tested when it can matter: he carries the parachute, or he is in a skydive.
+            const bool watched = around.free && (around.holdsChute || state.chute.phase != Parachute::Phase::Off);
+            around.height = watched ? HeightAboveGround(a_feet) : 0.0f;
+            around.standing = watched ? Parachute::Grounded(a_ped->bIsStanding, around.height) : a_ped->bIsStanding;
+            if (watched && dt > 0.0f) {
+                state.fallWatch.Update(a_feet.z, around.standing, dt);
+            } else if (!watched) {
+                state.fallWatch.Reset();
+            }
+            // San Andreas's speed, or his feet's when they show more (it can lag behind a walk off an edge).
+            around.fall = (std::max)(-a_ped->m_vecMoveSpeed.z * 50.0f, watched ? state.fallWatch.Rate() : 0.0f);
+            around.dropped = watched ? state.fallWatch.Dropped() : 0.0f;
+            const auto before = state.chute.phase;
             state.chute = Parachute::Step(state.chute, around, keys, dt);
             const auto phase = state.chute.phase;
+            if (watched && phase == Parachute::Phase::Off && around.dropped >= 2.0f * Parachute::kStartDrop && !state.fallLogged) {
+                state.fallLogged = true;
+                Log(std::format("gear: CJ fell {:.1f} m with the parachute and no skydive: standing {} (San Andreas {}), falling {:.1f} m/s (speed {:.1f}, feet {:.1f}), "
+                                "{:.0f} m up",
+                    around.dropped, around.standing, static_cast<bool>(a_ped->bIsStanding), around.fall, -a_ped->m_vecMoveSpeed.z * 50.0f, state.fallWatch.Rate(), around.height));
+            } else if (around.standing) {
+                state.fallLogged = false;
+            }
             if (before == Parachute::Phase::Off && phase == Parachute::Phase::Freefall && !HoldsChute(a_ped)) {
                 a_ped->SetCurrentWeapon(WEAPONTYPE_PARACHUTE);  // into his hands for the skydive, as the script does
             }
@@ -587,6 +604,7 @@ namespace AhShitRim::CjGear
             Log("gear: the skydive ends for the new handover");
         }
         state.chute = {};
+        state.fallWatch.Reset();
         PlayOnCj(a_ped, {}, false);
         DropCanopy();
     }

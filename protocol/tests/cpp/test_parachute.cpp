@@ -45,6 +45,62 @@ TEST_CASE("parachute: a fall with the parachute and air under him starts a skydi
     CHECK_FALSE(CanopyOut(s.phase));
 }
 
+TEST_CASE("parachute: walking off an edge starts a skydive once he is 3 m down, even while San Andreas's speed lags")
+{
+    // San Andreas's fall speed still slow, but he has come 3 m down with 80 m of air under him: off a bridge.
+    Around off = Falling(1.0f, 80.0f);
+    off.dropped = 2.9f;
+    CHECK(Step({}, off, {}, 0.03f).phase == Phase::Off);
+    off.dropped = 3.0f;
+    CHECK(Step({}, off, {}, 0.03f).phase == Phase::Freefall);
+    CHECK(StartsSkydive(off));
+    // Not off a wall, nor without the parachute.
+    Around low = off;
+    low.height = 10.0f;
+    CHECK_FALSE(StartsSkydive(low));
+    Around noChute = off;
+    noChute.holdsChute = false;
+    CHECK_FALSE(StartsSkydive(noChute));
+}
+
+TEST_CASE("parachute: standing counts only with the ground right under his feet")
+{
+    CHECK(Grounded(true, 0.05f));
+    CHECK(Grounded(true, 0.45f));
+    CHECK_FALSE(Grounded(true, 0.6f));   // San Andreas's flag still up over the drop
+    CHECK_FALSE(Grounded(true, 80.0f));
+    CHECK_FALSE(Grounded(false, 0.0f));
+}
+
+TEST_CASE("parachute: the fall watch follows his feet down from where he last stood")
+{
+    FallWatch watch;
+    CHECK(watch.Dropped() == 0.0f);
+    watch.Update(500.0f, true, 1.0f / 30.0f);   // on the bridge
+    watch.Update(500.2f, false, 1.0f / 30.0f);  // a hop up first: the top is the highest point
+    CHECK(watch.Dropped() == doctest::Approx(0.0f));
+    float z = 500.2f, v = 0.0f;
+    for (int i = 0; i < 20; ++i) {  // two thirds of a second of San Andreas's gravity
+        v += 20.0f / 30.0f;
+        z -= v / 30.0f;
+        watch.Update(z, false, 1.0f / 30.0f);
+    }
+    CHECK(watch.Dropped() == doctest::Approx(500.2f - z));
+    CHECK(watch.Dropped() > kStartDrop);
+    CHECK(watch.Rate() == doctest::Approx(v).epsilon(0.01));
+    // Standing again starts it over.
+    watch.Update(z, true, 1.0f / 30.0f);
+    CHECK(watch.Dropped() == 0.0f);
+    CHECK(watch.Rate() == 0.0f);
+    // A jump of more than 10 m in a frame is a teleport (the fall rescue, the floating origin), not a fall.
+    watch.Update(z - 0.1f, false, 1.0f / 30.0f);
+    watch.Update(z - 300.0f, false, 1.0f / 30.0f);
+    CHECK(watch.Dropped() == 0.0f);
+    CHECK(watch.Rate() == 0.0f);
+    watch.Reset();
+    CHECK(watch.Dropped() == 0.0f);
+}
+
 TEST_CASE("parachute: the freefall reaches its speed, faster diving, and turns with A and D")
 {
     State s = Step({}, Falling(8.0f, 500.0f), {}, 0.03f);

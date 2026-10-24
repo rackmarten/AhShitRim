@@ -1,5 +1,6 @@
 #include "chunk_world.h"
 
+#include "cj_pickups.h"
 #include "cj_cheats.h"
 #include "cj_projectiles.h"
 #include "cj_weapons.h"
@@ -411,6 +412,8 @@ namespace AhShitRim::ChunkWorld
                 CjProjectiles::Queue(a_data, a_size);
             } else if (a_type == Protocol::MessageType::Cheat) {
                 CjCheats::Queue(a_data, a_size);
+            } else if (a_type == Protocol::MessageType::PickupCommand) {
+                CjPickups::Queue(a_data, a_size);
             }
         });
     }

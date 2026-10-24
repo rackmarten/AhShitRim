@@ -34,8 +34,9 @@ namespace AhShitRim::SaveState
                 SKSE::log::error("save state: the co-save record could not be written");
                 return;
             }
-            SKSE::log::info("save state: saved (San Andreas {} the player, armour {:.0f}, {} weapons{})", record.handover ? "has" : "doesn't have", record.armor,
-                WeaponCount(record), record.car.model ? std::format(", in a vehicle of model {}", record.car.model) : std::string());
+            SKSE::log::info("save state: saved (San Andreas {} the player, armour {:.0f}, {} weapons{}, {} one-off pickups taken)",
+                record.handover ? "has" : "doesn't have", record.armor, WeaponCount(record),
+                record.car.model ? std::format(", in a vehicle of model {}", record.car.model) : std::string(), record.pickupsTaken.size());
         }
 
         void Load(SKSE::SerializationInterface* a_intfc)
