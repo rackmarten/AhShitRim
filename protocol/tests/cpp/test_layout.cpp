@@ -88,7 +88,8 @@ TEST_CASE("protocol v19 constants")
     CHECK(static_cast<std::uint8_t>(PickupCommandKind::Collected) == 2);
     CHECK(static_cast<std::uint8_t>(PickupEventKind::Dropped) == 2);
     CHECK(sizeof(PickupCommand) == 16);
-    CHECK(sizeof(PickupEvent) == 96);
+    CHECK(sizeof(PickupEvent) == 144);
+    CHECK(kPickupPartMax == 4);
     CHECK(offsetof(PickupEvent, kind) == 4);
     CHECK(offsetof(PickupEvent, partCount) == 7);
     CHECK(offsetof(PickupEvent, model) == 8);

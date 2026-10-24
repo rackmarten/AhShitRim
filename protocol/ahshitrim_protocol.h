@@ -499,6 +499,8 @@ namespace AhShitRim::Protocol
         Dropped = 2,  // San Andreas made a pickup of its own (the jetpack CJ took off) at `at` and dropped it: Skyrim keeps it
     };
 
+    inline constexpr std::uint32_t kPickupPartMax = 4;  // parts of a pickup's model sent with it (the jetpack has 3)
+
     // Payload of a PickupEvent message (v23).
     struct PickupEvent
     {
@@ -510,8 +512,8 @@ namespace AhShitRim::Protocol
         std::uint32_t model;      // ModelChunkHeader.model (a kSkinModelWeapon), Model only
         std::uint32_t amount;     // a weapon's ammo, a wad's money (Dropped)
         float         at[3];      // where it is, relative to InputState.anchor, Skyrim units (Dropped)
-        BodyBone      parts[kProjectilePartMax];  // each part of the model relative to the pickup (Model)
-        std::uint32_t reserved[3];
+        BodyBone      parts[kPickupPartMax];  // each part of the model relative to the pickup (Model)
+        std::uint32_t reserved;
     };
 
     // Payload: this header, then size bytes of a model blob starting at offset. Chunks of one model
@@ -632,7 +634,7 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(CheatCommand) == 8);
     static_assert(offsetof(CheatCommand, cheat) == 4);
     static_assert(sizeof(PickupCommand) == 16);
-    static_assert(sizeof(PickupEvent) == 96);
+    static_assert(sizeof(PickupEvent) == 144);
     static_assert(offsetof(PickupEvent, model) == 8);
     static_assert(offsetof(PickupEvent, at) == 16);
     static_assert(offsetof(PickupEvent, parts) == 28);

@@ -2,8 +2,10 @@
 // the Skyrim side, hands the player over on flat ground streamed around CJ as Skyrim's sampler does, and through the dev
 // key (' with a pick) spawns, boards and drives or flies an NRG-500, a BMX, a Hunter (its rotor, its guns), a Hydra
 // (hover, then forward flight on the nozzle keys, its missiles) and a Rhino (its shell), refuses a boat, then puts the
-// jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands. Prints what it sees and exits
-// non-zero when a check fails. Built with the protocol tests; run it through scripts/fake-vehicles.ps1 while San
+// jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands; last (v23) it walks him off a
+// 100 m drop with the parachute in his hands, which must start the skydive on foot, and asks for each pickup's model and
+// checks the jetpack he takes off comes back as a dropped pickup. AHSHITRIM_ONLY=cliff or =pickups runs only that.
+// Prints what it sees and exits non-zero when a check fails. Built with the protocol tests; run it through scripts/fake-vehicles.ps1 while San
 // Andreas runs (launch-sa.ps1), with Skyrim closed.
 
 #include <algorithm>
@@ -40,6 +42,7 @@ namespace
         SkinModel::Assembler                                assembler;
         std::map<std::uint32_t, std::vector<std::uint8_t>> blobs;
         std::vector<Protocol::ProjectileEvent>             projectiles;
+        std::vector<Protocol::PickupEvent>                 pickups;  // v23
         int                                                 shots = 0;
 
         std::optional<SkinModel::Model> Model(std::uint32_t a_id) const
@@ -56,6 +59,12 @@ namespace
                 Protocol::ProjectileEvent e{};
                 std::memcpy(&e, a_data, sizeof(e));
                 a_received.projectiles.push_back(e);
+                return;
+            }
+            if (a_type == Protocol::MessageType::PickupEvent && a_size == sizeof(Protocol::PickupEvent)) {
+                Protocol::PickupEvent e{};
+                std::memcpy(&e, a_data, sizeof(e));
+                a_received.pickups.push_back(e);
                 return;
             }
             if (a_type == Protocol::MessageType::Shot) {
@@ -152,6 +161,7 @@ int main()
         link.WriteInput(s);
     };
     std::set<std::pair<std::int32_t, std::int32_t>> sent;
+    bool pit = false;  // the cliff check's ground: a plateau 10 m round the anchor, 100 m above the rest
     const auto stream = [&] {
         Protocol::PlayerState p{};
         const bool  have = link.ReadPlayer(p) && p.handover == handoverId;
@@ -165,6 +175,13 @@ int main()
                 Collision::Heightfield f;
                 f.Reset(cx + dx, cy + dy, 32);
                 std::fill(f.heights.begin(), f.heights.end(), anchor[2]);
+                for (std::uint32_t j = 0; pit && j < f.Side(); ++j) {
+                    for (std::uint32_t i = 0; i < f.Side(); ++i) {
+                        if (std::hypot(f.X(i) - anchor[0], f.Y(j) - anchor[1]) > 10.0f * Pose::kUnitsPerMeter) {
+                            f.heights[j * f.Side() + i] = anchor[2] - 100.0f * Pose::kUnitsPerMeter;
+                        }
+                    }
+                }
                 std::fill(f.hit.begin(), f.hit.end(), std::uint8_t{ 1 });
                 const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId);
                 if (link.Send(Protocol::MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size()))) {
@@ -243,10 +260,112 @@ int main()
         return in;
     };
 
+    // On foot off a 100 m drop with the parachute in his hands (v23): San Andreas's own fall must start the skydive (it once
+    // only did for a bail-out), so the fire key opens the chute and he floats down.
+    const auto cliff = [&] {
+        pit = true;
+        fresh();
+        input.SetDevModel(VehicleKinds::kParachute);
+        press(Input::kDikApostrophe);
+        wait(1.0);
+        const float top = height();
+        input.SetKey(Input::kDikW, true);
+        const bool off = run(10.0, [&] { return top - height() > 5.0f; });
+        input.SetKey(Input::kDikW, false);
+        float fastest = 0.0f;
+        run(1.5, [&] {
+            fastest = (std::max)(fastest, -player().velocity[2] * Pose::kMetersPerUnit);
+            return false;
+        });
+        input.SetFire(true);
+        wait(0.3);
+        input.SetFire(false);
+        bool       canopy = false;
+        float      floatFall = 0.0f;
+        const bool landed = run(60.0, [&] {
+            Protocol::BodyState g{};
+            if (link.ReadGear(g) && (g.flags & Protocol::kBodyParachute) && received.Model(g.model)) {
+                canopy = true;
+            }
+            const auto p = player();
+            if (canopy && !(p.flags & Protocol::kPlayerGrounded)) {
+                floatFall = -p.velocity[2] * Pose::kMetersPerUnit;
+            }
+            return (p.flags & Protocol::kPlayerGrounded) != 0 && top - height() > 50.0f;
+        });
+        std::printf("cliff: %s, fell up to %.1f m/s, canopy %s, floating down at %.1f m/s, %s %.0f m below the top, damage so far %.0f\n",
+            off ? "walked off" : "DID NOT WALK OFF", fastest, canopy ? "out" : "NEVER OUT", floatFall, landed ? "landed" : "DID NOT LAND", top - height(),
+            player().damage);
+        pit = false;
+        return off && canopy && floatFall < 8.0f && landed ? 0 : 1;
+    };
+
+    // Each pickup's model asked for (v23): San Andreas answers with a PickupEvent Model and sends the model itself.
+    const auto pickupModels = [&] {
+        int bad = 0;
+        for (const auto& [kind, weapon, name] : { std::tuple{ Protocol::PickupKind::Health, 0, "heart" }, std::tuple{ Protocol::PickupKind::Armour, 0, "armour" },
+                 std::tuple{ Protocol::PickupKind::Parachute, 46, "parachute" }, std::tuple{ Protocol::PickupKind::Money, 0, "money" },
+                 std::tuple{ Protocol::PickupKind::Jetpack, 0, "jetpack" }, std::tuple{ Protocol::PickupKind::Weapon, 30, "AK-47" },
+                 std::tuple{ Protocol::PickupKind::Weapon, 38, "minigun" } }) {
+            Protocol::PickupCommand command{};
+            command.kind = static_cast<std::uint8_t>(Protocol::PickupCommandKind::Model);
+            command.pickup = static_cast<std::uint8_t>(kind);
+            command.weapon = static_cast<std::uint8_t>(weapon);
+            link.Send(Protocol::MessageType::PickupCommand, &command, sizeof(command));
+            Protocol::PickupEvent answer{};
+            const bool got = run(10.0, [&] {
+                for (const auto& e : received.pickups) {
+                    if (e.kind == static_cast<std::uint8_t>(Protocol::PickupEventKind::Model) && e.pickup == static_cast<std::uint8_t>(kind) &&
+                        received.Model(e.model)) {
+                        answer = e;
+                        return true;
+                    }
+                }
+                return false;
+            });
+            const auto model = got ? received.Model(answer.model) : std::nullopt;
+            std::printf("pickups: the %s's model %s (%u parts, %zu meshes, part 0 at %.1f,%.1f,%.1f)\n", name, got ? model->name.c_str() : "NEVER CAME",
+                answer.partCount, got ? model->meshes.size() : 0, answer.parts[0].translation[0], answer.parts[0].translation[1],
+                answer.parts[0].translation[2]);
+            bad += !(got && answer.partCount > 0 && !model->meshes.empty());
+            received.pickups.clear();
+        }
+        return bad;
+    };
+    // The jetpack on and taken off with F standing: San Andreas's own pickup of it comes to Skyrim as a Dropped one.
+    const auto jetpackDrop = [&] {
+        fresh();
+        received.pickups.clear();
+        input.SetDevModel(VehicleKinds::kJetpack);
+        press(Input::kDikApostrophe);
+        wait(2.0);
+        press(Input::kDikF);
+        Protocol::PickupEvent drop{};
+        const bool dropped = run(5.0, [&] {
+            for (const auto& e : received.pickups) {
+                if (e.kind == static_cast<std::uint8_t>(Protocol::PickupEventKind::Dropped)) {
+                    drop = e;
+                    return true;
+                }
+            }
+            return false;
+        });
+        std::printf("pickups: the jetpack taken off %s (kind %u, %.0f,%.0f,%.0f from the anchor)\n", dropped ? "came as a dropped pickup" : "NEVER CAME",
+            drop.pickup, drop.at[0], drop.at[1], drop.at[2]);
+        return dropped && drop.pickup == static_cast<std::uint8_t>(Protocol::PickupKind::Jetpack) && drop.handover == handoverId ? 0 : 1;
+    };
+
     int failed = 0;
     publish(true);
     run(5.0, [&] { return player().handover == handoverId && (player().flags & Protocol::kPlayerGrounded); });
     wait(1.5);
+    if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && (std::string(only) == "cliff" || std::string(only) == "pickups")) {
+        failed += std::string(only) == "cliff" ? cliff() : pickupModels() + jetpackDrop();
+        publish(false);
+        link.Tick(ms());
+        std::printf("%s\n", failed ? "SOME CHECKS FAILED" : "all checks passed");
+        return failed ? 2 : 0;
+    }
 
     // Land: the NRG-500 and the BMX ride.
     for (const auto& [model, name, metres] : { std::tuple{ std::uint16_t{ 522 }, "NRG500", 10.0f }, std::tuple{ std::uint16_t{ 481 }, "BMX", 3.0f } }) {
@@ -467,6 +586,10 @@ int main()
             canopy ? "out" : "NEVER OUT", floatFall, landed ? "landed" : "DID NOT LAND", kept ? "STILL CARRIED" : "used up", p.damage);
         failed += !(fastest > 10.0f && canopy && floatFall < 8.0f && landed && !kept);
     }
+
+    failed += pickupModels();
+    failed += jetpackDrop();
+    failed += cliff();
 
     publish(false);
     link.Tick(ms());

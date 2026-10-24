@@ -34,7 +34,7 @@ namespace AhShitRim::WorldPickups
         {
             std::uint32_t                                                id = 0;
             std::uint32_t                                                partCount = 0;
-            std::array<Protocol::BodyBone, Protocol::kProjectilePartMax> parts{};
+            std::array<Protocol::BodyBone, Protocol::kPickupPartMax> parts{};
         };
 
         // Where a table spot was set down, once it was near enough for its ground to be loaded.
@@ -419,7 +419,7 @@ namespace AhShitRim::WorldPickups
         if (event.kind == static_cast<std::uint8_t>(Protocol::PickupEventKind::Model)) {
             auto& model = state.models[ModelKey(static_cast<Kind>(event.pickup), event.weapon)];
             model.id = event.model;
-            model.partCount = (std::min)(static_cast<std::uint32_t>(event.partCount), Protocol::kProjectilePartMax);
+            model.partCount = (std::min)(static_cast<std::uint32_t>(event.partCount), Protocol::kPickupPartMax);
             std::memcpy(model.parts.data(), event.parts, sizeof(event.parts));
             Log(std::format("the {}'s model is {:08X} ({} parts)", NameOf(static_cast<Kind>(event.pickup)), model.id, model.partCount));
         } else if (event.kind == static_cast<std::uint8_t>(Protocol::PickupEventKind::Dropped) && state.dropped.size() < 16) {

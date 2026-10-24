@@ -54,7 +54,7 @@ namespace AhShitRim::CjPickups
         {
             std::uint32_t                                                id = 0;
             std::uint32_t                                                partCount = 0;
-            std::array<Protocol::BodyBone, Protocol::kProjectilePartMax> parts{};
+            std::array<Protocol::BodyBone, Protocol::kPickupPartMax> parts{};
             bool                                                         failed = false;
         };
 
@@ -145,7 +145,7 @@ namespace AhShitRim::CjPickups
             auto                   blob = CjWeapons::BuildModel(object, a_kind == Kind::Weapon ? a_weapon : 0, parts, label);
             if (!blob.empty()) {
                 RwFrame* root = static_cast<RwFrame*>(object->parent);
-                model.partCount = static_cast<std::uint32_t>((std::min)(parts.size(), static_cast<std::size_t>(Protocol::kProjectilePartMax)));
+                model.partCount = static_cast<std::uint32_t>((std::min)(parts.size(), static_cast<std::size_t>(Protocol::kPickupPartMax)));
                 for (std::uint32_t i = 0; i < model.partCount; ++i) {
                     model.parts[i] = Body::ToBone(PartOnObject(parts[i], root), {});
                 }

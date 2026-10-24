@@ -40,7 +40,7 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 | [`protocol/cpp/smoke_model.h`](../protocol/cpp/smoke_model.h) | A damaged vehicle's smoke: San Andreas's `overheat_car` WhiteSmoke and BlackSmoke (rates, lives, sizes, fades, drift) drawn with its `bullethitsmoke` sprite as camera-facing quads |
 | `protocol/tests/` | doctest tests (layout, handshake, heartbeat, slots, rings, input mapping, pose conversion, collision chunks, floating origin, chunk bookkeeping, fall rescue, model blob, mesh building, texture decoding, bones, interpolation, vehicle spawn spots, part baking and mesh merging, vehicle kinds and the seat table, the parachute, the cheats' keys, typing and the M key, NOMERCY's ledger, coming back, vehicle damage stages, the pickups, volumes, the radio dial, Radio Sovngarde and Sweetroll FM's shuffle, the weapons, the IMG reader, the flash and the scopes' layout), run by `scripts/test.ps1` |
 | `protocol/tools/fake_skyrim.cpp` | Stands in for the Skyrim plugin to drive a running San Andreas and check CJ walks and his model and skeleton arrive, and that the three vehicles spawn on the ground, the Sandking drives with CJ in it and its radio dials round all 14 stops, the Sanchez rides, and a re-anchor far off and far below (fast travel in a car) takes CJ out, removes them and holds him until the ground there is in (`scripts/fake-skyrim.ps1`) |
-| `protocol/tools/fake_vehicles.cpp` | (v19) Stands in for the Skyrim plugin to check every kind of vehicle and the gear against a running San Andreas: through the dev key it rides an NRG-500 and a BMX, sees a boat refused, flies a Hunter (its rotor swapping, its guns) and a Hydra (hover, forward flight on the nozzle keys, missiles), fires the Rhino's shell, flies up on the jetpack and comes down on the parachute (`scripts/fake-vehicles.ps1`) |
+| `protocol/tools/fake_vehicles.cpp` | (v19) Stands in for the Skyrim plugin to check every kind of vehicle and the gear against a running San Andreas: through the dev key it rides an NRG-500 and a BMX, sees a boat refused, flies a Hunter (its rotor swapping, its guns) and a Hydra (hover, forward flight on the nozzle keys, missiles), fires the Rhino's shell, flies up on the jetpack and comes down on the parachute (`scripts/fake-vehicles.ps1`; v23: and a walk off a 100 m drop with the parachute, which must skydive and open, each pickup model asked for and the jetpack taken off coming back as a dropped pickup, `AHSHITRIM_ONLY=cliff` or `pickups` for those alone) |
 | `protocol/tools/fake_weapons.cpp` | Stands in for the Skyrim plugin to check CJ's weapons against a running San Andreas: gives the sets, switches through every weapon on the wheel, aims and fires each, checks the model of the weapon in his hand arrives, shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent (`scripts/fake-weapons.ps1`) |
 
 ## Section layout
@@ -241,7 +241,7 @@ Messages that must all arrive, one after another: two single-producer, single-co
 | 6 | `Effect` | Skyrim → San Andreas (v15) | `EffectEvent` (32 bytes): what CJ's explosives did, for San Andreas's own sound, fire and camera shake |
 | 7 | `Cheat` | Skyrim → San Andreas (v20) | `CheatCommand` (8 bytes): one of San Andreas's own cheats typed in Skyrim |
 | 8 | `PickupCommand` | Skyrim → San Andreas (v23) | `PickupCommand` (16 bytes): a pickup's model wanted, or one CJ took |
-| 9 | `PickupEvent` | San Andreas → Skyrim (v23) | `PickupEvent` (96 bytes): a pickup's model and its parts, or a pickup San Andreas made and dropped |
+| 9 | `PickupEvent` | San Andreas → Skyrim (v23) | `PickupEvent` (144 bytes): a pickup's model and its parts, or a pickup San Andreas made and dropped |
 
 ### CJ's model
 
@@ -367,7 +367,7 @@ Skyrim keeps the pickups (`skse/src/player/WorldPickups.cpp`, the rules and the 
 | `Model` 1 | loads its model for `pickup` (`health`, `bodyarmour`, `gun_para`, `money`, `jetpack`, a weapon's `CWeaponInfo::m_nModelId`), builds it as a `kSkinModelWeapon` from an instance of it the way a held weapon is built, sends it (under `ModelSender::kPickupKey` plus one for each model asked for, and again whenever the link comes up) and answers with a `PickupEvent` `Model`; a model built already is answered at once. Skyrim asks for a kind when the first of it is within 100 m, and again after a handover in which the model never got built |
 | `Collected` 2 | CJ took one in Skyrim: San Andreas plays its sound for it (`CAudioEngine::ReportFrontendAudioEvent`: `AE_FRONTEND_PICKUP_HEALTH`, `_BODY_ARMOUR`, `_MONEY`, `_WEAPON`, the jetpack's `_INFO`) and puts the jetpack on him or the parachute in his hands (`CjGear::Give`, as the dev path does). Only while Skyrim has handed over the player. A weapon comes as a `GiveWeapon` command just before it |
 
-`PickupEvent` (96 bytes):
+`PickupEvent` (144 bytes):
 
 | Offset | Field | |
 |---|---|---|
@@ -379,8 +379,8 @@ Skyrim keeps the pickups (`skse/src/player/WorldPickups.cpp`, the rules and the 
 | 8 | `model` | u32: the `ModelChunkHeader.model` it is drawn with (`Model`) |
 | 12 | `amount` | u32: a weapon's ammo, a wad's money (`Dropped`) |
 | 16 | `at[3]` | where it is, relative to `InputState.anchor`, Skyrim units (`Dropped`) |
-| 28 | `parts[2]` | `BodyBone`s: each part of the model relative to the pickup, Skyrim units (`Model`) |
-| 84 | reserved | 12 bytes |
+| 28 | `parts[4]` | `BodyBone`s (`kPickupPartMax`): each part of the model relative to the pickup, Skyrim units (`Model`) |
+| 140 | reserved | 4 bytes |
 
 `Dropped`: San Andreas made a pickup itself. With no mission script the only one is the jetpack CJ takes off (`CTaskSimpleJetPack::DropJetPack` makes one with `CPickups::GenerateNewOne`). Every frame San Andreas has the player it looks through `CPickups::aPickUps` (620) for one that is on and is a kind Skyrim knows (by its model), sends it and takes it out (`CPickup::Remove`), so nothing of it is left in San Andreas's world. Skyrim sets it down where it fell and keeps it until CJ walks back into it (once he has stepped off it) or leaves that interior or worldspace.
 
