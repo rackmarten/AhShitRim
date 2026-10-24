@@ -7,8 +7,6 @@
 #include "player/CheatCodes.h"
 #include "player/Particles.h"
 #include "player/Chatter.h"
-#include "melee.h"
-#include "player/LockOn.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -22,7 +20,6 @@ namespace AhShitRim::Shots
         constexpr std::size_t kQueueMax = 256;        // shots kept for the next frame; a minigun fires about 20 a second
         constexpr int         kPassMax = 8;           // things a bullet goes through (the player, the dead) before it gives up
         constexpr float       kMeleeSearch = 600.0f;  // actors this close to the blow are looked at
-        constexpr float       kChest = 0.7f;          // of a locked target's height, where a locked shot goes off the head
         constexpr float       kActorRadiusMin = 20.0f;
         constexpr float       kImpactScale = 2.5f;    // the arrows' impacts, bigger for a bullet
         constexpr int         kLoggedHits = 12;       // the first hits are logged in full, then a summary
@@ -49,7 +46,7 @@ namespace AhShitRim::Shots
             int                              logged = 0;
             int                              loggedBlocks = 0;
             // For the summary.
-            unsigned                         bullets = 0, blows = 0, actorHits = 0, staticHits = 0, misses = 0, stale = 0, locked = 0;
+            unsigned                         bullets = 0, blows = 0, actorHits = 0, staticHits = 0, misses = 0, stale = 0;
             std::chrono::steady_clock::time_point summaryAt;
         } state;
 
@@ -382,23 +379,6 @@ namespace AhShitRim::Shots
             if (a_shot.flags & Protocol::kShotVehicleGun) {
                 Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas
             }
-            // Locked on over the shoulder (LockOn): the shot goes to the target, its head when the crosshair is on it.
-            if (const auto id = (a_shot.flags & Protocol::kShotFirstPerson) ? 0 : LockOn::GunTarget()) {
-                if (auto* target = RE::TESForm::LookupByID<RE::Actor>(id); target && !target->IsDead() && target->Is3DLoaded()) {
-                    const auto   feet = target->GetPosition();
-                    RE::NiPoint3 head = feet + RE::NiPoint3(0.0f, 0.0f, 0.92f * target->GetHeight());
-                    if (auto* node = HeadOf(target)) {
-                        head = node->world.translate;
-                    }
-                    const RE::NiPoint3 chest = feet + RE::NiPoint3(0.0f, 0.0f, kChest * target->GetHeight());
-                    const auto         aim = Melee::AimPoint({ origin.x, origin.y, origin.z }, { dir.x, dir.y, dir.z }, { head.x, head.y, head.z }, { chest.x, chest.y, chest.z });
-                    RE::NiPoint3       to = RE::NiPoint3(aim.x, aim.y, aim.z) - origin;
-                    if (to.Unitize() >= 1e-4f) {
-                        dir = to;
-                        state.locked++;
-                    }
-                }
-            }
             bool      hit = false;
             const int pellets = (a_shot.flags & Protocol::kShotSpread) ? Damage::Pellets(a_shot.weaponType) : 1;
             for (int i = 0; i < pellets; ++i) {
@@ -504,10 +484,10 @@ namespace AhShitRim::Shots
                 return;
             }
             if (state.bullets || state.blows || state.stale) {
-                SKSE::log::info("shots: {} bullets ({} at a locked target; {} hit actors and blows that landed, {} hit statics, {} hit nothing), {} blows, {} for an old handover",
-                    state.bullets, state.locked, state.actorHits, state.staticHits, state.misses, state.blows, state.stale);
+                SKSE::log::info("shots: {} bullets ({} hit actors and blows that landed, {} hit statics, {} hit nothing), {} blows, {} for an old handover",
+                    state.bullets, state.actorHits, state.staticHits, state.misses, state.blows, state.stale);
             }
-            state.bullets = state.blows = state.actorHits = state.staticHits = state.misses = state.stale = state.locked = 0;
+            state.bullets = state.blows = state.actorHits = state.staticHits = state.misses = state.stale = 0;
             state.summaryAt = now;
         }
     }
