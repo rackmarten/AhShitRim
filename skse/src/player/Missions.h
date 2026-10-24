@@ -11,7 +11,9 @@ namespace RE
 // - Skyrim's HUD message for a quest starting (it sends one once a quest has a journal entry) shows the
 //   quest's name as San Andreas's mission title, and the one for a quest completed shows "mission
 //   passed!" and "respect +" with San Andreas's mission passed tune, one after another. Skyrim's own
-//   notification is swallowed. Misc quests, objectives and failed quests stay Skyrim's.
+//   notification is swallowed. Objectives and failed quests stay Skyrim's, and so do misc quests, but
+//   for one that ends after its objective is completed (Skyrim sends no "quest completed" for those):
+//   that is an odd job passed, "mission passed!" alone with the tune ([Missions] MiscPassed=0 turns it off).
 // - The Helgen intro: when Ralof's "Hey, you. You're finally awake." in the cart ends (Skyrim's topic
 //   info event), CJ says "Ah shit, here we go again." from San Andreas's intro voice-over, with
 //   San Andreas's subtitle.

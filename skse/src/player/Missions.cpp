@@ -1,5 +1,6 @@
 #include "player/Missions.h"
 
+#include "Ini.h"
 #include "hud/SaHud.h"
 #include "../../../protocol/cpp/missions.h"  // by path: "missions.h" would find player/Missions.h first on Windows
 
@@ -15,6 +16,9 @@ namespace AhShitRim::Missions
         {
             std::mutex        lock;
             std::vector<Step> notices;           // from the HUD hook, for the sequence
+            std::vector<std::pair<RE::FormID, std::string>> miscDone;  // misc quests whose objective was completed, for the watch
+            std::atomic<bool> miscPassed = true;  // [Missions] MiscPassed
+            MiscWatch         misc;      // main thread
             bool              ralofDone = false;  // Ralof's line ended
             Sequence          sequence;  // main thread
             Intro             intro;     // main thread
@@ -39,6 +43,8 @@ namespace AhShitRim::Missions
 
     void OnDataLoaded()
     {
+        state.miscPassed = Ini::Value("Missions", "MiscPassed") != "0";
+        SKSE::log::info("missions: misc quests done are odd jobs passed: {} ([Missions] MiscPassed)", state.miscPassed ? "on" : "off");
         static TopicSink topics;
         if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
             events->AddEventSink<RE::TESTopicInfoEvent>(&topics);
@@ -52,6 +58,11 @@ namespace AhShitRim::Missions
         if (type >= kHudQuestStarted && type <= kHudQuestStarted + 5) {  // quest and objective messages: what Skyrim announces, for the log
             SKSE::log::info("missions: Skyrim's HUD message {} '{}' for {:08X} (type {})", type, a_data.text.c_str() ? a_data.text.c_str() : "",
                 quest ? quest->GetFormID() : 0, quest ? static_cast<int>(quest->GetType()) : -1);
+        }
+        if (quest && MiscCandidate(type, static_cast<int>(quest->GetType()), state.miscPassed)) {
+            std::scoped_lock guard(state.lock);  // Skyrim's own message stays; the watch sees whether the quest ended
+            state.miscDone.emplace_back(quest->GetFormID(), quest->GetName() ? quest->GetName() : "");
+            return false;
         }
         if (type != kHudQuestStarted && type != kHudQuestComplete) {
             return false;
@@ -75,9 +86,11 @@ namespace AhShitRim::Missions
     {
         std::vector<Step> notices;
         bool              ralofDone = false;
+        std::vector<std::pair<RE::FormID, std::string>> miscDone;
         {
             std::scoped_lock guard(state.lock);
             notices.swap(state.notices);
+            miscDone.swap(state.miscDone);
             ralofDone = std::exchange(state.ralofDone, false);
         }
         for (auto& notice : notices) {
@@ -86,12 +99,23 @@ namespace AhShitRim::Missions
         if (ralofDone) {
             state.intro.OnTopicEnd(kRalofFinallyAwake);
         }
+        for (auto& [quest, name] : miscDone) {
+            state.misc.Add(quest, std::move(name));
+        }
+        // A misc quest ended after its objective: its script completed or stopped it.
+        for (auto& step : state.misc.Tick(a_delta, [](std::uint32_t a_quest) {
+                 const auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_quest);
+                 return quest && (quest->IsCompleted() || quest->IsStopping() || quest->IsStopped());
+             })) {
+            SKSE::log::info("missions: the misc quest {} is done, shown as San Andreas's odd job passed", step.name);
+            state.sequence.Push(step.notice, std::move(step.name));
+        }
 
         std::uint8_t cue = 0;
         if (const auto step = state.sequence.Tick(a_delta); step.notice == Notice::Title) {
             SaHud::ShowMissionTitle(step.name);
-        } else if (step.notice == Notice::Passed) {
-            SaHud::ShowBigMessage(SaHud::BigMessage::MissionPassed, kPassedSeconds);
+        } else if (IsPassed(step.notice)) {
+            SaHud::ShowBigMessage(step.notice == Notice::OddJob ? SaHud::BigMessage::OddJobPassed : SaHud::BigMessage::MissionPassed, kPassedSeconds);
             cue = Protocol::kCueMissionPassed;
         }
         // One cue a frame: CJ's line waits a frame for the tune.
@@ -120,6 +144,8 @@ namespace AhShitRim::Missions
     {
         std::scoped_lock guard(state.lock);
         state.notices.clear();
+        state.miscDone.clear();
+        state.misc.Clear();
         state.ralofDone = false;
         state.sequence.Clear();
         state.intro.Clear();
