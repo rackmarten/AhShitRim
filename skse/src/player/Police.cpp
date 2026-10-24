@@ -486,19 +486,33 @@ namespace AhShitRim::Police
         }
 
         // A guard of the hold about, whose base ours copy (the hold's guards as the war left them), else the table's.
+        bool Unique(RE::TESBoundObject* a_base)
+        {
+            auto* npc = a_base ? a_base->As<RE::TESNPC>() : nullptr;
+            return npc && npc->IsUnique();
+        }
+
+        // A generic guard of the hold about (Wanted::Copyable: never a unique or named one, such as Commander Caius, who
+        // counts as a guard), whose base ours copy (the hold's guards as the war left them), else the table's.
         RE::TESBoundObject* GuardBase(RE::PlayerCharacter* a_player)
         {
+            auto*               table = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+            const char*         tableName = table ? table->GetName() : nullptr;
             RE::TESBoundObject* found = nullptr;
             if (auto* lists = RE::ProcessLists::GetSingleton()) {
                 lists->ForEachHighActor([&](RE::Actor* a_actor) {
                     if (Pursues(a_actor) && !IsSpawned(a_actor) && a_actor != a_player) {
-                        found = a_actor->GetObjectReference();
-                        return RE::BSContainer::ForEachResult::kStop;
+                        auto*       npc = a_actor->GetActorBase();
+                        const char* name = a_actor->GetName();
+                        if (npc && Wanted::Copyable(npc->IsUnique(), name ? name : "", tableName ? tableName : "")) {
+                            found = a_actor->GetObjectReference();
+                            return RE::BSContainer::ForEachResult::kStop;
+                        }
                     }
                     return RE::BSContainer::ForEachResult::kContinue;
                 });
             }
-            return found ? found : RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+            return found && !Unique(found) ? found : table;
         }
 
         // A levelled list (the soldiers' LCharSoldier*) as one of its NPCs (Wanted::PickLeveled, a few lists deep): a reference
@@ -639,6 +653,11 @@ namespace AhShitRim::Police
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto* base = BaseFor(a_player, a_unit);
+            if (Unique(base)) {
+                SKSE::log::warn("police: {:08X} for a {} is a unique NPC: never copied, the hold's guard instead", base->GetFormID(), Wanted::NameOf(a_unit));
+                base = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+                a_unit = Wanted::Unit::Guard;
+            }
             if (!base && a_unit != Wanted::Unit::Guard) {
                 SKSE::log::info("police: no {} to send for {}, a guard instead", Wanted::NameOf(a_unit), state.hold->name);
                 a_unit = Wanted::Unit::Guard;
