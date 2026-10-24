@@ -14,6 +14,7 @@
 #include "hud/SaHud.h"
 #include "input.h"
 #include "knock.h"
+#include "settle.h"
 #include "wanted.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
@@ -58,6 +59,7 @@ namespace AhShitRim::PlayerSync
             bool           wasThirdPerson = false;
             Cosave::Record resume;               // what a loaded save held
             bool           resumePending = false;  // it had San Andreas on the player: take it again once the game is up
+            Settle::Gate   settle;                 // and has been normal for a moment (Settle::kSeconds)
             Cosave::Car    carRequest;           // the saved car, sent along with the handover that resumes
             bool           carForNext = false;
             std::uint32_t  carHandover = 0;      // the handover the car request belongs to
@@ -904,12 +906,25 @@ namespace AhShitRim::PlayerSync
 
         // A save that had San Andreas on the player: once the game is up and the link too, the handover
         // resumes, and the car it was in goes back under CJ.
-        void TryResume(RE::PlayerCharacter* a_player)
+        // A loaded save had San Andreas on the player: it's taken again only once the game has settled (Settle::Gate: a
+        // couple of seconds of normal frames after the loading screen), not while Skyrim is still finishing the load.
+        void TryResume(RE::PlayerCharacter* a_player, float a_delta)
         {
-            auto* ui = RE::UI::GetSingleton();
-            if (!LinkService::Get().IsUp() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell() ||
-                StreamTest::Running()) {
-                return;  // the stream test moves the player first; CJ comes back after it
+            auto*         ui = RE::UI::GetSingleton();
+            auto*         cell = a_player->GetParentCell();
+            Settle::Frame frame;
+            frame.linkUp = LinkService::Get().IsUp();
+            frame.loadingMenu = ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+            frame.paused = GamePaused();
+            frame.player3D = a_player->Is3DLoaded();
+            frame.cellAttached = cell && cell->IsAttached();
+            frame.busy = StreamTest::Running();  // the stream test moves the player first; CJ comes back after it
+            frame.delta = a_delta;
+            if (!state.settle.Armed()) {
+                state.settle.Start();
+            }
+            if (!state.settle.Tick(frame)) {
+                return;
             }
             state.resumePending = false;
             state.carRequest = state.resume.car;
@@ -938,7 +953,7 @@ namespace AhShitRim::PlayerSync
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
-                    TryResume(a_player);
+                    TryResume(a_player, a_delta);
                 }
                 if (!state.owned) {
                     StreamTest::Update(a_player, a_delta);
@@ -1313,6 +1328,7 @@ namespace AhShitRim::PlayerSync
     {
         state.resume = a_record;
         state.resumePending = a_record.handover;
+        state.settle.Reset();  // armed again by the first frame after the load
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
     }
