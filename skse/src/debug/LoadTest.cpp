@@ -117,6 +117,31 @@ namespace AhShitRim::LoadTest
             SKSE::log::info("load test: ran '{}'", a_command);
         }
 
+        // Who is in a fight as the load goes: whatever crashes in the load's combat clearing is one of these.
+        void Census()
+        {
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            int fighting = 0;
+            lists->ForEachHighActor([&](RE::Actor* a_actor) {
+                if (!a_actor || !a_actor->IsInCombat()) {
+                    return RE::BSContainer::ForEachResult::kContinue;
+                }
+                fighting++;
+                auto*      base = a_actor->GetActorBase();
+                auto*      leveled = a_actor->extraList.GetByType<RE::ExtraLeveledCreature>();
+                const auto target = a_actor->GetActorRuntimeData().currentCombatTarget.get();
+                SKSE::log::info("load test:   fighting {:08X} '{}' base {:08X}{} from {:08X}, target {:08X}{}", a_actor->GetFormID(), a_actor->GetName(),
+                    base ? base->GetFormID() : 0, base && base->IsDynamicForm() ? " (runtime)" : "",
+                    leveled && leveled->originalBase ? leveled->originalBase->GetFormID() : 0, target ? target->GetFormID() : 0,
+                    a_actor->IsDead() ? ", dead" : "");
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+            SKSE::log::info("load test: {} in a fight as the load goes", fighting);
+        }
+
         // The next cycle: counted first (a crash in it isn't run again), then its save loaded.
         void NextCycle()
         {
@@ -129,6 +154,9 @@ namespace AhShitRim::LoadTest
             WriteProgress(state.cycle);
             state.scenario = state.scenarios[static_cast<std::size_t>(state.cycle - 1) % state.scenarios.size()];
             state.travelled = false;
+            if (state.cycle > 1) {
+                Census();
+            }
             Note("load");
             state.phase = Phase::Loading;
             state.timer = 0.0f;
