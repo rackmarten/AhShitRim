@@ -45,6 +45,30 @@ namespace AhShitRim::Aim
     // Straight ahead of him, level: his facing flattened onto the ground (north when it has no length there).
     inline Vec3 Ahead(const Vec3& a_forward) { return Body::Normalize({ a_forward.x, a_forward.y, 0.0f }, { 0.0f, 1.0f, 0.0f }); }
 
+    // Which way his chest faces, level: square to the line from his left shoulder to his right one. San Andreas's
+    // gun stances can turn his body away from his heading (with twin guns both arms then pointed the same way, off
+    // to his right) and only turn the torso back past 45 degrees (CPedIK::RotateTorsoForArm), so "ahead" for his
+    // arms and his shots from the hip is where his chest faces. His heading when one shoulder is above the other.
+    inline Vec3 ChestFacing(const Vec3& a_rightShoulder, const Vec3& a_leftShoulder, const Vec3& a_heading)
+    {
+        const Vec3 across{ a_rightShoulder.x - a_leftShoulder.x, a_rightShoulder.y - a_leftShoulder.y, 0.0f };
+        if (Body::Dot(across, across) < 1e-4f) {
+            return Ahead(a_heading);
+        }
+        const Vec3 right = Body::Normalize(across);
+        return { -right.y, right.x, 0.0f };  // up x right
+    }
+
+    inline constexpr float kHipAimDistance = 10.0f;  // metres ahead of his chest that the guns from the hip meet
+
+    // The one point both his guns aim at from the hip: ahead of the middle of his chest, so the two arms of a
+    // twin gun mirror each other and meet there instead of pointing the same way side by side.
+    inline Vec3 HipAimPoint(const Vec3& a_rightShoulder, const Vec3& a_leftShoulder, const Vec3& a_facing)
+    {
+        const Vec3 middle = Body::Scale(Body::Add(a_rightShoulder, a_leftShoulder), 0.5f);
+        return Body::Add(middle, Body::Scale(Ahead(a_facing), kHipAimDistance));
+    }
+
     // ---- Posing an arm ----
 
     inline constexpr float kArmAcross = 0.26f;  // sin 15 degrees: how far an arm reaches across his front
