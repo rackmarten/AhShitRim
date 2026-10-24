@@ -51,7 +51,9 @@ if ($Target -in 'all', 'sa') {
         $cachedLib = if ($cacheDir -and $Configuration -eq 'Release') { Join-Path $cacheDir 'plugin_sa.lib' }
         $prebuilt = if ($cachedLib -and (Test-Path $cachedLib)) { $cachedLib } else { '' }
         Invoke-Checked cmake (@('--preset', 'x86', "-DPLUGIN_SA_LIB=$prebuilt") + $generator)
-        Invoke-Checked cmake @('--build', '--preset', $preset, '--', '/m', '/nologo', '/v:minimal')
+        # MSBuild's /m takes every core; CMAKE_BUILD_PARALLEL_LEVEL (which Ninja's builds follow) limits it too.
+        $parallel = if ($env:CMAKE_BUILD_PARALLEL_LEVEL) { "/m:$env:CMAKE_BUILD_PARALLEL_LEVEL" } else { '/m' }
+        Invoke-Checked cmake @('--build', '--preset', $preset, '--', $parallel, '/nologo', '/v:minimal')
         if ($cachedLib -and -not $prebuilt) {
             New-Item -ItemType Directory -Force (Split-Path $cachedLib) | Out-Null
             Copy-Item -Force (Join-Path $RepoRoot 'sa/build/Release/plugin_sa.lib') $cachedLib

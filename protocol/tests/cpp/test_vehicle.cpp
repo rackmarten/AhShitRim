@@ -102,6 +102,34 @@ TEST_CASE("a spot will do when its ground is all there, flat enough and near CJ'
     CHECK_FALSE(GroundHeight(nan, 500.0f).has_value());
 }
 
+TEST_CASE("the ground round a spot is looked at past its edges, and a drop-off there refuses it")
+{
+    Spot spot;
+    spot.center = { 0.0f, 0.0f, 3.0f };
+    spot.forward = { 1.0f, 0.0f, 0.0f };
+    const auto edges = EdgePoints(spot, { 0.4f, 1.0f });
+    CHECK(edges[0].x == doctest::Approx(-1.5f));  // the back left corner, kEdgeSkirt out
+    CHECK(edges[0].y == doctest::Approx(0.9f));
+    CHECK(edges[3].x == doctest::Approx(1.5f));
+    CHECK(edges[7].x == doctest::Approx(0.0f));   // the right side's middle
+    CHECK(edges[7].y == doctest::Approx(-0.9f));
+    CHECK(edges[7].z == 3.0f);
+
+    std::array<bool, kEdgeSamples>  hit;
+    std::array<float, kEdgeSamples> z;
+    hit.fill(true);
+    z.fill(500.0f);
+    CHECK(EdgesHold(hit, z, 500.0f));
+    z[5] = 501.5f;  // a bank rising beside it
+    CHECK(EdgesHold(hit, z, 500.0f));
+    z[3] = 498.8f;  // the ledge ends just past its front
+    CHECK_FALSE(EdgesHold(hit, z, 500.0f));
+    CHECK(EdgesHold(hit, z, 500.0f, 1.5f));
+    z[3] = 500.0f;
+    hit[1] = false;  // nothing under a corner at all: over a cliff
+    CHECK_FALSE(EdgesHold(hit, z, 500.0f));
+}
+
 TEST_CASE("paint placeholders take the vehicle's colours and the lights turn white")
 {
     const std::array<Rgb, 4> colours = { Rgb{ 10, 20, 30 }, Rgb{ 40, 50, 60 }, Rgb{ 70, 80, 90 }, Rgb{ 1, 2, 3 } };
