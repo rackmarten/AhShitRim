@@ -53,7 +53,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
     s = b.Build(8, true, true);
     CHECK(s.moveY == 1.0f);
     CHECK(s.moveX == 1.0f);
-    CHECK(s.buttons == Protocol::kButtonSprint);
+    CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonAccelerate));  // v23: W held as its own button too
 
     b.SetKey(kDikS, true);  // forwards and back cancel
     b.SetKey(kDikSpace, true);
@@ -63,7 +63,7 @@ TEST_CASE("the builder turns held keys into axes and buttons")
     CHECK(s.moveY == 0.0f);
     // v23: Left Ctrl and Left Alt are a vehicle's fire keys as well, which ToPad only reads in one.
     CHECK(s.buttons == (Protocol::kButtonSprint | Protocol::kButtonJump | Protocol::kButtonCrouch | Protocol::kButtonWalk | Protocol::kButtonHandbrake |
-                           Protocol::kButtonVehicleFire | Protocol::kButtonVehicleFireAlt));
+                           Protocol::kButtonVehicleFire | Protocol::kButtonVehicleFireAlt | Protocol::kButtonAccelerate | Protocol::kButtonBrake));
 
     b.SetKey(kDikW, false);
     b.SetKey(kDikD, false);
@@ -359,7 +359,7 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     b.SetKey(kDikSpace, true);
     b.SetKey(kDikW, true);
     auto in = b.Build(1, true, true);
-    CHECK(in.buttons == (Protocol::kButtonSprint | Protocol::kButtonHandbrake));
+    CHECK(in.buttons == (Protocol::kButtonSprint | Protocol::kButtonHandbrake | Protocol::kButtonAccelerate));
     auto pad = ToPad(in, false);
     CHECK(pad.buttonCross == 255);   // sprints
     CHECK(pad.buttonSquare == 0);    // doesn't jump
@@ -370,7 +370,7 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     b.SetKey(kDikSpace, false);
     b.SetKey(kDikLeftShift, true);
     in = b.Build(2, true, true);
-    CHECK(in.buttons == Protocol::kButtonJump);
+    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonAccelerate));
     CHECK(ToPad(in, false).buttonSquare == 255);  // jumps
     CHECK(ToPad(in, true).rightShoulder1 == 0);   // Shift does nothing in a vehicle
 
@@ -378,7 +378,7 @@ TEST_CASE("the classic layout is San Andreas's own: Space sprints, Shift jumps")
     b.SetKey(kDikRightCtrl, true);
     in = b.Build(3, true, true);
     // San Andreas's second jump and handbrake key, and (v23) a vehicle's fire key, all three as San Andreas binds it.
-    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake | Protocol::kButtonVehicleFire));
+    CHECK(in.buttons == (Protocol::kButtonJump | Protocol::kButtonHandbrake | Protocol::kButtonVehicleFire | Protocol::kButtonAccelerate));
     CHECK(ToPad(in, true).buttonCircle == 255);
 
     b.SetKey(kDikRightCtrl, false);
@@ -688,4 +688,37 @@ TEST_CASE("v23: none of the new keys is one of Skyrim's own")
         CHECK(dik != 0x43);  // F9, quick load
         CHECK(SpawnModelFromScanCode(dik) == 0);
     }
+}
+
+TEST_CASE("v23: W and S together are San Andreas's burnout in a vehicle, and A and D still steer")
+{
+    Builder b;
+    b.SetKey(kDikW, true);
+    b.SetKey(kDikS, true);
+    b.SetKey(kDikA, true);
+    auto in = b.Build(1, true, true);
+    CHECK(in.moveY == 0.0f);  // they cancel out on foot
+    CHECK((in.buttons & (Protocol::kButtonAccelerate | Protocol::kButtonBrake)) == (Protocol::kButtonAccelerate | Protocol::kButtonBrake));
+    auto pad = ToPad(in, true);
+    CHECK(pad.buttonCross == 255);  // accelerate
+    CHECK(pad.buttonSquare == 255);  // and brake at once
+    CHECK(pad.leftStickX == -128);   // turning during it
+    pad = ToPad(in, false);
+    CHECK(pad.leftStickY == 0);      // on foot CJ stands still, as before
+    CHECK(pad.buttonCross == 0);
+    CHECK(pad.buttonSquare == 0);
+
+    b.SetKey(kDikS, false);
+    b.SetKey(kDikA, false);
+    b.SetKey(kDikD, true);
+    pad = ToPad(b.Build(2, true, true), true);
+    CHECK(pad.buttonCross == 255);
+    CHECK(pad.buttonSquare == 0);
+    CHECK(pad.leftStickX == 128);
+
+    b.SetKey(kDikW, false);
+    b.SetKey(kDikUp, true);  // the arrows lean, they don't accelerate
+    in = b.Build(3, true, true);
+    CHECK((in.buttons & (Protocol::kButtonAccelerate | Protocol::kButtonBrake)) == 0);
+    CHECK(ToPad(in, true).buttonCross == 0);
 }

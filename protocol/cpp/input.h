@@ -418,6 +418,8 @@ namespace AhShitRim::Input
             if (_fire) s.buttons |= Protocol::kButtonFire;
             if (_aim) s.buttons |= Protocol::kButtonAim;
             if (_lookBehind) s.buttons |= Protocol::kButtonLookBehind;
+            if (Held(Action::Forward)) s.buttons |= Protocol::kButtonAccelerate;
+            if (Held(Action::Back)) s.buttons |= Protocol::kButtonBrake;
             if (HandbrakeHeld()) s.buttons |= Protocol::kButtonHandbrake;
             return s;
         }
@@ -507,8 +509,9 @@ namespace AhShitRim::Input
         const float lean = ((a_input.buttons & Protocol::kButtonLeanForward) ? 1.0f : 0.0f) - ((a_input.buttons & Protocol::kButtonLeanBack) ? 1.0f : 0.0f);
         if (a_inVehicle) {
             p.leftStickY = Stick(-lean);  // stick forward (negative) leans forward
-            p.buttonCross = a_input.moveY > 0.0f ? 255 : 0;
-            p.buttonSquare = a_input.moveY < 0.0f ? 255 : 0;
+            // v23: W and S each held as they are, so both together are San Andreas's burnout (moveY cancels them out).
+            p.buttonCross = a_input.moveY > 0.0f || (a_input.buttons & Protocol::kButtonAccelerate) ? 255 : 0;
+            p.buttonSquare = a_input.moveY < 0.0f || (a_input.buttons & Protocol::kButtonBrake) ? 255 : 0;
             p.rightShoulder1 = held(Protocol::kButtonHandbrake);
             p.shockButtonL = held(Protocol::kButtonHorn);
             p.buttonCircle = held(Protocol::kButtonFire | Protocol::kButtonVehicleFire);
