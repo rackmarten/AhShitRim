@@ -28,9 +28,15 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v33: fist fights and lock-on")
+{
+    CHECK(kProtocolVersion == 33);
+    CHECK(kProxyTarget == 0x4);
+    CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
+}
+
 TEST_CASE("protocol v32: the burnout")
 {
-    CHECK(kProtocolVersion == 32);
     CHECK(kButtonAccelerate == 0x400000);
     CHECK(kButtonBrake == 0x800000);
 }

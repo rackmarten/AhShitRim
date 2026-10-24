@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 32;
+    inline constexpr std::uint32_t kProtocolVersion = 33;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -365,9 +365,10 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v28): a giant, mammoth or dragon, which stops a car like a wall
     inline constexpr std::uint8_t kProxyPerson = 0x2;  // a person (a humanoid race)
+    inline constexpr std::uint8_t kProxyTarget = 0x4;  // v33, on foot: the one CJ locks on to with fists or a melee weapon (the right mouse button, or a swing's nearest hostile), whom San Andreas turns him to face
 
-    // One of Skyrim's actors near CJ's vehicle (v28): a capsule San Andreas tests the vehicle against. Its
-    // segment ends and velocity are Skyrim's, relative to InputState.anchor.
+    // One of Skyrim's actors near CJ (v28): a capsule San Andreas tests his vehicle against, or on foot CJ himself.
+    // Its segment ends and velocity are Skyrim's, relative to InputState.anchor.
     struct ActorProxy
     {
         std::uint32_t id;           // the actor's form id, which an ImpactEvent names
@@ -381,8 +382,8 @@ namespace AhShitRim::Protocol
         std::uint32_t reserved1[3];
     };
 
-    // Skyrim -> San Andreas, every Skyrim frame while CJ is in a vehicle (v28): the nearest actors around it,
-    // count 0 otherwise.
+    // Skyrim -> San Andreas, every Skyrim frame while CJ has the player (v28): the nearest actors around his vehicle,
+    // or on foot around him (fewer and closer, followers left out, his lock-on target flagged), count 0 otherwise.
     struct ProxyState
     {
         std::uint32_t frame;     // Skyrim frame counter

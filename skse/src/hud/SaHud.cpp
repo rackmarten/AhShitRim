@@ -121,7 +121,7 @@ namespace AhShitRim::SaHud
             std::uint32_t    target256 = 0;  // particle.txd's: the heat seeker's lock-on marker
             bool             mark = false;   // a marker to draw, set again every frame (MarkTarget)
             RE::NiPoint3     markAt;
-            bool             markLocked = false;
+            std::uint32_t    markColour = 0;  // RGBA, red in the low byte
             std::array<std::uint32_t, 64> icons{};  // by weapon type
             Loot::Counter    money;  // the money shown, counting towards the player's gold
             float            delta = 0.0f;
@@ -253,7 +253,8 @@ namespace AhShitRim::SaHud
 
         // The heat seeker's marker round its target (CWeaponEffects::MarkTarget's): San Andreas's target256 over
         // where the target shows through Skyrim's camera, kHsMarkerSize across there (no smaller than the rocket
-        // sight's quarter), white and see-through while it locks on, red once locked.
+        // sight's quarter), white and see-through while it locks on, red once locked; the melee and gun lock-on's
+        // (LockOn) by the target's health.
         void DrawMark(Frame& a_frame)
         {
             auto* camera = RE::Main::WorldRootCamera();
@@ -268,8 +269,7 @@ namespace AhShitRim::SaHud
             }
             const float cx = x * screen.width, cy = (1.0f - y) * screen.height;
             const float half = (std::max)(std::abs(topY - y) * screen.height, 24.0f * screen.unitY);
-            const std::uint32_t colour = state.markLocked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
-            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, colour });
+            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, state.markColour });
         }
 
         // The top right HUD, from the Skyrim player.
@@ -569,7 +569,14 @@ namespace AhShitRim::SaHud
     {
         state.mark = true;
         state.markAt = a_at;
-        state.markLocked = a_locked;
+        state.markColour = a_locked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
+    }
+
+    void MarkTarget(const RE::NiPoint3& a_at, std::uint32_t a_colour)
+    {
+        state.mark = true;
+        state.markAt = a_at;
+        state.markColour = a_colour;
     }
 
     void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }

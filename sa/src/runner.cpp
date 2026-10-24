@@ -8,6 +8,7 @@
 #include "cj_cheats.h"
 #include "cj_gear.h"
 #include "cj_pickups.h"
+#include "cj_melee.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
@@ -487,6 +488,7 @@ namespace AhShitRim::Runner
             // Skyrim's actors push back on CJ's vehicle before it is posed and published, so a car a mammoth stopped is
             // drawn where it stopped.
             CarHits::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());
+            CjMelee::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());  // on foot: bumping into them, the lock-on
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
@@ -572,6 +574,7 @@ namespace AhShitRim::Runner
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
             CjShots::Install();
             CjProjectiles::Install();
+            CjMelee::Install();
             Vitals::Install();
             Scenes::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {

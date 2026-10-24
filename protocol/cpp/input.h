@@ -318,6 +318,9 @@ namespace AhShitRim::Input
             return false;
         }
 
+        bool Aiming() const { return _aim; }
+        bool Firing() const { return _fire; }
+
         // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before; on
         // foot (v12) up switches to the next weapon and down to the previous one. San Andreas acts on
         // the change by where CJ is.

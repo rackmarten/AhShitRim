@@ -26,6 +26,7 @@
 #include "player/Police.h"
 #include "player/GunRewards.h"
 #include "player/Respawns.h"
+#include "player/LockOn.h"
 #include "player/Looting.h"
 #include "player/Missions.h"
 #include "player/Conversation.h"
@@ -527,6 +528,7 @@ namespace AhShitRim::PlayerSync
             Particles::Clear();
             People::Clear();
             CarHits::Clear();
+            LockOn::Clear();
             Riders::Clear();
             Hitboxes::Clear();
             DrawSkyrimPlayer();
@@ -616,6 +618,7 @@ namespace AhShitRim::PlayerSync
             Particles::Clear();
             People::Clear();
             CarHits::Clear();
+            LockOn::Clear();
             Riders::Clear();
             Hitboxes::Clear();
             Activation::Clear();
@@ -935,9 +938,22 @@ namespace AhShitRim::PlayerSync
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
-            Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
+            // On foot CJ bumps into Skyrim's actors, and locks on to one: with fists or a melee weapon the right mouse button
+            // or a swing turns him to it, with a gun the right mouse button sends his shots at it.
+            const bool onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held;
+            LockOn::Aim aim;
+            if (onFoot && !MenuHasInput()) {
+                aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
+                aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
+                aim.aim = state.input.Aiming();
+                aim.fire = state.input.Firing();
+                aim.heading = pose.heading;
+                aim.view = pose.viewHeading;
+            }
+            const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             // The heat seeker aims while CJ aims it, and in the Hydra (v23) while its lock-on, the handbrake key, is held.
             const std::uint16_t vehicleModel = valid && (pose.flags & Protocol::kPlayerInVehicle) ? pose.vehicleModel : 0;

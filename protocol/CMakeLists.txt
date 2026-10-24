@@ -80,6 +80,7 @@ add_executable(protocol_tests
     tests/cpp/test_run_over.cpp
     tests/cpp/test_passengers.cpp
     tests/cpp/test_vehicle_hits.cpp
+    tests/cpp/test_melee.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
