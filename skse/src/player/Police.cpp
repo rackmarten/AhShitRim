@@ -25,9 +25,7 @@ namespace AhShitRim::Police
         constexpr float      kLookEvery = 0.25f;  // seconds between looks for who sees CJ
         constexpr float      kJoinEvery = 1.0f;   // seconds between calls for the hold's guards to join
         constexpr float      kCalmEvery = 0.5f;   // seconds between calling the fight off, while busted or never wanted
-        constexpr float      kMountAfter = 0.5f;  // a rider gets on his horse this long after both are in
-        constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that, once he's on it
-        constexpr float      kMountWait = 5.0f;   // or this long after, on it or not
+        constexpr float      kFightAfter = 0.5f;  // one of ours goes for CJ this long after it's in
         constexpr float      kRetargetEvery = 1.0f;  // seconds between pulling ours back onto CJ from whoever else they fight
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
@@ -54,24 +52,20 @@ namespace AhShitRim::Police
         struct Spawned
         {
             RE::ObjectRefHandle actor;
-            RE::ObjectRefHandle horse;  // a rider's
             Wanted::Unit        unit = Wanted::Unit::Guard;
-            float               age = 0.0f;  // seconds since both were in (3D loaded)
+            float               age = 0.0f;  // seconds since it was in (3D loaded)
             float               retarget = 0.0f;  // seconds since its target was last checked
-            bool                mounted = false;
+            float               speedMult = 100.0f;  // a wolf's SpeedMult as last set
             bool                fighting = false;
-            bool                onHorse = false;    // a rider seen on his horse
-            bool                offLogged = false;  // logged a rider found off his horse
         };
 
-        // A pursuer spawned for the pursuit that is no longer needed: taken out a step a frame (the rider, then his
-        // horse), once the player can't see it. Actors are only disabled: deleting them (SetDelete) left dangling ones in
-        // Skyrim's AI that crashed a load, and all at once in a fight crashed too. The ground probes are deleted.
+        // A pursuer spawned for the pursuit that is no longer needed: taken out a step a frame once the player can't
+        // see it. Actors are only disabled: deleting them (SetDelete) left dangling ones in Skyrim's AI that crashed a
+        // load, and all at once in a fight crashed too. The ground probes are deleted.
         struct Leaving
         {
             RE::ObjectRefHandle actor;
-            RE::ObjectRefHandle horse;
-            int                 step = 0;  // 0 disable the actor, 1 delete it if it's no actor, 2 disable the horse, 3 (nothing)
+            int                 step = 0;  // 0 disable it, 1 delete it if it's no actor
         };
 
         // Where walking out of a barracks door puts the player: the door's own teleport.
@@ -122,10 +116,10 @@ namespace AhShitRim::Police
             RE::NiPoint3             blowFrom;        // where the last hit on the player came from (anyone's), and when
             std::chrono::steady_clock::time_point blowAt;
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
-            std::vector<std::pair<RE::TESRace*, bool>> mountedRaces;  // races ours ride with, and whether they had mounted combat
             VehicleHits::DoorRun     doorRun;             // v31: the pursuer running to the door of CJ's stopped car
             float                    steerTimer = 0.0f;
             Wanted::Point            steeredTo{ 1e9f, 1e9f };  // the offset from the player he was last told
+            float                    cjSpeed = 0.0f;      // how fast CJ goes across, units a second (the pose's)
         } state;
 
         void Show(int a_stars, bool a_flashing = false)
@@ -381,43 +375,6 @@ namespace AhShitRim::Police
             });
         }
 
-        // ---- Riders ----
-
-        // Skyrim's AI gets a rider off his horse as his fight starts unless his race allows mounted combat (Dawnguard's
-        // race flag, off for the playable races): it's switched on for our riders' races, and their horses', while ours
-        // ride, and put back as they leave. Base forms changed at runtime aren't saved, so a crash leaves nothing behind.
-        void AllowMountedCombat(RE::TESObjectREFR* a_ref)
-        {
-            auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
-            auto* race = actor ? actor->GetRace() : nullptr;
-            if (!race) {
-                return;
-            }
-            for (const auto& [known, had] : state.mountedRaces) {
-                if (known == race) {
-                    return;
-                }
-            }
-            const bool had = race->data.flags2.all(RE::RACE_DATA::Flag2::kAllowMountedCombat);
-            state.mountedRaces.emplace_back(race, had);
-            race->data.flags2.set(RE::RACE_DATA::Flag2::kAllowMountedCombat);
-            const char* id = race->GetFormEditorID();
-            SKSE::log::info("police: {} ({:08X}) may fight mounted while ours ride{}", id && *id ? id : "a race", race->GetFormID(), had ? " (it already could)" : "");
-        }
-
-        void RestoreMountedCombat()
-        {
-            for (const auto& [race, had] : state.mountedRaces) {
-                if (!had) {
-                    race->data.flags2.reset(RE::RACE_DATA::Flag2::kAllowMountedCombat);
-                }
-            }
-            if (!state.mountedRaces.empty()) {
-                SKSE::log::info("police: {} race(s) back to Skyrim's mounted combat", state.mountedRaces.size());
-            }
-            state.mountedRaces.clear();
-        }
-
         // ---- Ours leaving ----
 
         // Everyone spawned stops fighting and leaves: SweepLeaving takes them out once the player can't see them.
@@ -425,17 +382,19 @@ namespace AhShitRim::Police
         {
             state.clearOut = state.clearOut || a_clearOut;
             state.director.Reset();
-            RestoreMountedCombat();
             if (state.spawned.empty()) {
                 return;
             }
             for (auto& s : state.spawned) {
                 if (auto ref = s.actor.get()) {
                     if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead()) {
+                        if (s.unit == Wanted::Unit::Wolf) {
+                            actor->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, 0.0f);  // or it goes for CJ again
+                        }
                         actor->StopCombat();
                     }
                 }
-                state.leaving.push_back({ s.actor, s.horse, 0 });
+                state.leaving.push_back({ s.actor, 0 });
             }
             SKSE::log::info("police: {} spawned pursuer(s) leave ({})", state.spawned.size(), a_why);
             state.spawned.clear();
@@ -459,20 +418,18 @@ namespace AhShitRim::Police
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             for (auto it = state.leaving.begin(); it != state.leaving.end(); ++it) {
-                auto actor = it->actor.get();
-                auto horse = it->horse.get();
-                if (it->step == 0 && !CanGo(player, actor.get())) {
+                auto ref = it->actor.get();
+                if (it->step == 0 && !CanGo(player, ref.get())) {
                     continue;
                 }
-                RE::TESObjectREFR* ref = it->step < 2 ? actor.get() : horse.get();
                 if (ref) {
-                    if (it->step % 2 == 0) {
+                    if (it->step == 0) {
                         ref->Disable();
                     } else if (!ref->As<RE::Actor>()) {
                         ref->SetDelete(true);  // a ground probe
                     }
                 }
-                if (++it->step >= 4) {
+                if (++it->step >= 2) {
                     state.leaving.erase(it);
                 }
                 break;
@@ -499,7 +456,7 @@ namespace AhShitRim::Police
                     state.pursuit.AddHeat(kDragonHeat);
                     SKSE::log::info("police: the guards' dragon is down: heat {:.0f}, {} star(s)", state.pursuit.Heat(), state.pursuit.Stars());
                 }
-                state.leaving.push_back({ it->actor, it->horse, 0 });
+                state.leaving.push_back({ it->actor, 0 });
                 it = state.spawned.erase(it);
             }
         }
@@ -568,6 +525,7 @@ namespace AhShitRim::Police
             const bool imperial = state.hold->side == Wanted::Side::Imperial;
             std::uint32_t id = 0;
             switch (a_unit) {
+            case Wanted::Unit::Wolf: id = Wanted::WolfFor(state.pursuit.Stars()); break;
             case Wanted::Unit::Captain: id = imperial ? Wanted::kCaptainImperial : Wanted::kCaptainSons; break;
             case Wanted::Unit::Wizard: id = imperial ? Wanted::kWizardImperial : Wanted::kWizardSons; break;
             case Wanted::Unit::Soldier: id = imperial ? Wanted::kSoldiersImperial : Wanted::kSoldiersSons; break;
@@ -623,7 +581,7 @@ namespace AhShitRim::Police
             }
             const bool found = marker->MoveToNearestNavmesh();
             a_out = marker->GetPosition();
-            state.leaving.push_back({ marker->CreateRefHandle(), {}, 0 });
+            state.leaving.push_back({ marker->CreateRefHandle(), 0 });
             return found;
         }
 
@@ -658,7 +616,7 @@ namespace AhShitRim::Police
                 return Place(a_player, a_base, RE::NiPoint3(spot.x, spot.y, feet.z + 1500.0f), false, true);
             }
             Spot barracks;
-            if (a_unit != Wanted::Unit::Rider && !Wanted::OpenWorldOnly(a_unit) && state.spawnTries % 2 == 0 && BarracksSpot(*state.hold, barracks) && barracks.world == a_player->GetWorldspace() &&
+            if (!Wanted::OpenWorldOnly(a_unit) && state.spawnTries % 2 == 0 && BarracksSpot(*state.hold, barracks) && barracks.world == a_player->GetWorldspace() &&
                 barracks.position.GetDistance(feet) < kBarracksRange &&
                 !Wanted::InView(Wanted::CameraOf(Flat(feet), heading), heading, Flat(barracks.position))) {
                 state.spawnTries++;
@@ -691,7 +649,7 @@ namespace AhShitRim::Police
             auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
             if (!actor) {
                 if (ref) {
-                    state.leaving.push_back({ ref->CreateRefHandle(), {}, 0 });  // made, but no actor: it goes again
+                    state.leaving.push_back({ ref->CreateRefHandle(), 0 });  // made, but no actor: it goes again
                 }
                 SKSE::log::info("police: no spot for a {} of {} (base {:08X}{})", Wanted::NameOf(a_unit), state.hold->name, base ? base->GetFormID() : 0,
                     ref ? ", and it made no actor" : "");
@@ -700,60 +658,85 @@ namespace AhShitRim::Police
             Spawned s;
             s.actor = actor->CreateRefHandle();
             s.unit = a_unit;
-            if (a_unit == Wanted::Unit::Rider) {
-                const auto at = actor->GetPosition();
-                const auto heading = a_player->GetAngleZ();
-                const RE::NiPoint3 beside(at.x + std::cos(heading) * 120.0f, at.y - std::sin(heading) * 120.0f, at.z + 50.0f);
-                if (auto* horse = Place(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHorse), beside, true, false)) {
-                    s.horse = horse->CreateRefHandle();
+            if (a_unit == Wanted::Unit::Wolf) {
+                // The hold's tamed wolves: out of their own factions (predators, enemies of the guards), and
+                // aggressive to enemies only (a wild wolf goes for anyone about).
+                if (auto* npc = actor->GetActorBase()) {
+                    for (const auto& rank : npc->factions) {
+                        if (rank.faction) {
+                            actor->AddToFaction(rank.faction, -1);  // rank -1 is out, as Papyrus's RemoveFromFaction
+                        }
+                    }
                 }
+                actor->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, 1.0f);
+            }
+            if (!Wanted::OpenWorldOnly(a_unit) && a_unit != Wanted::Unit::Guard) {
+                // The hold's own (wolves, the captain, wizards, soldiers) take the factions of the guards ours copy, so
+                // they're all allies through the guards' civil war and guard factions, which are allied to themselves.
+                // The crime faction isn't, and the captain isn't in his side's civil war faction: a stray blow between
+                // him and a wolf, only neutral to each other, started a fight the guards joined on the wolf's side.
+                int   took = 0;
+                auto* guard = GuardBase(a_player);
+                if (auto* guardNpc = guard ? guard->As<RE::TESNPC>() : nullptr) {
+                    for (const auto& rank : guardNpc->factions) {
+                        if (rank.faction && rank.rank >= 0) {
+                            actor->AddToFaction(rank.faction, rank.rank);
+                            took++;
+                        }
+                    }
+                }
+                SKSE::log::info("police: {} {:08X} takes the {} faction(s) of guard base {:08X}", Wanted::NameOf(a_unit), actor->GetFormID(), took,
+                    guard ? guard->GetFormID() : 0);
             }
             const auto at = actor->GetPosition();
-            SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}{}) comes from {} at ({:.0f},{:.0f},{:.0f}), {:.0f} units from CJ", Wanted::NameOf(a_unit),
-                state.hold->name, actor->GetFormID(), base->GetFormID(), a_unit == Wanted::Unit::Rider ? (s.horse ? ", on a horse" : ", no horse") : "", from, at.x,
-                at.y, at.z, at.GetDistance(a_player->GetPosition()));
+            SKSE::log::info("police: a {} for {} ({:08X} of base {:08X}) comes from {} at ({:.0f},{:.0f},{:.0f}), {:.0f} units from CJ", Wanted::NameOf(a_unit),
+                state.hold->name, actor->GetFormID(), base->GetFormID(), from, at.x, at.y, at.z, at.GetDistance(a_player->GetPosition()));
             state.spawned.push_back(s);
             return true;
         }
 
-        // The riders get on their horses once both are in, then everyone of ours goes for CJ.
+        // A wolf's speed by how far behind CJ it is and how fast he goes (Wanted::ChaseSpeedMult). Skyrim only takes a new
+        // SpeedMult up once something else about its movement changes, so its carry weight is nudged after.
+        void Pace(RE::Actor* a_wolf, Spawned& a_s, const RE::NiPoint3& a_feet)
+        {
+            const float mult = Wanted::ChaseSpeedMult(a_wolf->GetPosition().GetDistance(a_feet), state.cjSpeed);
+            if (mult == a_s.speedMult) {
+                return;
+            }
+            auto* values = a_wolf->AsActorValueOwner();
+            values->SetActorValue(RE::ActorValue::kSpeedMult, mult);
+            values->ModActorValue(RE::ACTOR_VALUE_MODIFIERS::kPermanent, RE::ActorValue::kCarryWeight, 0.1f);
+            values->ModActorValue(RE::ACTOR_VALUE_MODIFIERS::kPermanent, RE::ActorValue::kCarryWeight, -0.1f);
+            if ((mult > 100.0f) != (a_s.speedMult > 100.0f)) {
+                SKSE::log::info("police: wolf {:08X} at {:.0f} units, CJ at {:.0f} a second: speed {:.0f}%", a_wolf->GetFormID(), a_wolf->GetPosition().GetDistance(a_feet),
+                    state.cjSpeed, mult);
+            }
+            a_s.speedMult = mult;
+        }
+
+        // Everyone of ours goes for CJ once in, and wolves keep his pace.
         void Lead(RE::PlayerCharacter* a_player, float a_delta)
         {
+            const auto feet = a_player->GetPosition();
             for (auto& s : state.spawned) {
                 auto  actorRef = s.actor.get();
                 auto* actor = actorRef ? actorRef->As<RE::Actor>() : nullptr;
-                auto  horse = s.horse.get();
-                if (!actor || !actor->Is3DLoaded() || (horse && !horse->Is3DLoaded())) {
+                if (!actor || !actor->Is3DLoaded()) {
                     continue;
                 }
                 s.age += a_delta;
-                if (horse && !s.mounted && s.age >= kMountAfter) {
-                    // An NPC activating a horse gets on it, as followers do; his race and the horse's may fight mounted.
-                    AllowMountedCombat(actor);
-                    AllowMountedCombat(horse.get());
-                    s.mounted = true;
-                    const bool took = horse->ActivateRef(actor, 0, nullptr, 0, false);
-                    SKSE::log::info("police: rider {:08X} gets on horse {:08X} ({})", actor->GetFormID(), horse->GetFormID(), took ? "activated" : "the horse refused");
-                }
-                // A rider goes for CJ once he's on his horse (getting on takes a moment, and a fight started before then
-                // has him get off again), or after kMountWait whatever.
-                s.onHorse = s.onHorse || (horse && actor->IsOnMount());
-                const bool ready = !horse || (s.age >= kMountAfter + kFightAfter && s.onHorse) || s.age >= kMountAfter + kMountWait;
-                if (!s.fighting && s.age >= kMountAfter && ready) {
+                if (!s.fighting && s.age >= kFightAfter) {
                     s.fighting = true;
                     const bool fights = actor->StartCombat(a_player);
-                    SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
-                        horse ? (actor->IsOnMount() ? ", mounted" : ", on foot") : "");
+                    SKSE::log::info("police: {} {:08X} goes for CJ ({})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight");
+                }
+                if (s.unit == Wanted::Unit::Wolf) {
+                    Pace(actor, s, feet);
                 }
                 // Ours are after CJ alone: a giant swatting at the dragon, or a dragon burning guards, is pulled back onto him.
                 s.retarget += a_delta;
                 if (s.fighting && s.retarget >= kRetargetEvery && actor->GetFormID() != state.doorRun.Runner()) {  // not the one running for the door
                     s.retarget = 0.0f;
-                    if (horse && !s.offLogged && !actor->IsOnMount()) {
-                        s.offLogged = true;  // Skyrim's AI got him off after all, or he never got on
-                        SKSE::log::info("police: rider {:08X} fights on foot ({}), his horse {:08X} left behind", actor->GetFormID(),
-                            s.onHorse ? "he got off" : "he never got on", horse->GetFormID());
-                    }
                     if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
                         SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());
                         actor->StopCombat();
@@ -944,7 +927,7 @@ namespace AhShitRim::Police
             std::vector<VehicleHits::Pursuer> pursuers;
             if (auto* lists = RE::ProcessLists::GetSingleton()) {
                 lists->ForEachHighActor([&](RE::Actor* a_actor) {
-                    if (Pursues(a_actor) && (!SpawnedOf(a_actor) || SpawnedOf(a_actor)->unit != Wanted::Unit::Dragon)) {
+                    if (Pursues(a_actor) && (!SpawnedOf(a_actor) || Wanted::Arrests(SpawnedOf(a_actor)->unit))) {
                         const auto at = a_actor->GetPosition();
                         if (std::abs(at.z - feet.z) < 200.0f) {
                             const float toDoor = std::hypot(at.x - target.x, at.y - target.y);
@@ -1158,6 +1141,7 @@ namespace AhShitRim::Police
         } else if (look.stars > 0 && state.seen && state.chasedTimer >= Wanted::kChasedEvery) {
             Say(Wanted::kLineChased);
         }
+        state.cjSpeed = a_pose ? std::hypot(a_pose->velocity[0], a_pose->velocity[1]) : 0.0f;
         Respond(a_player, a_delta, a_scene);
 
         Wanted::Bust bust = Wanted::Bust::None;
@@ -1216,7 +1200,6 @@ namespace AhShitRim::Police
     void OnRelease()
     {
         state.owned = false;
-        RestoreMountedCombat();
         if (state.sequence.Running()) {
             state.sequence.Cancel();
             SKSE::log::info("police: Busted ended with the handover");
@@ -1245,7 +1228,6 @@ namespace AhShitRim::Police
     {
         state.spawned.clear();  // the save's own references now
         state.leaving.clear();
-        RestoreMountedCombat();
         state.director.Reset();
         state.settle = kSettle;
         state.clearOut = false;

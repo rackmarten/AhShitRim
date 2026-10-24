@@ -216,8 +216,12 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
         CHECK(special <= now.total);
     }
     CHECK(ForceFor(kMaxStars).total == kForceCap);
-    CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Rider)] > 0);   // riders from 3
-    CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Rider)] == 0);
+    CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Wolf)] == 0);
+    CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Wolf)] == 2);   // a couple of wolves at 3, a pack that grows
+    for (int stars = 3; stars < kMaxStars; stars++) {
+        CHECK(ForceFor(stars + 1).most[static_cast<std::size_t>(Unit::Wolf)] >= ForceFor(stars).most[static_cast<std::size_t>(Unit::Wolf)]);
+    }
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Wolf)] == 4);
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Wizard)] > 0);  // a guard wizard from 4
     CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Soldier)] > 0); // soldiers from 5
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
@@ -243,32 +247,76 @@ TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
     CHECK(GiveBack(std::numeric_limits<float>::quiet_NaN(), 0.5f) == 0.0f);
 }
 
-TEST_CASE("the next unit: the dragon, giants, the mammoth, riders, the captain, wizards, soldiers, then guards")
+TEST_CASE("the next unit: the dragon, giants, the mammoth, wolves, the captain, wizards, soldiers, then guards")
 {
     const auto force = ForceFor(6);
     Counts     counts{};
     CHECK(NextUnit(force, counts) == Unit::Dragon);
-    CHECK(NextUnit(force, counts, false) == Unit::Rider);  // in a city: no dragon, giants or mammoth
+    CHECK(NextUnit(force, counts, false) == Unit::Wolf);  // in a city: no dragon, giants or mammoth
     counts[static_cast<std::size_t>(Unit::Dragon)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Giant);
     counts[static_cast<std::size_t>(Unit::Giant)] = 2;
     CHECK(NextUnit(force, counts) == Unit::Mammoth);
     counts[static_cast<std::size_t>(Unit::Mammoth)] = 1;
-    CHECK(NextUnit(force, counts) == Unit::Rider);
-    counts[static_cast<std::size_t>(Unit::Rider)] = 2;
+    CHECK(NextUnit(force, counts) == Unit::Wolf);
+    counts[static_cast<std::size_t>(Unit::Wolf)] = 4;
     CHECK(NextUnit(force, counts) == Unit::Captain);
     counts[static_cast<std::size_t>(Unit::Captain)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Wizard);
-    counts[static_cast<std::size_t>(Unit::Wizard)] = 2;
+    counts[static_cast<std::size_t>(Unit::Wizard)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Soldier);
-    counts[static_cast<std::size_t>(Unit::Soldier)] = 2;
+    counts[static_cast<std::size_t>(Unit::Soldier)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Guard);
     CHECK(TotalOf(counts) == 11);
     CHECK(OpenWorldOnly(Unit::Mammoth));
     CHECK_FALSE(OpenWorldOnly(Unit::Soldier));
+    CHECK_FALSE(OpenWorldOnly(Unit::Wolf));  // wolves come into a city too
     CHECK(std::string(NameOf(Unit::Giant)) == "giant");
     CHECK(NextUnit(ForceFor(2), Counts{}) == Unit::Guard);
+    CHECK(NextUnit(ForceFor(3), Counts{}) == Unit::Wolf);  // at 3 stars the wolves come first
     CHECK(std::string(NameOf(Unit::Wizard)) == "wizard");
+    CHECK(std::string(NameOf(Unit::Wolf)) == "wolf");
+}
+
+TEST_CASE("wolves: ice wolves from 5 stars, and they don't bust CJ")
+{
+    CHECK(WolfFor(3) == kWolf);
+    CHECK(WolfFor(4) == kWolf);
+    CHECK(WolfFor(5) == kIceWolf);
+    CHECK(WolfFor(6) == kIceWolf);
+    CHECK_FALSE(Arrests(Unit::Wolf));
+    CHECK_FALSE(Arrests(Unit::Dragon));
+    CHECK(Arrests(Unit::Guard));
+    CHECK(Arrests(Unit::Captain));
+}
+
+TEST_CASE("a wolf keeps up with CJ on foot or in a car, and catches up from behind")
+{
+    // Close by and CJ sprinting (about the wolf's own run) or standing: Skyrim's own speed.
+    CHECK(ChaseSpeedMult(300.0f, 0.0f) == 100.0f);
+    CHECK(ChaseSpeedMult(kChaseNear, 520.0f) == 100.0f);
+    // Left behind on foot: faster, up to half again.
+    CHECK(ChaseSpeedMult(2560.0f, 520.0f) == doctest::Approx(140.0f));
+    CHECK(ChaseSpeedMult(kChaseFar, 520.0f) == 150.0f);
+    CHECK(ChaseSpeedMult(20000.0f, 0.0f) == 150.0f);
+    // CJ in a car at 25 m/s (1750 units a second): as fast as the car beside it, faster behind it.
+    CHECK(ChaseSpeedMult(500.0f, 1750.0f) == doctest::Approx(310.0f));
+    CHECK(ChaseSpeedMult(kChaseFar, 1750.0f) == doctest::Approx(470.0f));
+    // A fast car: kChaseMost at most.
+    CHECK(ChaseSpeedMult(kChaseFar, 4000.0f) == kChaseMost);
+    // Never slower the further behind, nor the faster CJ goes; whole steps only.
+    for (float d = 0.0f; d < 5000.0f; d += 250.0f) {
+        for (float v = 0.0f; v < 4000.0f; v += 250.0f) {
+            const float m = ChaseSpeedMult(d, v);
+            CHECK(ChaseSpeedMult(d + 250.0f, v) >= m);
+            CHECK(ChaseSpeedMult(d, v + 250.0f) >= m);
+            CHECK(std::fmod(m, kChaseStep) == 0.0f);
+            CHECK(m >= 100.0f);
+            CHECK(m <= kChaseMost);
+        }
+    }
+    CHECK(ChaseSpeedMult(std::numeric_limits<float>::quiet_NaN(), 500.0f) == 100.0f);
+    CHECK(ChaseSpeedMult(500.0f, std::numeric_limits<float>::infinity()) == 100.0f);
 }
 
 TEST_CASE("the director spawns one per cooldown up to the force, and gives a breather when they're all dead")

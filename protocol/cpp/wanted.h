@@ -98,7 +98,8 @@ namespace AhShitRim::Wanted
     }
 
     // Skyrim.esm's other forms the response spawns.
-    inline constexpr std::uint32_t kHorse = 0x00023AB2;             // EncHorseSaddledBrown, a saddled horse
+    inline constexpr std::uint32_t kWolf = 0x00023ABE;              // EncWolf
+    inline constexpr std::uint32_t kIceWolf = 0x00023ABF;           // EncWolfIce, a tougher one
     inline constexpr std::uint32_t kSoldiersImperial = 0x0001FC5B;  // LCharSoldierImperial, a levelled legionnaire
     inline constexpr std::uint32_t kSoldiersSons = 0x0001FC5C;      // LCharSoldierSons, a levelled Stormcloak
     inline constexpr std::uint32_t kCaptainImperial = 0x000AA8D4;   // EncGuardImperialM01MaleNordCommander
@@ -276,13 +277,13 @@ namespace AhShitRim::Wanted
         }
     }
 
-    // What the director sends: copies of the hold's guards, on foot or on a horse, their captain, a guard wizard (the
-    // hold's battlemage), the hold's soldiers, from 5 stars a dragon (San Andreas's helicopter: CJ's guns are made for
-    // it), and at 6 giants and a mammoth (its tanks: they run him down on foot).
+    // What the director sends: copies of the hold's guards, the hold's tamed wolves (fast enough to run CJ down, on
+    // foot or in a car), their captain, a guard wizard (the hold's battlemage), the hold's soldiers, from 5 stars a
+    // dragon (San Andreas's helicopter: CJ's guns are made for it), and at 6 giants and a mammoth (its tanks).
     enum class Unit : std::uint8_t
     {
         Guard,
-        Rider,
+        Wolf,
         Captain,
         Wizard,
         Soldier,
@@ -299,7 +300,7 @@ namespace AhShitRim::Wanted
     {
         switch (a_unit) {
         case Unit::Guard: return "guard";
-        case Unit::Rider: return "rider";
+        case Unit::Wolf: return "wolf";
         case Unit::Captain: return "captain";
         case Unit::Wizard: return "wizard";
         case Unit::Soldier: return "soldier";
@@ -326,13 +327,13 @@ namespace AhShitRim::Wanted
     constexpr Force ForceFor(int a_stars)
     {
         // The breather is short enough that the next ones are there before CJ, unseen, loses a star (kArriveSeconds).
-        //                                          guard rider captain wizard soldier dragon giant mammoth
+        //                                          guard wolf captain wizard soldier dragon giant mammoth
         switch (std::clamp(a_stars, 0, kMaxStars)) {
         case 2: return { 5, 6.0f, 10.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
         case 3: return { 7, 5.0f, 9.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
         case 4: return { 9, 4.0f, 8.0f, { 0, 3, 1, 1, 0, 0, 0, 0 } };
-        case 5: return { 11, 3.0f, 7.0f, { 0, 3, 1, 2, 3, 1, 0, 0 } };
-        case 6: return { kForceCap, 2.5f, 6.0f, { 0, 2, 1, 2, 2, 1, 2, 1 } };
+        case 5: return { 11, 3.0f, 7.0f, { 0, 4, 1, 2, 2, 1, 0, 0 } };
+        case 6: return { kForceCap, 2.5f, 6.0f, { 0, 4, 1, 1, 1, 1, 2, 1 } };
         default: return {};
         }
     }
@@ -372,12 +373,12 @@ namespace AhShitRim::Wanted
         return total;
     }
 
-    // The kind the next spawn is: the dragon first, then giants and the mammoth, riders, the captain, wizards and soldiers
+    // The kind the next spawn is: the dragon first, then giants and the mammoth, wolves, the captain, wizards and soldiers
     // up to their counts, plain guards for the rest. Out of the open world (a city), no dragon, giants or mammoth. Guard
     // too when the force is full (the caller doesn't spawn then).
     constexpr Unit NextUnit(const Force& a_force, const Counts& a_counts, bool a_openWorld = true)
     {
-        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Giant, Unit::Mammoth, Unit::Rider, Unit::Captain, Unit::Wizard, Unit::Soldier };
+        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Giant, Unit::Mammoth, Unit::Wolf, Unit::Captain, Unit::Wizard, Unit::Soldier };
         for (const Unit unit : kOrder) {
             const auto i = static_cast<std::size_t>(unit);
             if ((a_openWorld || !OpenWorldOnly(unit)) && a_counts[i] < a_force.most[i]) {
@@ -385,6 +386,35 @@ namespace AhShitRim::Wanted
             }
         }
         return Unit::Guard;
+    }
+
+    // Wolves are the hold's fast chasers, a pack from 3 stars that grows with them (ice wolves from 5). Skyrim's
+    // runners by their movement types' run forward, in units a second: a wolf 556, a sabre cat 563 (but one is a match
+    // for CJ alone, where wolves swarm), a horse 450 (600 sprinting, and our guards never got on theirs), a bear 638,
+    // a deer 833 (prey), a guard 370 (500 sprinting). CJ sprints at about the wolf's run.
+    constexpr std::uint32_t WolfFor(int a_stars) { return a_stars >= 5 ? kIceWolf : kWolf; }
+
+    // Whether one of a_unit at the driver's door busts CJ: not a wolf or the dragon.
+    constexpr bool Arrests(Unit a_unit) { return a_unit != Unit::Wolf && a_unit != Unit::Dragon; }
+
+    inline constexpr float kWolfRun = 556.0f;     // Wolf_Default_MT's run forward, units a second
+    inline constexpr float kChaseNear = 800.0f;   // this close a wolf goes as fast as CJ does
+    inline constexpr float kChaseFar = 3000.0f;   // this far behind, half as fast again
+    inline constexpr float kChaseMost = 600.0f;   // SpeedMult at most: about 48 m/s, a fast car's
+    inline constexpr float kChaseStep = 10.0f;    // the SpeedMult goes in steps of this, so it isn't set every frame
+
+    // The SpeedMult (100 is Skyrim's own) of a wolf a_distance units from CJ, who moves at a_cjSpeed units a second:
+    // never slower than CJ (on foot that's the wolf's own run; on a bike or in a car it's the vehicle's), half as fast
+    // again by kChaseFar behind so a pack left behind catches up, and kChaseMost at most.
+    inline float ChaseSpeedMult(float a_distance, float a_cjSpeed)
+    {
+        if (!std::isfinite(a_distance) || !std::isfinite(a_cjSpeed)) {
+            return 100.0f;
+        }
+        const float keepUp = (std::max)(kWolfRun, a_cjSpeed) / kWolfRun;
+        const float behind = std::clamp((a_distance - kChaseNear) / (kChaseFar - kChaseNear), 0.0f, 1.0f);
+        const float mult = 100.0f * keepUp * (1.0f + 0.5f * behind);
+        return std::clamp(std::round(mult / kChaseStep) * kChaseStep, 100.0f, kChaseMost);
     }
 
     inline constexpr float kFirstSpawn = 1.5f;     // seconds from the stars calling for a force to its first one spawning
