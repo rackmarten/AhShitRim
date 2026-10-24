@@ -62,6 +62,7 @@ namespace AhShitRim::ChunkWorld
             CBuilding* building = nullptr;
             CColModel* col = nullptr;  // the borrowed model's own collision model, filled with each chunk the slot gets
             bool       inWorld = false;
+            Ground::Mesh mesh;         // what it was filled with, to fill it again should San Andreas empty it
         };
 
         struct State
@@ -80,7 +81,7 @@ namespace AhShitRim::ChunkWorld
             CVehicle*             falling = nullptr;  // what fall watches: CJ's vehicle, or CJ himself (nullptr)
 
             // Stats, logged every 5 s while chunks come in.
-            int           built = 0, replaced = 0, triangles = 0, dropped = 0, stale = 0, distant = 0;
+            int           built = 0, replaced = 0, triangles = 0, dropped = 0, stale = 0, distant = 0, refilled = 0;
             std::uint64_t statMs = 0;
         } state;
 
@@ -183,11 +184,17 @@ namespace AhShitRim::ChunkWorld
                         Log(std::format("ground: San Andreas's collision models are all taken, chunk ({},{}) not built", key.x, key.y));
                         return;
                     }
-                    info->SetColModel(slot.col, true);
                 }
+                // Not the collision store's any more: a map model's collision is streamed with San Andreas's map
+                // (CColStore, by where CJ is in San Andreas), and loading its area wrote the map's own collision into
+                // the chunk's, unloading it emptied it (CFileLoader::LoadCollisionFile and CColStore::RemoveCol only
+                // touch a model flagged so), and CJ fell through ground that had been fine. The game's own
+                // SetColModel clears the flag.
+                info->SetColModel(slot.col, false);
             }
             TakeOut(slot);
             FillColModel(slot.col, mesh);  // its triangle planes are freed with its volumes
+            slot.mesh = mesh;
             slot.building->SetPosn(CVector(mesh.position.x, mesh.position.y, mesh.position.z));
             CWorld::Add(slot.building);
             slot.inWorld = true;
@@ -463,18 +470,29 @@ namespace AhShitRim::ChunkWorld
             Catch(a_ped);
         }
 
+        // A chunk's collision emptied or replaced underneath it (by anything: San Andreas's collision streaming did it)
+        // is filled again from what it was given, so the ground under CJ is always there.
+        for (auto& slot : state.slots) {
+            const auto* data = slot.inWorld && slot.col ? slot.col->m_pColData : nullptr;
+            if (slot.inWorld && (!data || data->m_nNumTriangles != slot.mesh.triangles.size() / 3 || slot.col->m_nColSlot != 0)) {
+                FillColModel(slot.col, slot.mesh);
+                state.refilled++;
+            }
+        }
+
         const std::uint64_t now = ::GetTickCount64();
         if (now - state.statMs >= 5000) {
-            if (state.built || state.distant || state.stale) {
+            if (state.built || state.distant || state.stale || state.refilled) {
                 // San Andreas's pools the chunks draw on: a full one returns nothing, and its users crash.
                 const auto used = [](auto* a_pool) { return a_pool ? std::format("{}/{}", a_pool->GetNoOfUsedSpaces(), a_pool->m_nSize) : std::string("?"); };
-                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale; {} chunks around CJ; "
-                                "pools: col models {}, buildings {}",
-                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.book.Count(), used(CPools::ms_pColModelPool),
-                    used(CPools::ms_pBuildingPool)));
+                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale, {} emptied and filled again; "
+                                "{} chunks around CJ; pools: col models {}, buildings {}, peds {}, vehicles {}, objects {}, dummies {}",
+                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.refilled, state.book.Count(),
+                    used(CPools::ms_pColModelPool), used(CPools::ms_pBuildingPool), used(CPools::ms_pPedPool), used(CPools::ms_pVehiclePool),
+                    used(CPools::ms_pObjectPool), used(CPools::ms_pDummyPool)));
             }
             state.statMs = now;
-            state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = 0;
+            state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = state.refilled = 0;
         }
     }
 
