@@ -3,6 +3,7 @@
 #include "body/ModelView.h"
 #include "explosives.h"
 #include "health.h"
+#include "hud/SaHud.h"
 #include "link/LinkService.h"
 #include "pickups.h"
 #include "player/Vitals.h"
@@ -55,6 +56,8 @@ namespace AhShitRim::WorldPickups
             double        born = 0.0;
             bool          heart = false;
             bool          armed = false;  // CJ has stepped off it since it came (he drops the jetpack at his feet)
+            bool          emptied = false;  // a weapon whose rounds went into CJ's gun
+            bool          offered = false;  // a weapon whose swap the help box offered
             const void*   place = nullptr;
         };
 
@@ -66,6 +69,11 @@ namespace AhShitRim::WorldPickups
             std::map<std::uint16_t, Placed>  placed;  // by spot id
             std::vector<Loose>               loose;
             std::vector<Protocol::PickupEvent> dropped;
+            std::set<std::uint16_t>          emptied;  // weapon spots whose rounds went into CJ's gun: empty until taken
+            std::set<std::uint16_t>          offered;  // weapon spots whose swap the help box offered
+            int                              offerHelps = 0;  // offers shown, kOfferHelpMax at most
+            bool                             offering = false;     // this frame CJ stands on a weapon E swaps him for
+            bool                             swapPressed = false;  // E since the last frame, while offering
             HeartRule                        heart;
             float                            heartRetry = 0.0f;
             double                           clock = 0.0;  // seconds San Andreas has had the player, the respawns' clock
@@ -241,11 +249,34 @@ namespace AhShitRim::WorldPickups
             cj.healthMax = a_player->GetActorValueMax(RE::ActorValue::kHealth);
             cj.armour = Vitals::Armor();
             cj.inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
+            std::copy(std::begin(a_pose.loadout), std::end(a_pose.loadout), std::begin(cj.loadout));
             Protocol::BodyState gear{};
             cj.jetpack = LinkService::Get().ReadGear(gear) && (gear.flags & Protocol::kBodyJetpack) != 0;
             return cj;
         }
 
+        // San Andreas's CPed::GiveWeapon of a_weapon with a_rounds: the same weapon's on top, another takes over the slot (and
+        // its rounds in the shotgun, SMG and rifle slots). entries[0].type set, 0 rounds stay 0 (an emptied pickup).
+        void SendWeapon(std::uint8_t a_weapon, std::uint32_t a_rounds)
+        {
+            Protocol::WeaponCommand command{};
+            command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon);
+            command.argument = a_weapon;
+            command.entries[0].type = a_weapon;
+            command.entries[0].ammo = a_rounds;
+            LinkService::Get().Send(Protocol::MessageType::WeaponCommand, &command, sizeof(command));
+        }
+
+        void Sound(Kind a_kind, std::uint8_t a_weapon)
+        {
+            Protocol::PickupCommand command{};
+            command.kind = static_cast<std::uint8_t>(Protocol::PickupCommandKind::Collected);
+            command.pickup = static_cast<std::uint8_t>(a_kind);
+            command.weapon = a_weapon;
+            LinkService::Get().Send(Protocol::MessageType::PickupCommand, &command, sizeof(command));
+        }
+
+        // a_amount: the gold of a wad, the rounds of a weapon.
         void Give(RE::PlayerCharacter* a_player, Kind a_kind, std::uint8_t a_weapon, std::uint32_t a_amount, std::string_view a_where)
         {
             switch (a_kind) {
@@ -266,26 +297,53 @@ namespace AhShitRim::WorldPickups
                     a_player->AddObjectToContainer(gold, nullptr, static_cast<std::int32_t>(a_amount), nullptr);
                 }
                 break;
-            case Kind::Weapon: {
-                Protocol::WeaponCommand command{};
-                command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::GiveWeapon);
-                command.argument = a_weapon;
-                command.entries[0].type = a_weapon;
-                command.entries[0].ammo = a_amount ? a_amount : StreetAmmo(a_weapon);
-                LinkService::Get().Send(Protocol::MessageType::WeaponCommand, &command, sizeof(command));
+            case Kind::Weapon:
+                SendWeapon(a_weapon, a_amount);
                 break;
-            }
             default:
                 break;  // the parachute and the jetpack: San Andreas's, below
             }
             // San Andreas's sound for it; the parachute in his hands, the jetpack on him.
-            Protocol::PickupCommand command{};
-            command.kind = static_cast<std::uint8_t>(Protocol::PickupCommandKind::Collected);
-            command.pickup = static_cast<std::uint8_t>(a_kind);
-            command.weapon = a_weapon;
-            LinkService::Get().Send(Protocol::MessageType::PickupCommand, &command, sizeof(command));
+            Sound(a_kind, a_weapon);
             SKSE::log::info("pickups: CJ took the {}{} at {}", NameOf(a_kind), a_kind == Kind::Weapon ? std::format(" (weapon {})", a_weapon) : std::string(),
                 a_where);
+        }
+
+        // A weapon CJ walks into (Pickups::OnWalk): taken, its rounds into his gun, or the swap offered and made on E.
+        // a_rounds: what it holds when full. True once it is taken.
+        bool TouchWeapon(RE::PlayerCharacter* a_player, const Cj& a_cj, std::uint8_t a_weapon, std::uint32_t a_rounds, bool& a_emptied, bool& a_offered,
+            std::string_view a_where)
+        {
+            const auto& held = a_cj.loadout[Shop::SlotOf(a_weapon)];
+            const auto  rounds = a_emptied ? 0u : a_rounds;
+            switch (OnWalk(held, a_weapon, a_emptied)) {
+            case Walk::Take:
+                Give(a_player, Kind::Weapon, a_weapon, rounds, a_where);
+                return true;
+            case Walk::Ammo:
+                SendWeapon(held.type, rounds);  // its rounds into the gun he has (CPickup::ExtractAmmoFromPickup)
+                Sound(Kind::Weapon, a_weapon);
+                a_emptied = true;
+                SKSE::log::info("pickups: weapon {}'s {} rounds at {} went into CJ's weapon {}", a_weapon, rounds, a_where, held.type);
+                break;
+            case Walk::Offer:
+                break;
+            }
+            state.offering = true;
+            if (!a_offered && state.offerHelps < kOfferHelpMax) {
+                a_offered = true;
+                state.offerHelps++;
+                SaHud::ShowHelp("Press E to take this weapon. It replaces the one you carry in its slot.", 6.0f);
+            }
+            if (!state.swapPressed) {
+                return false;
+            }
+            state.swapPressed = false;
+            const auto after = AfterSwap(held, a_weapon, a_emptied ? 0u : a_rounds);
+            SendWeapon(a_weapon, a_emptied ? 0u : a_rounds);
+            Sound(Kind::Weapon, a_weapon);
+            SKSE::log::info("pickups: CJ swapped weapon {} ({} rounds) for weapon {} at {}, now {} rounds", held.type, held.ammo, a_weapon, a_where, after.ammo);
+            return true;
         }
 
         // ---- The table ----
@@ -328,10 +386,27 @@ namespace AhShitRim::WorldPickups
                     continue;
                 }
                 Draw(spot.kind, spot.weapon, placed.middle, a_shown);
-                if (a_cj && Touches(V(a_feet), V(placed.middle)) && Wants(spot.kind, *a_cj)) {
-                    state.board.Take(spot, state.clock);
-                    Give(a_player, spot.kind, spot.weapon, spot.amount, std::format("{} (spot {})", spot.name, spot.id));
+                if (!a_cj || !Touches(V(a_feet), V(placed.middle)) || !Wants(spot.kind, *a_cj)) {
+                    continue;
                 }
+                const auto where = std::format("{} (spot {})", spot.name, spot.id);
+                if (spot.kind == Kind::Weapon) {
+                    bool emptied = state.emptied.count(spot.id) != 0, offered = state.offered.count(spot.id) != 0;
+                    const bool taken = TouchWeapon(a_player, *a_cj, spot.weapon, spot.amount ? spot.amount : StreetAmmo(spot.weapon), emptied, offered, where);
+                    if (emptied) {
+                        state.emptied.insert(spot.id);
+                    }
+                    if (offered) {
+                        state.offered.insert(spot.id);
+                    }
+                    if (taken) {
+                        state.board.Take(spot, state.clock);
+                        state.emptied.erase(spot.id);  // back full when it comes back
+                    }
+                    continue;
+                }
+                state.board.Take(spot, state.clock);
+                Give(a_player, spot.kind, spot.weapon, spot.amount, where);
             }
         }
 
@@ -378,7 +453,13 @@ namespace AhShitRim::WorldPickups
                 if (it->middle.GetDistance(a_feet) <= kDrawRange) {
                     Draw(it->kind, it->weapon, it->middle, a_shown);
                 }
-                if (a_cj && it->armed && touches && Wants(it->kind, *a_cj)) {
+                if (a_cj && it->armed && touches && it->kind == Kind::Weapon && Wants(it->kind, *a_cj)) {
+                    if (TouchWeapon(a_player, *a_cj, it->weapon, it->amount ? it->amount : StreetAmmo(it->weapon), it->emptied, it->offered,
+                            "where San Andreas dropped it")) {
+                        it = state.loose.erase(it);
+                        continue;
+                    }
+                } else if (a_cj && it->armed && touches && Wants(it->kind, *a_cj)) {
                     const auto taken = *it;
                     it = state.loose.erase(it);
                     Give(a_player, taken.kind, taken.weapon, taken.amount, taken.heart ? "the heart" : "where San Andreas dropped it");
@@ -431,6 +512,10 @@ namespace AhShitRim::WorldPickups
         bool a_held)
     {
         state.clock += std::clamp(a_delta, 0.0f, 0.25f);
+        if (!state.offering) {
+            state.swapPressed = false;  // an E from before he stood on one swaps nothing
+        }
+        state.offering = false;
 
         for (const auto& event : state.dropped) {
             if (event.handover == a_handover) {
@@ -454,6 +539,15 @@ namespace AhShitRim::WorldPickups
         std::map<std::uint32_t, std::uint32_t> shown;  // by model: how many are drawn with it so far
         UpdateTable(a_player, feet, free ? &cj : nullptr, shown);
         UpdateLoose(a_player, feet, free ? &cj : nullptr, shown);
+    }
+
+    bool Activate()
+    {
+        if (!state.offering) {
+            return false;
+        }
+        state.swapPressed = true;
+        return true;
     }
 
     void Clear()

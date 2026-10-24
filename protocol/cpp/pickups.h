@@ -21,6 +21,7 @@
 #include "../ahshitrim_protocol.h"
 #include "damage.h"
 #include "pose.h"
+#include "shop.h"
 #include "weapons.h"
 
 namespace AhShitRim::Pickups
@@ -66,6 +67,7 @@ namespace AhShitRim::Pickups
         float armour = 0.0f;     // San Andreas points, 0..100
         bool  jetpack = false;   // has it on
         bool  inVehicle = false;
+        Weapons::Loadout loadout{};  // what he carries, by San Andreas's slot (the pose's)
     };
 
     // CPickup::Update's CanPlayerPick: a heart isn't taken at full health, armour at full armour, the jetpack
@@ -89,6 +91,51 @@ namespace AhShitRim::Pickups
         30, 10, 10, 15, 10, 10, 60, 60, 80, 80, 60, 20, 10, 4, 3, 100, 500, 5, 1, 500, 500, 36, 0, 0, 1 };
 
     inline std::uint32_t StreetAmmo(std::uint8_t a_weapon) { return a_weapon < kStreetAmmo.size() ? (std::max)(kStreetAmmo[a_weapon], std::uint16_t{ 1 }) : 1; }
+
+    // ---- Walking into a weapon ----
+    //
+    // As San Andreas's CPickup::Update, by what CJ already holds in the weapon's slot (the pose's loadout):
+    // - the same weapon, an empty slot, or a weapon with no rounds left outside the shotgun, SMG and rifle slots: he takes
+    //   it (the same weapon's rounds go on top: CPed::GiveWeapon),
+    // - another weapon with rounds left: he keeps his, the help box says E takes this one instead (PU_CF1's offer), and
+    //   pressing E there swaps (CollectPickupJustDown),
+    // - another weapon in the shotgun, SMG or rifle slot, with rounds or none: the pickup's rounds go into his first
+    //   (ExtractAmmoFromPickup, once: it is empty after), then the same offer.
+    // A swap is CPed::GiveWeapon with the pickup's rounds left: in the shotgun, SMG and rifle slots the old gun's rounds
+    // go over to the new one, in every other slot (the handguns too) they go with the old gun, which is gone.
+
+    enum class Walk : std::uint8_t
+    {
+        Take,
+        Offer,  // nothing taken: E swaps
+        Ammo,   // its rounds into his, then the offer
+    };
+
+    // The slots whose rounds a swap keeps and whose pickups give rounds to the gun he has: shotguns, SMGs and rifles.
+    constexpr bool SharesRounds(std::uint32_t a_slot) { return a_slot >= 3 && a_slot <= 5; }
+
+    // a_held: what CJ holds in the slot of a_weapon. a_emptied: the pickup gave its rounds away already.
+    inline Walk OnWalk(const Protocol::WeaponEntry& a_held, std::uint8_t a_weapon, bool a_emptied)
+    {
+        const auto slot = Shop::SlotOf(a_weapon);
+        if (a_held.type == a_weapon || a_held.type == Weapons::Unarmed || (a_held.ammo == 0 && !SharesRounds(slot))) {
+            return Walk::Take;
+        }
+        return SharesRounds(slot) && !a_emptied ? Walk::Ammo : Walk::Offer;
+    }
+
+    // What CJ holds in the slot after swapping for a pickup with a_rounds left in it: its weapon, with his old gun's
+    // rounds on top in the shotgun, SMG and rifle slots.
+    inline Protocol::WeaponEntry AfterSwap(const Protocol::WeaponEntry& a_held, std::uint8_t a_weapon, std::uint32_t a_rounds)
+    {
+        Protocol::WeaponEntry out{};
+        out.type = a_weapon;
+        out.ammo = (std::min)(a_rounds + (SharesRounds(Shop::SlotOf(a_weapon)) ? a_held.ammo : 0u), Weapons::kAmmoMax);
+        return out;
+    }
+
+    // San Andreas shows its offer once for each pickup and 10 times a game at most (CPickups::DisplayHelpMessage).
+    inline constexpr int kOfferHelpMax = 10;
 
     // ---- Coming back ----
 

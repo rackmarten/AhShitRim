@@ -242,7 +242,8 @@ namespace AhShitRim::CjWeapons
             case Protocol::WeaponCommandKind::GiveWeapon: {
                 const auto type = static_cast<std::uint8_t>(command.argument);
                 if (command.argument <= 0xFF && Weapons::Carried(type)) {
-                    GiveOne(a_ped, static_cast<eWeaponType>(type), command.entries[0].ammo ? command.entries[0].ammo : 1);
+                    // At least a round, unless entries[0] names the weapon (v23: a swapped pickup whose rounds went into his gun).
+                    GiveOne(a_ped, static_cast<eWeaponType>(type), command.entries[0].ammo || command.entries[0].type == type ? command.entries[0].ammo : 1);
                     EnsureLoadout(a_ped);
                     Log(std::format("weapons: weapon {} given", command.argument));
                 } else {
