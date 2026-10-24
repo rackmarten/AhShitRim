@@ -290,7 +290,7 @@ San Andreas's radar needs a map, and there's no San Andreas-style map of Skyrim,
 | `protocol/` | Shared protocol header, C++ link code and its game-free tests |
 | `scripts/` | `build.ps1`, `deploy-local.ps1`, `test.ps1`, `logs.ps1`, `launch-sa.ps1`, `restart-games.ps1`, `fake-skyrim.ps1`, `encode-music.ps1`, `radar-map.ps1` |
 | `music/` | `CREDITS.md` (Sweetroll FM's CC0 tracks and their sources), `sweetrollfm/*.xwm` once encoded |
-| `docs/` | This document, [PROTOCOL.md](PROTOCOL.md), [DEV_SETUP.md](DEV_SETUP.md), [ROADMAP.md](ROADMAP.md) |
+| `docs/` | This document, [PROTOCOL.md](PROTOCOL.md), [DEV_SETUP.md](DEV_SETUP.md), [INSTALL.md](INSTALL.md) for players, [CHEATS.md](CHEATS.md) |
 
 ## 6. Risks
 
