@@ -52,8 +52,8 @@ namespace AhShitRim::Wanted
         std::uint32_t    barracks;  // the barracks' (or keep's) inside door out: where its teleport leads is where CJ wakes after Busted
     };
 
-    // The nine holds. A guard's crime faction says which hold he is from; the guards sent copy one of those about
-    // (the hold's guards as the war has left them), else the guard here. CJ wakes after Busted outside the hold's
+    // The nine holds. A guard's crime faction says which hold he is from; the guards sent are made from the guard
+    // here (Spawnable: the game's own record, never a guard about's runtime base). CJ wakes after Busted outside the hold's
     // barracks, or the keep where it has none: where walking out of its door puts the player (the door's own
     // teleport, read at runtime). Reinforcements also come out of there in its city. Whiterun's crime faction's
     // exterior jail marker put the player under the ground, so the markers are only the fallback.
@@ -514,9 +514,21 @@ namespace AhShitRim::Wanted
     // ---- Quick save and quickload ----
 
     // As in San Andreas, no saving while wanted: no quick save or quickload while stars show or any of ours are still
-    // out (fighting, or leaving). Skyrim's load clears the world with ours mid-fight in it, and its combat code crashed
-    // on them (SkyrimSE.exe+01DCDE4, a quickload at 6 stars). a_ours spawned and alive, a_leaving still to be taken out.
-    constexpr bool QuickAllowed(int a_stars, int a_ours, int a_leaving) { return a_stars <= 0 && a_ours <= 0 && a_leaving <= 0; }
+    // out (fighting, or leaving), nor for kQuickAfterGone after the last of them was taken out, so Skyrim has let go of
+    // them. Skyrim's load clears the world with ours mid-fight in it, and its combat code crashed on them
+    // (SkyrimSE.exe+01DCDE4, a quickload at 6 stars). a_ours spawned and alive, a_leaving still to be taken out,
+    // a_sinceGone seconds since the last one went.
+    inline constexpr float kQuickAfterGone = 2.0f;
+    inline constexpr float kQuickNagEvery = 4.0f;  // "Lose the heat first" at most this often, and only for a key pressed
+
+    // Whether a refused F5 or F9 shows "Lose the heat first": only as the key goes down (not while it's held, nor for
+    // anything the player didn't press), and not again within kQuickNagEvery.
+    constexpr bool QuickNag(bool a_pressed, float a_sinceLast) { return a_pressed && a_sinceLast >= kQuickNagEvery; }
+
+    constexpr bool QuickAllowed(int a_stars, int a_ours, int a_leaving, float a_sinceGone)
+    {
+        return a_stars <= 0 && a_ours <= 0 && a_leaving <= 0 && a_sinceGone >= kQuickAfterGone;
+    }
 
     // ---- One side ----
 
@@ -596,26 +608,13 @@ namespace AhShitRim::Wanted
         float _since = kLeashGap;   // seconds since it was last set on him
     };
 
-    // Ours are copies of the hold's generic guards, never of anyone with a life of his own: not a unique NPC (Commander
-    // Caius, a jarl's housecarl, who counts as a guard of the hold: four of him came down the street at 4 stars), and not
-    // one called by his name rather than by what he is. Copies of a unique base are also references Skyrim doesn't
-    // expect, for an NPC it keeps one of for its dialogue and quests. a_name is the actor's, a_generic the hold's
-    // guard's ("Whiterun Guard").
-    inline bool Copyable(bool a_unique, std::string_view a_name, std::string_view a_generic)
-    {
-        if (a_unique || a_name.empty()) {
-            return false;
-        }
-        if (a_name == a_generic) {
-            return true;
-        }
-        for (const std::string_view role : { "Guard", "Soldier", "Battlemage" }) {  // "Windhelm Guard", "Imperial Soldier"
-            if (a_name == role || (a_name.size() > role.size() && a_name.ends_with(role) && a_name[a_name.size() - role.size() - 1] == ' ')) {
-                return true;
-            }
-        }
-        return false;
-    }
+    // What ours are made from: a base record of the game's own (Skyrim.esm and the like), never a form Skyrim made at
+    // runtime (form ID FFxxxxxx). A guard about who is levelled or built from a template has such a base of his own,
+    // made for him and freed with him or with a load: copies of a guard about ran on it, and a quickload crashed in
+    // their combat code on it (a runtime "Imperial Soldier" TESNPC on the stack). So ours are made from the hold's
+    // guard record (Hold::guard) and the tables' records, never by copying someone about, which also keeps out a unique
+    // or named one (four of Commander Caius came at 4 stars that way). a_unique the base's flag.
+    constexpr bool Spawnable(std::uint32_t a_formID, bool a_unique) { return a_formID != 0 && (a_formID >> 24) != 0xFF && !a_unique; }
 
     // The soldiers' bases are levelled lists (LCharSoldier*, LVLN), and a reference made straight from one is no actor:
     // one of its entries is picked instead, as Skyrim levels a list (anyone up to the player's level; with nobody that

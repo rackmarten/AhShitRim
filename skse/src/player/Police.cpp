@@ -133,6 +133,7 @@ namespace AhShitRim::Police
             Wanted::Point            steeredTo{ 1e9f, 1e9f };  // the offset from the player he was last told
             float                    cjSpeed = 0.0f;      // how fast CJ goes across, units a second (the pose's)
             std::vector<RE::ActorHandle> downFighters;  // who fought the player as it was knocked down
+            std::chrono::steady_clock::time_point goneAt;  // when the last of ours leaving was taken out
             Knock::Rejoin            rejoin;           // and for how long they're set on it again
         } state;
 
@@ -548,6 +549,9 @@ namespace AhShitRim::Police
                 }
                 if (++it->step >= 2) {
                     state.leaving.erase(it);
+                    if (state.leaving.empty()) {
+                        state.goneAt = std::chrono::steady_clock::now();
+                    }
                 }
                 break;
             }
@@ -608,28 +612,8 @@ namespace AhShitRim::Police
             return npc && npc->IsUnique();
         }
 
-        // A generic guard of the hold about (Wanted::Copyable: never a unique or named one, such as Commander Caius, who
-        // counts as a guard), whose base ours copy (the hold's guards as the war left them), else the table's.
-        RE::TESBoundObject* GuardBase(RE::PlayerCharacter* a_player)
-        {
-            auto*               table = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
-            const char*         tableName = table ? table->GetName() : nullptr;
-            RE::TESBoundObject* found = nullptr;
-            if (auto* lists = RE::ProcessLists::GetSingleton()) {
-                lists->ForEachHighActor([&](RE::Actor* a_actor) {
-                    if (Pursues(a_actor) && !IsSpawned(a_actor) && a_actor != a_player) {
-                        auto*       npc = a_actor->GetActorBase();
-                        const char* name = a_actor->GetName();
-                        if (npc && Wanted::Copyable(npc->IsUnique(), name ? name : "", tableName ? tableName : "")) {
-                            found = a_actor->GetObjectReference();
-                            return RE::BSContainer::ForEachResult::kStop;
-                        }
-                    }
-                    return RE::BSContainer::ForEachResult::kContinue;
-                });
-            }
-            return found && !Unique(found) ? found : table;
-        }
+        // The hold's guard record (Wanted::Spawnable: the game's own, never a guard about's runtime base or a unique one).
+        RE::TESBoundObject* GuardBase(RE::PlayerCharacter*) { return RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard); }
 
         // A levelled list (the soldiers' LCharSoldier*) as one of its NPCs (Wanted::PickLeveled, a few lists deep): a reference
         // made straight from a list is no actor. Anything else as it is.
@@ -814,9 +798,10 @@ namespace AhShitRim::Police
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto* base = BaseFor(a_player, a_unit);
-            if (Unique(base)) {
-                SKSE::log::warn("police: {:08X} for a {} is a unique NPC: never copied, the hold's guard instead", base->GetFormID(), Wanted::NameOf(a_unit));
-                base = RE::TESForm::LookupByID<RE::TESBoundObject>(state.hold->guard);
+            if (base && !Wanted::Spawnable(base->GetFormID(), Unique(base))) {
+                SKSE::log::warn("police: {:08X} for a {} is a runtime or unique base: never spawned, the hold's guard instead", base->GetFormID(),
+                    Wanted::NameOf(a_unit));
+                base = GuardBase(a_player);
                 a_unit = Wanted::Unit::Guard;
             }
             if (!base && a_unit != Wanted::Unit::Guard) {
@@ -908,6 +893,7 @@ namespace AhShitRim::Police
                 s.age += a_delta;
                 if (!s.fighting && s.age >= kFightAfter) {
                     s.fighting = true;
+                    Enlist(actor);  // again now it's in: a levelled or templated one has its factions only once its base is built
                     const bool fights = actor->StartCombat(a_player);
                     SKSE::log::info("police: {} {:08X} goes for CJ ({})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight");
                 }
@@ -973,7 +959,7 @@ namespace AhShitRim::Police
             Calm(a_player, true);
             state.pursuit.Clear();
             state.seeded = false;
-            Dismiss("AEZAKMI");
+            Dismiss("AEZAKMI", true);  // all of ours go at once, seen or not
             SKSE::log::info("police: AEZAKMI: {} hold(s)' bounty cleared, the fight called off", cleared);
         }
 
@@ -1143,9 +1129,18 @@ namespace AhShitRim::Police
                 return;
             }
             if (a_how == 0) {
+                // A clean slate: the pursuit's hold's bounty goes too (else a guard who sees CJ brings the stars back at
+                // once), the fight is called off, and all of ours go at once, seen or not.
+                auto*     faction = state.hold ? FactionOf(*state.hold) : nullptr;
+                const int bounty = BountyOf(player, state.hold);
+                if (faction && bounty > 0) {
+                    player->ClearAllCrimeGold(faction);
+                }
+                Calm(player, true);
                 state.pursuit.Clear();
-                Dismiss("ASNAEB");
-                SKSE::log::info("police: ASNAEB: no stars");
+                state.seeded = false;
+                Dismiss("ASNAEB", true);
+                SKSE::log::info("police: ASNAEB: no stars{}", faction && bounty > 0 ? std::format(", {}'s bounty of {} cleared", state.hold->name, bounty) : std::string());
                 return;
             }
             if (!state.hold) {
@@ -1466,20 +1461,21 @@ namespace AhShitRim::Police
         g_pending.retarget = true;
     }
 
-    bool QuickAllowed()
+    bool QuickAllowed(bool a_pressed)
     {
         const int alive = static_cast<int>(std::count_if(state.spawned.begin(), state.spawned.end(), [](const Spawned& a_s) {
             auto ref = a_s.actor.get();
             auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
             return actor && !actor->IsDead();
         }));
-        const bool allowed = Wanted::QuickAllowed(state.pursuit.Stars(), alive, static_cast<int>(state.leaving.size()));
+        const float sinceGone = state.leaving.empty() ? std::chrono::duration<float>(std::chrono::steady_clock::now() - state.goneAt).count() : 0.0f;
+        const bool  allowed = Wanted::QuickAllowed(state.pursuit.Stars(), alive, static_cast<int>(state.leaving.size()), sinceGone);
         if (!allowed && state.pursuit.Stars() == 0 && alive == 0) {
             state.clearOut = true;  // only leaving ones: out of sight or not, they go now
         }
-        if (!allowed) {
-            SKSE::log::info("police: a quick save or quickload refused: {} star(s), {} of ours out, {} leaving", state.pursuit.Stars(), alive,
-                state.leaving.size());
+        if (!allowed && a_pressed) {
+            SKSE::log::info("police: a quick save or quickload refused: {} star(s), {} of ours out, {} leaving, the last gone {:.1f} s ago", state.pursuit.Stars(),
+                alive, state.leaving.size(), sinceGone);
         }
         return allowed;
     }
