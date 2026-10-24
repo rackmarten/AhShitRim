@@ -7,7 +7,7 @@
 #include "link/LinkService.h"
 #include "loot.h"
 #include "txd.h"
-#include "explosives.h"
+#include "lock_marker.h"
 #include "weapons.h"
 
 #include <array>
@@ -117,10 +117,11 @@ namespace AhShitRim::SaHud
             bool             loggedScreen = false;
             WeaponHud        weapon;
             std::uint32_t    siteM16 = 0, siteRocket = 0, sniperCrosshair = 0, cameraCrosshair = 0;  // texture ids
-            std::uint32_t    target256 = 0;  // particle.txd's: the heat seeker's lock-on marker
+            std::uint32_t    lockon = 0, lockonFire = 0;  // particle.txd's: the heat seeker's lock-on marker (LockMarker)
             bool             mark = false;   // a marker to draw, set again every frame (MarkTarget)
             RE::NiPoint3     markAt;
             bool             markLocked = false;
+            double           markClock = 0.0;  // seconds, for the marker's spin: a clock that stops while a menu is up, as San Andreas's
             std::array<std::uint32_t, 64> icons{};  // by weapon type
             Loot::Counter    money;  // the money shown, counting towards the player's gold
             float            delta = 0.0f;
@@ -250,25 +251,27 @@ namespace AhShitRim::SaHud
             }
         }
 
-        // The heat seeker's marker round its target (CWeaponEffects::MarkTarget's): San Andreas's target256 over
-        // where the target shows through Skyrim's camera, kHsMarkerSize across there (no smaller than the rocket
-        // sight's quarter), white and see-through while it locks on, red once locked.
+        // The heat seeker's marker on its target, as San Andreas draws a flying vehicle's lock (CWeaponEffects::Render):
+        // lockon and lockonFire over where the target shows through Skyrim's camera, one size on the screen, with
+        // their black outlines, green while it locks on and red once locked, the inner ring turning (LockMarker).
         void DrawMark(Frame& a_frame)
         {
             auto* camera = RE::Main::WorldRootCamera();
-            if (!state.mark || !state.target256 || !camera) {
+            if (!state.mark || !state.lockon || !state.lockonFire || !camera) {
                 return;
             }
             const auto& screen = a_frame.screen;
-            float       x = 0.0f, y = 0.0f, z = 0.0f, topX = 0.0f, topY = 0.0f;
-            const RE::NiPoint3 top = state.markAt + RE::NiPoint3(0.0f, 0.0f, 0.5f * Explosives::kHsMarkerSize * Explosives::kMeter);
-            if (!camera->WorldPtToScreenPt3(state.markAt, x, y, z, 1e-5f) || !camera->WorldPtToScreenPt3(top, topX, topY, z, 1e-5f)) {
+            float       x = 0.0f, y = 0.0f, z = 0.0f;
+            if (!camera->WorldPtToScreenPt3(state.markAt, x, y, z, 1e-5f)) {
                 return;
             }
             const float cx = x * screen.width, cy = (1.0f - y) * screen.height;
-            const float half = (std::max)(std::abs(topY - y) * screen.height, 24.0f * screen.unitY);
-            const std::uint32_t colour = state.markLocked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
-            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, colour });
+            for (const auto& layer : LockMarker::Layers(state.markLocked, static_cast<std::uint64_t>(state.markClock * 1000.0))) {
+                const float half = layer.halfSize * screen.unitX;  // a circle: San Andreas's pixels are square
+                Overlay::Quad quad{ layer.inner ? state.lockonFire : state.lockon, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, layer.colour };
+                quad.rotation = layer.rotation;
+                a_frame.quads.push_back(quad);
+            }
         }
 
         // The top right HUD, from the Skyrim player.
@@ -456,7 +459,9 @@ namespace AhShitRim::SaHud
         state.siteM16 = add(Txd::Find(hud, "siteM16"));
         state.siteRocket = add(Txd::Find(hud, "siterocket"));
         const auto particleData = ReadFile(sa / "models" / "particle.txd");
-        state.target256 = add(Txd::Find(Txd::Read(particleData.data(), particleData.size(), &skipped), "target256"));
+        const auto particles = Txd::Read(particleData.data(), particleData.size(), &skipped);
+        state.lockon = add(Txd::Find(particles, "lockon"));
+        state.lockonFire = add(Txd::Find(particles, "lockonFire"));
 
         // The weapons' icons and scopes are in each weapon's own dictionary in gta3.img.
         std::ifstream      archive(sa / "models" / "gta3.img", std::ios::binary);
@@ -491,7 +496,7 @@ namespace AhShitRim::SaHud
         state.loaded = true;
         SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}, lock-on marker {}{}",
             sa.string(), fonts.size(), hud.size(), icons, missing, state.sniperCrosshair != 0, state.cameraCrosshair != 0, state.siteRocket != 0, state.siteM16 != 0,
-            state.target256 != 0,
+            state.lockon != 0 && state.lockonFire != 0,
             directory ? "" : "; gta3.img did not read, the weapon icon stays the fist");
     }
 
@@ -503,6 +508,9 @@ namespace AhShitRim::SaHud
         }
         state.frame++;
         state.delta = a_delta;
+        if (!a_menu) {
+            state.markClock += std::clamp(a_delta, 0.0f, 0.25f);
+        }
         for (auto* timed : { &state.missionTitle, &state.big, &state.help, &state.prompt, &state.subtitle, &state.radio }) {
             timed->Tick(a_delta);
         }
@@ -545,7 +553,7 @@ namespace AhShitRim::SaHud
         }
         w.valid = true;
         w.type = a_pose->weaponType;
-        w.scope = Weapons::ScopeOf(a_pose->cameraMode);
+        w.scope = Weapons::ScopeOf(a_pose->cameraMode, (a_pose->flags & Protocol::kPlayerInVehicle) ? a_pose->vehicleModel : 0);
         w.aiming = (a_pose->weaponFlags & Protocol::kWeaponAiming) != 0;
         w.gun = (w.type >= Weapons::Pistol && w.type <= Weapons::CountryRifle) || w.type == Weapons::Flamethrower || w.type == Weapons::Minigun;
         w.crosshair[0] = a_pose->crosshair[0];

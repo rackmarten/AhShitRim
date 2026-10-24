@@ -25,6 +25,7 @@ namespace AhShitRim::Overlay
         float         x0 = 0, y0 = 0, x1 = 0, y1 = 0;  // back buffer pixels
         float         u0 = 0, v0 = 0, u1 = 1, v1 = 1;  // 0..1 across the texture
         std::uint32_t colour = 0xFFFFFFFF;              // multiplies the texture; red in the low byte, alpha in the high
+        float         rotation = 0;                     // radians clockwise on the screen, about the quad's middle
     };
 
     // Hooks a_swapChain's Present (an IDXGISwapChain*); false when there is none.
