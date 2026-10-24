@@ -587,7 +587,24 @@ namespace AhShitRim::SaHud
 
     void HideBigMessage() { state.big.hold = 0.0f; }
 
-    void ShowHelp(std::string a_text, float a_seconds) { state.help.Show(std::move(a_text), a_seconds); }
+    void ShowHelp(std::string a_text, float a_seconds)
+    {
+        if (HudSounds::HelpBeeps(state.help.hold > 0.0f, state.help.text, a_text)) {
+            PlayHudSound(HudSounds::Sound::DisplayInfo);
+        } else if (state.help.hold > 0.0f && state.help.text == a_text) {
+            state.help.hold = (std::max)(state.help.hold, state.help.age - state.help.fadeIn + a_seconds);  // already up: stays longer, without starting over
+            return;
+        }
+        state.help.Show(std::move(a_text), a_seconds);
+    }
+
+    void PlayHudSound(HudSounds::Sound a_sound)
+    {
+        Protocol::FrontendSoundCommand command{};
+        command.event = static_cast<std::uint8_t>(a_sound);
+        const bool sent = LinkService::Get().Send(Protocol::MessageType::FrontendSound, &command, sizeof(command));
+        SKSE::log::info("sa hud: {} sound{}", HudSounds::NameOf(a_sound), sent ? "" : " not sent");
+    }
 
     void ShowPrompt(std::string a_text)
     {

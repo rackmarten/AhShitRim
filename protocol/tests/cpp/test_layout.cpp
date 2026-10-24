@@ -28,9 +28,14 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v30: HUD sounds")
+{
+    CHECK(kProtocolVersion == 30);  // FrontendSound's type and payload are checked with the v19 constants
+    CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 11);
+}
+
 TEST_CASE("protocol v29: CJ talking on his own")
 {
-    CHECK(kProtocolVersion == 29);
     CHECK(sizeof(InputState) == 124);
     CHECK(offsetof(InputState, stealthKillCount) == 116);
     CHECK(offsetof(InputState, cashCount) == 118);
@@ -130,6 +135,13 @@ TEST_CASE("protocol v20: cheats")
     CHECK(offsetof(CheatCommand, cheat) == 4);
     CHECK(offsetof(CheatCommand, flags) == 5);
     CHECK(kCheatOn == 0x1);
+}
+
+TEST_CASE("protocol v30: HUD sounds")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 11);
+    CHECK(sizeof(FrontendSoundCommand) == 4);
+    CHECK(offsetof(FrontendSoundCommand, event) == 0);
 }
 
 TEST_CASE("protocol v19 constants")

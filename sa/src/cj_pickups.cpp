@@ -1,5 +1,6 @@
 #include "cj_pickups.h"
 
+#include "audio.h"
 #include "body.h"
 #include "cj_gear.h"
 #include "cj_shots.h"
@@ -14,7 +15,6 @@
 
 #include <plugin.h>
 
-#include <CAudioEngine.h>
 #include <CBaseModelInfo.h>
 #include <CModelInfo.h>
 #include <CPickup.h>
@@ -44,11 +44,6 @@ namespace AhShitRim::CjPickups
         constexpr int           kLoaded = 1;         // LOADSTATE_LOADED
         constexpr int           kStreamKeep = 0x2 | 0x8;  // game required, keep in memory
         constexpr int           kPickupNone = 0;     // PICKUP_NONE
-        constexpr int           kAeWeapon = 0x6;     // AE_FRONTEND_PICKUP_WEAPON
-        constexpr int           kAeMoney = 0x7;      // AE_FRONTEND_PICKUP_MONEY
-        constexpr int           kAeHealth = 0x8;     // AE_FRONTEND_PICKUP_HEALTH
-        constexpr int           kAeArmour = 0xA;     // AE_FRONTEND_PICKUP_BODY_ARMOUR
-        constexpr int           kAeInfo = 0xB;       // AE_FRONTEND_PICKUP_INFO: the jetpack's (GivePlayerGoodiesWithPickUpMI)
 
         struct Model
         {
@@ -182,15 +177,7 @@ namespace AhShitRim::CjPickups
         void Collected(CPlayerPed* a_ped, const Protocol::PickupCommand& a_command)
         {
             const auto kind = static_cast<Kind>(a_command.pickup);
-            int        sound = kAeWeapon;
-            switch (kind) {
-            case Kind::Health: sound = kAeHealth; break;
-            case Kind::Armour: sound = kAeArmour; break;
-            case Kind::Money: sound = kAeMoney; break;
-            case Kind::Jetpack: sound = kAeInfo; break;
-            default: break;
-            }
-            AudioEngine.ReportFrontendAudioEvent(sound, 0.0f, 1.0f);
+            Audio::Play(HudSounds::ForPickup(kind));
             if (kind == Kind::Jetpack) {
                 CjGear::Give(a_ped, VehicleKinds::kJetpack);
             } else if (kind == Kind::Parachute) {

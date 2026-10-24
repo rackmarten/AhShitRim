@@ -70,6 +70,7 @@ add_executable(protocol_tests
     tests/cpp/test_dialogue.cpp
     tests/cpp/test_thuum.cpp
     tests/cpp/test_situations.cpp
+    tests/cpp/test_hud_sounds.cpp
     tests/cpp/test_wanted.cpp
     tests/cpp/test_knock.cpp
     tests/cpp/test_mega_punch.cpp

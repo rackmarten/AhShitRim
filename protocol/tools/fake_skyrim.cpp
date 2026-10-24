@@ -329,6 +329,20 @@ int main(int argc, char** argv)
         failed += dialed != Radio::kRadioOff;
     }
 
+    // HUD sounds (v30): each one San Andreas may play, then one it drops (34, the radio retune's loop). Its log
+    // shows them ("audio: HUD sound", "audio: no HUD sound 34").
+    {
+        int sent = 0;
+        for (const auto event : { 6, 7, 8, 10, 11, 32, 40, 34 }) {
+            Protocol::FrontendSoundCommand command{};
+            command.event = static_cast<std::uint8_t>(event);
+            sent += link.Send(Protocol::MessageType::FrontendSound, &command, sizeof(command));
+            run(0.5, [] { return false; });
+        }
+        std::printf("hud sounds: %d of 8 sent\n", sent);
+        failed += sent != 8;
+    }
+
     Protocol::BodyState before{}, driving{};
     vehicleIn(0, before);
     // Passenger seats (v28): a Sandking takes one passenger, on the right of CJ.
