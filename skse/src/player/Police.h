@@ -21,9 +21,9 @@ namespace AhShitRim::Protocol
 //   mounted combat while they ride, so they stay on), a captain and a guard wizard from 4, the hold's soldiers and a
 //   dragon from 5 (bringing it down is a lot of heat), giants and a mammoth at 6. One spawns per cooldown, never in
 //   view: round CJ behind the camera on the ground, or out of the city's barracks door. Killing them all buys a
-//   breather, over before a star would go for nobody seeing him. They fight CJ alone: once a second, one fighting
-//   anyone else is pulled back onto him. When the stars go they stop fighting and
-//   are taken out a step a frame once the player can't see them (Sweep).
+//   breather, over before a star would go for nobody seeing him. They're after CJ: one fighting someone else
+//   is set on him again after a while of it, gently (Wanted::Leash, no fight stopped). When the stars go they stop
+//   fighting and are taken out a step a frame once the player can't see them (Sweep).
 // - Guards (any hold's) and ours hit CJ by the stars: 0.4 of their damage at 1 star up to all of it from 5
 //   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
 // - AEZAKMI (CheatCodes) clears every hold's bounty and calls off the fight as it's typed, then keeps the stars

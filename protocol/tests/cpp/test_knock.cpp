@@ -99,8 +99,8 @@ TEST_CASE("the bound covers CJ's fall and get-up")
 
 TEST_CASE("after a knock-down, whoever fought the player is set on it again, for a while, and nobody's fight is stopped")
 {
-    CHECK(Rejoins(true, true, false));         // dropped CJ: back on him
-    CHECK_FALSE(Rejoins(true, true, true));    // still fighting him: left alone, not stopped and started again
+    CHECK(Rejoins(true, true, false));         // in no fight any more: back on CJ
+    CHECK_FALSE(Rejoins(true, true, true));    // in a fight (CJ's, or someone else's for the leash): left alone
     CHECK_FALSE(Rejoins(false, true, false));  // dead
     CHECK_FALSE(Rejoins(true, false, false));  // gone out of the loaded world
 

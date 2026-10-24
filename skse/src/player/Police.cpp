@@ -29,7 +29,8 @@ namespace AhShitRim::Police
         constexpr float      kMountAfter = 0.5f;  // a rider gets on his horse this long after both are in
         constexpr float      kFightAfter = 1.5f;  // and goes for CJ this long after that, once he's on it
         constexpr float      kMountWait = 5.0f;   // or this long after, on it or not
-        constexpr float      kRetargetEvery = 1.0f;  // seconds between pulling ours back onto CJ from whoever else they fight
+        constexpr float      kRiderCheck = 1.0f;    // seconds between looks at whether a rider is still on his horse
+        constexpr float      kSnapFar = 600.0f;     // a spawn spot's navmesh further than this from it is somewhere else: not used
         constexpr float      kGoneRange = 4000.0f;   // a pursuer leaving goes once this far, or out of the player's sight
         constexpr float      kLostRange = 10000.0f;  // one of ours this far off is lost: he leaves
         constexpr float      kSpawnRise = 300.0f;    // a spawn spot more than this above or below the player is a tower or a ledge: not used
@@ -56,7 +57,8 @@ namespace AhShitRim::Police
             RE::ObjectRefHandle horse;  // a rider's
             Wanted::Unit        unit = Wanted::Unit::Guard;
             float               age = 0.0f;  // seconds since both were in (3D loaded)
-            float               retarget = 0.0f;  // seconds since its target was last checked
+            float               riderCheck = 0.0f;  // seconds since a rider was last looked at
+            Wanted::Leash       leash;              // when it's set on CJ again, fighting someone else
             bool                mounted = false;
             bool                fighting = false;
             bool                onHorse = false;    // a rider seen on his horse
@@ -196,7 +198,7 @@ namespace AhShitRim::Police
             std::vector<RE::NiPointer<RE::Actor>> back;  // not while looking: a fight started may change who fights whom
             for (const auto& handle : state.downFighters) {
                 auto actor = handle.get();
-                if (actor && Knock::Rejoins(!actor->IsDead(), actor->Is3DLoaded(), Fights(actor.get(), a_player))) {
+                if (actor && Knock::Rejoins(!actor->IsDead(), actor->Is3DLoaded(), static_cast<bool>(actor->GetActorRuntimeData().currentCombatTarget.get()))) {
                     back.push_back(actor);
                 }
             }
@@ -596,6 +598,14 @@ namespace AhShitRim::Police
             const bool found = marker->MoveToNearestNavmesh();
             a_out = marker->GetPosition();
             state.leaving.push_back({ marker->CreateRefHandle(), {}, 0 });
+            // The nearest navmesh may be far off (another island of it) or in a cell that isn't loaded: Skyrim's path
+            // search to and from such a spot is what crashed. Only a spot on loaded navmesh close to the one asked for.
+            auto*       cell = marker->GetParentCell();
+            const float off = std::hypot(a_out.x - a_at.x, a_out.y - a_at.y);
+            if (found && (off > kSnapFar || !cell || !cell->IsAttached())) {
+                SKSE::log::info("police: a spawn spot given up (its navmesh {:.0f} units off{})", off, cell && cell->IsAttached() ? "" : ", in a cell not loaded");
+                return false;
+            }
             return found;
         }
 
@@ -722,21 +732,24 @@ namespace AhShitRim::Police
                     SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
                         horse ? (actor->IsOnMount() ? ", mounted" : ", on foot") : "");
                 }
-                // Ours are after CJ alone: a giant swatting at the dragon, or a dragon burning guards, is pulled back onto him.
-                s.retarget += a_delta;
-                if (s.fighting && s.retarget >= kRetargetEvery) {
-                    s.retarget = 0.0f;
-                    if (horse && !s.offLogged && !actor->IsOnMount()) {
+                s.riderCheck += a_delta;
+                if (horse && s.fighting && !s.offLogged && s.riderCheck >= kRiderCheck) {
+                    s.riderCheck = 0.0f;
+                    if (!actor->IsOnMount()) {
                         s.offLogged = true;  // Skyrim's AI got him off after all, or he never got on
                         SKSE::log::info("police: rider {:08X} fights on foot ({}), his horse {:08X} left behind", actor->GetFormID(),
                             s.onHorse ? "he got off" : "he never got on", horse->GetFormID());
                     }
-                    if (const auto target = actor->GetActorRuntimeData().currentCombatTarget.get(); target && target.get() != a_player) {
-                        SKSE::log::info("police: {} {:08X} fights {:08X}, back onto CJ", Wanted::NameOf(s.unit), actor->GetFormID(), target->GetFormID());
-                        actor->StopCombat();
-                        actor->StartCombat(a_player);
-                    } else if (!target) {
-                        actor->StartCombat(a_player);  // its fight ended (lost him, or won against someone else): after him again
+                }
+                // Ours are after CJ: a giant swatting at the dragon, or a dragon burning guards, is set on him again, gently
+                // (Wanted::Leash: after a while of it, never more often than every few seconds, no fight stopped).
+                if (s.fighting) {
+                    const auto target = actor->GetActorRuntimeData().currentCombatTarget.get();
+                    const auto on = target ? (target.get() == a_player ? Wanted::Target::Cj : Wanted::Target::Other) : Wanted::Target::None;
+                    if (s.leash.Tick(a_delta, on)) {
+                        const bool fights = actor->StartCombat(a_player);
+                        SKSE::log::info("police: {} {:08X} {}, set on CJ again{}", Wanted::NameOf(s.unit), actor->GetFormID(),
+                            target ? std::format("fights {:08X}", target->GetFormID()) : std::string("fights nobody"), fights ? "" : " (refused)");
                     }
                 }
             }
@@ -1162,7 +1175,7 @@ namespace AhShitRim::Police
             state.rejoin.Start();
             Rejoin(a_player);
             for (auto& s : state.spawned) {
-                s.retarget = 0.0f;
+                s.leash.Pulled();
             }
         }
 

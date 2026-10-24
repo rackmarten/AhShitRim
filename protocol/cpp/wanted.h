@@ -481,6 +481,49 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // Ours are after CJ, but gently: one fighting someone else (a giant at its camp, the dragon) is set on CJ again only
+    // after kStrayFor seconds of it, one out of any fight after kLostFor, and none more often than every kLeashGap. Their
+    // fights are never stopped for it: stopping and starting everyone's every second, in a camp brawl, threw away the path
+    // each one was having built, and Skyrim's path search crashed (a navmesh search on a tasklet thread).
+    inline constexpr float kStrayFor = 6.0f;
+    inline constexpr float kLostFor = 2.0f;
+    inline constexpr float kLeashGap = 5.0f;
+
+    enum class Target : std::uint8_t
+    {
+        Cj,     // fighting CJ (the player)
+        Other,  // fighting someone else
+        None,   // in no fight
+    };
+
+    class Leash
+    {
+    public:
+        // A frame of a_delta seconds with one of ours fighting a_target. Returns whether to set it on CJ now.
+        bool Tick(float a_delta, Target a_target)
+        {
+            _since += a_delta;
+            if (a_target == Target::Cj) {
+                _away = 0.0f;
+                return false;
+            }
+            _away += a_delta;
+            if (_away >= (a_target == Target::None ? kLostFor : kStrayFor) && _since >= kLeashGap) {
+                _away = 0.0f;
+                _since = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        // It was just set on CJ some other way (a knock-down's rejoin): the gap starts again.
+        void Pulled() { _since = 0.0f; }
+
+    private:
+        float _away = 0.0f;         // seconds not on CJ
+        float _since = kLeashGap;   // seconds since it was last set on him
+    };
+
     // Ours are copies of the hold's generic guards, never of anyone with a life of his own: not a unique NPC (Commander
     // Caius, a jarl's housecarl, who counts as a guard of the hold: four of him came down the street at 4 stars), and not
     // one called by his name rather than by what he is. Copies of a unique base are also references Skyrim doesn't
