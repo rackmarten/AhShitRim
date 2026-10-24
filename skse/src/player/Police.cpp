@@ -3,6 +3,7 @@
 #include "hud/SaHud.h"
 #include "player/CheatCodes.h"
 #include "player/Vitals.h"
+#include "knock.h"
 #include "wasted.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
@@ -120,6 +121,8 @@ namespace AhShitRim::Police
             float                    steerTimer = 0.0f;
             Wanted::Point            steeredTo{ 1e9f, 1e9f };  // the offset from the player he was last told
             float                    cjSpeed = 0.0f;      // how fast CJ goes across, units a second (the pose's)
+            std::vector<RE::ActorHandle> downFighters;  // who fought the player as it was knocked down
+            Knock::Rejoin            rejoin;           // and for how long they're set on it again
         } state;
 
         void Show(int a_stars, bool a_flashing = false)
@@ -272,6 +275,36 @@ namespace AhShitRim::Police
             state.line = a_line;
             if (a_line == Wanted::kLineChased) {
                 state.chasedTimer = 0.0f;
+            }
+        }
+
+        // ---- After a knock-down ----
+
+        // Whoever fought the player as it went down and isn't fighting it now is set on it again (Knock::Rejoin). Nobody's
+        // fight is stopped: stopping and starting one in a frame left Skyrim's guards out of it.
+        void Rejoin(RE::PlayerCharacter* a_player)
+        {
+            if (!a_player || state.sequence.Running() || NeverWanted()) {
+                state.rejoin.Reset();
+                return;
+            }
+            std::vector<RE::NiPointer<RE::Actor>> back;  // not while looking: a fight started may change who fights whom
+            for (const auto& handle : state.downFighters) {
+                auto actor = handle.get();
+                if (actor && Knock::Rejoins(!actor->IsDead(), actor->Is3DLoaded(), Fights(actor.get(), a_player))) {
+                    back.push_back(actor);
+                }
+            }
+            int again = 0;
+            for (const auto& actor : back) {
+                again += actor->StartCombat(a_player) ? 1 : 0;
+            }
+            if (!back.empty()) {
+                SKSE::log::info("police: the player is back at CJ: {} of the {} who fought it had dropped it, {} back on it", back.size(), state.downFighters.size(),
+                    again);
+            }
+            if (!state.rejoin.Active()) {
+                state.downFighters.clear();
             }
         }
 
@@ -1142,6 +1175,9 @@ namespace AhShitRim::Police
             Say(Wanted::kLineChased);
         }
         state.cjSpeed = a_pose ? std::hypot(a_pose->velocity[0], a_pose->velocity[1]) : 0.0f;
+        if (state.rejoin.Tick(a_delta)) {
+            Rejoin(a_player);
+        }
         Respond(a_player, a_delta, a_scene);
 
         Wanted::Bust bust = Wanted::Bust::None;
@@ -1168,29 +1204,36 @@ namespace AhShitRim::Police
         return true;
     }
 
-    void Retarget(RE::PlayerCharacter* a_player)
+    void OnKnockedDown(RE::PlayerCharacter* a_player)
     {
+        state.downFighters.clear();
+        state.rejoin.Reset();
         auto* lists = RE::ProcessLists::GetSingleton();
-        if (!lists || !a_player || state.sequence.Running() || NeverWanted()) {
+        if (!lists || !a_player) {
             return;
         }
-        const auto                            feet = a_player->GetPosition();
-        std::vector<RE::NiPointer<RE::Actor>> fighting;  // not while walking the list: a fight started over may change it
+        const auto feet = a_player->GetPosition();
         lists->ForEachHighActor([&](RE::Actor* a_actor) {
             if (a_actor && !a_actor->IsDead() && a_actor->Is3DLoaded() && Fights(a_actor, a_player) && a_actor->GetPosition().GetDistance(feet) <= Wanted::kSightRange) {
-                fighting.emplace_back(a_actor);
+                state.downFighters.push_back(a_actor->GetHandle());
             }
             return RE::BSContainer::ForEachResult::kContinue;
         });
-        int again = 0;
-        for (const auto& actor : fighting) {
-            actor->StopCombat();
-            again += actor->StartCombat(a_player) ? 1 : 0;
+        for (const auto& s : state.spawned) {  // ours too, whoever they were fighting this moment
+            if (auto ref = s.actor.get(); ref && ref->As<RE::Actor>()) {
+                state.downFighters.push_back(ref->As<RE::Actor>()->GetHandle());
+            }
         }
+        SKSE::log::info("police: the player is knocked down with {} fighting it (and ours)", state.downFighters.size());
+    }
+
+    void Retarget(RE::PlayerCharacter* a_player)
+    {
+        state.rejoin.Start();
+        Rejoin(a_player);
         for (auto& s : state.spawned) {
             s.retarget = 0.0f;
         }
-        SKSE::log::info("police: the player is back at CJ: {} fighting it start over there", again);
     }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
@@ -1200,6 +1243,8 @@ namespace AhShitRim::Police
     void OnRelease()
     {
         state.owned = false;
+        state.downFighters.clear();
+        state.rejoin.Reset();
         if (state.sequence.Running()) {
             state.sequence.Cancel();
             SKSE::log::info("police: Busted ended with the handover");
@@ -1226,6 +1271,8 @@ namespace AhShitRim::Police
 
     void OnGameLoad()
     {
+        state.downFighters.clear();
+        state.rejoin.Reset();
         state.spawned.clear();  // the save's own references now
         state.leaving.clear();
         state.director.Reset();

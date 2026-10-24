@@ -96,3 +96,32 @@ TEST_CASE("the bound covers CJ's fall and get-up")
     CHECK(kDownMost >= 2.5f);
     CHECK(kDownMost <= 4.0f);
 }
+
+TEST_CASE("after a knock-down, whoever fought the player is set on it again, for a while, and nobody's fight is stopped")
+{
+    CHECK(Rejoins(true, true, false));         // dropped CJ: back on him
+    CHECK_FALSE(Rejoins(true, true, true));    // still fighting him: left alone, not stopped and started again
+    CHECK_FALSE(Rejoins(false, true, false));  // dead
+    CHECK_FALSE(Rejoins(true, false, false));  // gone out of the loaded world
+
+    Rejoin rejoin;
+    CHECK_FALSE(rejoin.Active());
+    CHECK_FALSE(rejoin.Tick(0.1f));
+    rejoin.Start();
+    CHECK(rejoin.Active());
+    CHECK(rejoin.Tick(0.016f));  // a check at once
+    int checks = 1;
+    float t = 0.016f;
+    while (rejoin.Active() && t < 30.0f) {
+        checks += rejoin.Tick(0.1f) ? 1 : 0;
+        t += 0.1f;
+    }
+    CHECK(t == doctest::Approx(kRejoinSeconds).epsilon(0.05));
+    CHECK(checks == doctest::Approx(kRejoinSeconds / kRejoinEvery + 1.0f).epsilon(0.15));
+    CHECK_FALSE(rejoin.Tick(0.1f));  // over
+    rejoin.Start();  // a new knock-down starts it again
+    CHECK(rejoin.Tick(0.1f));
+    rejoin.Reset();
+    CHECK_FALSE(rejoin.Active());
+    CHECK(kRejoinSeconds >= 5.0f);  // long enough for the AI to give up on a target it lost
+}
