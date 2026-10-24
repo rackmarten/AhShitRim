@@ -80,7 +80,9 @@ namespace AhShitRim::Riders
         {
             for (const auto& rider : state.riders) {
                 auto* actor = ActorOf(rider);
-                if (!actor) {
+                if (!actor || actor->IsDisabled() || !actor->Is3DLoaded()) {
+                    // Gone, or unloading (a load that began with them seated): nothing of theirs is touched, they're just let go.
+                    SKSE::log::info("riders: {:08X} is let go without standing up (not loaded)", rider.id);
                     continue;
                 }
                 if (a_out && !actor->IsDead()) {
@@ -155,5 +157,14 @@ namespace AhShitRim::Riders
     bool Rides(RE::FormID a_id)
     {
         return std::any_of(state.riders.begin(), state.riders.end(), [&](const Rider& a_rider) { return a_rider.id == a_id; });
+    }
+
+    std::vector<RE::FormID> Riding()
+    {
+        std::vector<RE::FormID> out;
+        for (const auto& rider : state.riders) {
+            out.push_back(rider.id);
+        }
+        return out;
     }
 }

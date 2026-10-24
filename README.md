@@ -124,7 +124,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
 - CJ has his own lines for being chased and busted.
 - A giant's club or a mammoth throws CJ through the air as a car's blast does, and he gets back up San Andreas's way.
-- In a car, stop for a second or two and the nearest guard puts his weapon away and runs round to the driver's door, then drags CJ out: Busted. On a bike he runs to CJ and knocks him off. Keep moving and they can't.
+- In a car, stop for a second or two and the nearest guard puts his weapon away and runs round to the driver's door, then drags CJ out: Busted. On a bike he runs to CJ and knocks him off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.
 - Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks (Dragonsreach in Whiterun) with all his weapons. No jail. Once he's arrested nobody shoots him.
 - Paying the fine to a guard ends the stars too.

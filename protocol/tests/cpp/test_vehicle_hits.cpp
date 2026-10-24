@@ -105,9 +105,12 @@ TEST_CASE("vehicle hits: who takes it, CJ or his vehicle")
     const auto open = SplitOf(Cover::Open, Attack::Melee);
     CHECK(open.vehicle == kOpenShare);
     CHECK(open.cj == kOpenShare);
+    // A blast never reaches anyone in a vehicle (San Andreas skips a ped in one): the bike takes it whole.
     const auto blast = SplitOf(Cover::Open, Attack::Explosion);
     CHECK(blast.vehicle == 1.0f);
-    CHECK(blast.cj == kOpenShare);
+    CHECK(blast.cj == 0.0f);
+    CHECK(SplitOf(Cover::Closed, Attack::Explosion).cj == 0.0f);
+    CHECK(SplitOf(Cover::None, Attack::Explosion).cj == 1.0f);  // on foot it's all his
     const auto foot = SplitOf(Cover::None, Attack::Arrow);
     CHECK(foot.vehicle == 0.0f);
     CHECK(foot.cj == 1.0f);
@@ -303,4 +306,61 @@ TEST_CASE("door run: the spot and KeepOffsetFromActor's offset")
     const auto bike = RunTo(Wanted::Bust::KnockOff, { 0.0f, 0.0f }, 0.0f, { 5.0f, 5.0f });
     CHECK(bike.x == doctest::Approx(5.0f - kBikeSide));
     CHECK(bike.y == doctest::Approx(5.0f));
+}
+
+TEST_CASE("door run: no bust while CJ gets in or out, and only people run for the door")
+{
+    // Getting off the Sanchez (or into the car), nobody busts him, as San Andreas's cops don't.
+    CHECK(BustNow(Wanted::Bust::KnockOff, true) == Wanted::Bust::None);
+    CHECK(BustNow(Wanted::Bust::Door, true) == Wanted::Bust::None);
+    CHECK(BustNow(Wanted::Bust::Door, false) == Wanted::Bust::Door);
+    CHECK(BustNow(Wanted::Bust::KnockOff, false) == Wanted::Bust::KnockOff);
+    // And the door run stops with it: the runner is called back as he would be for no stars.
+    DoorRun                     run;
+    const std::vector<Pursuer> near{ { 4, 300.0f } };
+    CHECK(run.Tick(1.0f, true, BustNow(Wanted::Bust::KnockOff, false), 0.0f, near).send == 4);
+    CHECK(run.Tick(0.1f, true, BustNow(Wanted::Bust::KnockOff, true), 0.0f, near).recall == 4);
+
+    CHECK(CanRun(Build::Person, false));
+    CHECK_FALSE(CanRun(Build::Person, true));  // a rider
+    CHECK_FALSE(CanRun(Build::Giant, false));
+    CHECK_FALSE(CanRun(Build::Mammoth, false));
+    CHECK_FALSE(CanRun(Build::Dragon, false));
+    CHECK_FALSE(CanRun(Build::Beast, false));
+    CHECK(kRecallHold > 0.0f);
+}
+
+TEST_CASE("vehicle hits: San Andreas's proofs keep it off the vehicle and everyone in it")
+{
+    // The Rhino: bullet and explosion proof (CAutomobile's constructor), not fire or melee.
+    const auto rhino = ProofsOf(Protocol::kBodyValid | Protocol::kBodyDriven | Protocol::kBodyBulletProof | Protocol::kBodyExplosionProof);
+    CHECK(rhino.bullet);
+    CHECK(rhino.explosion);
+    CHECK_FALSE(rhino.fire);
+    CHECK_FALSE(rhino.melee);
+    CHECK(ProofAgainst(rhino, Attack::Explosion));
+    CHECK(ProofAgainst(rhino, Attack::Arrow));
+    CHECK(ProofAgainst(rhino, Attack::Bolt));
+    CHECK_FALSE(ProofAgainst(rhino, Attack::Spell));
+    CHECK_FALSE(ProofAgainst(rhino, Attack::Melee));
+
+    const auto blast = SplitOf(Cover::Closed, Attack::Explosion, rhino);
+    CHECK(blast.vehicle == 0.0f);  // the Rhino shrugs it off
+    CHECK(blast.cj == 0.0f);       // and nobody inside is hurt
+    const auto arrow = SplitOf(Cover::Closed, Attack::Arrow, rhino);
+    CHECK(arrow.vehicle == 0.0f);
+    CHECK(arrow.cj == 0.0f);
+    const auto fire = SplitOf(Cover::Closed, Attack::Spell, rhino);
+    CHECK(fire.vehicle == 1.0f);  // a spell still burns it
+    CHECK(fire.cj == 0.0f);
+
+    // A bulletproof bike (SMASH_N_BOOM's, a script's): an arrow reaches neither the bike nor its rider.
+    const Proofs bullet{ .bullet = true };
+    CHECK(SplitOf(Cover::Open, Attack::Arrow, bullet).cj == 0.0f);
+    CHECK(SplitOf(Cover::Open, Attack::Arrow, bullet).vehicle == 0.0f);
+    CHECK(SplitOf(Cover::Open, Attack::Melee, bullet).cj == kOpenShare);  // a sword still does
+
+    // On foot proofs mean nothing: they're the vehicle's.
+    CHECK(SplitOf(Cover::None, Attack::Explosion, rhino).cj == 1.0f);
+    CHECK(ProofsOf(0).bullet == false);
 }

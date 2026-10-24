@@ -27,4 +27,7 @@ namespace AhShitRim::Riders
 
     // Whether a_id rides with CJ now (CarHits leaves them out).
     bool Rides(RE::FormID a_id);
+
+    // Who rides with CJ now (v35: Hitboxes covers them as it covers CJ).
+    std::vector<RE::FormID> Riding();
 }

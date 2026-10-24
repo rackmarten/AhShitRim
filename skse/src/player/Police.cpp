@@ -118,6 +118,16 @@ namespace AhShitRim::Police
             std::chrono::steady_clock::time_point blowAt;
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
             VehicleHits::DoorRun     doorRun;             // v31: the pursuer running to the door of CJ's stopped car
+            std::uint32_t            recalled = 0;        // the last runner called back, kept from leaving for VehicleHits::kRecallHold
+            std::chrono::steady_clock::time_point recalledAt;
+            struct Bound  // an Actor script object CallActor bound itself, to unbind once the runner is done with it
+            {
+                RE::FormID                                id = 0;
+                RE::BSTSmartPointer<RE::BSScript::Object> object;
+                bool                                      releasing = false;
+                std::chrono::steady_clock::time_point     at;  // when it may go
+            };
+            std::vector<Bound>       bound;
             float                    steerTimer = 0.0f;
             Wanted::Point            steeredTo{ 1e9f, 1e9f };  // the offset from the player he was last told
             float                    cjSpeed = 0.0f;      // how fast CJ goes across, units a second (the pose's)
@@ -195,6 +205,8 @@ namespace AhShitRim::Police
                     return false;
                 }
                 binder->BindObject(object, handle);
+                state.bound.push_back({ a_actor->GetFormID(), object });  // ours: unbound again when his run is over
+                SKSE::log::info("police: bound an Actor script object to {:08X} for {}", a_actor->GetFormID(), a_function);
             }
             auto*                                                    args = RE::MakeFunctionArguments(std::move(a_args)...);
             RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
@@ -202,6 +214,13 @@ namespace AhShitRim::Police
         }
 
         // ---- The door runner (v31) ----
+
+        RunOver::Build BuildOf(RE::Actor* a_actor)
+        {
+            auto*       race = a_actor->GetRace();
+            const char* id = race ? race->GetFormEditorID() : nullptr;
+            return race ? RunOver::BuildOf(id ? id : "", race->HasKeywordString("ActorTypeNPC"), race->HasKeywordString("ActorTypeDragon")) : RunOver::Build::Beast;
+        }
 
         RE::Actor* RunnerOf(std::uint32_t a_id) { return a_id ? RE::TESForm::LookupByID<RE::Actor>(a_id) : nullptr; }
 
@@ -227,11 +246,42 @@ namespace AhShitRim::Police
                 return;
             }
             const bool cleared = CallActor(actor, "ClearKeepOffsetFromActor");
+            state.recalled = a_id;  // Papyrus clears his offset later: he doesn't leave (disabled, a load's garbage) before that
+            state.recalledAt = std::chrono::steady_clock::now();
+            for (auto& b : state.bound) {
+                if (b.id == a_id) {
+                    b.releasing = true;
+                    b.at = state.recalledAt + std::chrono::milliseconds(static_cast<int>(VehicleHits::kRecallHold * 1000.0f));
+                }
+            }
             if (a_fight && !actor->IsDead()) {
                 actor->StartCombat(a_player);
             }
             SKSE::log::info("police: {} ({:08X}) {}{}", actor->GetName(), a_id, a_gaveUp ? "can't get to the door and gives up" : "stops running for the door",
                 cleared ? "" : " (his offset couldn't be cleared)");
+        }
+
+        // The script objects CallActor bound whose run is over (all of them, a_all, before a load): unbound, so no object of
+        // ours is left on an actor the pursuit sends away or a load clears.
+        void Unbind(bool a_all)
+        {
+            auto*      vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+            const auto now = std::chrono::steady_clock::now();
+            std::erase_if(state.bound, [&](const State::Bound& a_bound) {
+                if (!a_all && (!a_bound.releasing || now < a_bound.at)) {
+                    return false;
+                }
+                if (vm && a_bound.object) {
+                    vm->UnbindObject(a_bound.object);
+                }
+                SKSE::log::info("police: unbound the Actor script object of {:08X}{}", a_bound.id, a_all ? " (a load or a new game)" : "");
+                return true;
+            });
+        }
+
+        bool Bound(RE::FormID a_id)
+        {
+            return std::any_of(state.bound.begin(), state.bound.end(), [&](const State::Bound& a_bound) { return a_bound.id == a_id; });
         }
 
         void EndRun(RE::PlayerCharacter* a_player, bool a_fight)
@@ -454,6 +504,10 @@ namespace AhShitRim::Police
                 auto ref = it->actor.get();
                 if (it->step == 0 && !CanGo(player, ref.get())) {
                     continue;
+                }
+                if (it->step == 0 && ref && (Bound(ref->GetFormID()) || (ref->GetFormID() == state.recalled &&
+                    std::chrono::duration<float>(std::chrono::steady_clock::now() - state.recalledAt).count() < VehicleHits::kRecallHold))) {
+                    continue;  // the door runner, whose offset Papyrus hasn't cleared yet, or who still has our script object
                 }
                 if (ref) {
                     if (it->step == 0) {
@@ -944,7 +998,8 @@ namespace AhShitRim::Police
         bool CheckVehicle(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, float a_delta, Wanted::Bust& a_bust)
         {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
-            a_bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
+            a_bust = inVehicle ? VehicleHits::BustNow(Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)), (a_pose->flags & Protocol::kPlayerGettingInOut) != 0)
+                               : Wanted::Bust::None;
             if (a_bust == Wanted::Bust::None || state.pursuit.Stars() == 0) {
                 state.stop.Reset();
                 EndRun(a_player, state.pursuit.Stars() > 0);
@@ -965,8 +1020,8 @@ namespace AhShitRim::Police
                         if (std::abs(at.z - feet.z) < 200.0f) {
                             const float toDoor = std::hypot(at.x - target.x, at.y - target.y);
                             reach = (std::min)(reach, toDoor);
-                            if (!a_actor->IsOnMount()) {
-                                pursuers.push_back({ a_actor->GetFormID(), toDoor });  // a rider can't run for it
+                            if (VehicleHits::CanRun(BuildOf(a_actor), a_actor->IsOnMount())) {
+                                pursuers.push_back({ a_actor->GetFormID(), toDoor });  // no rider, giant or mammoth runs for it
                             }
                         }
                     }
@@ -1267,7 +1322,11 @@ namespace AhShitRim::Police
         }
     }
 
-    void Sweep() { SweepLeaving(); }
+    void Sweep()
+    {
+        Unbind(false);
+        SweepLeaving();
+    }
 
     void OnGameLoad()
     {
@@ -1284,6 +1343,7 @@ namespace AhShitRim::Police
         state.jailAsked = nullptr;
         state.stop.Reset();
         state.doorRun.Reset();  // whoever ran is the save's again
+        Unbind(true);
         state.line = 0;
     }
 

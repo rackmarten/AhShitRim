@@ -3,7 +3,8 @@
 // inside: Skyrim works out what hit it and how hard (the damage table below), sends it to San Andreas as a
 // HitVehicle effect, and San Andreas takes it off the vehicle's health, down to smoke, fire and the blow-up. In an
 // open vehicle (a bike, a bicycle, a quad) CJ keeps half of what Skyrim does to him and the vehicle takes half of the
-// table (a blast all of it). A
+// table; a blast never reaches anyone in a vehicle, and a vehicle San Andreas made proof against an attack (the Rhino
+// against blasts and bullets) takes none of it, nor does anyone in it. A
 // wanted CJ's stopped car also sends the nearest pursuer to the driver's door to bust him (DoorRun). Header-only and
 // free of game types, so the protocol tests cover it.
 //
@@ -200,20 +201,60 @@ namespace AhShitRim::VehicleHits
     struct Split
     {
         float vehicle = 0.0f;  // of the table's damage, to the vehicle
-        float cj = 1.0f;       // of Skyrim's own damage to the player, kept (the rest given back)
+        float cj = 1.0f;       // of Skyrim's own damage to the player (and a passenger), kept (the rest given back)
     };
 
     inline constexpr float kOpenShare = 0.5f;  // an open vehicle: half the hits are the rider's, half the vehicle's
 
-    // As San Andreas has it for bullets: a closed vehicle shields CJ, an open one only half (a blast takes the whole
-    // bike as well).
-    constexpr Split SplitOf(Cover a_cover, Attack a_attack)
+    // What San Andreas has the vehicle proof against (its physical flags, the slot's kBody*Proof): the Rhino bullets and
+    // explosions, a mission's car whatever the script set, one that can't be damaged everything.
+    struct Proofs
     {
-        switch (a_cover) {
-        case Cover::Closed: return { 1.0f, 0.0f };
-        case Cover::Open: return a_attack == Attack::Explosion ? Split{ 1.0f, kOpenShare } : Split{ kOpenShare, kOpenShare };
-        default: return { 0.0f, 1.0f };
+        bool bullet = false;
+        bool fire = false;
+        bool explosion = false;
+        bool melee = false;
+    };
+
+    constexpr Proofs ProofsOf(std::uint32_t a_bodyFlags)
+    {
+        return { (a_bodyFlags & Protocol::kBodyBulletProof) != 0, (a_bodyFlags & Protocol::kBodyFireProof) != 0,
+            (a_bodyFlags & Protocol::kBodyExplosionProof) != 0, (a_bodyFlags & Protocol::kBodyMeleeProof) != 0 };
+    }
+
+    // Whether a vehicle with a_proofs shrugs a_attack off, as San Andreas's own proofs keep it off (car_hits.cpp's Warded).
+    constexpr bool ProofAgainst(const Proofs& a_proofs, Attack a_attack)
+    {
+        switch (a_attack) {
+        case Attack::Arrow:
+        case Attack::Bolt: return a_proofs.bullet;
+        case Attack::Melee:
+        case Attack::Bash:
+        case Attack::Unarmed:
+        case Attack::Claws: return a_proofs.melee;
+        case Attack::Spell:
+        case Attack::Flames: return a_proofs.fire;
+        case Attack::Explosion: return a_proofs.explosion;
+        default: return false;
         }
+    }
+
+    // As San Andreas has it: a closed vehicle shields CJ and his passengers, an open one only half for bullets and blows.
+    // A blast never reaches anyone in a vehicle (San Andreas's explosions skip a ped in one): the vehicle takes it whole,
+    // a bike too, and only its blowing up kills them. A vehicle proof against the attack takes none of it, and nor does
+    // anyone in it (the Rhino and its blasts).
+    constexpr Split SplitOf(Cover a_cover, Attack a_attack, const Proofs& a_proofs = {})
+    {
+        if (a_cover == Cover::None) {
+            return { 0.0f, 1.0f };
+        }
+        if (ProofAgainst(a_proofs, a_attack)) {
+            return { 0.0f, 0.0f };
+        }
+        if (a_attack == Attack::Explosion) {
+            return { 1.0f, 0.0f };
+        }
+        return a_cover == Cover::Closed ? Split{ 1.0f, 0.0f } : Split{ kOpenShare, kOpenShare };
     }
 
     // ---- The vehicle's shape ----
@@ -357,6 +398,15 @@ namespace AhShitRim::VehicleHits
     inline constexpr float kProgress = 40.0f;
     inline constexpr float kRunMax = 15.0f;      // seconds a run takes at most
     inline constexpr float kBlockFor = 15.0f;    // seconds one who gave up isn't sent again
+
+    // What the vehicle CJ is in allows a pursuer to do now: nothing while he's getting in or out, as San Andreas's cops
+    // never bust him in the middle of it (a_gettingInOut, kPlayerGettingInOut).
+    constexpr Wanted::Bust BustNow(Wanted::Bust a_bust, bool a_gettingInOut) { return a_gettingInOut ? Wanted::Bust::None : a_bust; }
+
+    // Who may run for the door: a person (no giant, mammoth, dragon or creature busts anyone), on foot.
+    constexpr bool CanRun(Build a_build, bool a_mounted) { return a_build == Build::Person && !a_mounted; }
+
+    inline constexpr float kRecallHold = 1.5f;  // seconds a recalled runner stays (isn't sent away) so his offset is cleared first
 
     struct Pursuer
     {

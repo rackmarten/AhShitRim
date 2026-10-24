@@ -30,8 +30,14 @@ namespace AhShitRim::Hitboxes
     // Every frame San Andreas has the player, after the vehicles are drawn: a_pose the player's, nullptr when stale.
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState* a_pose, bool a_active);
 
-    // Of Skyrim's own damage to the player, the share CJ keeps in the vehicle a_pose says he's in (1 on foot).
+    // Of Skyrim's own damage to the player, the share CJ keeps in the vehicle a_pose says he's in (1 on foot): none in a
+    // closed one, half on a bike, none of a blast (the hits since the last call say) or of what the vehicle is proof
+    // against. Vitals asks once a frame.
     float CjShare(const Protocol::PlayerState* a_pose);
+
+    // Whether CJ sits in a vehicle with a shape: his own blasts don't reach him or his passengers there (San Andreas's
+    // explosions skip a ped in a vehicle).
+    bool Shields();
 
     // Back to Skyrim's own player, or a re-anchor.
     void Clear();

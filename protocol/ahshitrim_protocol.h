@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 34;
+    inline constexpr std::uint32_t kProtocolVersion = 35;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -206,6 +206,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kPlayerCrouching = 0x4;  // PlayerState.flags: CJ crouches (v3); Skyrim sneaks
     inline constexpr std::uint32_t kPlayerInVehicle = 0x8;  // PlayerState.flags: CJ drives or rides a vehicle (v6)
     inline constexpr std::uint32_t kPlayerOnFire = 0x20;  // PlayerState.flags (v15): CJ burns in San Andreas; Skyrim shows flames on him
+    inline constexpr std::uint32_t kPlayerGettingInOut = 0x40;  // PlayerState.flags (v35): CJ is getting into or out of a vehicle (San Andreas's enter or leave task); no bust then
     inline constexpr std::uint32_t kPlayerRadioRetuning = 0x10;  // PlayerState.flags (v7): the radio is between stations
 
     inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays
@@ -295,6 +296,10 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kBodyBurning = 0x8;  // BodyState.flags, vehicle slots (v18): it burns: its engine (health under 250, about to blow up) or the wreck
     inline constexpr std::uint32_t kBodyJetpack = 0x10;    // BodyState.flags, the gear slot (v19): the jetpack on CJ's back
     inline constexpr std::uint32_t kBodyParachute = 0x20;  // BodyState.flags, the gear slot (v19): the parachute, open
+    inline constexpr std::uint32_t kBodyBulletProof = 0x80;      // BodyState.flags, vehicle slots (v35): San Andreas's bBulletProof (the Rhino), or it can't be damaged at all
+    inline constexpr std::uint32_t kBodyFireProof = 0x100;       // (v35) bFireProof
+    inline constexpr std::uint32_t kBodyExplosionProof = 0x200;  // (v35) bExplosionProof (the Rhino)
+    inline constexpr std::uint32_t kBodyMeleeProof = 0x400;      // (v35) bMeleeProof
     inline constexpr std::uint32_t kBodyHydraulics = 0x40;  // BodyState.flags, vehicle slots (v20): it has San Andreas's hydraulics (LOWRIDER)
 
     inline constexpr std::uint8_t kFxLowGear = 0x1;  // BodyFx.flags, vehicle slots (v26): in first or second gear, where San Andreas puffs more exhaust smoke

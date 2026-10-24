@@ -31,6 +31,7 @@
 #include <CClothes.h>
 #include <CMenuManager.h>
 #include <CPad.h>
+#include <CPedIntelligence.h>
 #include <CPedClothesDesc.h>
 #include <CPlayerData.h>
 #include <CPlayerPed.h>
@@ -288,6 +289,17 @@ namespace AhShitRim::Runner
 
         // ---- Input and pose ----
 
+        // CJ getting into or out of a vehicle (v35): San Andreas's cops never bust him in the middle of it, nor does Skyrim.
+        bool GettingInOrOut(CPlayerPed* a_ped)
+        {
+            if (!a_ped->m_pIntelligence) {
+                return false;
+            }
+            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
+            return tasks.FindActiveTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) || tasks.FindActiveTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) ||
+                   tasks.FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR);
+        }
+
         void PublishPose(CPlayerPed* a_ped)
         {
             Pose::SanAndreasPose sa;
@@ -323,6 +335,9 @@ namespace AhShitRim::Runner
             auto pose = Pose::ToPlayerState(sa, ++state.frame, state.handover);
             if (vehicle) {
                 pose.flags |= Protocol::kPlayerInVehicle;
+            }
+            if (GettingInOrOut(a_ped)) {
+                pose.flags |= Protocol::kPlayerGettingInOut;
             }
             Audio::Fill(pose, vehicle != nullptr);
             GetLink().WritePlayer(pose);
