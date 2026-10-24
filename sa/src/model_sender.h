@@ -21,12 +21,12 @@ namespace AhShitRim::ModelSender
     // a_chunks: the model's ModelChunk payloads (SkinModel::Chunks). Replaces what a_key had; one
     // half sent is dropped (its successor starts at offset 0, which drops it in Skyrim too).
     // a_label starts the log line once it is sent ("body: CJ's model").
-    // A new model's id, for every module the same counter (SkinModel::NextId): unique and odd.
-    std::uint32_t NewId();
-
     void Set(int a_key, std::uint32_t a_id, std::vector<std::vector<std::uint8_t>> a_chunks, std::string a_label);
     void Remove(int a_key);
 
     // Once a frame: sends what the ring has room for.
     void Pump();
+
+    // A new model's id, never one sent before (SkinModel::ModelIds, one counter for every sender).
+    std::uint32_t NewId();
 }

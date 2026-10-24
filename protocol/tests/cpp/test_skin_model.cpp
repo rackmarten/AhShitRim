@@ -222,3 +222,21 @@ TEST_CASE("model ids are odd and never the same twice, also within one tick of S
     // The old rule, (tick << 4 | n) | 1, gave the 2nd and the 3rd model of a tick the same id.
     CHECK(((1000u << 4 | 2u) | 1u) == ((1000u << 4 | 3u) | 1u));
 }
+
+TEST_CASE("model ids never repeat, even many in one millisecond, and are never 0")
+{
+    SkinModel::ModelIds ids;
+    std::vector<std::uint32_t> seen;
+    for (int i = 0; i < 64; i++) {
+        seen.push_back(ids.Next(1000));  // a twin gun's two hands, a vehicle and more, all in the same millisecond
+    }
+    std::sort(seen.begin(), seen.end());
+    CHECK(std::adjacent_find(seen.begin(), seen.end()) == seen.end());
+    for (const auto id : seen) {
+        CHECK(id != 0);
+        CHECK((id & 1) == 1);
+    }
+    // A San Andreas started later starts further on.
+    SkinModel::ModelIds later;
+    CHECK(later.Next(2000) > seen.back());
+}

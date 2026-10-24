@@ -30,13 +30,6 @@ namespace AhShitRim::ModelSender
         } state;
     }
 
-    std::uint32_t NewId()
-    {
-        static std::uint32_t last = 0;
-        last = SkinModel::NextId(last, ::GetTickCount64());
-        return last;
-    }
-
     void Set(int a_key, std::uint32_t a_id, std::vector<std::vector<std::uint8_t>> a_chunks, std::string a_label)
     {
         state.entries[a_key] = Entry{ a_id, std::move(a_chunks), std::move(a_label), true };
@@ -92,5 +85,11 @@ namespace AhShitRim::ModelSender
             state.sending = -1;
             Log(std::format("{} {:08X} sent to Skyrim in {} chunks ({} ms)", entry.label, entry.id, entry.chunks.size(), ::GetTickCount64() - state.startMs));
         }
+    }
+
+    std::uint32_t NewId()
+    {
+        static SkinModel::ModelIds ids;
+        return ids.Next(::GetTickCount64());
     }
 }
