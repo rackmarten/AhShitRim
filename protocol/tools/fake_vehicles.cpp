@@ -2,7 +2,9 @@
 // the Skyrim side, hands the player over on flat ground streamed around CJ as Skyrim's sampler does, and through the dev
 // key (' with a pick) spawns, boards and drives or flies an NRG-500, a BMX, a Hunter (its rotor, its guns), a Hydra
 // (hover, then forward flight on the nozzle keys, its missiles) and a Rhino (its shell), refuses a boat, then puts the
-// jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands. Prints what it sees and exits
+// jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands. From v23 it checks the particles'
+// sources along the way: the NRG-500's exhaust, the Hunter's rotor dust and gun flashes, the Rhino's cannon flag and the
+// jetpack's jets and flame level growing with thrust. Prints what it sees and exits
 // non-zero when a check fails. Built with the protocol tests; run it through scripts/fake-vehicles.ps1 while San
 // Andreas runs (launch-sa.ps1), with Skyrim closed.
 
@@ -41,6 +43,7 @@ namespace
         std::map<std::uint32_t, std::vector<std::uint8_t>> blobs;
         std::vector<Protocol::ProjectileEvent>             projectiles;
         int                                                 shots = 0;
+        int                                                 vehicleGunShots = 0;  // v23: flagged kShotVehicleGun
 
         std::optional<SkinModel::Model> Model(std::uint32_t a_id) const
         {
@@ -60,6 +63,11 @@ namespace
             }
             if (a_type == Protocol::MessageType::Shot) {
                 a_received.shots++;
+                if (a_size == sizeof(Protocol::ShotEvent)) {
+                    Protocol::ShotEvent e{};
+                    std::memcpy(&e, a_data, sizeof(e));
+                    a_received.vehicleGunShots += (e.flags & Protocol::kShotVehicleGun) ? 1 : 0;
+                }
                 return;
             }
             if (a_type != Protocol::MessageType::ModelChunk || a_received.assembler.Add(a_data, a_size) != SkinModel::Assembler::Result::Complete) {
@@ -121,6 +129,23 @@ namespace
             n++;
         }
         return n;
+    }
+
+    // v23: the particles' sources a body slot gives.
+    int Sources(const Protocol::BodyFx& a_fx)
+    {
+        int n = 0;
+        for (const auto& along : a_fx.along) {
+            n += along[0] != 0.0f || along[1] != 0.0f || along[2] != 0.0f ? 1 : 0;
+        }
+        return n;
+    }
+
+    void PrintFx(const char* a_name, const Protocol::BodyFx& a_fx)
+    {
+        std::printf("%s fx: %d sources, first at (%.0f, %.0f, %.0f) out (%.2f, %.2f, %.2f), gas %d, level %u, dust %u over ground %.0f, flags 0x%X\n", a_name,
+            Sources(a_fx), a_fx.at[0][0], a_fx.at[0][1], a_fx.at[0][2], a_fx.along[0][0], a_fx.along[0][1], a_fx.along[0][2], a_fx.gas, a_fx.level, a_fx.dust,
+            a_fx.ground, a_fx.flags);
     }
 }
 
@@ -255,7 +280,15 @@ int main()
         const bool in = slot >= 0 && board(name);
         find(name, bike);
         input.SetKey(Input::kDikW, true);
-        wait(3.0);
+        wait(1.5);
+        Protocol::BodyState riding{};
+        find(name, riding);
+        PrintFx(name, riding.fx);
+        // v23: a motorbike's running engine puffs from its exhaust; a bicycle has none.
+        const bool exhaust = model == 522 ? Sources(riding.fx) > 0 && riding.fx.gas > 0 : Sources(riding.fx) == 0;
+        std::printf("%s: %s\n", name, exhaust ? "exhaust as expected" : "EXHAUST WRONG");
+        failed += !exhaust;
+        wait(1.5);
         input.SetKey(Input::kDikW, false);
         find(name, moved);
         const float rode = std::hypot(moved.feet[0] - bike.feet[0], moved.feet[1] - bike.feet[1]) * Pose::kMetersPerUnit;
@@ -284,6 +317,10 @@ int main()
         input.SetKey(Input::kDikW, true);
         const bool lifted = run(15.0, [&] { return height() - ground > 8.0f; });
         find("HUNTER", flying);
+        PrintFx("HUNTER", flying.fx);
+        const bool dust = flying.fx.dust > 0 && flying.fx.ground < 0.0f;  // v23: low over the ground, its rotor raises dust
+        std::printf("HUNTER: %s\n", dust ? "rotor dust" : "NO ROTOR DUST");
+        failed += !dust;
         std::printf("HUNTER: %s, %.1f m up; hidden parts %d parked, %d flying (%s)\n", lifted ? "lifted off" : "DID NOT LIFT", height() - ground,
             Bits(parked), Bits(flying.hiddenParts), parked != flying.hiddenParts ? "the rotor changed" : "THE ROTOR DID NOT CHANGE");
         input.SetKey(Input::kDikW, false);
@@ -295,7 +332,9 @@ int main()
         input.SetAim(true);
         wait(1.5);
         input.SetAim(false);
-        std::printf("HUNTER: firing sent %zu projectiles and %d shots\n", received.projectiles.size(), received.shots);
+        std::printf("HUNTER: firing sent %zu projectiles and %d shots (%d flagged the vehicle's gun)\n", received.projectiles.size(), received.shots,
+            received.vehicleGunShots);
+        failed += received.shots > 0 && received.vehicleGunShots == 0;
         failed += !(in && lifted && parked != flying.hiddenParts && (received.projectiles.size() + received.shots) > 0);
         fresh();
     }
@@ -368,7 +407,7 @@ int main()
         input.SetFire(false);
         wait(1.0);
         const bool shell = std::any_of(received.projectiles.begin(), received.projectiles.end(), [](const Protocol::ProjectileEvent& e) {
-            return e.weaponType == 19 && e.model == 0 && e.fuseMs > 0 && e.fuseMs < 1000;
+            return e.weaponType == 19 && e.model == 0 && e.fuseMs > 0 && e.fuseMs < 1000 && (e.flags & Protocol::kProjectileCannon);
         });
         std::printf("RHINO: %s (%zu projectiles)\n", shell ? "fired a shell" : "NO SHELL", received.projectiles.size());
         failed += !(in && shell);
@@ -387,14 +426,23 @@ int main()
         input.SetDevModel(VehicleKinds::kJetpack);
         press(Input::kDikApostrophe);
         wait(1.0);
+        Protocol::BodyState resting{};
+        link.ReadGear(resting);
         const float ground = height();
         input.SetKey(Input::kDikLeftShift, true);
         const bool up = run(30.0, [&] { return height() - ground > 90.0f; });
-        input.SetKey(Input::kDikLeftShift, false);
         Protocol::BodyState gear{};
         const bool drawn = link.ReadGear(gear) && (gear.flags & Protocol::kBodyJetpack) && received.Model(gear.model);
+        input.SetKey(Input::kDikLeftShift, false);
         std::printf("jetpack: %s, %.1f m up, %s\n", up ? "flew up" : "DID NOT FLY UP", height() - ground, drawn ? "drawn" : "NOT DRAWN");
         failed += !(up && drawn);
+        // v23: both jets, pointing down, their flames at full while he thrusts, lower before.
+        PrintFx("jetpack resting", resting.fx);
+        PrintFx("jetpack thrusting", gear.fx);
+        const bool jets = Sources(gear.fx) == 2 && gear.fx.along[0][2] < -0.5f && gear.fx.along[1][2] < -0.5f && gear.fx.level > 200 &&
+                          resting.fx.level < gear.fx.level;
+        std::printf("jetpack: %s\n", jets ? "two jets, flames growing with thrust" : "JETS WRONG");
+        failed += !jets;
 
         // Back down (the jump key is San Andreas's brake: down), and off it with F standing still, as San Andreas allows.
         input.SetKey(Input::kDikSpace, true);
