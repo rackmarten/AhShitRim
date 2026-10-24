@@ -32,6 +32,7 @@ TEST_CASE("protocol v24: Skyrim's hits on CJ's vehicle")
 {
     CHECK(kProtocolVersion == 24);
     CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
+    CHECK(kPlayerGettingInOut == 0x40);
     CHECK(offsetof(BodyState, vehicleFrame) == 1980);
     CHECK(offsetof(BodyState, boxMin) == 2008);
     CHECK(offsetof(BodyState, boxMax) == 2020);

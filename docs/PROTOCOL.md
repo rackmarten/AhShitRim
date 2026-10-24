@@ -127,7 +127,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `frame` | San Andreas frame counter |
-| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations, `kPlayerOnFire` (0x20, v15): CJ burns in San Andreas, Skyrim shows flames on him |
+| 4 | `flags` | `kPlayerValid` (0x1), `kPlayerGrounded` (0x2): CJ stands on something (or sits in a vehicle), `kPlayerCrouching` (0x4): CJ crouches, Skyrim sneaks, `kPlayerInVehicle` (0x8, v6): CJ drives or rides a vehicle, `kPlayerRadioRetuning` (0x10, v7): the radio is between stations, `kPlayerOnFire` (0x20, v15): CJ burns in San Andreas, Skyrim shows flames on him, `kPlayerGettingInOut` (0x40, v24): CJ is getting into or out of a vehicle (an enter-car or leave-car task of San Andreas's is active), when nobody busts him |
 | 8 | `offset[3]` | CJ relative to where the current handover spawned him |
 | 20 | `velocity[3]` | units per second; in a vehicle the vehicle's, which Skyrim samples the ground ahead by |
 | 32 | `heading` | CJ's body |

@@ -1,6 +1,7 @@
 #include "player/Hitboxes.h"
 
 #include "link/LinkService.h"
+#include "player/Riders.h"
 #include "run_over.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
@@ -59,6 +60,8 @@ namespace AhShitRim::Hitboxes
             std::unordered_map<std::uint32_t, RE::NiPoint3>         flying;   // projectiles near it, by handle: where each was last frame
             std::unordered_set<std::uint32_t>                       counted;  // those that already hit it
             std::unordered_map<RE::FormID, RE::ATTACK_STATE_ENUM> attacks;  // each attacker's attack state last frame
+            std::vector<RE::FormID>              riding;   // CJ's passengers (Riders), for the sink: their hits are the vehicle's too
+            std::unordered_map<RE::FormID, float> riderHealth;  // each passenger's health after the last Update
             int      logged = 0;
             unsigned sent = 0, byEvent = 0, byBox = 0, bySwing = 0, stopped = 0;
         } state;
@@ -146,8 +149,15 @@ namespace AhShitRim::Hitboxes
                 auto* player = RE::PlayerCharacter::GetSingleton();
                 auto* cause = a_event->cause.get();
                 auto* attacker = cause ? cause->As<RE::Actor>() : nullptr;
-                if (!player || a_event->target.get() != player || !attacker || attacker == player) {
+                auto* target = a_event->target.get();
+                if (!player || !target || !attacker || attacker == player) {
                     return RE::BSEventNotifyControl::kContinue;
+                }
+                if (target != player) {
+                    std::lock_guard guard(state.lock);
+                    if (std::find(state.riding.begin(), state.riding.end(), target->GetFormID()) == state.riding.end()) {
+                        return RE::BSEventNotifyControl::kContinue;  // not CJ, nor one riding with him
+                    }
                 }
                 using Flag = RE::TESHitEvent::Flag;
                 auto*          source = RE::TESForm::LookupByID(a_event->source);
@@ -160,6 +170,34 @@ namespace AhShitRim::Hitboxes
                 return RE::BSEventNotifyControl::kContinue;
             }
         } hitSink;
+
+        // CJ's passengers are covered as he is (Vitals' shield): what Skyrim took off each since the last frame is given back,
+        // all of it in a closed vehicle, half on a bike's pillion.
+        void CoverRiders(const std::vector<RE::FormID>& a_riding)
+        {
+            const float share = VehicleHits::SplitOf(state.cover, VehicleHits::Attack::Melee).cj;
+            std::unordered_map<RE::FormID, float> health;
+            for (const auto id : a_riding) {
+                auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                if (!actor || actor->IsDead()) {
+                    continue;
+                }
+                auto*       values = actor->AsActorValueOwner();
+                float       now = values->GetActorValue(RE::ActorValue::kHealth);
+                const auto  last = state.riderHealth.find(id);
+                if (last != state.riderHealth.end() && now < last->second && share < 1.0f) {
+                    const float back = (last->second - now) * (1.0f - share);
+                    values->RestoreActorValue(RE::ActorValue::kHealth, back);
+                    now = values->GetActorValue(RE::ActorValue::kHealth);
+                    if (state.logged < kLogged) {
+                        state.logged++;
+                        SKSE::log::info("hitboxes: CJ's vehicle took a hit for {} ({:08X}), riding with him: {:.1f} health given back", actor->GetName(), id, back);
+                    }
+                }
+                health[id] = now;
+            }
+            state.riderHealth = std::move(health);
+        }
 
         // Every projectile near the vehicle that flew into its box since last frame (not CJ's own): a hit. In a closed
         // vehicle an arrow stops there; a spell flies on (its blast, if any, is Skyrim's).
@@ -270,6 +308,11 @@ namespace AhShitRim::Hitboxes
                 std::lock_guard guard(state.lock);
                 state.reported.clear();
             }
+            {
+                std::lock_guard guard(state.lock);
+                state.riding.clear();
+            }
+            state.riderHealth.clear();
             state.swings.clear();
             state.flying.clear();
             state.counted.clear();
@@ -313,10 +356,13 @@ namespace AhShitRim::Hitboxes
         const double now = NowSeconds();
 
         std::vector<Reported> reported;
+        const auto            riding = Riders::Riding();
         {
             std::lock_guard guard(state.lock);
             reported.swap(state.reported);
+            state.riding = riding;
         }
+        CoverRiders(riding);
         for (const auto& hit : reported) {
             auto*      attacker = RE::TESForm::LookupByID<RE::Actor>(hit.attacker);
             const auto from = attacker ? ChestOf(attacker) : Ni(state.frame.pos);

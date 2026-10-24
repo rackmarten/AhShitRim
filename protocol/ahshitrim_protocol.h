@@ -186,6 +186,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kPlayerCrouching = 0x4;  // PlayerState.flags: CJ crouches (v3); Skyrim sneaks
     inline constexpr std::uint32_t kPlayerInVehicle = 0x8;  // PlayerState.flags: CJ drives or rides a vehicle (v6)
     inline constexpr std::uint32_t kPlayerOnFire = 0x20;  // PlayerState.flags (v15): CJ burns in San Andreas; Skyrim shows flames on him
+    inline constexpr std::uint32_t kPlayerGettingInOut = 0x40;  // PlayerState.flags (v24): CJ is getting into or out of a vehicle (San Andreas's enter or leave task); no bust then
     inline constexpr std::uint32_t kPlayerRadioRetuning = 0x10;  // PlayerState.flags (v7): the radio is between stations
 
     inline constexpr std::int8_t kRadioNone = -1;  // PlayerState.radioStation (v7): no station plays

@@ -120,6 +120,8 @@ namespace AhShitRim::Police
             std::chrono::steady_clock::time_point blowAt;
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
             VehicleHits::DoorRun     doorRun;             // v24: the pursuer running to the door of CJ's stopped car
+            std::uint32_t            recalled = 0;        // the last runner called back, kept from leaving for VehicleHits::kRecallHold
+            std::chrono::steady_clock::time_point recalledAt;
             float                    steerTimer = 0.0f;
             Wanted::Point            steeredTo{ 1e9f, 1e9f };  // the offset from the player he was last told
         } state;
@@ -202,6 +204,13 @@ namespace AhShitRim::Police
 
         // ---- The door runner (v24) ----
 
+        RunOver::Build BuildOf(RE::Actor* a_actor)
+        {
+            auto*       race = a_actor->GetRace();
+            const char* id = race ? race->GetFormEditorID() : nullptr;
+            return race ? RunOver::BuildOf(id ? id : "", race->HasKeywordString("ActorTypeNPC"), race->HasKeywordString("ActorTypeDragon")) : RunOver::Build::Beast;
+        }
+
         RE::Actor* RunnerOf(std::uint32_t a_id) { return a_id ? RE::TESForm::LookupByID<RE::Actor>(a_id) : nullptr; }
 
         // He puts his weapon away and runs for the door; Steer tells him where it is.
@@ -226,6 +235,8 @@ namespace AhShitRim::Police
                 return;
             }
             const bool cleared = CallActor(actor, "ClearKeepOffsetFromActor");
+            state.recalled = a_id;  // Papyrus clears his offset later: he doesn't leave (disabled, a load's garbage) before that
+            state.recalledAt = std::chrono::steady_clock::now();
             if (a_fight && !actor->IsDead()) {
                 actor->StartCombat(a_player);
             }
@@ -421,6 +432,10 @@ namespace AhShitRim::Police
                 auto horse = it->horse.get();
                 if (it->step == 0 && !CanGo(player, actor.get())) {
                     continue;
+                }
+                if (it->step == 0 && actor && actor->GetFormID() == state.recalled &&
+                    std::chrono::duration<float>(std::chrono::steady_clock::now() - state.recalledAt).count() < VehicleHits::kRecallHold) {
+                    continue;  // the door runner, whose offset Papyrus hasn't cleared yet
                 }
                 RE::TESObjectREFR* ref = it->step < 2 ? actor.get() : horse.get();
                 if (ref) {
@@ -846,7 +861,8 @@ namespace AhShitRim::Police
         bool CheckVehicle(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, float a_delta, Wanted::Bust& a_bust)
         {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
-            a_bust = inVehicle ? Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)) : Wanted::Bust::None;
+            a_bust = inVehicle ? VehicleHits::BustNow(Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)), (a_pose->flags & Protocol::kPlayerGettingInOut) != 0)
+                               : Wanted::Bust::None;
             if (a_bust == Wanted::Bust::None || state.pursuit.Stars() == 0) {
                 state.stop.Reset();
                 EndRun(a_player, state.pursuit.Stars() > 0);
@@ -867,8 +883,8 @@ namespace AhShitRim::Police
                         if (std::abs(at.z - feet.z) < 200.0f) {
                             const float toDoor = std::hypot(at.x - target.x, at.y - target.y);
                             reach = (std::min)(reach, toDoor);
-                            if (!a_actor->IsOnMount()) {
-                                pursuers.push_back({ a_actor->GetFormID(), toDoor });  // a rider can't run for it
+                            if (VehicleHits::CanRun(BuildOf(a_actor), a_actor->IsOnMount())) {
+                                pursuers.push_back({ a_actor->GetFormID(), toDoor });  // no rider, giant or mammoth runs for it
                             }
                         }
                     }

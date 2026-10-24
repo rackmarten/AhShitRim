@@ -358,6 +358,15 @@ namespace AhShitRim::VehicleHits
     inline constexpr float kRunMax = 15.0f;      // seconds a run takes at most
     inline constexpr float kBlockFor = 15.0f;    // seconds one who gave up isn't sent again
 
+    // What the vehicle CJ is in allows a pursuer to do now: nothing while he's getting in or out, as San Andreas's cops
+    // never bust him in the middle of it (a_gettingInOut, kPlayerGettingInOut).
+    constexpr Wanted::Bust BustNow(Wanted::Bust a_bust, bool a_gettingInOut) { return a_gettingInOut ? Wanted::Bust::None : a_bust; }
+
+    // Who may run for the door: a person (no giant, mammoth, dragon or creature busts anyone), on foot.
+    constexpr bool CanRun(Build a_build, bool a_mounted) { return a_build == Build::Person && !a_mounted; }
+
+    inline constexpr float kRecallHold = 1.5f;  // seconds a recalled runner stays (isn't sent away) so his offset is cleared first
+
     struct Pursuer
     {
         std::uint32_t id = 0;

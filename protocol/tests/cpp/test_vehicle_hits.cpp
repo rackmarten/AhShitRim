@@ -304,3 +304,25 @@ TEST_CASE("door run: the spot and KeepOffsetFromActor's offset")
     CHECK(bike.x == doctest::Approx(5.0f - kBikeSide));
     CHECK(bike.y == doctest::Approx(5.0f));
 }
+
+TEST_CASE("door run: no bust while CJ gets in or out, and only people run for the door")
+{
+    // Getting off the Sanchez (or into the car), nobody busts him, as San Andreas's cops don't.
+    CHECK(BustNow(Wanted::Bust::KnockOff, true) == Wanted::Bust::None);
+    CHECK(BustNow(Wanted::Bust::Door, true) == Wanted::Bust::None);
+    CHECK(BustNow(Wanted::Bust::Door, false) == Wanted::Bust::Door);
+    CHECK(BustNow(Wanted::Bust::KnockOff, false) == Wanted::Bust::KnockOff);
+    // And the door run stops with it: the runner is called back as he would be for no stars.
+    DoorRun                     run;
+    const std::vector<Pursuer> near{ { 4, 300.0f } };
+    CHECK(run.Tick(1.0f, true, BustNow(Wanted::Bust::KnockOff, false), 0.0f, near).send == 4);
+    CHECK(run.Tick(0.1f, true, BustNow(Wanted::Bust::KnockOff, true), 0.0f, near).recall == 4);
+
+    CHECK(CanRun(Build::Person, false));
+    CHECK_FALSE(CanRun(Build::Person, true));  // a rider
+    CHECK_FALSE(CanRun(Build::Giant, false));
+    CHECK_FALSE(CanRun(Build::Mammoth, false));
+    CHECK_FALSE(CanRun(Build::Dragon, false));
+    CHECK_FALSE(CanRun(Build::Beast, false));
+    CHECK(kRecallHold > 0.0f);
+}
