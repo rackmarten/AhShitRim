@@ -1,5 +1,7 @@
 #include "player/Shouting.h"
 
+#include "player/CheatCodes.h"
+
 #include "thuum.h"
 
 #include <algorithm>
@@ -142,6 +144,18 @@ namespace AhShitRim::Shouting
                 state.variation = high->currentShoutVariation;
             }
         }
+        // WANRLTW: infinite ammo is infinite shouting. PlayerSync has seen the cooldown start this frame
+        // (that's the release), so taking it away now costs nothing but the wait.
+        if (a_cjHasPlayer && high && high->voiceRecoveryTime > 0.0f && CheatCodes::On(Cheats::SaCheat::InfiniteAmmo)) {
+            high->voiceRecoveryTime = 0.0f;
+        }
+    }
+
+    bool InProgress(RE::PlayerCharacter* a_player)
+    {
+        auto* process = a_player ? a_player->GetActorRuntimeData().currentProcess : nullptr;
+        auto* high = process ? process->high : nullptr;
+        return high && high->voiceState.get() != RE::VOICE_STATE::kNone;
     }
 
     std::uint8_t Released(RE::PlayerCharacter* a_player, float a_recovery)
