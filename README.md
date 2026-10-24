@@ -18,7 +18,26 @@ Version 0.1 takes you from the Helgen cart to the Greybeards. A sibling of [Perk
 
 You need your own copies of both games: nothing from either is in this repository or its download.
 
-<!-- Screenshots: a short gallery from docs/media/ goes here once the picks are approved. -->
+![CJ's Sandking, its radio on K-DST, in front of a stone dragon bridge at sunset](docs/media/sandking-dragon-bridge.jpg)
+
+<table>
+  <tr>
+    <td><img src="docs/media/faendal-sanchez-pillion.jpg" alt="CJ on a Sanchez dirt bike on a forest path, Faendal sitting stiffly on the pillion behind him"></td>
+    <td><img src="docs/media/hunter-river-valley.jpg" alt="A Hunter attack helicopter flying low over a river valley outside Whiterun"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Faendal rides along on the Sanchez</sub></td>
+    <td align="center"><sub>The Hunter over a river valley</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/rhino-whiterun.jpg" alt="The Rhino tank on the tundra road below Whiterun and Dragonsreach"></td>
+    <td><img src="docs/media/mission-passed-dragonsreach.jpg" alt="A letterboxed cutscene in Dragonsreach: MISSION PASSED! RESPECT + over CJ and Jarl Balgruuf, with his line as a subtitle"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>The Rhino below Whiterun</sub></td>
+    <td align="center"><sub>Before the Storm, passed</sub></td>
+  </tr>
+</table>
 
 ## Download and install
 
