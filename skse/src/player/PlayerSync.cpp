@@ -862,9 +862,19 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
-            // On foot CJ bumps into Skyrim's actors, and with fists or a melee weapon the right mouse button locks on to one.
+            // On foot CJ bumps into Skyrim's actors, and locks on to one: with fists or a melee weapon the right mouse button
+            // or a swing turns him to it, with a gun the right mouse button sends his shots at it.
             const bool onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held;
-            const auto target = LockOn::Update(a_player, cjFeet, pose.heading, onFoot && (pose.weaponFlags & Protocol::kWeaponMelee) && state.input.Aiming() && !MenuHasInput());
+            LockOn::Aim aim;
+            if (onFoot && !MenuHasInput()) {
+                aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
+                aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
+                aim.aim = state.input.Aiming();
+                aim.fire = state.input.Firing();
+                aim.heading = pose.heading;
+                aim.view = pose.viewHeading;
+            }
+            const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
             CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,

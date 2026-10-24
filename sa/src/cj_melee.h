@@ -8,9 +8,10 @@ class CVector;
 // frame after San Andreas's physics step:
 // - CJ is pushed out of each he walked into, and what of his run went into one is taken away, so he stops
 //   against a guard, a wolf or a giant instead of walking through,
-// - while he holds the right mouse button with fists or a melee weapon, Skyrim flags the one he locks on to
-//   (kProxyTarget), and from the next frame his on-foot task (CTaskSimplePlayerOnFoot::ProcessPed) turns him to
-//   face it as he stands and fights, before his blows are struck. Running, he goes where he is steered.
+// - while he holds the right mouse button with fists or a melee weapon, or swings one at someone hostile in
+//   front, Skyrim flags the one he locks on to (kProxyTarget), and from the next frame his on-foot task
+//   (CTaskSimplePlayerOnFoot::ProcessPed) turns him to face it as he stands and fights, before his blows are
+//   struck. Running, he goes where he is steered.
 // Game thread only.
 namespace AhShitRim::CjMelee
 {

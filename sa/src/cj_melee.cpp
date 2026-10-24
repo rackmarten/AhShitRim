@@ -8,7 +8,6 @@
 
 #include <plugin.h>
 
-#include <CPad.h>
 #include <CPlayerPed.h>
 #include <CTimer.h>
 #include <common.h>
@@ -95,10 +94,10 @@ namespace AhShitRim::CjMelee
                 }
             }
 
-            // The lock-on: Skyrim flags the target while the right mouse button is held; San Andreas still has to
-            // hold a melee weapon and the button (Skyrim's flag lags a frame behind letting go).
+            // The lock-on: Skyrim flags the target while the right mouse button is held, or for a swing's combo;
+            // San Andreas still has to hold a melee weapon (Skyrim's flag lags a frame behind a weapon switch).
             const auto type = static_cast<std::uint8_t>(a_ped->m_aWeapons[a_ped->m_nSelectedWepSlot].m_eWeaponType);
-            if (target && Weapons::IsMelee(type) && CPad::GetPad(0)->NewState.RightShoulder1 != 0) {
+            if (target && Weapons::IsMelee(type)) {
                 const auto capsule = CapsuleOf(*target, spawnFeet);
                 state.locked = true;
                 state.targetId = target->id;

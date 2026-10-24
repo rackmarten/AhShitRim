@@ -1,7 +1,8 @@
-// CJ on foot against Skyrim's actors (#895, on the proxy slot of run_over.h). While CJ holds fists or a melee
-// weapon and the right mouse button, Skyrim picks the actor he locks on to, as San Andreas's
-// CPlayerPed::EvaluateTarget rates them, and flags its proxy (kProxyTarget); San Andreas turns CJ to face it. And
-// on foot Skyrim sends the actors around CJ too, which San Andreas pushes him out of, so he bumps into people and
+// CJ on foot against Skyrim's actors (#895, on the proxy slot of run_over.h). Skyrim picks the actor CJ locks on
+// to, as San Andreas's CPlayerPed::EvaluateTarget rates them: with fists or a melee weapon while he holds the right
+// mouse button, or the nearest hostile in front when he swings without it, and flags its proxy (kProxyTarget) for
+// San Andreas to turn him to face it; with a gun while he aims over the shoulder, and sends his shots at it. And on
+// foot Skyrim sends the actors around CJ too, which San Andreas pushes him out of, so he bumps into people and
 // creatures instead of walking through them. Header-only and free of game types, so the protocol tests cover it.
 //
 // Distances here are metres. Skyrim's headings are radians from north, clockwise (Pose::HeadingOf); San
@@ -33,11 +34,32 @@ namespace AhShitRim::Melee
 
     // ---- The lock-on (Skyrim's side) ----
 
-    inline constexpr float kLockRange = 10.0f;     // metres: who is farther isn't locked on to
-    inline constexpr float kBreakRange = 12.0f;    // a lock breaks farther than this (a little over kLockRange, so it doesn't flicker)
-    inline constexpr float kViewAngle = 140.0f;    // degrees off CJ's facing San Andreas still rates (PLAYER_MAX_TARGET_VIEW_ANGLE)
+    inline constexpr float kViewAngle = 140.0f;      // degrees off the heading San Andreas still rates (PLAYER_MAX_TARGET_VIEW_ANGLE)
     inline constexpr float kHostilePriority = 0.8f;  // FindTargetPriority: someone out to kill or arrest the player
     inline constexpr float kOtherPriority = 0.1f;    // anyone else
+
+    // How one kind of lock-on picks and keeps its target.
+    struct Rules
+    {
+        float range = 0.0f;         // metres: who is farther isn't picked
+        float breakRange = 0.0f;    // metres: a kept target farther than this is let go (a little over range, so it doesn't flicker)
+        float pickAngle = 180.0f;   // degrees off the heading a new target may be at most
+        float keepAngle = 180.0f;   // degrees off the heading a kept one may drift before it is let go (180: never)
+        bool  hostileOnly = false;  // only someone fighting or hostile to the player
+        float keepSeconds = 0.0f;   // how long the target outlasts letting go of the button
+    };
+
+    // The right mouse button with fists or a melee weapon: as San Andreas's lock-on, anyone in front within 10 m,
+    // kept until out of reach whichever way CJ turns (San Andreas breaks a lock by range, not angle).
+    inline constexpr Rules kMeleeLock{ 10.0f, 12.0f, 140.0f, 180.0f, false, 0.0f };
+    // A punch or a swing with nobody locked on to: the nearest hostile in front within reach, kept through the combo.
+    inline constexpr Rules kSwing{ 3.0f, 4.0f, 60.0f, 180.0f, true, 0.75f };
+    // The right mouse button with a gun, aimed over the shoulder: San Andreas's pad lock-on, by where the camera looks
+    // (the mouse aims); looking well away from the target lets it go for whoever is there, or free aim.
+    inline constexpr Rules kGunLock{ 30.0f, 36.0f, 30.0f, 45.0f, false, 0.0f };
+
+    inline constexpr float kLockRange = kMeleeLock.range;
+    inline constexpr float kBreakRange = kMeleeLock.breakRange;
 
     struct Candidate
     {
@@ -46,20 +68,27 @@ namespace AhShitRim::Melee
         bool          hostile = false;  // in combat with the player or hostile to him
     };
 
-    // How San Andreas rates a target (CPlayerPed::EvaluateTarget): its priority, less the farther it is off CJ's
-    // facing (nothing at kViewAngle or more) and the farther away it is (by the fourth root, past a metre). 0 for
-    // one out of range or behind him.
-    inline float Rating(const Candidate& a_candidate, float a_heading)
+    // How far a_offset is off a_heading, degrees, 0..180.
+    inline float DegreesOff(const Vec3& a_offset, float a_heading)
     {
-        const float distance = RunOver::Length(a_candidate.offset);
-        if (!std::isfinite(distance) || distance > kLockRange) {
-            return 0.0f;
-        }
-        float off = Pose::HeadingOf(a_candidate.offset.x, a_candidate.offset.y) - a_heading;
+        float off = Pose::HeadingOf(a_offset.x, a_offset.y) - a_heading;
         while (off <= -Pose::kPi) off += 2.0f * Pose::kPi;
         while (off > Pose::kPi) off -= 2.0f * Pose::kPi;
-        float view = 1.0f - std::abs(off) * (180.0f / Pose::kPi) / kViewAngle;
-        if (!(view > 0.0f)) {
+        return std::abs(off) * (180.0f / Pose::kPi);
+    }
+
+    // How San Andreas rates a target (CPlayerPed::EvaluateTarget): its priority, less the farther it is off the
+    // heading (nothing at kViewAngle or more) and the farther away it is (by the fourth root, past a metre). 0 for
+    // one out of a_rules' range or cone, or not hostile when they want that.
+    inline float Rating(const Candidate& a_candidate, float a_heading, const Rules& a_rules = kMeleeLock)
+    {
+        const float distance = RunOver::Length(a_candidate.offset);
+        if (!std::isfinite(distance) || distance > a_rules.range || (a_rules.hostileOnly && !a_candidate.hostile)) {
+            return 0.0f;
+        }
+        const float off = DegreesOff(a_candidate.offset, a_heading);
+        float       view = 1.0f - off / kViewAngle;
+        if (!(view > 0.0f) || off > a_rules.pickAngle) {
             return 0.0f;
         }
         if (distance > 1.0f) {
@@ -69,12 +98,12 @@ namespace AhShitRim::Melee
     }
 
     // The candidates worth locking on to, best first: the indices into a_all.
-    inline std::vector<std::size_t> Ranked(std::span<const Candidate> a_all, float a_heading)
+    inline std::vector<std::size_t> Ranked(std::span<const Candidate> a_all, float a_heading, const Rules& a_rules = kMeleeLock)
     {
         std::vector<std::size_t> out;
         std::vector<float>       rating(a_all.size(), 0.0f);
         for (std::size_t i = 0; i < a_all.size(); i++) {
-            rating[i] = Rating(a_all[i], a_heading);
+            rating[i] = Rating(a_all[i], a_heading, a_rules);
             if (rating[i] > 0.0f) {
                 out.push_back(i);
             }
@@ -88,24 +117,30 @@ namespace AhShitRim::Melee
     class Lock
     {
     public:
-        // Once a frame. a_held: the right mouse button with fists or a melee weapon, on foot. a_all: who could be
-        // locked on to (alive, loaded, not a follower or a child). a_sees(i): whether CJ sees a_all[i], asked only of
-        // a new target. The target's id, 0 for none.
+        // Once a frame. a_held: the button that locks on, held. a_all: who could be locked on to (alive, loaded, not a
+        // follower or a child). a_heading: CJ's facing, or the camera's for a gun. a_sees(i): whether CJ sees
+        // a_all[i], asked only of a new target. a_seconds since the last call (for a_rules.keepSeconds). The
+        // target's id, 0 for none.
         template <class Sees>
-        std::uint32_t Update(bool a_held, std::span<const Candidate> a_all, float a_heading, Sees&& a_sees)
+        std::uint32_t Update(bool a_held, std::span<const Candidate> a_all, float a_heading, Sees&& a_sees, const Rules& a_rules = kMeleeLock,
+            float a_seconds = 0.0f)
         {
-            if (!a_held) {
+            _unheld = a_held ? 0.0f : _unheld + (std::isfinite(a_seconds) && a_seconds > 0.0f ? a_seconds : 0.0f);
+            if (!a_held && !(_target && a_rules.keepSeconds > 0.0f && _unheld <= a_rules.keepSeconds)) {
                 _target = 0;
                 return 0;
             }
             if (_target) {
                 const auto kept = std::find_if(a_all.begin(), a_all.end(), [&](const Candidate& c) { return c.id == _target; });
-                if (kept != a_all.end() && RunOver::Length(kept->offset) <= kBreakRange) {
+                if (kept != a_all.end() && RunOver::Length(kept->offset) <= a_rules.breakRange && DegreesOff(kept->offset, a_heading) <= a_rules.keepAngle) {
                     return _target;
                 }
                 _target = 0;
             }
-            for (const auto i : Ranked(a_all, a_heading)) {
+            if (!a_held) {
+                return 0;  // only a held button picks a new one
+            }
+            for (const auto i : Ranked(a_all, a_heading, a_rules)) {
                 if (a_sees(i)) {
                     _target = a_all[i].id;
                     break;
@@ -119,7 +154,36 @@ namespace AhShitRim::Melee
 
     private:
         std::uint32_t _target = 0;
+        float         _unheld = 0.0f;
     };
+
+    // ---- Shots at a locked target (Skyrim's side) ----
+
+    // Where a gun's shot goes when CJ is locked on: the head when the shot's own line (San Andreas's, through the
+    // crosshair) passes nearer it than the chest, the chest otherwise, as San Andreas's lock-on aims at the body.
+    // a_dir is a unit vector.
+    inline Vec3 AimPoint(const Vec3& a_origin, const Vec3& a_dir, const Vec3& a_head, const Vec3& a_chest)
+    {
+        if (!(std::abs(Dot(a_dir, a_dir) - 1.0f) < 0.01f)) {
+            return a_chest;
+        }
+        const auto missBy = [&](const Vec3& a_point) {
+            const Vec3  to = Sub(a_point, a_origin);
+            const float along = (std::max)(0.0f, Dot(to, a_dir));
+            return RunOver::Length(Sub(to, Scale(a_dir, along)));
+        };
+        return missBy(a_head) < missBy(a_chest) ? a_head : a_chest;
+    }
+
+    // San Andreas's lock-on marker's colour by the target's health (0..1): green when unhurt, through yellow, red
+    // near death. RGBA packed as the overlay takes it (red in the low byte), opaque.
+    inline std::uint32_t MarkerColour(float a_health)
+    {
+        const float h = std::isfinite(a_health) ? std::clamp(a_health, 0.0f, 1.0f) : 1.0f;
+        const auto  red = static_cast<std::uint32_t>(std::lround(255.0f * (std::min)(1.0f, 2.0f * (1.0f - h))));
+        const auto  green = static_cast<std::uint32_t>(std::lround(255.0f * (std::min)(1.0f, 2.0f * h)));
+        return 0xFF000000u | (green << 8) | red;
+    }
 
     // ---- The turn (San Andreas's side) ----
 

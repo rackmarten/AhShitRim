@@ -326,7 +326,7 @@ namespace AhShitRim::Protocol
 
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v23): a giant, mammoth or dragon, which stops a car like a wall
     inline constexpr std::uint8_t kProxyPerson = 0x2;  // a person (a humanoid race)
-    inline constexpr std::uint8_t kProxyTarget = 0x4;  // on foot: the one CJ locks on to (right mouse with fists or a melee weapon), whom San Andreas turns him to face
+    inline constexpr std::uint8_t kProxyTarget = 0x4;  // on foot: the one CJ locks on to with fists or a melee weapon (the right mouse button, or a swing's nearest hostile), whom San Andreas turns him to face
 
     // One of Skyrim's actors near CJ (v23): a capsule San Andreas tests his vehicle against, or on foot CJ himself.
     // Its segment ends and velocity are Skyrim's, relative to InputState.anchor.

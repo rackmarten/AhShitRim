@@ -210,3 +210,60 @@ TEST_CASE("melee: two guards side by side hold him between their pushes")
     CHECK(r.move.y < 0.0f);
     CHECK(r.velocity.y <= 0.01f);
 }
+
+TEST_CASE("melee: a swing turns CJ to the nearest hostile in front, and keeps them through the combo")
+{
+    Lock             swing;
+    const std::array all{ At(10, 0.0f, 1.0f), At(20, 1.0f, 2.0f, true), At(30, 0.0f, -1.5f, true), At(40, 0.0f, 5.0f, true) };
+    // The bystander right ahead, the hostile behind and the hostile 5 m out don't count: the one in reach in front does.
+    CHECK(swing.Update(true, all, kNorth, kSeesAll, kSwing, 0.03f) == 20);
+    // Let go between blows: kept for kSwing.keepSeconds, then gone.
+    CHECK(swing.Update(false, all, kNorth, kSeesAll, kSwing, 0.5f) == 20);
+    CHECK(swing.Update(false, all, kNorth, kSeesAll, kSwing, 0.5f) == 0);
+    // Nobody hostile in reach: no turn.
+    const std::array calm{ At(10, 0.0f, 1.0f), At(20, 3.0f, 0.5f, true) };
+    Lock             none;
+    CHECK(none.Update(true, calm, kNorth, kSeesAll, kSwing, 0.03f) == 0);
+    // Not holding, nothing new is picked even with someone in reach.
+    CHECK(none.Update(false, all, kNorth, kSeesAll, kSwing, 0.03f) == 0);
+}
+
+TEST_CASE("melee: a gun's lock follows where the camera looks")
+{
+    Lock       gun;
+    std::array all{ At(10, 0.0f, 20.0f), At(20, 20.0f, 0.0f, true), At(30, 0.0f, 40.0f, true) };
+    // Looking north: the bystander 20 m ahead (the hostile east is 90 degrees off the camera, the other past 30 m).
+    CHECK(gun.Update(true, all, kNorth, kSeesAll, kGunLock, 0.03f) == 10);
+    // Looking a little off it keeps it; looking east lets it go for the one there.
+    CHECK(gun.Update(true, all, 0.6f, kSeesAll, kGunLock, 0.03f) == 10);
+    CHECK(gun.Update(true, all, kEast, kSeesAll, kGunLock, 0.03f) == 20);
+    // Looking at nobody: free aim.
+    CHECK(gun.Update(true, all, Pose::kPi, kSeesAll, kGunLock, 0.03f) == 0);
+    // Letting go of the button ends it at once.
+    CHECK(gun.Update(true, all, kEast, kSeesAll, kGunLock, 0.03f) == 20);
+    CHECK(gun.Update(false, all, kEast, kSeesAll, kGunLock, 0.03f) == 0);
+    // The melee lock reaches 10 m, the gun's 30.
+    CHECK(Rating(At(1, 0.0f, 25.0f), kNorth, kGunLock) > 0.0f);
+    CHECK(Rating(At(1, 0.0f, 25.0f), kNorth, kMeleeLock) == 0.0f);
+}
+
+TEST_CASE("melee: a locked shot goes to the head when the crosshair is on it, else the chest")
+{
+    const Vec3 origin{ 0.0f, 0.0f, 1.5f };
+    const Vec3 head{ 0.0f, 10.0f, 1.7f };
+    const Vec3 chest{ 0.0f, 10.0f, 1.2f };
+    const auto unit = [](Vec3 v) { return Body::Normalize(v); };
+    CHECK(AimPoint(origin, unit(Sub(head, origin)), head, chest).z == 1.7f);
+    CHECK(AimPoint(origin, unit({ 0.0f, 10.0f, 0.15f }), head, chest).z == 1.7f);  // a little above the middle
+    CHECK(AimPoint(origin, unit({ 0.0f, 10.0f, -0.5f }), head, chest).z == 1.2f);
+    CHECK(AimPoint(origin, { 0.0f, 0.0f, 0.0f }, head, chest).z == 1.2f);          // no line to go by
+}
+
+TEST_CASE("melee: the marker goes from green to red as the target is hurt")
+{
+    CHECK(MarkerColour(1.0f) == 0xFF00FF00u);
+    CHECK(MarkerColour(0.5f) == 0xFF00FFFFu);  // yellow
+    CHECK(MarkerColour(0.0f) == 0xFF0000FFu);
+    CHECK(MarkerColour(2.0f) == 0xFF00FF00u);
+    CHECK(MarkerColour(std::nanf("")) == 0xFF00FF00u);
+}
