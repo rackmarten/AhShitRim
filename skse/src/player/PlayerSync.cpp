@@ -516,6 +516,7 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             state.control = Scene::Control::Cj;
             Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
+            Looting::SetHandedOver(false);
             Police::OnRelease();
             CollisionSampler::Stop();
             Activation::Clear();
@@ -590,6 +591,7 @@ namespace AhShitRim::PlayerSync
             state.control = Scene::Control::Cj;
             state.down.Reset();
             Vitals::OnTakeOver(a_player);
+            Looting::SetHandedOver(true);
             state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);

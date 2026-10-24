@@ -65,6 +65,7 @@ add_executable(protocol_tests
     tests/cpp/test_mercy.cpp
     tests/cpp/test_revive.cpp
     tests/cpp/test_shop.cpp
+    tests/cpp/test_menus.cpp
     tests/cpp/test_loot.cpp
     tests/cpp/test_rewards.cpp
     tests/cpp/test_dialogue.cpp
