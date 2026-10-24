@@ -178,8 +178,16 @@ $ini = Join-Path $realPlugins 'AhShitRim.ini'
 # The plugin reads it as narrow text, so it's in the ANSI code page (a non-ASCII folder name survives).
 # F11 screenshots go to Screenshots next to this script.
 $shots = Join-Path $Root 'Screenshots'
-$iniLines = [string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots")
 $ansi = [Text.Encoding]::Default
+# The player's own settings stay: the key layout, and whether misc quests are odd jobs (on unless set to 0).
+$oldLines = if (Test-Path $ini) { [IO.File]::ReadAllLines($ini, $ansi) } else { @() }
+$layout = $oldLines | Where-Object { $_ -match '^\s*KeyLayout\s*=' } | Select-Object -First 1
+$misc = $oldLines | Where-Object { $_ -match '^\s*MiscPassed\s*=' } | Select-Object -First 1
+$iniLines = [System.Collections.Generic.List[string]]::new()
+$iniLines.AddRange([string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots"))
+if ($layout) { $iniLines.AddRange([string[]] @('[Input]', $layout.Trim())) }
+$iniLines.AddRange([string[]] @('[Missions]', $(if ($misc) { $misc.Trim() } else { 'MiscPassed=1' })))
+$iniLines = $iniLines.ToArray()
 if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") -ne ($iniLines -join "`n")) {
     New-Item -ItemType Directory -Force $realPlugins | Out-Null
     try { [IO.File]::WriteAllLines($ini, $iniLines, $ansi) }

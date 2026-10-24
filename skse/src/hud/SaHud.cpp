@@ -592,11 +592,16 @@ namespace AhShitRim::SaHud
 
     void ShowBigMessage(BigMessage a_message, float a_seconds)
     {
-        state.bigStyle = a_message == BigMessage::MissionPassed ? &kMissionPassed : &kBigMessage;
-        state.bigUnderFade = a_message != BigMessage::MissionPassed;
+        const bool passed = a_message == BigMessage::MissionPassed || a_message == BigMessage::OddJobPassed;
+        state.bigStyle = passed ? &kMissionPassed : &kBigMessage;
+        state.bigUnderFade = !passed;
         // As San Andreas's GXT has them; M_PASSR's "~w~respect +" goes on a line of its own under the gold one, in white (each
         // drawn with an empty line for the other, so both lay out as the two lines San Andreas prints from the bottom).
-        state.big.Show(a_message == BigMessage::Wasted ? "Wasted" : a_message == BigMessage::Busted ? "Busted" : "mission passed!~n~", a_seconds);
+        state.big.Show(a_message == BigMessage::Wasted         ? "Wasted"
+                       : a_message == BigMessage::Busted       ? "Busted"
+                       : a_message == BigMessage::OddJobPassed ? "mission passed!"
+                                                               : "mission passed!~n~",
+            a_seconds);
         state.bigWhite = a_message == BigMessage::MissionPassed ? "~n~respect +" : "";
         state.big.fadeIn = 0.65f;  // San Andreas brings "wasted" up over about two thirds of a second
     }

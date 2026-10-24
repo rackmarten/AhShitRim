@@ -2,7 +2,7 @@
 
 // AhShitRim.ini next to the plugin (Skyrim runs in its own folder), written by
 // scripts/deploy-local.ps1: [SanAndreas] Path, [Input] KeyLayout; the launcher also writes
-// [Screenshots] Dir.
+// [Screenshots] Dir. Players may add their own settings, such as [Missions] MiscPassed.
 namespace AhShitRim::Ini
 {
     inline constexpr const char* kPath = "Data/SKSE/Plugins/AhShitRim.ini";

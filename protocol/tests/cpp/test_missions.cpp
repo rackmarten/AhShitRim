@@ -130,3 +130,50 @@ TEST_CASE("a cue plays for its sound and the time to load it")
     t.Clear();
     CHECK(!t.Playing());
 }
+
+TEST_CASE("a misc quest's objective completed is a candidate odd job while MiscPassed is on, never a title")
+{
+    constexpr int kHudObjectiveCompleted = 18;
+    CHECK(MiscCandidate(kHudObjectiveCompleted, kQuestMiscellaneous, true));
+    CHECK(MiscCandidate(kHudQuestComplete, kQuestMiscellaneous, true));
+    CHECK(!MiscCandidate(kHudObjectiveCompleted, kQuestMiscellaneous, false));  // MiscPassed=0: nothing
+    CHECK(!MiscCandidate(kHudQuestComplete, kQuestMiscellaneous, false));
+    CHECK(!MiscCandidate(kHudObjectiveCompleted, kMainQuest, true));  // a main quest's objective is no mission
+    CHECK(!MiscCandidate(kHudQuestStarted, kQuestMiscellaneous, true));
+    CHECK(!MiscCandidate(kHudObjectiveStarted, kQuestMiscellaneous, true));
+    CHECK(NoticeOf(kHudQuestStarted, kQuestMiscellaneous, "A Lovely Letter") == Notice::None);  // no title, so fetch quests don't spam
+}
+
+TEST_CASE("a misc quest that ends after its objective is an odd job passed, once")
+{
+    MiscWatch w;
+    bool      ended = false;
+    const auto endedIf = [&](std::uint32_t) { return ended; };
+    w.Add(0x74A83, "A Lovely Letter");  // "Deliver Faendal's letter to Camilla" completed: the quest goes on
+    CHECK(w.Tick(1.0f, endedIf).empty());
+    CHECK(w.Tick(kMiscWatchSeconds, endedIf).empty());  // it didn't end: dropped
+    CHECK(w.Watching() == 0);
+    w.Add(0x74A83, "A Lovely Letter");  // "Talk to Faendal" completed, and the script stops it
+    ended = true;
+    const auto steps = w.Tick(0.016f, endedIf);
+    REQUIRE(steps.size() == 1);
+    CHECK(steps[0].notice == Notice::OddJob);
+    CHECK(steps[0].name == "A Lovely Letter");
+    w.Add(0x74A83, "A Lovely Letter");  // once
+    CHECK(w.Tick(0.016f, endedIf).empty());
+    w.Clear();  // a game loads
+    w.Add(0x74A83, "A Lovely Letter");
+    CHECK(w.Tick(0.016f, endedIf).size() == 1);
+}
+
+TEST_CASE("an odd job passes like a mission: before waiting titles, for as long as its tune")
+{
+    CHECK(IsPassed(Notice::OddJob));
+    CHECK(SecondsOf(Notice::OddJob) == SecondsOf(Notice::Passed));
+    Sequence s;
+    s.Push(Notice::Title, "Bleak Falls Barrow");
+    s.Push(Notice::OddJob, "A Lovely Letter");
+    CHECK(s.Tick(0.016f).notice == Notice::OddJob);
+    CHECK(s.Tick(kTuneSeconds - 0.1f).notice == Notice::None);
+    CHECK(s.Tick(1.0f).name == "Bleak Falls Barrow");
+}
