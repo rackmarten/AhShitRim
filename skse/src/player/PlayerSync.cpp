@@ -1156,6 +1156,23 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
+        // F5 and F9: as in San Andreas, no saving (or loading) while wanted. Skyrim's load clearing the world with the
+        // pursuit mid-fight in it crashed in its combat code; quicksaves and quickloads wait until the heat is gone.
+        struct QuickSaveLoadHook
+        {
+            static bool thunk(RE::QuickSaveLoadHandler* a_handler, RE::InputEvent* a_event)
+            {
+                if (state.owned && a_event && !Police::QuickAllowed()) {
+                    if (auto* button = a_event->AsButtonEvent(); button && button->IsDown()) {
+                        SaHud::ShowHelp("Lose the heat first. You can't quick save or quickload while the law is after you.");
+                    }
+                    return false;
+                }
+                return original(a_handler, a_event);
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
         class InputSink : public RE::BSTEventSink<RE::InputEvent*>
         {
         public:
@@ -1361,6 +1378,8 @@ namespace AhShitRim::PlayerSync
         FavoritesHook::original = favorites.write_vfunc(0x1, FavoritesHook::thunk);
         REL::Relocation<std::uintptr_t> menuOpen{ RE::VTABLE_MenuOpenHandler[0] };
         MenuOpenHook::original = menuOpen.write_vfunc(0x1, MenuOpenHook::thunk);
+        REL::Relocation<std::uintptr_t> quick{ RE::VTABLE_QuickSaveLoadHandler[0] };
+        QuickSaveLoadHook::original = quick.write_vfunc(0x1, QuickSaveLoadHook::thunk);
         BlockHook<kMovementHook>::Install(RE::VTABLE_MovementHandler[0]);
         BlockHook<1>::Install(RE::VTABLE_LookHandler[0]);
         BlockHook<2>::Install(RE::VTABLE_SprintHandler[0]);

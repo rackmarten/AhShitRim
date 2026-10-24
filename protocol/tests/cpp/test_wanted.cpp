@@ -491,6 +491,18 @@ TEST_CASE("the leash: on CJ never pulled, a stray after a while, a lost one soon
     CHECK(kLeashGap >= 3.0f);  // a path takes a moment to build
 }
 
+TEST_CASE("no quick save or quickload while wanted or while any of ours are out")
+{
+    CHECK(QuickAllowed(0, 0, 0));
+    CHECK_FALSE(QuickAllowed(6, 7, 0));   // F9 at 6 stars with the force out: the crash
+    CHECK_FALSE(QuickAllowed(1, 0, 0));   // wanted, nobody spawned yet
+    CHECK_FALSE(QuickAllowed(0, 0, 12));  // ASNAEB just sent twelve off: not until they're gone
+    CHECK_FALSE(QuickAllowed(0, 3, 0));
+    // ASNAEB, LJSPQK, AEZAKMI, then F9: AEZAKMI clears the stars and sends ours off; F9 waits until they're gone.
+    CHECK_FALSE(QuickAllowed(0, 0, 9));
+    CHECK(QuickAllowed(0, 0, 0));
+}
+
 TEST_CASE("ours are one side: the hold's guards' factions, their own left, the crime faction always")
 {
     const std::vector<std::uint32_t> guards = { 0x10, 0x11, 0x12 };  // say GuardFaction, IsGuardFaction, the hold's guards

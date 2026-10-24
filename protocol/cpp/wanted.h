@@ -511,6 +511,13 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // ---- Quick save and quickload ----
+
+    // As in San Andreas, no saving while wanted: no quick save or quickload while stars show or any of ours are still
+    // out (fighting, or leaving). Skyrim's load clears the world with ours mid-fight in it, and its combat code crashed
+    // on them (SkyrimSE.exe+01DCDE4, a quickload at 6 stars). a_ours spawned and alive, a_leaving still to be taken out.
+    constexpr bool QuickAllowed(int a_stars, int a_ours, int a_leaving) { return a_stars <= 0 && a_ours <= 0 && a_leaving <= 0; }
+
     // ---- One side ----
 
     // Every one of ours (the guards, captain, wizards and soldiers, the giants, the mammoth, the dragon) is enlisted in the

@@ -107,6 +107,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars.
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
+- As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
 - Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5.
 - In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
 - Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard ends the stars too.
@@ -167,7 +168,7 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 - **Guns**: bullet holes leave no decal. A boss's gun reward comes again if you load a save from before it and kill the boss again.
 - **Explosives**: with four or five Molotovs burning at once the later ones' outer flames are silent and don't set CJ alight (Skyrim's flames and damage still work). The spray can and extinguisher do nothing. Rockets leave no smoke trail, and the heat seeker's homing is our own. Satchels are dropped at a load door or F10. Locks only a key opens stay locked.
 - **Memory**: Skyrim keeps every vehicle model it was sent until it quits (a few MB each), so spawning dozens of vehicles in one session uses up memory.
-<!-- Add the quick-load (F9) at high stars here once its fix lands: what it ends up doing (blocked while wanted, or fixed). -->
+- **Saving while wanted**: as in San Andreas, F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about. Lose the stars, or ASNAEB, then save.
 
 Found something else? Open an issue with what you did, what you expected, and both logs: `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`) and `scripts\AhShitRim.log` in your San Andreas folder.
 
