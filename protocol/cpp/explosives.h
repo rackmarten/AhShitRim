@@ -477,14 +477,16 @@ namespace AhShitRim::Explosives
     }
 
     inline constexpr std::uint16_t kModelHydra = 520;
+    inline constexpr std::uint16_t kModelHunter = 425;
 
-    // Whether Skyrim's lock steers the rockets CJ launches (v23): the heat seeker in his hands on foot, the Hydra in
-    // a vehicle (its rockets, not the Hunter's). The Hydra's own lock (R1 held, CVehicle::GetPlaneWeaponFiringStatus)
-    // looks for San Andreas's vehicles, so it never locks and fires plain rockets: Skyrim's lock, aimed while the
-    // handbrake key is held, steers them instead.
+    // Whether Skyrim's lock steers the rockets CJ launches (v23): the heat seeker in his hands on foot, the Hydra's or
+    // the Hunter's in a vehicle. The Hydra's own lock (R1 held, CVehicle::GetPlaneWeaponFiringStatus) looks for San
+    // Andreas's vehicles, so it never locks and fires plain rockets: Skyrim's lock, aimed while the handbrake key is
+    // held, steers them instead. San Andreas's Hunter has no lock at all (CVehicle::SelectPlaneWeapon gives it double
+    // rockets, never lock-on ones); ours gets the Hydra's on purpose, so its rockets home once locked.
     constexpr bool SeeksHeat(std::uint8_t a_cjWeapon, std::uint16_t a_vehicleModel)
     {
-        return a_vehicleModel ? a_vehicleModel == kModelHydra : a_cjWeapon == Weapons::RocketLauncherHs;
+        return a_vehicleModel ? a_vehicleModel == kModelHydra || a_vehicleModel == kModelHunter : a_cjWeapon == Weapons::RocketLauncherHs;
     }
 
     inline constexpr float kHsReach = 250.0f;         // metres: San Andreas's aim line is this long

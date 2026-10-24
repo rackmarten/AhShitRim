@@ -45,7 +45,7 @@ namespace AhShitRim::Projectiles
     // Every frame San Andreas has the player, before ModelView::EndFrame: the projectiles of a_handover,
     // relative to a_anchor, a_delta seconds on. a_cjBurning: CJ's feet while San Andreas has him on fire.
     // a_cjWeapon: the weapon in his hands, a_aiming whether he aims it. a_vehicleModel (v23): the vehicle he's in, 0 on
-    // foot; in the Hydra a_aiming is its lock-on held instead (Explosives::SeeksHeat).
+    // foot; in the Hydra or the Hunter a_aiming is the lock-on held instead (Explosives::SeeksHeat).
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
         std::uint8_t a_cjWeapon, bool a_aiming, std::uint16_t a_vehicleModel);
 
