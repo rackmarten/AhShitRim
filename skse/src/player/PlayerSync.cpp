@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
+#include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
@@ -958,6 +959,7 @@ namespace AhShitRim::PlayerSync
                 if (!state.owned) {
                     StreamTest::Update(a_player, a_delta);
                 }
+                LoadTest::Update(a_player, a_delta);
                 Arms::Update();
                 CheatCodes::Update();
                 Police::Sweep();
@@ -1306,6 +1308,30 @@ namespace AhShitRim::PlayerSync
         Release("game loading", true);
         CheatCodes::OnGameLoad();
         Police::OnGameLoad();
+    }
+
+    bool DebugOwned() { return state.owned; }
+
+    void DebugToggle()
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (state.owned) {
+            Release("the load test");
+        } else if (player) {
+            TakeOver(player);
+        }
+    }
+
+    void DebugType(const char* a_code)
+    {
+        for (const char* c = a_code; c && *c; ++c) {
+            for (std::uint32_t dik = 0; dik < 0x100; dik++) {
+                if (Cheats::LetterOf(dik) == *c) {
+                    TypeCheat(dik);
+                    break;
+                }
+            }
+        }
     }
 
     void Snapshot(Cosave::Record& a_out)
