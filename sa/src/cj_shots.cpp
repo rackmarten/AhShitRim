@@ -1,6 +1,7 @@
 #include "cj_shots.h"
 
 #include "aim.h"
+#include "cj_body.h"
 #include "explosives.h"
 #include "log.h"
 #include "pose.h"
@@ -177,9 +178,9 @@ namespace AhShitRim::CjShots
 
         // Each line FireInstantHit tests, with San Andreas's spread in it: a bullet, or a shotgun's shot (one line;
         // Skyrim fans it out into the pellets). From the hip (no aim camera, no target) the shot goes straight ahead
-        // of him, level (Aim::LineOf): a gun aimed with the arm could fire along the hand San Andreas's hidden arm IK
-        // left pointing at the sky. Aiming, a bullet's spread is eased in: the first of a burst goes down the
-        // crosshair (San Andreas's line without its spread runs from the camera's aim through the same start).
+        // of his chest, level (Aim::LineOf, CjBody::HipFacing): a gun aimed with the arm could fire along the hand
+        // San Andreas's hidden arm IK left pointing at the sky. Aiming, a bullet's spread is eased in: the first of a
+        // burst goes down the crosshair (San Andreas's line without its spread runs from the camera's aim through the same start).
         void __cdecl HandleGunShotHook(const CVector* a_start, const CVector* a_end)
         {
             // The guns of the vehicle CJ drives are his too (v19: the Hunter's, CVehicle::FireFixedMachineGuns, fired with the
@@ -201,9 +202,7 @@ namespace AhShitRim::CjShots
                         mode, state.targeted ? "at a target" : "no target"));
                 }
                 if (line == Aim::Line::Ahead && length > 1e-3f) {
-                    const auto& forward = ped->GetForward();
-                    const auto  ahead = Aim::Ahead({ forward.x, forward.y, forward.z });
-                    along = CVector(ahead.x, ahead.y, ahead.z) * length;
+                    along = CjBody::HipFacing(static_cast<CPlayerPed*>(ped)) * length;
                 } else if (!shotgun && length > 1e-3f && line == Aim::Line::Crosshair) {
                     CVector source, target;
                     TheCamera.Find3rdPersonCamTargetVector(length, *a_start, &source, &target);

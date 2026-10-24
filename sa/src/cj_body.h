@@ -29,6 +29,10 @@ namespace AhShitRim::CjBody
     // was put there.
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame);
 
+    // Where his shots from the hip go and his arms point: straight ahead of his chest, level (Aim::ChestFacing),
+    // from his bones as last posed (his heading before they are).
+    CVector HipFacing(CPlayerPed* a_ped);
+
     // CJ's pelvis joint relative to his position as of the last Update (metres); false before one.
     bool Pelvis(CVector& a_offset);
 

@@ -46,6 +46,48 @@ TEST_CASE("ahead is his facing, level")
     CHECK(Length(none) == doctest::Approx(1.0f));
 }
 
+TEST_CASE("ahead is where his chest faces, square to his shoulders, whatever his heading")
+{
+    // Shoulders across X, the right one east: he faces north, even with his heading 50 degrees off.
+    const Vec3 right{ 0.2f, 0.0f, 1.4f }, left{ -0.2f, 0.0f, 1.42f };
+    const Vec3 facing = ChestFacing(right, left, { 0.77f, 0.64f, 0.0f });
+    CHECK(facing.x == doctest::Approx(0.0f));
+    CHECK(facing.y == doctest::Approx(1.0f));
+    CHECK(facing.z == 0.0f);
+    // Turned: shoulders along Y, the right one south, he faces east.
+    const Vec3 east = ChestFacing({ 0.0f, -0.2f, 1.4f }, { 0.0f, 0.2f, 1.4f }, { 0.0f, 1.0f, 0.0f });
+    CHECK(east.x == doctest::Approx(1.0f));
+    CHECK(east.y == doctest::Approx(0.0f));
+    // One shoulder above the other: his heading.
+    const Vec3 lying = ChestFacing({ 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.6f }, { 1.0f, 0.0f, 0.0f });
+    CHECK(lying.x == doctest::Approx(1.0f));
+}
+
+TEST_CASE("from the hip twin guns mirror each other, meeting ahead of his chest")
+{
+    const Vec3 right{ 0.2f, 0.0f, 1.4f }, left{ -0.2f, 0.0f, 1.4f };
+    const Vec3 facing = ChestFacing(right, left, { 1.0f, 0.0f, 0.0f });
+    const Vec3 point = HipAimPoint(right, left, facing);
+    CHECK(point.x == doctest::Approx(0.0f));
+    CHECK(point.y == doctest::Approx(kHipAimDistance));
+    CHECK(point.z == doctest::Approx(1.4f));
+    // Each arm's line: mirrored about his middle, both turned in, not the same way side by side.
+    const Vec3 sideRight{ facing.y, -facing.x, 0.0f };
+    const Vec3 rightLine = ArmLine(facing, sideRight, Body::Sub(point, right), false);
+    const Vec3 leftLine = ArmLine(facing, sideRight, Body::Sub(point, left), true);
+    CHECK(rightLine.x < 0.0f);
+    CHECK(leftLine.x > 0.0f);
+    CHECK(rightLine.x == doctest::Approx(-leftLine.x));
+    CHECK(rightLine.y == doctest::Approx(leftLine.y));
+    CHECK(rightLine.z == doctest::Approx(leftLine.z));
+    // And so are the elbows.
+    const Arm rightArm = ReachAlong(right, rightLine, 0.28f, 0.26f, sideRight);
+    const Arm leftArm = ReachAlong(left, leftLine, 0.28f, 0.26f, Body::Scale(sideRight, -1.0f));
+    CHECK(rightArm.elbow.x == doctest::Approx(-leftArm.elbow.x));
+    CHECK(rightArm.elbow.y == doctest::Approx(leftArm.elbow.y));
+    CHECK(rightArm.hand.x == doctest::Approx(-leftArm.hand.x));
+}
+
 TEST_CASE("an arm keeps to its own side of his body")
 {
     const Vec3 forward{ 0.0f, 1.0f, 0.0f }, right{ 1.0f, 0.0f, 0.0f };
