@@ -1,5 +1,6 @@
 #include "cj_body.h"
 
+#include "aim.h"
 #include "cj_gear.h"
 #include "log.h"
 #include "model_sender.h"
@@ -144,39 +145,16 @@ namespace AhShitRim::CjBody
             }
         }
 
-        constexpr float kArmAcross = 0.26f;  // sin 15 degrees: how far an arm reaches across his front
-
-        // The line an arm aiming along a_wanted takes: kept on its own side of his body (the right arm from
-        // a bit left of straight ahead round to his right, the left arm the other way), so aiming across him
-        // or behind him the arm stops and the wrist turns the rest of the way.
-        CVector ArmLine(CPlayerPed* a_ped, const CVector& a_wanted, bool a_left)
-        {
-            CVector forward = a_ped->GetForward(), right = a_ped->GetRight();
-            forward.z = right.z = 0.0f;
-            const float horizontal = std::hypot(a_wanted.x, a_wanted.y);
-            if (forward.Magnitude() < 1e-3f || right.Magnitude() < 1e-3f || horizontal < 1e-3f) {
-                return a_wanted;
-            }
-            forward.Normalize();
-            right.Normalize();
-            const float side = a_left ? -1.0f : 1.0f;
-            const float ahead = (a_wanted.x * forward.x + a_wanted.y * forward.y) / horizontal;
-            const float out = side * (a_wanted.x * right.x + a_wanted.y * right.y) / horizontal;
-            if (out >= -kArmAcross && ahead >= 0.0f) {
-                return a_wanted;
-            }
-            // Across his body or behind him: as far across as the arm goes, at the same height.
-            const float   across = ahead >= 0.0f ? -kArmAcross : (out >= 0.0f ? 1.0f : -kArmAcross);
-            const float   straight = std::sqrt((std::max)(0.0f, 1.0f - across * across));
-            const CVector flat = forward * straight + right * (side * across);
-            return CVector(flat.x * horizontal, flat.y * horizontal, a_wanted.z);
-        }
+        CVector Vector(const Pose::Vec3& a_v) { return CVector(a_v.x, a_v.y, a_v.z); }
+        Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
 
         // San Andreas points a one-handed gun with its arm IK (IKChainManager_c), which hidden leaves the arm
         // half raised and the gun pointing at the sky. So while he uses the gun (aiming or firing) the arm is
-        // posed here as San Andreas's pistol stance looks: upper arm and forearm straight along the line from
-        // the shoulder to the aim point, then the hand turned so the barrel (the weapon's fire offset on the
-        // hand, as the weapon is put on it) points there too. Only the pose: shots go where San Andreas fires them.
+        // posed here as San Andreas's pistol stance looks (Aim::ReachAlong): the hand out on the line from the
+        // shoulder to the aim point, the elbow slightly bent below it, then the hand turned so the barrel (its
+        // X axis, the weapon's model sits on the hand as it is) points from the muzzle at the aim point. Aiming,
+        // that is where San Andreas's crosshair aims; from the hip, straight ahead of him and level from each
+        // shoulder, where his shots go (Aim::LineOf).
         void AimArms(CPlayerPed* a_ped, RpHAnimHierarchy* a_hierarchy, RwMatrix* a_matrices)
         {
             const auto& cam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
@@ -190,15 +168,14 @@ namespace AhShitRim::CjBody
             if (!info || !info->m_nFlags.bAimWithArm) {
                 return;
             }
-            // Free aim: where San Andreas's crosshair aims. Firing without the aim camera: ahead of him.
-            CVector source, target;
+            CVector source, crosshair;
             if (aiming) {
-                TheCamera.Find3rdPersonCamTargetVector(20.0f, a_ped->GetPosition() + CVector(0.0f, 0.0f, 0.7f), &source, &target);
-            } else {
-                target = a_ped->GetPosition() + a_ped->GetForward() * 20.0f + CVector(0.0f, 0.0f, 0.5f);
+                TheCamera.Find3rdPersonCamTargetVector(20.0f, a_ped->GetPosition() + CVector(0.0f, 0.0f, 0.7f), &source, &crosshair);
             }
-            const CVector offset(info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z);
-            const auto    parents = ParentsOf(a_hierarchy);
+            const Pose::Vec3 forward = Vec(a_ped->GetForward()), right = Vec(a_ped->GetRight());
+            const CVector    ahead = Vector(Aim::Ahead(forward));
+            const CVector    offset(info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z);
+            const auto       parents = ParentsOf(a_hierarchy);
             for (int arm = 0; arm < (info->m_nFlags.bTwinPistol ? 2 : 1); ++arm) {
                 const int upper = IndexOf(a_hierarchy, arm == 0 ? kBoneRightUpperArm : kBoneLeftUpperArm);
                 const int fore = IndexOf(a_hierarchy, arm == 0 ? kBoneRightForeArm : kBoneLeftForeArm);
@@ -207,16 +184,20 @@ namespace AhShitRim::CjBody
                     continue;
                 }
                 const CVector shoulder = Pos(a_matrices[upper]);
-                const CVector wanted = ArmLine(a_ped, target - shoulder, arm == 1);
-                // The upper arm along the line, then the forearm, then the barrel at the target itself.
-                Turn(a_hierarchy, parents, a_matrices, upper, shoulder, Pos(a_matrices[fore]) - shoulder, wanted);
+                const CVector target = aiming ? crosshair : shoulder + ahead * 20.0f;
+                const auto    line = Aim::ArmLine(forward, right, Vec(target - shoulder), arm == 1);
+                const auto    reach = Aim::ReachAlong(Vec(shoulder), line, (Pos(a_matrices[fore]) - shoulder).Magnitude(),
+                       (Pos(a_matrices[hand]) - Pos(a_matrices[fore])).Magnitude(), arm == 1 ? Body::Scale(right, -1.0f) : right);
+                // The upper arm to the elbow, the forearm to the hand, then the barrel at the target itself.
+                Turn(a_hierarchy, parents, a_matrices, upper, shoulder, Pos(a_matrices[fore]) - shoulder, Vector(reach.elbow) - shoulder);
                 const CVector elbow = Pos(a_matrices[fore]);
-                Turn(a_hierarchy, parents, a_matrices, fore, elbow, Pos(a_matrices[hand]) - elbow, wanted);
-                // The left hand's weapon is turned over about its X axis (RenderWeaponPedsForPC).
+                Turn(a_hierarchy, parents, a_matrices, fore, elbow, Pos(a_matrices[hand]) - elbow, Vector(reach.hand) - elbow);
+                // The left hand's weapon is turned over about its X axis (RenderWeaponPedsForPC), which leaves the barrel along X.
                 const CVector   fire = arm == 0 ? offset : CVector(offset.x, -offset.y, -offset.z);
                 const RwMatrix& h = a_matrices[hand];
-                const CVector   barrel = CVector(h.right.x, h.right.y, h.right.z) * fire.x + CVector(h.up.x, h.up.y, h.up.z) * fire.y + CVector(h.at.x, h.at.y, h.at.z) * fire.z;
-                Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), barrel, target - Pos(h));
+                const CVector   axis(h.right.x, h.right.y, h.right.z);
+                const CVector   muzzle = Pos(h) + axis * fire.x + CVector(h.up.x, h.up.y, h.up.z) * fire.y + CVector(h.at.x, h.at.y, h.at.z) * fire.z;
+                Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), axis, Vector(Aim::BarrelLine(Vec(muzzle), Vec(target))));
             }
         }
 
@@ -407,8 +388,6 @@ namespace AhShitRim::CjBody
             Log(std::format("body: CJ's model is {:08X}, {} chunks", state.model, chunkCount));
             return true;
         }
-
-        Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
 
         // Milliseconds since the first frame on the high-resolution clock (GetTickCount ticks in 16 ms steps, too coarse to
         // interpolate 30 frames a second by).

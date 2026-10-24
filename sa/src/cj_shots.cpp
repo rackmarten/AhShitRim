@@ -1,5 +1,6 @@
 #include "cj_shots.h"
 
+#include "aim.h"
 #include "explosives.h"
 #include "log.h"
 #include "pose.h"
@@ -73,12 +74,14 @@ namespace AhShitRim::CjShots
             std::uint64_t          lastBlowMs = 0;
             std::set<std::uint8_t> loggedWeapons;
             std::set<int>          loggedCombos;
+            std::set<Aim::Line>    loggedLines;
             unsigned               sent = 0;
             unsigned               dropped = 0;
             std::uint32_t          bullets = 0;  // ever sent, for the pose's shots under infinite ammo
             std::uint64_t          summaryMs = 0;
             CWeapon*               firing = nullptr;  // FireInstantHit runs for this weapon
             CEntity*               firedBy = nullptr;
+            bool                   targeted = false;  // and San Andreas gave it a target (a lock-on)
         } state;
 
         bool IsCj(const void* a_entity)
@@ -152,11 +155,14 @@ namespace AhShitRim::CjShots
         {
             auto* const outerWeapon = state.firing;
             auto* const outerBy = state.firedBy;
+            const bool  outerTargeted = state.targeted;
             state.firing = a_weapon;
             state.firedBy = a_firedBy;
+            state.targeted = a_target || a_targetPos;
             const bool fired = g_fireInstantHit.thiscall<bool>(a_weapon, a_firedBy, a_origin, a_muzzle, a_target, a_targetPos, a_driveBy, a_arg6, a_arg7);
             state.firing = outerWeapon;
             state.firedBy = outerBy;
+            state.targeted = outerTargeted;
             return fired;
         }
 
@@ -170,7 +176,9 @@ namespace AhShitRim::CjShots
         }
 
         // Each line FireInstantHit tests, with San Andreas's spread in it: a bullet, or a shotgun's shot (one line;
-        // Skyrim fans it out into the pellets). A bullet's spread is eased in: the first of a burst goes down the
+        // Skyrim fans it out into the pellets). From the hip (no aim camera, no target) the shot goes straight ahead
+        // of him, level (Aim::LineOf): a gun aimed with the arm could fire along the hand San Andreas's hidden arm IK
+        // left pointing at the sky. Aiming, a bullet's spread is eased in: the first of a burst goes down the
         // crosshair (San Andreas's line without its spread runs from the camera's aim through the same start).
         void __cdecl HandleGunShotHook(const CVector* a_start, const CVector* a_end)
         {
@@ -184,19 +192,31 @@ namespace AhShitRim::CjShots
                 const bool shotgun = type == WEAPONTYPE_SHOTGUN || type == WEAPONTYPE_SAWNOFF || type == WEAPONTYPE_SPAS12;
                 CVector    along = *a_end - *a_start;
                 const float length = along.Magnitude();
-                if (!shotgun && length > 1e-3f && TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode == MODE_AIMWEAPON) {
+                auto* const ped = static_cast<CPed*>(state.firedBy);
+                const auto  mode = static_cast<std::uint8_t>(TheCamera.m_aCams[TheCamera.m_nActiveCam].m_nMode);
+                const auto  line = Aim::LineOf(mode, !ped->bInVehicle, state.targeted);
+                if (state.loggedLines.insert(line).second) {
+                    Log(std::format("shots: the first of CJ's shots {} (camera 0x{:02X}, {})", line == Aim::Line::Ahead ? "from the hip goes ahead, level"
+                            : line == Aim::Line::Crosshair ? "aimed goes through the crosshair" : "goes as San Andreas fired it",
+                        mode, state.targeted ? "at a target" : "no target"));
+                }
+                if (line == Aim::Line::Ahead && length > 1e-3f) {
+                    const auto& forward = ped->GetForward();
+                    const auto  ahead = Aim::Ahead({ forward.x, forward.y, forward.z });
+                    along = CVector(ahead.x, ahead.y, ahead.z) * length;
+                } else if (!shotgun && length > 1e-3f && line == Aim::Line::Crosshair) {
                     CVector source, target;
                     TheCamera.Find3rdPersonCamTargetVector(length, *a_start, &source, &target);
                     CVector aim = target - source;
                     if (aim.Magnitude() > 1e-3f) {
                         aim.Normalize();
-                        CVector line = along;
-                        line.Normalize();
-                        const float kept = SpreadKept(static_cast<CPed*>(state.firedBy));
-                        along = (aim + (line - aim) * kept) * length;
+                        CVector fired = along;
+                        fired.Normalize();
+                        const float kept = SpreadKept(ped);
+                        along = (aim + (fired - aim) * kept) * length;
                     }
                 }
-                SendBullet(static_cast<CPed*>(state.firedBy), type, *a_start, along, shotgun ? Protocol::kShotSpread : 0);
+                SendBullet(ped, type, *a_start, along, shotgun ? Protocol::kShotSpread : 0);
             }
             g_handleGunShot(a_start, a_end);
         }

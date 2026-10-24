@@ -52,6 +52,7 @@ add_executable(protocol_tests
     tests/cpp/test_wasted.cpp
     tests/cpp/test_cosave.cpp
     tests/cpp/test_weapons.cpp
+    tests/cpp/test_aim.cpp
     tests/cpp/test_img.cpp
     tests/cpp/test_flash.cpp
     tests/cpp/test_damage.cpp
