@@ -216,7 +216,9 @@ namespace AhShitRim::Audio
         const bool         retuning = inVehicle && (a_pose->flags & Protocol::kPlayerRadioRetuning) != 0;
         if (station != state.station || retuning != state.retuning) {
             if (const auto name = Radio::StationName(station); !name.empty() && inVehicle) {
-                SaHud::ShowRadioStation(std::string(name), retuning);
+                // Sweetroll FM with none of its tracks installed (0.1 ships without them) says so on the dial.
+                const bool offAir = station == Radio::kSweetroll && state.sweetroll.Size() == 0;
+                SaHud::ShowRadioStation(offAir ? std::string(name) + " - off air" : std::string(name), retuning);
             }
             if (station != state.station) {
                 StopTrack();
