@@ -270,6 +270,14 @@ namespace AhShitRim::Input
             _lineKind = a_kind;
         }
 
+        // CJ talking on his own (v24, protocol/cpp/situations.h): what Skyrim saw that may have him say a
+        // line. San Andreas decides whether he does.
+        void AddStealthKill() { _stealthKillCount++; }
+        void AddCash() { _cashCount++; }
+        void AddShopBuy() { _shopBuyCount++; }
+        void AddShopLeave() { _shopLeaveCount++; }
+        void SetHostileNear(bool a_near) { _hostileNear = a_near; }
+
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
         {
@@ -299,6 +307,13 @@ namespace AhShitRim::Input
             s.swearCount = _swearCount;
             s.lineCount = _lineCount;
             s.lineKind = _lineKind;
+            s.stealthKillCount = _stealthKillCount;
+            s.cashCount = _cashCount;
+            s.shopBuyCount = _shopBuyCount;
+            s.shopLeaveCount = _shopLeaveCount;
+            if (a_ownsPlayer && _hostileNear) {
+                s.flags |= Protocol::kInputHostileNear;
+            }
             if (!a_live) {
                 return s;
             }
@@ -361,6 +376,11 @@ namespace AhShitRim::Input
         std::uint16_t _swearCount = 0;
         std::uint16_t _lineCount = 0;
         std::uint8_t  _lineKind = 0;
+        std::uint16_t _stealthKillCount = 0;
+        std::uint16_t _cashCount = 0;
+        std::uint16_t _shopBuyCount = 0;
+        std::uint16_t _shopLeaveCount = 0;
+        bool          _hostileNear = false;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

@@ -2,16 +2,20 @@
 // protocol/cpp/voice_lines.h: the keys' between its "picks" markers, the dialogue categories' (CJ's
 // answers in Skyrim's conversations) between its "dialogue picks" markers, and the shouts' (his
 // Thu'um, one pick list per shout and word count, "shout.<key>.<words>", and "shout.generic") between
-// its "shout picks" markers. A dialogue category with no picks gets its defaults: CJ's calm lines (the
+// its "shout picks" markers, and the situations' (CJ talking on his own, "situation.<key>") between its
+// "situation picks" markers. A dialogue category with no picks gets its defaults: CJ's calm lines (the
 // CR and CR2 voices) of the San Andreas speech contexts nearest it, from ply-speech.json; the generic
-// shout pool with none gets his angry fight lines. The shouts come from protocol/cpp/thuum.h's
-// kShouts. Rebuild afterwards.
+// shout pool with none gets his angry fight lines; a situation with none is left empty (San Andreas
+// picks) unless San Andreas has no pick of CJ's for it, and then holds his calm lines (CR, CR2) of that
+// context. The shouts come from protocol/cpp/thuum.h's kShouts, the situations from
+// protocol/cpp/situations.h's kTriggers. Rebuild afterwards.
 //
 // Usage: node scripts/voice-picker/apply.mjs [path/to/voice-picks.json]
-//        node scripts/voice-picker/apply.mjs --defaults            the dialogue and shout blocks, all defaults
-//        node scripts/voice-picker/apply.mjs --dialogue-defaults   only the dialogue block, all defaults
+//        node scripts/voice-picker/apply.mjs --defaults             the dialogue, shout and situation blocks, all defaults
+//        node scripts/voice-picker/apply.mjs --dialogue-defaults    only the dialogue block, all defaults
+//        node scripts/voice-picker/apply.mjs --situation-defaults   only the situation block, all defaults
 // Without a path it reads voice-picks.json from your Downloads folder. A file with no dialogue (or no
-// shout) picks leaves that block as it is.
+// shout, or no situation) picks leaves that block as it is.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -42,6 +46,15 @@ function shouts() {
     const text = fs.readFileSync(path.join(repo, 'protocol', 'cpp', 'thuum.h'), 'utf8');
     return [...text.matchAll(/Shout\{ "([^"]+)", 0x([0-9A-Fa-f]+), "([^"]+)", "([^"]+)" \}/g)].map(m => ({ file: m[1], formId: m[2], key: m[3], name: m[4] }));
 }
+
+// The situation table, from situations.h (one Info{ key, name, context, chance, repeat, defaults } per line).
+function situations() {
+    const text = fs.readFileSync(path.join(repo, 'protocol', 'cpp', 'situations.h'), 'utf8');
+    return [...text.matchAll(/Info\{ "([^"]+)", "([^"]+)", \d+, [^,]+, [^,]+, "([^"]*)" \}/g)].map(m => ({ key: m[1], name: m[2], defaults: m[3] }));
+}
+
+// "pull-gun" -> "kPullGunLines", its array in voice_lines.h.
+const situationArray = key => `k${key.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join('')}Lines`;
 
 function contextLines(names, voices = kDefaultVoices) {
     const lines = [];
@@ -92,7 +105,9 @@ function replaceBlock(text, begin, end, body) {
 }
 
 const dialogueDefaults = process.argv.includes('--dialogue-defaults');
-const defaultsOnly = dialogueDefaults || process.argv.includes('--defaults');
+const situationDefaults = process.argv.includes('--situation-defaults');
+const allDefaults = process.argv.includes('--defaults');
+const defaultsOnly = dialogueDefaults || situationDefaults || allDefaults;
 const file = process.argv.slice(2).find(a => !a.startsWith('--')) ?? path.join(os.homedir(), 'Downloads', 'voice-picks.json');
 const picks = defaultsOnly ? {} : JSON.parse(fs.readFileSync(file, 'utf8'));
 let text = fs.readFileSync(header, 'utf8');
@@ -105,17 +120,28 @@ for (const key of Object.keys(picks).filter(k => k.startsWith('shout.') && k !==
     const [, shout, words] = key.split('.');
     if (!shouts().some(s => s.key === shout) || !['1', '2', '3'].includes(words)) throw new Error(`no such shout column in thuum.h: ${key}`);
 }
-if (defaultsOnly || Object.keys(kDialogue).some(c => picks[c]?.length)) {
+if ((defaultsOnly && !situationDefaults) || Object.keys(kDialogue).some(c => picks[c]?.length)) {
     const body = Object.entries(kDialogue).map(([c, [name, contexts]]) => array(name, picks[c]?.length ? picks[c] : contextLines(contexts))).join('');
     text = replaceBlock(text, '    // --- dialogue picks (scripts/voice-picker/apply.mjs) ---\n', '    // --- end of dialogue picks ---\n', body);
     console.log('dialogue lines written: ' + Object.keys(kDialogue).map(c => `${c} ${picks[c]?.length ? 'picked' : 'defaults'}`).join(', '));
 }
-if ((defaultsOnly && !dialogueDefaults) || Object.keys(picks).some(k => k.startsWith('shout.') && picks[k]?.length)) {
+if (allDefaults || Object.keys(picks).some(k => k.startsWith('shout.') && picks[k]?.length)) {
     const generic = picks['shout.generic']?.length ? picks['shout.generic'] : contextLines(...kShoutDefaults);
     text = replaceBlock(text, '    // --- shout picks (scripts/voice-picker/apply.mjs) ---\n', '    // --- end of shout picks ---\n',
         shoutArray(picks) + array('kShoutGeneric', generic));
     const columns = Object.keys(picks).filter(k => k.startsWith('shout.') && k !== 'shout.generic' && picks[k]?.length);
     console.log(`shout lines written: ${columns.length} shout columns picked, generic ${picks['shout.generic']?.length ? 'picked' : 'defaults'}`);
+}
+for (const key of Object.keys(picks).filter(k => k.startsWith('situation.'))) {
+    if (!situations().some(s => `situation.${s.key}` === key)) throw new Error(`no such situation in situations.h: ${key}`);
+}
+if (allDefaults || situationDefaults || Object.keys(picks).some(k => k.startsWith('situation.') && picks[k]?.length)) {
+    const body = situations().map(s => {
+        const picked = picks[`situation.${s.key}`];
+        return array(situationArray(s.key), picked?.length ? picked : s.defaults ? contextLines([s.defaults]) : []);
+    }).join('');
+    text = replaceBlock(text, '    // --- situation picks (scripts/voice-picker/apply.mjs) ---\n', '    // --- end of situation picks ---\n', body);
+    console.log('situation lines written: ' + situations().map(s => `${s.key} ${picks[`situation.${s.key}`]?.length ? 'picked' : s.defaults ? 'defaults' : 'San Andreas picks'}`).join(', '));
 }
 fs.writeFileSync(header, text);
 console.log(`to ${path.relative(repo, header)}`);

@@ -7,6 +7,7 @@
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
+#include "scenes.h"
 #include "skin_build.h"
 #include "skin_model.h"
 #include "texture_decode.h"
@@ -200,6 +201,7 @@ namespace AhShitRim::CjWeapons
             if (a_type > 0xFF || !Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
                 return;
             }
+            Scenes::OnHit(a_ped, static_cast<std::uint8_t>(a_type));  // v24: a fight or shoot line now and then
             const auto type = static_cast<eWeaponType>(a_type);
             const auto before = a_ped->GetWeaponSkill(type);
             for (std::uint32_t i = 0; i < (std::min)(a_count, kHitsMax); ++i) {

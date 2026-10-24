@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "player/Chatter.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -162,6 +163,8 @@ namespace AhShitRim::Shots
             const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
+            // v24: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
+            const bool unseen = a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead();
 
             if (state.processHit) {
                 auto* hit = RE::HitData::Create(a_player, actor, nullptr, false);
@@ -196,6 +199,9 @@ namespace AhShitRim::Shots
             }
 
             state.actorHits++;
+            if (unseen && (actor->IsDead() || actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) {
+                Chatter::StealthKill();
+            }
             if (melee && !actor->IsDead() && Roll() < Damage::StaggerChance(a_shot.weaponType)) {
                 Stagger(actor, a_player);
             }

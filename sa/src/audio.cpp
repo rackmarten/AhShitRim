@@ -181,4 +181,6 @@ namespace AhShitRim::Audio
             state.reported = station;
         }
     }
+
+    bool RadioPlays() { return Radio::Plays(state.reported); }
 }

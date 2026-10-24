@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 23;
+    inline constexpr std::uint32_t kProtocolVersion = 24;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -115,6 +115,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kInputWasted = 0x20;     // InputState.flags (v11): the player is dying (Wasted), San Andreas ignores damage; (v14) CJ falls dead on his front
     inline constexpr std::uint32_t kInputWastedCamera = 0x40;  // InputState.flags (v14), with kInputWasted: San Andreas's death camera rises over him
     inline constexpr std::uint32_t kInputBusted = 0x80;     // InputState.flags (v22): Busted, CJ is arrested: dragged out of the car he is in (the driver's door), knocked off a bike, or on foot his hands up
+    inline constexpr std::uint32_t kInputHostileNear = 0x100;  // InputState.flags (v24): a hostile actor in combat with the player is within 20 m; CJ sprinting then is chased (protocol/cpp/situations.h)
 
     inline constexpr std::uint32_t kButtonSprint = 0x1;  // InputState.buttons, held
     inline constexpr std::uint32_t kButtonJump = 0x2;
@@ -164,6 +165,10 @@ namespace AhShitRim::Protocol
         std::uint16_t lineCount;       // v21: counts lines Skyrim asks CJ to say; a new value has him say one of lineKind
         std::uint8_t  lineKind;        // v21: Dialogue::Category (protocol/cpp/dialogue.h): greet, agree, refuse, ask, threaten, joke, goodbye
         std::uint8_t  shoutVoice;      // v23: with each new shoutCount, the shout and the words charged (protocol/cpp/thuum.h's Encode); CJ says his line for them
+        std::uint16_t stealthKillCount;  // v24: counts kills the player made sneaking, unseen; a new value may have CJ say a stealth kill line (protocol/cpp/situations.h)
+        std::uint16_t cashCount;         // v24: counts gold the player gained outside a shop; looting gold
+        std::uint16_t shopBuyCount;      // v24: counts gold spent in barter or Ammu-Nation; buying
+        std::uint16_t shopLeaveCount;    // v24: counts shops closed after buying in them; leaving
     };
 
     struct InputSlot
@@ -171,7 +176,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[24];  // v9: keeps the later slots on a 64-byte boundary
+        std::uint8_t  pad[16];  // v9: keeps the later slots on a 64-byte boundary (v24: 8 bytes fewer for the larger input)
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -538,7 +543,7 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 112);
+    static_assert(sizeof(InputState) == 120);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
@@ -562,6 +567,8 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, lineCount) == 108);
     static_assert(offsetof(InputState, lineKind) == 110);
     static_assert(offsetof(InputState, shoutVoice) == 111);
+    static_assert(offsetof(InputState, stealthKillCount) == 112);
+    static_assert(offsetof(InputState, shopLeaveCount) == 118);
     static_assert(sizeof(InputSlot) == 144);
     static_assert(sizeof(WeaponEntry) == 8);
     static_assert(sizeof(WeaponCommand) == 8 + kWeaponSlotCount * sizeof(WeaponEntry) + 24);

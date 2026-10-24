@@ -28,11 +28,22 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v24: CJ talking on his own")
+{
+    CHECK(kProtocolVersion == 24);
+    CHECK(sizeof(InputState) == 120);
+    CHECK(offsetof(InputState, stealthKillCount) == 112);
+    CHECK(offsetof(InputState, cashCount) == 114);
+    CHECK(offsetof(InputState, shopBuyCount) == 116);
+    CHECK(offsetof(InputState, shopLeaveCount) == 118);
+    CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
+    CHECK(kInputHostileNear == 0x100);
+    CHECK((kInputHostileNear & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera | kInputBusted)) == 0);
+}
+
 TEST_CASE("protocol v23: the shout's voice")
 {
-    CHECK(kProtocolVersion == 23);
     CHECK(offsetof(InputState, shoutVoice) == 111);
-    CHECK(sizeof(InputState) == 112);
 }
 
 TEST_CASE("protocol v22: busted")
@@ -136,7 +147,6 @@ TEST_CASE("the v14 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 112);
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);

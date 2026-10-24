@@ -28,4 +28,7 @@ namespace AhShitRim::Audio
 
     // The radio in CJ's pose: station and retuning.
     void Fill(Protocol::PlayerState& a_pose, bool a_inVehicle);
+
+    // A station plays (San Andreas's, or one of Skyrim's; not off): as of the last Fill.
+    bool RadioPlays();
 }

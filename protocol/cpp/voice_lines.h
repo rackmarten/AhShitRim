@@ -236,6 +236,50 @@ namespace AhShitRim::VoiceLines
         Line{ 693, 43 },  // AR2 FIGHT
     };
     // --- end of shout picks ---
+
+    // CJ talking on his own (protocol/cpp/situations.h): his lines for each trigger, from the picker's
+    // situation columns. An empty one has San Andreas pick for the trigger's context; the stealth kill
+    // and shop ones, which San Andreas has no pick of CJ's for, hold his calm lines (CR, CR2) of their
+    // context until some are picked (apply.mjs --defaults).
+    // --- situation picks (scripts/voice-picker/apply.mjs) ---
+    inline constexpr std::array<Line, 0> kFightLines{};
+    inline constexpr std::array<Line, 0> kShootLines{};
+    inline constexpr std::array<Line, 0> kPullGunLines{};
+    inline constexpr std::array kStealthKillLines{
+        Line{ 700, 365 },  // CR STEALTH_KILL
+        Line{ 700, 366 },  // CR STEALTH_KILL
+        Line{ 700, 367 },  // CR STEALTH_KILL
+        Line{ 700, 368 },  // CR STEALTH_KILL
+        Line{ 701, 359 },  // CR2 STEALTH_KILL
+        Line{ 701, 360 },  // CR2 STEALTH_KILL
+        Line{ 701, 361 },  // CR2 STEALTH_KILL
+        Line{ 701, 362 },  // CR2 STEALTH_KILL
+        Line{ 701, 363 },  // CR2 STEALTH_KILL
+    };
+    inline constexpr std::array<Line, 0> kSingingLines{};
+    inline constexpr std::array<Line, 0> kCashLines{};
+    inline constexpr std::array kShopBuyLines{
+        Line{ 700, 323 },  // CR SHOP_BUY
+        Line{ 700, 324 },  // CR SHOP_BUY
+        Line{ 700, 325 },  // CR SHOP_BUY
+        Line{ 700, 326 },  // CR SHOP_BUY
+        Line{ 701, 318 },  // CR2 SHOP_BUY
+        Line{ 701, 319 },  // CR2 SHOP_BUY
+        Line{ 701, 320 },  // CR2 SHOP_BUY
+        Line{ 701, 321 },  // CR2 SHOP_BUY
+    };
+    inline constexpr std::array kShopLeaveLines{
+        Line{ 700, 327 },  // CR SHOP_LEAVE
+        Line{ 700, 328 },  // CR SHOP_LEAVE
+        Line{ 700, 329 },  // CR SHOP_LEAVE
+        Line{ 701, 322 },  // CR2 SHOP_LEAVE
+        Line{ 701, 323 },  // CR2 SHOP_LEAVE
+        Line{ 701, 324 },  // CR2 SHOP_LEAVE
+        Line{ 701, 325 },  // CR2 SHOP_LEAVE
+    };
+    inline constexpr std::array<Line, 0> kChasedLines{};
+    inline constexpr std::array<Line, 0> kCrashLines{};
+    // --- end of situation picks ---
     // clang-format on
 
     constexpr bool Valid(const Line& a_line) { return a_line.bank >= kFirstBank && a_line.bank <= kLastBank && a_line.sound < 400; }

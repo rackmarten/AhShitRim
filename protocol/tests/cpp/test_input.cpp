@@ -257,6 +257,26 @@ TEST_CASE("each insult and swear press counts on its own, also while a menu has 
     CHECK(s.swearCount == 1);
 }
 
+TEST_CASE("the situations Skyrim sees count on their own, also in a menu; the hostile flag needs the player handed over")
+{
+    Builder b;
+    b.AddStealthKill();
+    b.AddCash();
+    b.AddCash();
+    b.AddShopBuy();
+    b.AddShopLeave();
+    b.SetHostileNear(true);
+    auto s = b.Build(1, true, false);  // a barter menu has the input: buying still counts
+    CHECK(s.stealthKillCount == 1);
+    CHECK(s.cashCount == 2);
+    CHECK(s.shopBuyCount == 1);
+    CHECK(s.shopLeaveCount == 1);
+    CHECK((s.flags & Protocol::kInputHostileNear) != 0);
+    CHECK((b.Build(2, false, true).flags & Protocol::kInputHostileNear) == 0);
+    b.SetHostileNear(false);
+    CHECK((b.Build(3, true, true).flags & Protocol::kInputHostileNear) == 0);
+}
+
 TEST_CASE("each line asked of CJ counts, with the kind of the latest")
 {
     Builder b;

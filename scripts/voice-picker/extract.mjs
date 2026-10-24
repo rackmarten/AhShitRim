@@ -1,6 +1,7 @@
 // Builds a local page for listening to CJ's speech lines and picking the ones the insult (X) and
 // swear (middle mouse) keys play, his answers in Skyrim's conversations by category, and his Thu'um:
-// a column per shout (protocol/cpp/thuum.h) and word count. Reads San Andreas's own speech banks from your install
+// a column per shout (protocol/cpp/thuum.h) and word count, and one per situation CJ talks in on his
+// own (protocol/cpp/situations.h). Reads San Andreas's own speech banks from your install
 // (audio/SFX/SPC_PA, found through audio/CONFIG/BankLkup.dat) and writes every line of CJ's 20 voice
 // banks as a WAV under extracted/voice-picker/, which git ignores: the audio never leaves your machine.
 //
@@ -67,7 +68,11 @@ fs.closeSync(fd);
 const thuum = fs.readFileSync(path.join(repo, 'protocol', 'cpp', 'thuum.h'), 'utf8');
 const shouts = [...thuum.matchAll(/Shout\{ "([^"]+)", 0x([0-9A-Fa-f]+), "([^"]+)", "([^"]+)" \}/g)].map(m => ({ key: m[3], name: m[4] }));
 
+// The situation columns (CJ talking on his own): protocol/cpp/situations.h's triggers.
+const triggers = fs.readFileSync(path.join(repo, 'protocol', 'cpp', 'situations.h'), 'utf8');
+const situations = [...triggers.matchAll(/Info\{ "([^"]+)", "([^"]+)",/g)].map(m => ({ key: m[1], name: m[2] }));
+
 const page = fs.readFileSync(path.join(here, 'picker.html'), 'utf8')
-    .replace('/*DATA*/null', JSON.stringify({ ...table, seconds, shouts }));
+    .replace('/*DATA*/null', JSON.stringify({ ...table, seconds, shouts, situations }));
 fs.writeFileSync(path.join(out, 'index.html'), page);
 console.log(`Open ${path.join(out, 'index.html')}`);

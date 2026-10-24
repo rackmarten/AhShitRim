@@ -73,6 +73,10 @@ CJ has the Thu'um his own way. Shouting works as in Skyrim (learn the words, hol
 
 Which lines go with which shout is picked by ear in the voice picker ([`scripts/voice-picker`](scripts/voice-picker/README.md)), which builds a local page from your own San Andreas install.
 
+## CJ talks on his own
+
+CJ comments on what happens the way he does in San Andreas: now and then when a punch lands, when a burst of gunfire hits someone, when he aims a gun on foot, after a sneak kill, when he loots gold, when he buys at Ammu-Nation and when he leaves after buying, when he sprints away from someone fighting him, and when he crashes a vehicle hard. Left sitting in a car with the radio off, or standing idle, for a minute and a half, he sings, and stops when the radio comes on or he moves off. He isn't chatty: nothing comes sooner than 4 s after his last line, each situation has its own odds (about one punch in three), he never talks over himself, and the insult and swear keys always cut in. Each situation's lines are picked in the voice picker too; until they are, San Andreas picks them as it would.
+
 ## Cheat codes
 
 Type San Andreas's PC cheat codes while CJ has the player (F10), as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for one that toggles). HESOYAM, BAGUVIX, the weapon sets, the vehicles (JUMPJET, OHDUDE, AIWPRTON...), flying cars, the jetpack and the parachute all work, with San Andreas's alternative spellings (ROCKETMAN, FULLCLIP...), AEZAKMI keeps the wanted level away, OSRBLHH and LJSPQK bring it on (two more stars, six), ASNAEB clears it, plus our own: NOMERCY, MINIGUN, PAINT, LOWRIDER, and every vehicle by its name (SANCHEZ, HYDRA, MAVERICK). M doesn't open Skyrim's map while CJ has the player; the map is in Tab's menu.
