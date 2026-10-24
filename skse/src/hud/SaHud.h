@@ -34,7 +34,8 @@ namespace AhShitRim::SaHud
 
     // The text styles; a_seconds is how long each stays before it fades.
     void MarkTarget(const RE::NiPoint3& a_at, bool a_locked);  // the heat seeker's marker on what it locks on to (world point), as long as it's called every frame
-    void MarkTarget(const RE::NiPoint3& a_at, std::uint32_t a_colour);  // the same marker in a colour (RGBA, red in the low byte): the lock-on's, by the target's health
+    void MarkHead(const RE::NiPoint3& a_headTop, std::uint32_t a_colour);  // the lock-on's triangle over a head (RGBA, red in the low byte), as long as it's called every frame
+    bool AimCrosshair(float& a_x, float& a_y, float& a_aspect);           // where the gun's crosshair was last drawn (fractions of the screen, its width over height); false when it wasn't
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();

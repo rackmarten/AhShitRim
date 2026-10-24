@@ -6,6 +6,7 @@
 #include "img.h"
 #include "link/LinkService.h"
 #include "loot.h"
+#include "melee.h"
 #include "txd.h"
 #include "explosives.h"
 #include "weapons.h"
@@ -120,7 +121,13 @@ namespace AhShitRim::SaHud
             std::uint32_t    target256 = 0;  // particle.txd's: the heat seeker's lock-on marker
             bool             mark = false;   // a marker to draw, set again every frame (MarkTarget)
             RE::NiPoint3     markAt;
-            std::uint32_t    markColour = 0;  // RGBA, red in the low byte
+            bool             markLocked = false;
+            std::uint32_t    triangle = 0;     // the lock-on's marker (Melee::MarkerImage), made here
+            bool             head = false;     // a head marker to draw, set again every frame (MarkHead)
+            RE::NiPoint3     headAt;           // the top of the target's head
+            std::uint32_t    headColour = 0;   // RGBA, red in the low byte
+            bool             aimShown = false; // the gun's crosshair was drawn last frame, at aimX, aimY (fractions of the screen)
+            float            aimX = 0.0f, aimY = 0.0f, aimAspect = 0.0f;
             std::array<std::uint32_t, 64> icons{};  // by weapon type
             Loot::Counter    money;  // the money shown, counting towards the player's gold
             float            delta = 0.0f;
@@ -214,6 +221,16 @@ namespace AhShitRim::SaHud
             }
         }
 
+        void SetAim(const Screen& a_screen, float a_x, float a_y)
+        {
+            if (a_screen.width > 0.0f && a_screen.height > 0.0f) {
+                state.aimShown = true;
+                state.aimX = a_x / a_screen.width;
+                state.aimY = a_y / a_screen.height;
+                state.aimAspect = a_screen.width / a_screen.height;
+            }
+        }
+
         // What San Andreas's camera puts over the picture for the weapon (CHud::DrawCrossHairs): the sniper rifle's
         // scope with the rest of the screen black, the rocket launchers' sight, the camera's viewfinder, the first
         // person rifle's corners and the circle round a gun's aim.
@@ -241,8 +258,10 @@ namespace AhShitRim::SaHud
                     if (frustum.fRight > 0.01f && frustum.fTop > 0.01f && w.fov > 1.0f) {
                         const auto [x, y] = AimPoint(screen, w.crosshair[0], w.crosshair[1], w.fov, frustum.fRight, frustum.fTop);
                         DrawQuarters(a_frame, state.siteM16, AimSightAt(screen, x, y, w.aimRadius));
+                        SetAim(screen, x, y);
                     } else {
                         DrawQuarters(a_frame, state.siteM16, AimSight(screen, w.crosshair[0], w.crosshair[1], w.aimRadius));
+                        SetAim(screen, w.crosshair[0] * screen.width, w.crosshair[1] * screen.height);
                     }
                 }
                 break;
@@ -252,8 +271,7 @@ namespace AhShitRim::SaHud
 
         // The heat seeker's marker round its target (CWeaponEffects::MarkTarget's): San Andreas's target256 over
         // where the target shows through Skyrim's camera, kHsMarkerSize across there (no smaller than the rocket
-        // sight's quarter), white and see-through while it locks on, red once locked; the melee and gun lock-on's
-        // (LockOn) by the target's health.
+        // sight's quarter), white and see-through while it locks on, red once locked.
         void DrawMark(Frame& a_frame)
         {
             auto* camera = RE::Main::WorldRootCamera();
@@ -268,7 +286,29 @@ namespace AhShitRim::SaHud
             }
             const float cx = x * screen.width, cy = (1.0f - y) * screen.height;
             const float half = (std::max)(std::abs(topY - y) * screen.height, 24.0f * screen.unitY);
-            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, state.markColour });
+            const std::uint32_t colour = state.markLocked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
+            a_frame.quads.push_back({ state.target256, cx - half, cy - half, cx + half, cy + half, 0.0f, 0.0f, 1.0f, 1.0f, colour });
+        }
+
+        // The lock-on's marker over the target's head: Melee::MarkerImage, kMarkerGap over it and kMarkerHeight tall
+        // where it shows through Skyrim's camera (no smaller than a few pixels far off), tinted by its health.
+        void DrawHead(Frame& a_frame)
+        {
+            auto* camera = RE::Main::WorldRootCamera();
+            if (!state.head || !state.triangle || !camera) {
+                return;
+            }
+            const auto&        screen = a_frame.screen;
+            const RE::NiPoint3 base = state.headAt + RE::NiPoint3(0.0f, 0.0f, Melee::kMarkerGap * RunOver::kMeter);
+            const RE::NiPoint3 tip = base + RE::NiPoint3(0.0f, 0.0f, Melee::kMarkerHeight * RunOver::kMeter);
+            float              x = 0.0f, y = 0.0f, z = 0.0f, tipX = 0.0f, tipY = 0.0f, tipZ = 0.0f;
+            if (!camera->WorldPtToScreenPt3(base, x, y, z, 1e-5f) || !camera->WorldPtToScreenPt3(tip, tipX, tipY, tipZ, 1e-5f)) {
+                return;
+            }
+            const float cx = x * screen.width, bottom = (1.0f - y) * screen.height;
+            const float height = (std::max)(std::abs(tipY - y) * screen.height, 6.0f * screen.unitY);
+            const float half = 0.5f * height * Melee::kMarkerWidth / Melee::kMarkerHeight;
+            a_frame.quads.push_back({ state.triangle, cx - half, bottom - height, cx + half, bottom, 0.0f, 0.0f, 1.0f, 1.0f, state.headColour });
         }
 
         // The top right HUD, from the Skyrim player.
@@ -457,6 +497,11 @@ namespace AhShitRim::SaHud
         state.siteRocket = add(Txd::Find(hud, "siterocket"));
         const auto particleData = ReadFile(sa / "models" / "particle.txd");
         state.target256 = add(Txd::Find(Txd::Read(particleData.data(), particleData.size(), &skipped), "target256"));
+        {
+            auto marker = Melee::MarkerImage();  // San Andreas draws it in vertex colours, so it has no sprite to read
+            images.push_back({ marker.width, marker.height, std::move(marker.rgba) });
+            state.triangle = static_cast<std::uint32_t>(images.size());
+        }
 
         // The weapons' icons and scopes are in each weapon's own dictionary in gta3.img.
         std::ifstream      archive(sa / "models" / "gta3.img", std::ios::binary);
@@ -522,15 +567,18 @@ namespace AhShitRim::SaHud
             SKSE::log::info("sa hud: screen {}x{}, {:.3f} x {:.3f} pixels per HUD unit", width, height, frame.screen.unitX, frame.screen.unitY);
         }
         auto* player = RE::PlayerCharacter::GetSingleton();
+        state.aimShown = false;  // DrawScope sets it again while the gun's crosshair is up
         if (a_owned && !a_menu && player) {
             DrawHud(frame, player);
             DrawScope(frame);
             DrawMark(frame);
+            DrawHead(frame);
             DrawMenu(frame);
         } else if (player) {
             state.money.Tick(player->GetGoldAmount(), a_delta, false);  // not shown: it comes back as it is
         }
         state.mark = false;
+        state.head = false;
         state.menuRows.clear();
         DrawText(frame);
         Overlay::Submit(std::move(frame.quads));
@@ -564,14 +612,22 @@ namespace AhShitRim::SaHud
     {
         state.mark = true;
         state.markAt = a_at;
-        state.markColour = a_locked ? 0xFF0000FF : 0x64FFFFFF;  // red; white at San Andreas's alpha 100
+        state.markLocked = a_locked;
     }
 
-    void MarkTarget(const RE::NiPoint3& a_at, std::uint32_t a_colour)
+    void MarkHead(const RE::NiPoint3& a_headTop, std::uint32_t a_colour)
     {
-        state.mark = true;
-        state.markAt = a_at;
-        state.markColour = a_colour;
+        state.head = true;
+        state.headAt = a_headTop;
+        state.headColour = a_colour;
+    }
+
+    bool AimCrosshair(float& a_x, float& a_y, float& a_aspect)
+    {
+        a_x = state.aimX;
+        a_y = state.aimY;
+        a_aspect = state.aimAspect;
+        return state.aimShown;
     }
 
     void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }

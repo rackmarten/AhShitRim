@@ -1,8 +1,8 @@
 // CJ on foot against Skyrim's actors (#895, on the proxy slot of run_over.h). Skyrim picks the actor CJ locks on
 // to, as San Andreas's CPlayerPed::EvaluateTarget rates them: with fists or a melee weapon while he holds the right
 // mouse button, or the nearest hostile in front when he swings without it, and flags its proxy (kProxyTarget) for
-// San Andreas to turn him to face it; with a gun while he aims over the shoulder, and sends his shots at it. And on
-// foot Skyrim sends the actors around CJ too, which San Andreas pushes him out of, so he bumps into people and
+// San Andreas to turn him to face it. San Andreas's triangle marks the lock, or while he aims a gun the enemy
+// nearest the crosshair (guns stay free aim). And on foot Skyrim sends the actors around CJ too, which San Andreas pushes him out of, so he bumps into people and
 // creatures instead of walking through them. Header-only and free of game types, so the protocol tests cover it.
 //
 // Distances here are metres. Skyrim's headings are radians from north, clockwise (Pose::HeadingOf); San
@@ -44,19 +44,15 @@ namespace AhShitRim::Melee
         float range = 0.0f;         // metres: who is farther isn't picked
         float breakRange = 0.0f;    // metres: a kept target farther than this is let go (a little over range, so it doesn't flicker)
         float pickAngle = 180.0f;   // degrees off the heading a new target may be at most
-        float keepAngle = 180.0f;   // degrees off the heading a kept one may drift before it is let go (180: never)
         bool  hostileOnly = false;  // only someone fighting or hostile to the player
         float keepSeconds = 0.0f;   // how long the target outlasts letting go of the button
     };
 
     // The right mouse button with fists or a melee weapon: as San Andreas's lock-on, anyone in front within 10 m,
     // kept until out of reach whichever way CJ turns (San Andreas breaks a lock by range, not angle).
-    inline constexpr Rules kMeleeLock{ 10.0f, 12.0f, 140.0f, 180.0f, false, 0.0f };
+    inline constexpr Rules kMeleeLock{ 10.0f, 12.0f, 140.0f, false, 0.0f };
     // A punch or a swing with nobody locked on to: the nearest hostile in front within reach, kept through the combo.
-    inline constexpr Rules kSwing{ 3.0f, 4.0f, 60.0f, 180.0f, true, 0.75f };
-    // The right mouse button with a gun, aimed over the shoulder: San Andreas's pad lock-on, by where the camera looks
-    // (the mouse aims); looking well away from the target lets it go for whoever is there, or free aim.
-    inline constexpr Rules kGunLock{ 30.0f, 36.0f, 30.0f, 45.0f, false, 0.0f };
+    inline constexpr Rules kSwing{ 3.0f, 4.0f, 60.0f, true, 0.75f };
 
     inline constexpr float kLockRange = kMeleeLock.range;
     inline constexpr float kBreakRange = kMeleeLock.breakRange;
@@ -118,7 +114,7 @@ namespace AhShitRim::Melee
     {
     public:
         // Once a frame. a_held: the button that locks on, held. a_all: who could be locked on to (alive, loaded, not a
-        // follower or a child). a_heading: CJ's facing, or the camera's for a gun. a_sees(i): whether CJ sees
+        // follower or a child). a_heading: CJ's facing. a_sees(i): whether CJ sees
         // a_all[i], asked only of a new target. a_seconds since the last call (for a_rules.keepSeconds). The
         // target's id, 0 for none.
         template <class Sees>
@@ -132,7 +128,7 @@ namespace AhShitRim::Melee
             }
             if (_target) {
                 const auto kept = std::find_if(a_all.begin(), a_all.end(), [&](const Candidate& c) { return c.id == _target; });
-                if (kept != a_all.end() && RunOver::Length(kept->offset) <= a_rules.breakRange && DegreesOff(kept->offset, a_heading) <= a_rules.keepAngle) {
+                if (kept != a_all.end() && RunOver::Length(kept->offset) <= a_rules.breakRange) {
                     return _target;
                 }
                 _target = 0;
@@ -157,32 +153,90 @@ namespace AhShitRim::Melee
         float         _unheld = 0.0f;
     };
 
-    // ---- Shots at a locked target (Skyrim's side) ----
+    // ---- The marker (Skyrim's side) ----
 
-    // Where a gun's shot goes when CJ is locked on: the head when the shot's own line (San Andreas's, through the
-    // crosshair) passes nearer it than the chest, the chest otherwise, as San Andreas's lock-on aims at the body.
-    // a_dir is a unit vector.
-    inline Vec3 AimPoint(const Vec3& a_origin, const Vec3& a_dir, const Vec3& a_head, const Vec3& a_chest)
-    {
-        if (!(std::abs(Dot(a_dir, a_dir) - 1.0f) < 0.01f)) {
-            return a_chest;
-        }
-        const auto missBy = [&](const Vec3& a_point) {
-            const Vec3  to = Sub(a_point, a_origin);
-            const float along = (std::max)(0.0f, Dot(to, a_dir));
-            return RunOver::Length(Sub(to, Scale(a_dir, along)));
-        };
-        return missBy(a_head) < missBy(a_chest) ? a_head : a_chest;
-    }
+    // San Andreas's target marker: a small triangle pointing up over the target's head (CSprite::
+    // RenderOneXLUSprite_Triangle's, drawn in vertex colours, no texture), solid at its tip and fading toward its
+    // base, coloured by the target's health. On the melee lock-on's target, or while CJ aims a gun on the enemy
+    // nearest the crosshair (an indicator only: the shot is free aim).
+    inline constexpr float kMarkerWidth = 0.3f;    // metres across its base, a little wider than a head
+    inline constexpr float kMarkerHeight = 0.18f;  // metres from base to tip
+    inline constexpr float kMarkerGap = 0.25f;     // metres from the top of the head up to its base
+    inline constexpr float kMarkerBaseAlpha = 0.15f;  // the base's opacity against the tip's
 
-    // San Andreas's lock-on marker's colour by the target's health (0..1): green when unhurt, through yellow, red
-    // near death. RGBA packed as the overlay takes it (red in the low byte), opaque.
+    // The marker's colour by the target's health (0..1): green when unhurt, through yellow and orange, red near
+    // death. RGBA packed as the overlay takes it (red in the low byte), opaque.
     inline std::uint32_t MarkerColour(float a_health)
     {
         const float h = std::isfinite(a_health) ? std::clamp(a_health, 0.0f, 1.0f) : 1.0f;
         const auto  red = static_cast<std::uint32_t>(std::lround(255.0f * (std::min)(1.0f, 2.0f * (1.0f - h))));
         const auto  green = static_cast<std::uint32_t>(std::lround(255.0f * (std::min)(1.0f, 2.0f * h)));
         return 0xFF000000u | (green << 8) | red;
+    }
+
+    struct Image
+    {
+        std::uint32_t             width = 0;
+        std::uint32_t             height = 0;
+        std::vector<std::uint8_t> rgba;  // top row first
+    };
+
+    // The marker's picture, white for the overlay to tint: the triangle's tip at the top middle, its base along the
+    // bottom, opaque at the tip fading to kMarkerBaseAlpha at the base, clear around it. Edges are antialiased by
+    // coverage over 4x4 samples a pixel.
+    inline Image MarkerImage(std::uint32_t a_width = 64)
+    {
+        Image out;
+        out.width = (std::max)(a_width, 4u);
+        out.height = (std::max)(2u, static_cast<std::uint32_t>(std::lround(out.width * kMarkerHeight / kMarkerWidth)));
+        out.rgba.assign(static_cast<std::size_t>(out.width) * out.height * 4, 255);
+        const float w = static_cast<float>(out.width), h = static_cast<float>(out.height);
+        for (std::uint32_t y = 0; y < out.height; y++) {
+            for (std::uint32_t x = 0; x < out.width; x++) {
+                int inside = 0;
+                for (int sy = 0; sy < 4; sy++) {
+                    for (int sx = 0; sx < 4; sx++) {
+                        const float px = (static_cast<float>(x) + (static_cast<float>(sx) + 0.5f) / 4.0f) / w;  // 0..1 across
+                        const float py = (static_cast<float>(y) + (static_cast<float>(sy) + 0.5f) / 4.0f) / h;  // 0 at the tip, 1 at the base
+                        inside += std::abs(px - 0.5f) <= 0.5f * py ? 1 : 0;
+                    }
+                }
+                const float down = (static_cast<float>(y) + 0.5f) / h;
+                const float fade = 1.0f - (1.0f - kMarkerBaseAlpha) * down;
+                out.rgba[(static_cast<std::size_t>(y) * out.width + x) * 4 + 3] = static_cast<std::uint8_t>(std::lround(255.0f * fade * static_cast<float>(inside) / 16.0f));
+            }
+        }
+        return out;
+    }
+
+    // ---- The indicator while aiming a gun (Skyrim's side) ----
+
+    inline constexpr float kIndicatorRange = 30.0f;   // metres: enemies farther aren't marked
+    inline constexpr float kIndicatorRadius = 0.15f;  // screen heights from the crosshair an enemy is marked within
+
+    struct OnScreen
+    {
+        float x = 0.0f, y = 0.0f;  // where its middle shows, 0..1 across and down the screen
+        bool  visible = false;     // in front of the camera
+        float distance = 0.0f;     // metres from CJ
+    };
+
+    // The enemies worth marking, nearest the crosshair (at a_x, a_y, fractions of the screen) first: in front, in
+    // range and within kIndicatorRadius of it on a screen a_aspect (width over height) wide. Indices into a_all.
+    inline std::vector<std::size_t> NearCrosshair(std::span<const OnScreen> a_all, float a_x, float a_y, float a_aspect)
+    {
+        const float aspect = std::isfinite(a_aspect) && a_aspect > 0.1f ? a_aspect : 16.0f / 9.0f;
+        std::vector<std::size_t> out;
+        std::vector<float>       off(a_all.size(), 0.0f);
+        for (std::size_t i = 0; i < a_all.size(); i++) {
+            const auto& e = a_all[i];
+            off[i] = std::hypot((e.x - a_x) * aspect, e.y - a_y);  // in screen heights
+            if (e.visible && std::isfinite(off[i]) && off[i] <= kIndicatorRadius && e.distance <= kIndicatorRange) {
+                out.push_back(i);
+            }
+        }
+        std::stable_sort(out.begin(), out.end(), [&](std::size_t a, std::size_t b) { return off[a] < off[b]; });
+        return out;
     }
 
     // ---- The turn (San Andreas's side) ----

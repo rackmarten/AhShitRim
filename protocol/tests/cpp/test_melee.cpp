@@ -228,35 +228,50 @@ TEST_CASE("melee: a swing turns CJ to the nearest hostile in front, and keeps th
     CHECK(none.Update(false, all, kNorth, kSeesAll, kSwing, 0.03f) == 0);
 }
 
-TEST_CASE("melee: a gun's lock follows where the camera looks")
+TEST_CASE("melee: aiming a gun marks the enemy nearest the crosshair")
 {
-    Lock       gun;
-    std::array all{ At(10, 0.0f, 20.0f), At(20, 20.0f, 0.0f, true), At(30, 0.0f, 40.0f, true) };
-    // Looking north: the bystander 20 m ahead (the hostile east is 90 degrees off the camera, the other past 30 m).
-    CHECK(gun.Update(true, all, kNorth, kSeesAll, kGunLock, 0.03f) == 10);
-    // Looking a little off it keeps it; looking east lets it go for the one there.
-    CHECK(gun.Update(true, all, 0.6f, kSeesAll, kGunLock, 0.03f) == 10);
-    CHECK(gun.Update(true, all, kEast, kSeesAll, kGunLock, 0.03f) == 20);
-    // Looking at nobody: free aim.
-    CHECK(gun.Update(true, all, Pose::kPi, kSeesAll, kGunLock, 0.03f) == 0);
-    // Letting go of the button ends it at once.
-    CHECK(gun.Update(true, all, kEast, kSeesAll, kGunLock, 0.03f) == 20);
-    CHECK(gun.Update(false, all, kEast, kSeesAll, kGunLock, 0.03f) == 0);
-    // The melee lock reaches 10 m, the gun's 30.
-    CHECK(Rating(At(1, 0.0f, 25.0f), kNorth, kGunLock) > 0.0f);
-    CHECK(Rating(At(1, 0.0f, 25.0f), kNorth, kMeleeLock) == 0.0f);
+    // The crosshair up and right of the middle, as San Andreas's sits; a 16:9 screen.
+    const float      cx = 0.53f, cy = 0.4f, aspect = 16.0f / 9.0f;
+    const std::array all{
+        OnScreen{ 0.60f, 0.42f, true, 12.0f },  // 0.13 screen heights off: in
+        OnScreen{ 0.55f, 0.45f, true, 20.0f },  // 0.06 off: nearest
+        OnScreen{ 0.53f, 0.40f, false, 5.0f },  // behind the camera
+        OnScreen{ 0.54f, 0.41f, true, 40.0f },  // too far
+        OnScreen{ 0.80f, 0.40f, true, 8.0f },   // 0.48 off: out
+    };
+    const auto near = NearCrosshair(all, cx, cy, aspect);
+    REQUIRE(near.size() == 2);
+    CHECK(near[0] == 1);
+    CHECK(near[1] == 0);
+    // The width counts by the aspect: 0.1 across is 0.18 screen heights on 16:9, out; on a square screen, in.
+    const std::array wide{ OnScreen{ 0.63f, 0.40f, true, 10.0f } };
+    CHECK(NearCrosshair(wide, cx, cy, aspect).empty());
+    CHECK(NearCrosshair(wide, cx, cy, 1.0f).size() == 1);
+    CHECK(NearCrosshair({}, cx, cy, aspect).empty());
 }
 
-TEST_CASE("melee: a locked shot goes to the head when the crosshair is on it, else the chest")
+TEST_CASE("melee: the marker is a triangle pointing up, solid at its tip and fading to its base")
 {
-    const Vec3 origin{ 0.0f, 0.0f, 1.5f };
-    const Vec3 head{ 0.0f, 10.0f, 1.7f };
-    const Vec3 chest{ 0.0f, 10.0f, 1.2f };
-    const auto unit = [](Vec3 v) { return Body::Normalize(v); };
-    CHECK(AimPoint(origin, unit(Sub(head, origin)), head, chest).z == 1.7f);
-    CHECK(AimPoint(origin, unit({ 0.0f, 10.0f, 0.15f }), head, chest).z == 1.7f);  // a little above the middle
-    CHECK(AimPoint(origin, unit({ 0.0f, 10.0f, -0.5f }), head, chest).z == 1.2f);
-    CHECK(AimPoint(origin, { 0.0f, 0.0f, 0.0f }, head, chest).z == 1.2f);          // no line to go by
+    const auto image = MarkerImage(64);
+    REQUIRE(image.width == 64);
+    CHECK(image.height == 38);  // 0.18 m tall for 0.3 m wide
+    REQUIRE(image.rgba.size() == 64u * 38u * 4u);
+    const auto alpha = [&](std::uint32_t x, std::uint32_t y) { return image.rgba[(y * image.width + x) * 4 + 3]; };
+    // White throughout, for the overlay to tint.
+    CHECK(image.rgba[0] == 255);
+    CHECK(image.rgba[1] == 255);
+    CHECK(image.rgba[2] == 255);
+    // The tip's middle is solid, the corners beside it clear.
+    CHECK(alpha(32, 2) > 200);
+    CHECK(alpha(2, 2) == 0);
+    CHECK(alpha(61, 2) == 0);
+    // Along the base it is wide and faint; it fades all the way down the middle.
+    CHECK(alpha(4, 37) > 0);
+    CHECK(alpha(32, 37) < 60);
+    CHECK(alpha(32, 10) > alpha(32, 20));
+    CHECK(alpha(32, 20) > alpha(32, 30));
+    // Symmetric.
+    CHECK(alpha(20, 25) == alpha(43, 25));
 }
 
 TEST_CASE("melee: the marker goes from green to red as the target is hurt")
