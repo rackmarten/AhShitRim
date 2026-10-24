@@ -6,6 +6,7 @@
 
 #include <plugin.h>
 
+#include <CAECutsceneTrackManager.h>
 #include <CAudioEngine.h>
 
 #include <safetyhook.hpp>
@@ -70,6 +71,7 @@ namespace AhShitRim::Audio
             std::uint64_t cueMs = 0;            // when it started
             bool          lineLoaded = false;  // the intro line was loaded and set playing
             std::uint64_t linePlayMs = 0;      // when
+            unsigned long trackStatus = 8;     // the tune's CAECutsceneTrackManager status last seen (3 playing, 8 idle)
         } state;
 
         void __cdecl NoOp() {}
@@ -142,9 +144,16 @@ namespace AhShitRim::Audio
                     state.linePlayMs = ::GetTickCount64();
                     Log(std::format("audio: CJ's intro line plays ({} ms to load)", elapsed));
                 } else if (state.lineLoaded && ::GetTickCount64() - state.linePlayMs > kLineStartMs && plugin::CallMethodAndReturn<bool, kMissionAudioDone, CAudioEngine*, std::uint8_t>(&AudioEngine, kMissionAudioSlot)) {
+                    Log(std::format("audio: CJ's intro line over after {} ms", ::GetTickCount64() - state.linePlayMs));
                     EndCue();
                     return;
                 }
+            } else if (const auto status = AECutsceneTrackManager.m_nStatus; status != state.trackStatus) {
+                // The tune: loading (0..2), playing (3), stopping (4..7), done (8).
+                if (status == 3 || status == 8) {
+                    Log(std::format("audio: the mission passed tune {} after {} ms", status == 3 ? "plays" : "is over", elapsed));
+                }
+                state.trackStatus = status;
             }
             if (elapsed > static_cast<std::uint64_t>(Missions::CueSeconds(state.cue) * 1000.0f)) {
                 if (state.cue == Protocol::kCueIntroLine && !state.lineLoaded) {

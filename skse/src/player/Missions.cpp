@@ -48,10 +48,14 @@ namespace AhShitRim::Missions
     bool OnHudMessage(const RE::HUDData& a_data)
     {
         const auto type = static_cast<int>(a_data.type.get());
+        const auto* quest = a_data.quest;
+        if (type >= kHudQuestStarted && type <= kHudQuestStarted + 5) {  // quest and objective messages: what Skyrim announces, for the log
+            SKSE::log::info("missions: Skyrim's HUD message {} '{}' for {:08X} (type {})", type, a_data.text.c_str() ? a_data.text.c_str() : "",
+                quest ? quest->GetFormID() : 0, quest ? static_cast<int>(quest->GetType()) : -1);
+        }
         if (type != kHudQuestStarted && type != kHudQuestComplete) {
             return false;
         }
-        const auto* quest = a_data.quest;
         std::string name = a_data.text.c_str() ? a_data.text.c_str() : "";
         if (name.empty() && quest && quest->GetName()) {
             name = quest->GetName();
@@ -104,6 +108,13 @@ namespace AhShitRim::Missions
     }
 
     bool CuePlaying() { return state.cuePlaying; }
+
+    void TestIntro()
+    {
+        SKSE::log::info("missions: test: as if Ralof's line had ended");
+        std::scoped_lock guard(state.lock);
+        state.ralofDone = true;
+    }
 
     void OnGameLoad()
     {

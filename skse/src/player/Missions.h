@@ -32,4 +32,7 @@ namespace AhShitRim::Missions
     bool CuePlaying();
 
     void OnGameLoad();  // what was waiting belonged to the game before
+
+    // Debug (MissionTest): CJ answers as if Ralof's line had just ended.
+    void TestIntro();
 }

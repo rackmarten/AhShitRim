@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
+#include "debug/MissionTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
@@ -917,6 +918,7 @@ namespace AhShitRim::PlayerSync
                 CheatCodes::Update();
                 Police::Sweep();
                 GunRewards::Update();
+                MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
                 if (a_delta > 0.0f) {
                     // A quest's title or its mission passed, CJ's intro line: San Andreas plays the sound, whoever has the player.
@@ -1217,6 +1219,7 @@ namespace AhShitRim::PlayerSync
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
         Missions::OnDataLoaded();
+        MissionTest::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
