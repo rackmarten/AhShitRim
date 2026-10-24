@@ -180,6 +180,14 @@ $ini = Join-Path $realPlugins 'AhShitRim.ini'
 $shots = Join-Path $Root 'Screenshots'
 $iniLines = [string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots")
 $ansi = [Text.Encoding]::Default
+# The player's own choices in it stay: [Input] KeyLayout and [Hud] Compass.
+if (Test-Path $ini) {
+    $old = [IO.File]::ReadAllLines($ini, $ansi)
+    foreach ($kept in @(@('Input', 'KeyLayout'), @('Hud', 'Compass'))) {
+        $line = $old | Where-Object { $_ -match "^\s*$($kept[1])\s*=" } | Select-Object -First 1
+        if ($line) { $iniLines += @("[$($kept[0])]", $line.Trim()) }
+    }
+}
 if (-not (Test-Path $ini) -or ([IO.File]::ReadAllLines($ini, $ansi) -join "`n") -ne ($iniLines -join "`n")) {
     New-Item -ItemType Directory -Force $realPlugins | Out-Null
     try { [IO.File]::WriteAllLines($ini, $iniLines, $ansi) }

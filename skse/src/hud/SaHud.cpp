@@ -2,12 +2,15 @@
 
 #include "Ini.h"
 #include "hud/Overlay.h"
+#include "hud/RadarScene.h"
 #include "hud_layout.h"
 #include "img.h"
 #include "link/LinkService.h"
 #include "loot.h"
+#include "radar.h"
 #include "txd.h"
 #include "explosives.h"
+#include "vehicle_kinds.h"
 #include "weapons.h"
 
 #include <array>
@@ -42,6 +45,25 @@ namespace AhShitRim::SaHud
             float              crosshair[2] = { 0.5f, 0.4f };
             float              aimRadius = 0.2f;  // San Andreas's crosshair size, growing as he fires
             float              fov = 70.0f;       // San Andreas's camera, degrees across a 4:3 screen
+        };
+
+        // CJ for the radar, from the same pose as the weapon.
+        struct CjHud
+        {
+            bool          valid = false;
+            float         speed = 0.0f;        // metres a second, his vehicle's when he's in one
+            float         heading = 0.0f;      // his body
+            float         viewHeading = 0.0f;  // San Andreas's camera: up on the radar
+            std::uint16_t vehicleModel = 0;
+        };
+
+        // The radar's textures (overlay ids, 0 for one the files don't have) and the map.
+        struct RadarHud
+        {
+            std::uint32_t     disc = 0, centre = 0, north = 0, waypoint = 0, shop = 0;
+            std::uint32_t     map = 0;  // the map image (#899), 0 until it's there
+            Radar::MapBounds  mapBounds;
+            RE::FormID        mapWorld = 0x0000003C;  // Tamriel
         };
 
         // Skyrim's HUD clips hidden while San Andreas has the player, under
@@ -123,6 +145,9 @@ namespace AhShitRim::SaHud
             bool             markLocked = false;
             std::array<std::uint32_t, 64> icons{};  // by weapon type
             Loot::Counter    money;  // the money shown, counting towards the player's gold
+            CjHud            cj;
+            RadarHud         radar;
+            bool             showCompass = false;  // AhShitRim.ini [Hud] Compass=1: Skyrim's compass stays up beside the radar
             float            delta = 0.0f;
             std::string      menuTitle;
             std::vector<MenuRow> menuRows;  // set again every frame (ShowMenu)
@@ -145,8 +170,50 @@ namespace AhShitRim::SaHud
 
         struct Frame
         {
-            Screen                     screen;
-            std::vector<Overlay::Quad> quads;
+            Screen                      screen;
+            std::vector<Overlay::Quad>  quads;
+            std::vector<Overlay::Shape> shapes;
+
+            // A shape: its corners round it with their texture coordinates.
+            void Shape(std::uint32_t a_texture, const std::array<Radar::Corner, 4>& a_corners, Colour a_colour)
+            {
+                if (a_colour.a == 0) {
+                    return;
+                }
+                Overlay::Shape shape{ a_texture, {}, Packed(a_colour) };
+                for (int i = 0; i < 4; i++) {
+                    shape.corners[i] = { a_corners[i].x, a_corners[i].y, a_corners[i].u, a_corners[i].v };
+                }
+                Overlay::Quad quad{};
+                quad.texture = a_texture;
+                quad.shape = static_cast<std::int32_t>(shapes.size());
+                shapes.push_back(shape);
+                quads.push_back(quad);
+            }
+
+            // A filled polygon (a triangle has two corners the same).
+            void Fill(const Radar::Polygon& a_polygon)
+            {
+                std::array<Radar::Corner, 4> corners{};
+                for (int i = 0; i < 4; i++) {
+                    corners[i] = { a_polygon.corners[i].x, a_polygon.corners[i].y, 0.0f, 0.0f };
+                }
+                Shape(Overlay::kWhite, corners, a_polygon.colour);
+            }
+
+            // A whole texture on four corners: top left, top right, bottom right, bottom left of it.
+            void Sprite(std::uint32_t a_texture, const std::array<Radar::Vec2, 4>& a_corners, Colour a_colour)
+            {
+                if (!a_texture) {
+                    return;
+                }
+                constexpr float u[4] = { 0.0f, 1.0f, 1.0f, 0.0f }, v[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+                std::array<Radar::Corner, 4> corners{};
+                for (int i = 0; i < 4; i++) {
+                    corners[i] = { a_corners[i].x, a_corners[i].y, u[i], v[i] };
+                }
+                Shape(a_texture, corners, a_colour);
+            }
 
             void Box(const Rect& a_rect, Colour a_colour)
             {
@@ -203,14 +270,69 @@ namespace AhShitRim::SaHud
         };
 
         // The four quarters of a crosshair or scope, the three after the first mirrored.
-        void DrawQuarters(Frame& a_frame, std::uint32_t a_texture, const std::array<Quarter, 4>& a_quarters)
+        void DrawQuarters(Frame& a_frame, std::uint32_t a_texture, const std::array<Quarter, 4>& a_quarters, std::uint32_t a_colour = 0xFFFFFFFF)
         {
             if (a_texture == 0) {
                 return;
             }
             for (const auto& q : a_quarters) {
                 a_frame.quads.push_back({ a_texture, q.rect.x0, q.rect.y0, q.rect.x1, q.rect.y1, q.flipU ? 1.0f : 0.0f, q.flipV ? 1.0f : 0.0f,
-                    q.flipU ? 0.0f : 1.0f, q.flipV ? 0.0f : 1.0f, 0xFFFFFFFF });
+                    q.flipU ? 0.0f : 1.0f, q.flipV ? 0.0f : 1.0f, a_colour });
+            }
+        }
+
+        // San Andreas's radar bottom left (CHud::DrawRadar, CRadar::DrawMap and DrawBlips): the map turned with the camera,
+        // dark where there's none, the black ring, the N, the blips and CJ's arrow.
+        void DrawRadar(Frame& a_frame, RE::PlayerCharacter* a_player)
+        {
+            auto& radar = state.radar;
+            if (!radar.disc) {
+                return;
+            }
+            RadarScene::Scene scene;
+            RadarScene::Gather(a_player, radar.mapWorld, scene);
+            const auto& cj = state.cj;
+            const auto  kind = cj.vehicleModel ? VehicleKinds::KindOf(cj.vehicleModel) : VehicleKinds::Kind::Unknown;
+            const auto  moving = !cj.vehicleModel ? Radar::Moving::OnFoot : kind == VehicleKinds::Kind::Plane ? Radar::Moving::Plane : Radar::Moving::Vehicle;
+            float       altitude = 0.0f;
+            if (auto* world = a_player->GetWorldspace(); world && moving == Radar::Moving::Plane) {
+                altitude = (scene.z - world->GetDefaultWaterHeight()) * Pose::kMetersPerUnit;
+            }
+            const float camera = cj.valid ? cj.viewHeading : a_player->GetAngleZ();
+            const Radar::View view{ scene.cj, camera, Radar::RangeMeters(moving, cj.speed, altitude) * Pose::kUnitsPerMeter };
+            const auto& screen = a_frame.screen;
+
+            const bool mapped = scene.mapped && radar.map;
+            for (const auto& quad : Radar::Fill(screen, view, mapped ? radar.mapBounds : Radar::MapBounds{})) {
+                a_frame.Shape(mapped ? radar.map : Overlay::kWhite, quad, mapped ? Colour{ 255, 255, 255, 255 } : scene.mapped ? Radar::kNoMap : Radar::kDark);
+            }
+            DrawQuarters(a_frame, radar.disc, Radar::Disc(screen), Packed(kBlack));
+
+            const auto sprite = [&](std::uint32_t a_texture, Radar::Vec2 a_at) {
+                const auto box = Radar::SpriteBox(screen, a_at);
+                a_frame.Sprite(a_texture, { { { box.x0, box.y0 }, { box.x1, box.y0 }, { box.x1, box.y1 }, { box.x0, box.y1 } } }, Colour{ 255, 255, 255, 255 });
+            };
+            sprite(radar.north, Radar::North(screen, view));
+            for (const auto& blip : scene.blips) {
+                if (Radar::IsSprite(blip.kind)) {
+                    continue;
+                }
+                if (const auto at = Radar::Place(screen, view, blip.kind, blip.at)) {
+                    const auto colour = blip.kind == Radar::Kind::Hostile ? Radar::kThreat : Radar::kDestination;
+                    for (const auto& polygon : Radar::Trace(screen, *at, Radar::TraceSize(blip.kind), Radar::HeightOf(blip.z - scene.z), colour)) {
+                        a_frame.Fill(polygon);
+                    }
+                }
+            }
+            for (const auto& blip : scene.blips) {
+                if (const auto at = Radar::IsSprite(blip.kind) ? Radar::Place(screen, view, blip.kind, blip.at) : std::nullopt) {
+                    sprite(blip.kind == Radar::Kind::Shop ? radar.shop : radar.waypoint, *at);
+                }
+            }
+            // San Andreas doesn't draw CJ's arrow while he flies a plane.
+            if (moving != Radar::Moving::Plane) {
+                const float turn = cj.valid ? cj.heading - cj.viewHeading : 0.0f;
+                a_frame.Sprite(radar.centre, Radar::Arrow(screen, turn), Colour{ 255, 255, 255, 255 });
             }
         }
 
@@ -383,6 +505,9 @@ namespace AhShitRim::SaHud
                     return;
                 }
                 for (std::size_t i = 0; i < std::size(kSkyrimHud); i++) {
+                    if (i == 0 && state.showCompass) {
+                        continue;  // the compass and shout meter stay as Skyrim has them
+                    }
                     RE::GFxValue clip;
                     const auto   path = std::string("_root.HUDMovieBaseInstance.") + kSkyrimHud[i];
                     if (!movie->GetVariable(&clip, path.c_str()) || !clip.IsDisplayObject()) {
@@ -454,6 +579,12 @@ namespace AhShitRim::SaHud
             return static_cast<std::uint32_t>(images.size());  // the overlay's ids count from 1
         };
         state.siteM16 = add(Txd::Find(hud, "siteM16"));
+        state.radar.disc = add(Txd::Find(hud, Radar::kDiscSprite));
+        state.radar.centre = add(Txd::Find(hud, Radar::kCentreSprite));
+        state.radar.north = add(Txd::Find(hud, Radar::kNorthSprite));
+        state.radar.waypoint = add(Txd::Find(hud, Radar::kWaypointSprite));
+        state.radar.shop = add(Txd::Find(hud, Radar::kShopSprite));
+        state.showCompass = Ini::Value("Hud", "Compass") == "1";
         state.siteRocket = add(Txd::Find(hud, "siterocket"));
         const auto particleData = ReadFile(sa / "models" / "particle.txd");
         state.target256 = add(Txd::Find(Txd::Read(particleData.data(), particleData.size(), &skipped), "target256"));
@@ -487,11 +618,31 @@ namespace AhShitRim::SaHud
                 }
             }
         }
+
+        // The radar's map (#899's radar-map.png and its .json): the player's own in Documents\My Games\AhShitRim, else
+        // one shipped beside the plugin. San Andreas's sea past its edges.
+        for (const auto& folder : { Overlay::MyGamesFolder(), std::filesystem::path("Data/SKSE/Plugins/AhShitRim") }) {
+            const auto json = folder.empty() ? std::vector<std::uint8_t>{} : ReadFile(folder / "radar-map.json");
+            const auto bounds = Radar::ParseMapJson(std::string_view(reinterpret_cast<const char*>(json.data()), json.size()));
+            Overlay::Image map;
+            if (bounds && Overlay::ReadImage(folder / "radar-map.png", map)) {
+                SKSE::log::info("sa hud: radar map {}x{} from {}", map.width, map.height, folder.string());
+                map.border = Packed(Radar::kSea);
+                images.push_back(std::move(map));
+                state.radar.map = static_cast<std::uint32_t>(images.size());
+                state.radar.mapBounds = *bounds;
+                break;
+            }
+        }
+        if (!state.radar.map) {
+            SKSE::log::warn("sa hud: no radar map (radar-map.png and radar-map.json in Documents\\My Games\\AhShitRim or Data\\SKSE\\Plugins\\AhShitRim), the radar shows plain ground");
+        }
         Overlay::SetImages(std::move(images));
         state.loaded = true;
-        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}, lock-on marker {}{}",
+        SKSE::log::info("sa hud: San Andreas's fonts and HUD sprites read from {} ({} and {} textures); {} weapon icons ({} missing), scopes: sniper {}, camera {}, rocket {}, rifle {}, lock-on marker {}, radar {}{}{}",
             sa.string(), fonts.size(), hud.size(), icons, missing, state.sniperCrosshair != 0, state.cameraCrosshair != 0, state.siteRocket != 0, state.siteM16 != 0,
-            state.target256 != 0,
+            state.target256 != 0, state.radar.disc && state.radar.centre && state.radar.north && state.radar.waypoint && state.radar.shop,
+            state.showCompass ? " with Skyrim's compass" : "",
             directory ? "" : "; gta3.img did not read, the weapon icon stays the fist");
     }
 
@@ -523,6 +674,9 @@ namespace AhShitRim::SaHud
         }
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (a_owned && !a_menu && player) {
+            if (state.letterbox <= 0.0f) {  // San Andreas puts its radar away for cutscenes
+                DrawRadar(frame, player);
+            }
             DrawHud(frame, player);
             DrawScope(frame);
             DrawMark(frame);
@@ -533,16 +687,18 @@ namespace AhShitRim::SaHud
         state.mark = false;
         state.menuRows.clear();
         DrawText(frame);
-        Overlay::Submit(std::move(frame.quads));
+        Overlay::Submit(std::move(frame.quads), std::move(frame.shapes));
     }
 
     void SetWeapon(const Protocol::PlayerState* a_pose)
     {
         auto& w = state.weapon;
         w = {};
+        state.cj = {};
         if (!a_pose) {
             return;
         }
+        state.cj = { true, std::hypot(a_pose->velocity[0], a_pose->velocity[1], a_pose->velocity[2]) * Pose::kMetersPerUnit, a_pose->heading, a_pose->viewHeading, a_pose->vehicleModel };
         w.valid = true;
         w.type = a_pose->weaponType;
         w.scope = Weapons::ScopeOf(a_pose->cameraMode);

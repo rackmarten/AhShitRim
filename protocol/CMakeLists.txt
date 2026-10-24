@@ -70,6 +70,7 @@ add_executable(protocol_tests
     tests/cpp/test_wanted.cpp
     tests/cpp/test_knock.cpp
     tests/cpp/test_radar_map.cpp
+    tests/cpp/test_radar.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
