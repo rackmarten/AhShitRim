@@ -90,4 +90,4 @@ The full list is in the [README](../README.md#keys).
 - **No San Andreas HUD in Skyrim**: `Data\SKSE\Plugins\AhShitRim.ini` doesn't point at San Andreas. Run the launcher again, it rewrites it.
 - **Skyrim crashes at start, or SKSE says the plugin is incompatible**: the game updated. Update SKSE and Address Library to match.
 
-The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, San Andreas's in its `scripts\AhShitRim.log`.
+The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`, so a crash's log survives starting the game again), San Andreas's in its `scripts\AhShitRim.log`.
