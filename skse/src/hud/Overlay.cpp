@@ -269,7 +269,14 @@ namespace AhShitRim::Overlay
                     ((quad.colour >> 24) & 0xFF) / 255.0f } } };
                 const DirectX::XMFLOAT2    scale{ (quad.x1 - quad.x0) / static_cast<float>(source.right - source.left),
                     (quad.y1 - quad.y0) / static_cast<float>(source.bottom - source.top) };
-                batch->Draw(texture.view.Get(), DirectX::XMFLOAT2(quad.x0, quad.y0), &source, colour, 0.0f, DirectX::XMFLOAT2(0.0f, 0.0f), scale, effects, 0.0f);
+                if (quad.rotation == 0.0f) {
+                    batch->Draw(texture.view.Get(), DirectX::XMFLOAT2(quad.x0, quad.y0), &source, colour, 0.0f, DirectX::XMFLOAT2(0.0f, 0.0f), scale, effects, 0.0f);
+                } else {
+                    // Turned about its middle: the origin is in the source's pixels, the position on the screen.
+                    const DirectX::XMFLOAT2 origin{ 0.5f * static_cast<float>(source.right - source.left), 0.5f * static_cast<float>(source.bottom - source.top) };
+                    batch->Draw(texture.view.Get(), DirectX::XMFLOAT2(0.5f * (quad.x0 + quad.x1), 0.5f * (quad.y0 + quad.y1)), &source, colour, quad.rotation, origin,
+                        scale, effects, 0.0f);
+                }
             }
             batch->End();
         }

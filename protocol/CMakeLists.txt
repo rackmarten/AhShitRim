@@ -74,6 +74,7 @@ add_executable(protocol_tests
     tests/cpp/test_situations.cpp
     tests/cpp/test_hud_sounds.cpp
     tests/cpp/test_wanted.cpp
+    tests/cpp/test_lock_marker.cpp
     tests/cpp/test_knock.cpp
     tests/cpp/test_mega_punch.cpp
     tests/cpp/test_air_spawn.cpp

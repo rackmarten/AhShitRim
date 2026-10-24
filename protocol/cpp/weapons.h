@@ -203,6 +203,17 @@ namespace AhShitRim::Weapons
         }
     }
 
+    // (v23) In the Hydra (520) or the Hunter (425), San Andreas's first-person camera puts the rocket sight's four
+    // quarters in the middle of the screen as well, the same size (CHud::DrawCrossHairs' custom crosshair): the
+    // frame its heat-seeker lock shows inside. a_vehicleModel is 0 on foot.
+    constexpr Scope ScopeOf(std::uint8_t a_cameraMode, std::uint16_t a_vehicleModel)
+    {
+        if (a_cameraMode == kCamFirstPerson && (a_vehicleModel == 520 || a_vehicleModel == 425)) {
+            return Scope::Rocket;
+        }
+        return ScopeOf(a_cameraMode);
+    }
+
     // The look pitch to give San Andreas's aim (CPlayerData::m_fLookPitch) for a camera looking along a unit vector
     // with this Z: the angle it looks up, negated (0 is level, looking up is negative).
     inline float AimLookPitch(float a_frontZ)
