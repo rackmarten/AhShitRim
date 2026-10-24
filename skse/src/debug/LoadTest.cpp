@@ -64,6 +64,7 @@ namespace AhShitRim::LoadTest
             int                      cycles = 0;
             int                      cycle = 0;  // the one running (from 1)
             std::vector<std::string> saves{ "StressA", "StressB" };
+            std::vector<Scenario>    scenarios{ std::begin(kScenarios), std::end(kScenarios) };  // LoadTestScenarios, in turn
             Scenario                 scenario = Scenario::Idle;
             float                    timer = 0.0f;
             int                      step = 0;
@@ -126,7 +127,7 @@ namespace AhShitRim::LoadTest
                 return;
             }
             WriteProgress(state.cycle);
-            state.scenario = kScenarios[(state.cycle - 1) % std::size(kScenarios)];
+            state.scenario = state.scenarios[static_cast<std::size_t>(state.cycle - 1) % state.scenarios.size()];
             state.travelled = false;
             Note("load");
             state.phase = Phase::Loading;
@@ -259,6 +260,17 @@ namespace AhShitRim::LoadTest
                     state.saves.push_back(name);
                 }
                 from = comma == std::string::npos ? saves.size() + 1 : comma + 1;
+            }
+        }
+        if (const auto names = Ini::Value("Debug", "LoadTestScenarios"); !names.empty()) {
+            std::vector<Scenario> picked;
+            for (const auto scenario : kScenarios) {
+                if (names.find(NameOf(scenario)) != std::string::npos) {
+                    picked.push_back(scenario);
+                }
+            }
+            if (!picked.empty()) {
+                state.scenarios = picked;
             }
         }
         if (state.saves.empty() || ReadProgress() >= state.cycles) {
