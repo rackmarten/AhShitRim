@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 23;
+    inline constexpr std::uint32_t kProtocolVersion = 24;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -314,6 +314,9 @@ namespace AhShitRim::Protocol
         std::uint32_t seatCount;         // v23, vehicle slots: its passenger seats in seats (San Andreas's m_nMaxPassengers, at most kSeatMax); 0 elsewhere
         BodyBone      seats[kSeatMax];   // v23: each passenger seat (San Andreas's passenger order: the front one or a bike's pillion, back left,
                                          // back right) relative to feet, as the bones are: where a seated passenger's hips go, turned as the vehicle
+        BodyBone      vehicleFrame;      // v24, vehicle slots: how the vehicle is turned (its matrix: X right, Y forward, Z up), translation zero; zero elsewhere
+        float         boxMin[3];         // v24, vehicle slots: its collision box (its col model's bounds) in that frame from feet, Skyrim units; zero elsewhere
+        float         boxMax[3];
     };
 
     struct BodySlot
@@ -321,7 +324,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[60];  // v23: 2048 bytes, keeping the later slots on 64-byte boundaries
+        std::uint8_t  pad[8];  // v23: 2048 bytes, keeping the later slots on 64-byte boundaries
     };
 
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v23): a giant, mammoth or dragon, which stops a car like a wall
@@ -484,6 +487,7 @@ namespace AhShitRim::Protocol
         Fire = 3,            // fire on the ground at `at` for `seconds`: San Andreas's own (its crackle; CJ catches fire walking into it)
         BurnCj = 4,          // CJ was caught in fire: San Andreas sets him alight (his scream, the burn)
         KnockCj = 5,         // v22: a blow knocked the player down in Skyrim (a giant's club): San Andreas throws CJ away from `at` at `seconds` metres a second, with its own fall and get-up (protocol/cpp/knock.h)
+        HitVehicle = 6,      // v24: one of Skyrim's attacks hit CJ's vehicle at `at`: San Andreas takes `seconds` off its health; weaponType is the attack (VehicleHits::Attack, protocol/cpp/vehicle_hits.h)
     };
 
     // Payload of an Effect message (v15).
@@ -677,7 +681,9 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(AudioState) == 32);
     static_assert(sizeof(AudioSlot) == 64);
     static_assert(sizeof(BodyBone) == 28);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36 + 4 + kSeatMax * 28);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36 + 4 + kSeatMax * 28 + 28 + 24);
+    static_assert(offsetof(BodyState, vehicleFrame) == 64 + kBodyBoneMax * 28 + 40 + kSeatMax * 28);
+    static_assert(offsetof(BodyState, boxMin) == 64 + kBodyBoneMax * 28 + 40 + kSeatMax * 28 + 28);
     static_assert(offsetof(BodyState, seatCount) == 64 + kBodyBoneMax * 28 + 36);
     static_assert(offsetof(BodyState, seats) == 64 + kBodyBoneMax * 28 + 40);
     static_assert(offsetof(BodyState, cameraUp) == 64 + kBodyBoneMax * 28);

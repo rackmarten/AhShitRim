@@ -26,6 +26,7 @@
 #include "player/Looting.h"
 #include "player/Conversation.h"
 #include "player/CarHits.h"
+#include "player/Hitboxes.h"
 #include "player/Projectiles.h"
 #include "player/Riders.h"
 #include "player/Shots.h"
@@ -462,8 +463,9 @@ namespace AhShitRim::PlayerSync
                     }
                 }
             }
-            // CJ's followers ride in his (v23), smoothed with it.
+            // CJ's followers ride in his (v23), smoothed with it, and Skyrim's attacks hit its shape (v24).
             Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
         // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed.
@@ -506,6 +508,7 @@ namespace AhShitRim::PlayerSync
             People::Clear();
             CarHits::Clear();
             Riders::Clear();
+            Hitboxes::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -585,6 +588,7 @@ namespace AhShitRim::PlayerSync
             People::Clear();
             CarHits::Clear();
             Riders::Clear();
+            Hitboxes::Clear();
             Activation::Clear();
             AmmuNation::Close();
             state.reanchoring = true;
@@ -859,6 +863,7 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
+            Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
@@ -1220,6 +1225,7 @@ namespace AhShitRim::PlayerSync
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
         Riders::OnDataLoaded();
+        Hitboxes::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

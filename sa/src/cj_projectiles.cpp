@@ -1,6 +1,7 @@
 #include "cj_projectiles.h"
 
 #include "body.h"
+#include "car_hits.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
 #include "explosives.h"
@@ -303,6 +304,10 @@ namespace AhShitRim::CjProjectiles
                     TheCamera.CamShake(0.4f, pos.x, pos.y, pos.z);
                     Log(std::format("projectiles: a blow in Skyrim throws CJ at ({:.1f},{:.1f},{:.1f}) m/s, falling {}", launch.x, launch.y, launch.z, fall));
                 }
+                break;
+            case Protocol::EffectKind::HitVehicle:
+                // v24: one of Skyrim's attacks hit CJ's vehicle: its health and his line (CarHits).
+                CarHits::TakeHit(a_ped, a_effect.weaponType, a_effect.seconds, at);
                 break;
             default: break;
             }

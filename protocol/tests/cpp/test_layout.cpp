@@ -28,9 +28,19 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v24: Skyrim's hits on CJ's vehicle")
+{
+    CHECK(kProtocolVersion == 24);
+    CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
+    CHECK(offsetof(BodyState, vehicleFrame) == 1980);
+    CHECK(offsetof(BodyState, boxMin) == 2008);
+    CHECK(offsetof(BodyState, boxMax) == 2020);
+    CHECK(sizeof(BodyState) == 2032);
+    CHECK(sizeof(BodySlot) == 2048);  // unchanged: the slots and rings stay where v23 put them
+}
+
 TEST_CASE("protocol v23: running people over and passengers")
 {
-    CHECK(kProtocolVersion == 23);
     CHECK(kProxyMax == 16);
     CHECK(kSeatMax == 3);
     CHECK(static_cast<std::uint16_t>(MessageType::Impact) == 8);
@@ -210,7 +220,7 @@ TEST_CASE("the v23 slot and ring layout")
     CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 2048);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 1980);
+    CHECK(sizeof(BodyState) == 2032);  // v24: the vehicle frame and box after the seats
     CHECK(offsetof(BodyState, seatCount) == 1892);
     CHECK(offsetof(BodyState, seats) == 1896);
     CHECK(offsetof(BodyState, cameraUp) == 1856);

@@ -86,7 +86,7 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 ## Planned features
 
 - **CJ** on foot, with San Andreas's movement and animations.
-- **Cars and bikes**: San Andreas's vehicle physics on Skyrim's roads, and running people over.
+- **Cars and bikes**: San Andreas's vehicle physics on Skyrim's roads, and running people over. Skyrim's arrows, blows and spells hit the car, not CJ inside, and bandits, wolves and giants can wreck it until it burns and blows up (a bike only half shields him).
 - **Guns**: San Andreas's weapons in CJ's hands, hurting Skyrim's people, who react like San Andreas's peds: a civilian CJ points a gun at cowers, gunfire and the chainsaw send them running, and to Skyrim it's all magic ("Whoa, whoa, whoa! Watch the magic!") (done).
 - **Quests**: complete Skyrim's quests as CJ. Anything that needs spells or lockpicking hands the player back to Skyrim.
 - **Wanted level**: stars from the hold's bounty and the crimes CJ commits. More stars, more guards, and from 3 stars they chase CJ on horseback. Lose them by staying out of sight, or pay the guard. Stopped in a car with a guard at the door, you're dragged out and Busted (done, see [Wanted level and Busted](#wanted-level-and-busted)).
@@ -101,7 +101,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
 - CJ has his own lines for being chased and busted.
 - A giant's club or a mammoth throws CJ through the air as a car's blast does, and he gets back up San Andreas's way.
-- In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
+- In a car, stop for a second or two and the nearest guard puts his weapon away and runs round to the driver's door, then drags CJ out: Busted. On a bike he runs to CJ and knocks him off. Keep moving and they can't.
 - On foot, Skyrim's guard dialogue is as it was: pay the fine, resist, persuade. Only "go to jail" is Busted instead.
 - Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks (Dragonsreach in Whiterun) with all his weapons. No jail. Once he's arrested nobody shoots him.
 - Paying the fine to a guard ends the stars too.
