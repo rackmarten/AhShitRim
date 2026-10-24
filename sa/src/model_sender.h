@@ -25,4 +25,7 @@ namespace AhShitRim::ModelSender
 
     // Once a frame: sends what the ring has room for.
     void Pump();
+
+    // A new model's id, never one sent before (SkinModel::ModelIds, one counter for every sender).
+    std::uint32_t NewId();
 }

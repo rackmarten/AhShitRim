@@ -200,3 +200,21 @@ TEST_CASE("triangles back to back over the same corners are twins, whatever thei
     REQUIRE(twoModel);
     CHECK(SkinModel::OneSided(twoModel->meshes[0]));
 }
+
+TEST_CASE("model ids never repeat, even many in one millisecond, and are never 0")
+{
+    SkinModel::ModelIds ids;
+    std::vector<std::uint32_t> seen;
+    for (int i = 0; i < 64; i++) {
+        seen.push_back(ids.Next(1000));  // a twin gun's two hands, a vehicle and more, all in the same millisecond
+    }
+    std::sort(seen.begin(), seen.end());
+    CHECK(std::adjacent_find(seen.begin(), seen.end()) == seen.end());
+    for (const auto id : seen) {
+        CHECK(id != 0);
+        CHECK((id & 1) == 1);
+    }
+    // A San Andreas started later starts further on.
+    SkinModel::ModelIds later;
+    CHECK(later.Next(2000) > seen.back());
+}

@@ -77,7 +77,6 @@ namespace AhShitRim::Vehicles
         {
             Slot          slots[Protocol::kVehicleMax];
             std::uint64_t spawns = 0;
-            std::uint32_t builds = 0;
             std::uint64_t drivenLogMs = 0;
         } state;
 
@@ -431,7 +430,7 @@ namespace AhShitRim::Vehicles
                 Log(std::format("vehicle: the {}'s model ({} bytes, {} meshes) would not load in Skyrim, not sent", slot.name, blob.size(), model.meshes.size()));
                 return false;
             }
-            slot.model = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;  // new for every build
+            slot.model = ModelSender::NewId();  // new for every build
             auto       chunks = SkinModel::Chunks(slot.model, blob);
             const auto chunkCount = chunks.size();
             ModelSender::Set(ModelSender::kVehicleKey + a_index, slot.model, std::move(chunks), std::format("vehicle: the {}'s model", slot.name));

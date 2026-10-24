@@ -73,11 +73,10 @@ namespace AhShitRim::CjGear
             bool             blockLoaded = false;
             Model            jetpack;
             Model            chuteModel;
-            std::uint32_t    builds = 0;
             bool             shown = false;    // the gear slot holds something
         } state;
 
-        std::uint32_t NewId() { return (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1; }
+        std::uint32_t NewId() { return ModelSender::NewId(); }
 
         Body::RwRows ToFrame(const RwMatrix& a_m)
         {

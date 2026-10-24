@@ -319,4 +319,29 @@ namespace AhShitRim::SkinModel
         std::uint32_t             _total = 0;
         bool                      _receiving = false;
     };
+
+    // Ids for the models San Andreas sends: odd (so never 0), one after another for the whole run, starting from the
+    // clock at the first one so a restarted San Andreas doesn't reuse an id Skyrim has built already (it builds an id
+    // once). One counter for every sender: the old (ms << 4 | count & 0xF) | 1 per sender gave counts 2 and 3 in the
+    // same millisecond the same id, so a twin sawn-off's two hands came as one model and Skyrim drew one gun.
+    class ModelIds
+    {
+    public:
+        std::uint32_t Next(std::uint64_t a_nowMs)
+        {
+            if (!_next) {
+                _next = static_cast<std::uint32_t>(a_nowMs) << 4 | 1;
+            }
+            const std::uint32_t id = _next;
+            _next += 2;
+            if (_next == 1) {
+                _next = 3;  // wrapped round past 0
+            }
+            return id;
+        }
+
+    private:
+        std::uint32_t _next = 0;
+    };
+
 }
