@@ -232,6 +232,15 @@ San Andreas plays its own sounds, with its own audio engine; Skyrim only sets ho
 | CJ (done) | CJ drawn in Skyrim from San Andreas's own model, animated, through San Andreas's camera (protocol v5) |
 | Vehicles (done) | A Sandking, a ZR-350 and a Sanchez spawned, driven and ridden on Skyrim's roads, drawn from their own models (protocol v6) |
 
+### The radar's map
+
+San Andreas's radar needs a map, and there's no San Andreas-style map of Skyrim, so a generator paints one from the player's own plugins: the repo holds only the recipe, never the image or anything else made from Bethesda's data.
+
+- **Reading** (`protocol/cpp/esm.h`, `protocol/cpp/inflate.h`): the plugin format (records, groups, fields, zlib-compressed records through a small inflate of its own) and the records it needs: cells (grid, water height), landscape (`VHGT` heights, base and blended texture layers per quadrant), references (base, position, z rotation, scale) and base objects (model, bounds). Load order as the game's: its masters, Creation Club content (`Skyrim.ccc`), then `plugins.txt`, masters first; form IDs resolve through each plugin's masters, so a later plugin's cell, landscape or reference replaces an earlier one, and a mod that changes the land changes the map.
+- **What's on it** (`protocol/cpp/radar_map.h`): Tamriel's exterior cells, plus the buildings and roads of its child worlds standing on its land (the walled cities, `PNAM` bit 0; caves and Sovngarde are Tamriel's children only in name). Each landscape vertex's ground is its textures blended by opacity, classified by name (`LTundra01` tundra, `LSnow*` snow, `LPineForest*` forest, `LDirtPath01` path, ...), and water where it's below the cell's water (most cells say "the world's default", the sea level at -14000). Steep bare ground is rock. Roads are Skyrim's road meshes (`Landscape\Roads`, bridges, Whiterun's main road), not a ground texture. Buildings are anything under `Architecture` within a sane size; the cities' terrain, foundations and distant versions are town ground. Trees are `TREE`s under `Landscape\Trees` at least 500 units tall (Skyrim makes shrubs and flowers trees too).
+- **Painting**: 32 pixels per cell, one per landscape vertex (128 units), so Tamriel is 3808 x 3008. San Andreas's radar colours, sampled from its own `radar00..143.txd`: blue-grey water, light green grass, olive tundra, dark green forest (where trees stand closer than about one per 15 pixels), brown dirt, grey rock and town ground, white buildings, near-black roads, with a pale grey for snow, which San Andreas doesn't have. The ground is smoothed into flat patches (each class's share of a 7 x 7 square, water counting double so rivers survive). Roads get one width: their footprints (cut to the road's middle 520 units) are thinned to a centre line (Zhang-Suen), stubs and specks pruned, then drawn again 3.5 pixels wide and softened. Dirt paths painted on the ground get the same, 2 pixels wide and brown.
+- **Output**: `Documents\My Games\AhShitRim\radar-map.png` and `radar-map.json`: the size, the cell range, the origin (world x and y of the image's top-left corner) and units per pixel (pixel x = (world x - origin x) / 128, pixel y = (origin y - world y) / 128, north up), and the plugins it was made from (names, sizes, write times) with the generator's version. Run again, it does nothing while those match. `scripts/radar-map.ps1` runs it; on the desktop the whole run takes about 5 to 8 s (2 to 4 s reading, 3 s painting), so it could run at the first launch. A hand-touched copy may ship in the release zip, never in the repo.
+
 ## 5. Repo layout
 
 | Path | What |
@@ -239,7 +248,7 @@ San Andreas plays its own sounds, with its own audio engine; Skyrim only sets ho
 | `skse/` | SKSE plugin; `extern/CommonLibSSE-NG` submodule |
 | `sa/` | ASI plugin; `extern/plugin-sdk` submodule |
 | `protocol/` | Shared protocol header, C++ link code and its game-free tests |
-| `scripts/` | `build.ps1`, `deploy-local.ps1`, `test.ps1`, `logs.ps1`, `launch-sa.ps1`, `restart-games.ps1`, `fake-skyrim.ps1`, `encode-music.ps1` |
+| `scripts/` | `build.ps1`, `deploy-local.ps1`, `test.ps1`, `logs.ps1`, `launch-sa.ps1`, `restart-games.ps1`, `fake-skyrim.ps1`, `encode-music.ps1`, `radar-map.ps1` |
 | `music/` | `CREDITS.md` (Sweetroll FM's CC0 tracks and their sources), `sweetrollfm/*.xwm` once encoded |
 | `docs/` | This document, [PROTOCOL.md](PROTOCOL.md), [DEV_SETUP.md](DEV_SETUP.md), [ROADMAP.md](ROADMAP.md) |
 

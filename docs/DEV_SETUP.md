@@ -88,6 +88,7 @@ scripts/fake-weapons.ps1           # with San Andreas running and Skyrim closed:
 scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX, see a boat refused, fly a Hunter and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute
 scripts/restart-games.ps1          # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim (-NoBuild skips the build)
 scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
+scripts/radar-map.ps1              # paint the radar's map of Skyrim from your plugins into Documents\My Games\AhShitRim (-Force to paint it again, -NoMods for the base game only)
 scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones; then spawn a Sandking, drive it, ride a Sanchez, spawn a ZR-350, check a new handover takes CJ out and removes them, and drive 1.3 km through a floating origin move
 ```
 
@@ -97,6 +98,10 @@ The first SKSE build takes a while (often 15 to 25 minutes): vcpkg builds the de
 
 - `skse/build/release/AhShitRim.dll` (+ `.pdb`), deployed to `<SkyrimPath>\Data\SKSE\Plugins\`, next to an `AhShitRim.ini` the deploy writes with `[SanAndreas] Path=<SaPath>`: the plugin reads San Andreas's fonts and HUD sprites from there at startup
 - `sa/build/Release/AhShitRim.asi` (+ `.pdb`), deployed to `<SaPath>\scripts\`
+
+### The radar map
+
+`scripts/radar-map.ps1` builds `protocol/tools/radar_map.exe` (the `tools` preset: Release, in `protocol/build/tools`) and runs it on `SkyrimPath` from `local.props`. It reads your load order (`%LOCALAPPDATA%\Skyrim Special Edition\plugins.txt`), paints Tamriel and writes `radar-map.png` and `radar-map.json` to `Documents\My Games\AhShitRim` (`-Out <folder>` elsewhere). It needs neither game running and takes about 5 to 8 seconds; it skips the painting while the plugins haven't changed since the last map (`-Force` paints it anyway). The exe takes the same as arguments (`--skyrim <folder> --out <folder> --force --no-mods`) and finds Skyrim through the registry without `--skyrim`. How it reads and paints is in [DESIGN.md](DESIGN.md#the-radars-map). Never commit the image: it's made from Bethesda's data.
 
 ### Handshake check
 

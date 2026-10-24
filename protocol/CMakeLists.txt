@@ -69,6 +69,7 @@ add_executable(protocol_tests
     tests/cpp/test_dialogue.cpp
     tests/cpp/test_wanted.cpp
     tests/cpp/test_knock.cpp
+    tests/cpp/test_radar_map.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
@@ -104,5 +105,13 @@ if(WIN32)
     add_executable(fake_vehicles cpp/link.cpp tools/fake_vehicles.cpp)
     if(MSVC)
         target_compile_options(fake_vehicles PRIVATE /W4 /permissive- /utf-8)
+    endif()
+endif()
+
+# Paints the radar's map of Skyrim from the player's own plugins (scripts/radar-map.ps1). Not a test.
+if(WIN32)
+    add_executable(radar_map tools/radar_map.cpp)
+    if(MSVC)
+        target_compile_options(radar_map PRIVATE /W4 /permissive- /utf-8)
     endif()
 endif()
