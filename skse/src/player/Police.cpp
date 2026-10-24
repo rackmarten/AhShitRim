@@ -363,6 +363,8 @@ namespace AhShitRim::Police
             if (state.spawned.empty()) {
                 return;
             }
+            state.rejoin.Reset();  // the next pursuit starts clean: nobody of this one is set on the player again
+            state.downFighters.clear();
             for (auto& s : state.spawned) {
                 if (auto ref = s.actor.get()) {
                     if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead()) {
@@ -660,6 +662,42 @@ namespace AhShitRim::Police
             return nullptr;
         }
 
+        // One of ours joins the hold's guards' side (Wanted::Enlist): their factions and the hold's crime faction, its own
+        // left, aggressive only to enemies. Then no giant, dragon or guard of ours turns on another, or on the hold's guards.
+        void Enlist(RE::Actor* a_actor)
+        {
+            auto* guard = RE::TESForm::LookupByID<RE::TESNPC>(state.hold->guard);
+            std::vector<std::uint32_t> guards;
+            if (guard) {
+                for (const auto& rank : guard->factions) {
+                    if (rank.faction && rank.rank >= 0) {
+                        guards.push_back(rank.faction->GetFormID());
+                    }
+                }
+            }
+            std::vector<std::uint32_t> own;
+            a_actor->VisitFactions([&](RE::TESFaction* a_faction, std::int8_t a_rank) {
+                if (a_faction && a_rank >= 0) {
+                    own.push_back(a_faction->GetFormID());
+                }
+                return false;
+            });
+            const auto plan = Wanted::Enlist(own, guards, state.hold->faction);
+            for (const auto id : plan.leave) {
+                if (auto* faction = RE::TESForm::LookupByID<RE::TESFaction>(id)) {
+                    a_actor->RemoveFromFaction(faction);
+                }
+            }
+            for (const auto id : plan.join) {
+                if (auto* faction = RE::TESForm::LookupByID<RE::TESFaction>(id)) {
+                    a_actor->AddToFaction(faction, 0);
+                }
+            }
+            a_actor->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, Wanted::kOursAggression);
+            SKSE::log::info("police: {:08X} enlisted: {} faction(s) of {}'s guards joined, {} of its own left", a_actor->GetFormID(), plan.join.size(),
+                state.hold->name, plan.leave.size());
+        }
+
         bool Spawn(RE::PlayerCharacter* a_player, Wanted::Unit a_unit)
         {
             auto* base = BaseFor(a_player, a_unit);
@@ -684,6 +722,7 @@ namespace AhShitRim::Police
                     ref ? ", and it made no actor" : "");
                 return false;
             }
+            Enlist(actor);
             Spawned s;
             s.actor = actor->CreateRefHandle();
             s.unit = a_unit;

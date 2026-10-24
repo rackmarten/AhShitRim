@@ -481,6 +481,41 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // ---- One side ----
+
+    // Every one of ours (the guards, captain, wizards and soldiers, the giants, the mammoth, the dragon) is enlisted in the
+    // hold's guards' factions, its crime faction among them, and taken out of its own (the giants', the dragons', the
+    // predators'): friends with each other and with the hold's guards, with the criminal player their only enemy. Left as
+    // they were, the giants and the dragon fought the guards and each other, and nobody fought CJ.
+    inline constexpr float kOursAggression = 1.0f;  // aggressive: attacks enemies (the player) on sight, not everyone (a dragon's)
+
+    struct Enlistment
+    {
+        std::vector<std::uint32_t> join;   // the factions it joins (rank 0)
+        std::vector<std::uint32_t> leave;  // and those it leaves
+    };
+
+    // One of ours in factions a_own, the hold's guard in a_guards, the hold's crime faction a_crime (0 for none).
+    inline Enlistment Enlist(const std::vector<std::uint32_t>& a_own, const std::vector<std::uint32_t>& a_guards, std::uint32_t a_crime)
+    {
+        Enlistment out;
+        const auto add = [](std::vector<std::uint32_t>& a_to, std::uint32_t a_id) {
+            if (a_id != 0 && std::find(a_to.begin(), a_to.end(), a_id) == a_to.end()) {
+                a_to.push_back(a_id);
+            }
+        };
+        for (const auto id : a_guards) {
+            add(out.join, id);
+        }
+        add(out.join, a_crime);
+        for (const auto id : a_own) {
+            if (std::find(out.join.begin(), out.join.end(), id) == out.join.end()) {
+                add(out.leave, id);
+            }
+        }
+        return out;
+    }
+
     // Ours are after CJ, but gently: one fighting someone else (a giant at its camp, the dragon) is set on CJ again only
     // after kStrayFor seconds of it, one out of any fight after kLostFor, and none more often than every kLeashGap. Their
     // fights are never stopped for it: stopping and starting everyone's every second, in a camp brawl, threw away the path

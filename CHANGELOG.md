@@ -56,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- At 6 stars the reinforcements fought each other instead of CJ: the giants, the mammoth and the dragon weren't on the guards' side. Every reinforcement now joins the hold's guards' factions and leaves its own, so they're one side with the player as their only enemy, and a new pursuit after ASNAEB starts clean.
 - Skyrim could crash in its pathfinding during a big wanted fight (a giant camp): every pursuer fighting someone else had its fight stopped and started on CJ once a second, throwing away the paths being built. They're now set on CJ again only after a while of it and no more often than every 5 s, nobody's fight is stopped, and spawns only land on loaded navmesh close to the spot picked.
 - The wanted level's reinforcements could be copies of a named character, such as four Commander Caiuses at 4 stars in Whiterun: guards were copied from any guard of the hold about, and he counts as one. Only generic guards are copied now, never a unique or named NPC.
 - Quickloading (F9) after a fight with the wanted level's reinforcements could crash Skyrim. The police created, disabled and set actors on each other from inside the player's update, while Skyrim was updating other actors' AI, which left a freed actor in someone's AI. All of that now runs at Skyrim's safe point between frames, anyone fighting a pursuer stops before it's taken out, and a load leaves ours to Skyrim's own clearing.
