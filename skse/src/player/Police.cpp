@@ -416,7 +416,7 @@ namespace AhShitRim::Police
             }
         }
 
-        // One step a frame of the first leaving pursuer that can go (from the police's task, at a safe point).
+        // One step a frame of the first leaving pursuer that can go (from RunFrame, on the main thread).
         void SweepLeaving()
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1094,9 +1094,9 @@ namespace AhShitRim::Police
 
     namespace
     {
-        // The police's frame, run from an SKSE task (RunFrame), not from the player's update: creating, disabling and setting
-        // actors on each other there, while Skyrim updates the other actors' AI on its job threads, left a freed actor in
-        // someone's AI that crashed the game a while later (a quickload after a fight).
+        // The police's frame (RunFrame), on the main thread at the end of the player's update (Sweep, from PlayerSync's
+        // hook), after the frame's player sync. Not from an SKSE task: those ran on Skyrim's worker threads, beside its own
+        // actor updates, and setting actors on each other from there broke a fight's data that a quickload then crashed on.
         bool UpdateFrame(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene,
             float a_delta)
         {
@@ -1233,10 +1233,8 @@ namespace AhShitRim::Police
             bool                  release = false;  // Skyrim has the player back: ours leave
         };
 
-        std::mutex    g_pendingLock;
-        Pending       g_pending;
-        bool          g_taskQueued = false;
-        std::uint32_t g_generation = 0;  // a load or a new game makes the tasks queued before it do nothing
+        std::mutex g_pendingLock;
+        Pending    g_pending;
 
         void RunFrame()
         {
@@ -1244,7 +1242,6 @@ namespace AhShitRim::Police
             {
                 std::scoped_lock lock(g_pendingLock);
                 p = std::exchange(g_pending, Pending{});
-                g_taskQueued = false;
             }
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
@@ -1265,25 +1262,6 @@ namespace AhShitRim::Police
             SweepLeaving();
         }
 
-        // Asks for a task (one at a time) to run the police's frame at Skyrim's next safe point on the main thread. Call
-        // with g_pendingLock held.
-        void QueueLocked()
-        {
-            if (g_taskQueued) {
-                return;
-            }
-            auto* tasks = SKSE::GetTaskInterface();
-            if (!tasks) {
-                return;
-            }
-            g_taskQueued = true;
-            const auto generation = g_generation;
-            tasks->AddTask([generation] {
-                if (generation == g_generation) {
-                    RunFrame();
-                }
-            });
-        }
     }
 
     bool Update(RE::PlayerCharacter*, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_cjDrawn, bool a_scene, float a_delta)
@@ -1299,7 +1277,6 @@ namespace AhShitRim::Police
         g_pending.cjDrawn = a_cjDrawn;
         g_pending.scene = a_scene;
         g_pending.delta += a_delta;
-        QueueLocked();
         return state.sequence.Running();
     }
 
@@ -1323,14 +1300,30 @@ namespace AhShitRim::Police
     {
         std::scoped_lock lock(g_pendingLock);
         g_pending.knocked = true;
-        QueueLocked();
     }
 
     void Retarget(RE::PlayerCharacter*)
     {
         std::scoped_lock lock(g_pendingLock);
         g_pending.retarget = true;
-        QueueLocked();
+    }
+
+    bool QuickAllowed()
+    {
+        const int alive = static_cast<int>(std::count_if(state.spawned.begin(), state.spawned.end(), [](const Spawned& a_s) {
+            auto ref = a_s.actor.get();
+            auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+            return actor && !actor->IsDead();
+        }));
+        const bool allowed = Wanted::QuickAllowed(state.pursuit.Stars(), alive, static_cast<int>(state.leaving.size()));
+        if (!allowed && state.pursuit.Stars() == 0 && alive == 0) {
+            state.clearOut = true;  // only leaving ones: out of sight or not, they go now
+        }
+        if (!allowed) {
+            SKSE::log::info("police: a quick save or quickload refused: {} star(s), {} of ours out, {} leaving", state.pursuit.Stars(), alive,
+                state.leaving.size());
+        }
+        return allowed;
     }
 
     bool IsBusted() { return state.sequence.Running() && state.frame.active; }
@@ -1351,10 +1344,9 @@ namespace AhShitRim::Police
         state.line = 0;
         EndShow();
         {
-            std::scoped_lock lock(g_pendingLock);  // ours leave in the next task, at a safe point
+            std::scoped_lock lock(g_pendingLock);  // ours leave in the next RunFrame
             g_pending.update = false;
             g_pending.release = true;
-            QueueLocked();
         }
         state.stop.Reset();
         Show(0);
@@ -1367,23 +1359,15 @@ namespace AhShitRim::Police
         }
     }
 
-    void Sweep()
-    {
-        if (!state.leaving.empty()) {
-            std::scoped_lock lock(g_pendingLock);
-            QueueLocked();
-        }
-    }
+    void Sweep() { RunFrame(); }
 
     void OnGameLoad()
     {
         // A load or a new game: Skyrim clears its world, ours with it. Nothing of ours is done to any actor from here (no
-        // fight stopped, nothing disabled), no task queued before now runs, and no handle of ours outlives it.
+        // fight stopped, nothing disabled), nothing asked before now is run, and no handle of ours outlives it.
         {
             std::scoped_lock lock(g_pendingLock);
-            g_generation++;
             g_pending = {};
-            g_taskQueued = false;
         }
         if (!state.spawned.empty() || !state.leaving.empty()) {
             SKSE::log::info("police: a load: {} of ours and {} leaving are left to Skyrim's own clearing", state.spawned.size(), state.leaving.size());
