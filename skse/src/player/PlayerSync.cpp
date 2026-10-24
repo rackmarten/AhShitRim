@@ -9,6 +9,7 @@
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
 #include "debug/MissionTest.h"
+#include "debug/HitTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
@@ -30,6 +31,7 @@
 #include "player/Conversation.h"
 #include "player/Particles.h"
 #include "player/CarHits.h"
+#include "player/Hitboxes.h"
 #include "player/Projectiles.h"
 #include "player/Riders.h"
 #include "player/Shots.h"
@@ -472,8 +474,9 @@ namespace AhShitRim::PlayerSync
                     }
                 }
             }
-            // CJ's followers ride in his (v28), smoothed with it.
+            // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
             Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
         // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed,
@@ -524,6 +527,7 @@ namespace AhShitRim::PlayerSync
             People::Clear();
             CarHits::Clear();
             Riders::Clear();
+            Hitboxes::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -612,6 +616,7 @@ namespace AhShitRim::PlayerSync
             People::Clear();
             CarHits::Clear();
             Riders::Clear();
+            Hitboxes::Clear();
             Activation::Clear();
             AmmuNation::Close();
             state.reanchoring = true;
@@ -923,6 +928,7 @@ namespace AhShitRim::PlayerSync
             }
             Shots::Update(a_player, state.anchor, state.handover);
             CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
+            Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             // The heat seeker aims while CJ aims it, and in the Hydra (v23) while its lock-on, the handbrake key, is held.
@@ -1000,6 +1006,7 @@ namespace AhShitRim::PlayerSync
                 if (!state.owned) {
                     StreamTest::Update(a_player, a_delta);
                 }
+                HitTest::Update(a_player, a_delta);
                 Arms::Update();
                 CheatCodes::Update();
                 Police::Sweep();
@@ -1315,6 +1322,7 @@ namespace AhShitRim::PlayerSync
         MissionTest::OnDataLoaded();
         Shouting::OnDataLoaded();
         Riders::OnDataLoaded();
+        Hitboxes::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -1363,6 +1371,23 @@ namespace AhShitRim::PlayerSync
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
         WorldPickups::Restore(a_record.pickupsTaken);
+    }
+
+    void TakeOverInVehicle(std::uint16_t a_model)
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return;
+        }
+        if (state.owned) {
+            Release("the hit test hands it over again, in a vehicle");
+        }
+        state.carRequest = {};
+        state.carRequest.model = a_model;
+        state.carRequest.heading = player->GetAngleZ();
+        state.carForNext = true;
+        TakeOver(player);
+        state.carForNext = false;
     }
 
     void Revert()

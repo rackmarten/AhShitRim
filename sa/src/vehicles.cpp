@@ -594,6 +594,26 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
+        // frame (what CarHits sweeps against Skyrim's actors), in Skyrim units.
+        void PublishShape(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            const CMatrix& m = a_vehicle->GetMatrix();
+            a_out.vehicleFrame = Body::ToBone(Body::RwRows{ Vec(m.right), Vec(m.up), Vec(m.at), Vec(m.pos) }, Vec(m.pos));
+            auto* info = CModelInfo::GetModelInfo(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pColModel) {
+                return;
+            }
+            const auto& box = info->m_pColModel->m_boundBox;
+            const CVector lo = box.m_vecMin * Pose::kUnitsPerMeter, hi = box.m_vecMax * Pose::kUnitsPerMeter;
+            a_out.boxMin[0] = lo.x;
+            a_out.boxMin[1] = lo.y;
+            a_out.boxMin[2] = lo.z;
+            a_out.boxMax[0] = hi.x;
+            a_out.boxMax[1] = hi.y;
+            a_out.boxMax[2] = hi.z;
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -636,6 +656,7 @@ namespace AhShitRim::Vehicles
                 }
             }
             PublishSeats(a_vehicle, s);
+            PublishShape(a_vehicle, s);
             for (const auto& extra : slot.extras) {
                 auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
                 const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));

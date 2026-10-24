@@ -3,6 +3,7 @@
 #include "health.h"
 #include "pose.h"
 #include "hud/SaHud.h"
+#include "player/Hitboxes.h"
 #include "player/Police.h"
 #include "wasted.h"
 
@@ -36,6 +37,8 @@ namespace AhShitRim::Vitals
             bool                       invincible = false;  // BAGUVIX
             bool                       skillsFrozen = false;  // the hit-trained skills' progress when BAGUVIX went on was noted
             float                      frozenXp[3] = {};      // kHitSkills' xp then
+            float                      shieldFrom = -1.0f;    // v31: the player's health after the last Update, less our own damage since
+            int                        shieldLogged = 0;
         } state;
 
         // The skills being hit trains (Skyrim's own), held where they were while BAGUVIX is on: hits that do nothing
@@ -254,6 +257,30 @@ namespace AhShitRim::Vitals
             state.armor = split.armor;
             if (split.health > 0.0f) {
                 a_player->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kHealth, split.health);
+                if (state.shieldFrom >= 0.0f) {
+                    state.shieldFrom -= split.health;  // ours, not Skyrim's people's: the vehicle doesn't shield it
+                }
+            }
+        }
+
+        // In a vehicle (v31) Skyrim's hits are the vehicle's (Hitboxes): what Skyrim's people took off the player since the
+        // last frame is given back, all of it in a closed one, half on a bike or a quad.
+        void Shield(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose)
+        {
+            const float share = Hitboxes::CjShare(a_pose);
+            auto*       values = a_player->AsActorValueOwner();
+            const float now = values->GetActorValue(RE::ActorValue::kHealth);
+            if (share >= 1.0f || state.shieldFrom < 0.0f || !(now < state.shieldFrom)) {
+                return;
+            }
+            const float back = (state.shieldFrom - now) * (1.0f - share);
+            values->RestoreActorValue(RE::ActorValue::kHealth, back);
+            if (Bleeding(a_player) && values->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {
+                a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
+            }
+            if (state.shieldLogged < 8) {
+                state.shieldLogged++;
+                SKSE::log::info("vitals: CJ's vehicle took a hit for him: {:.1f} of {:.1f} health given back", back, state.shieldFrom - now);
             }
         }
     }
@@ -268,6 +295,7 @@ namespace AhShitRim::Vitals
     void OnTakeOver(RE::PlayerCharacter* a_player)
     {
         state.meter.Reset();
+        state.shieldFrom = -1.0f;
         state.sequence.Cancel();
         state.tracked = false;
         if (!UnboundRunning(100.0f)) {
@@ -284,6 +312,7 @@ namespace AhShitRim::Vitals
         EndShow();
         SetEssential(a_player, false);
         state.meter.Reset();
+        state.shieldFrom = -1.0f;
         state.moveAsked = false;
     }
 
@@ -306,6 +335,15 @@ namespace AhShitRim::Vitals
         TrackTemple(a_player);
 
         const float damage = a_pose ? state.meter.Take(a_pose->damage) : 0.0f;
+        // What Skyrim's people do to the player is measured from the health this frame ends on.
+        struct NoteHealth
+        {
+            RE::PlayerCharacter* player;
+            ~NoteHealth() { state.shieldFrom = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth); }
+        } note{ a_player };
+        if (!state.sequence.Running() && !state.invincible) {
+            Shield(a_player, a_pose);
+        }
         if (state.sequence.Running()) {
             Run(a_player, seconds, a_cjDrawn);
             return state.sequence.Running();

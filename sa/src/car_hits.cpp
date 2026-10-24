@@ -4,6 +4,7 @@
 #include "pose.h"
 #include "run_over.h"
 #include "scenes.h"
+#include "vehicle_hits.h"
 #include "vehicles.h"
 
 #include <plugin.h>
@@ -35,10 +36,39 @@ namespace AhShitRim::CarHits
             RunOver::SpeechGap speech;
             int               logged = 0;
             unsigned          sent = 0, dropped = 0;
+            int               loggedTaken = 0;  // Skyrim's hits on the vehicle (v31), the first logged in full
+            unsigned          taken = 0, warded = 0;
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
         CVector    Cv(const Pose::Vec3& a_v) { return CVector(a_v.x, a_v.y, a_v.z); }
+
+        // CJ's crash line, one every RunOver::kSpeechGap at most, whether he hit someone or someone hit his vehicle.
+        void SayCrash(CPlayerPed* a_ped, double a_now, const char* a_why)
+        {
+            if (state.speech.Ready(a_now)) {
+                Scenes::SayCrash(a_ped, a_why);
+            }
+        }
+
+        // What San Andreas's own proofs keep off the vehicle (a mission's, the Rhino's).
+        bool Warded(CVehicle* a_vehicle, VehicleHits::Attack a_attack)
+        {
+            using enum VehicleHits::Attack;
+            const CVehicle& proof = *a_vehicle;
+            switch (a_attack) {
+            case Arrow:
+            case Bolt: return proof.bBulletProof;
+            case Melee:
+            case Bash:
+            case Unarmed:
+            case Claws: return proof.bMeleeProof;
+            case Spell:
+            case Flames: return proof.bFireProof;
+            case Explosion: return proof.bExplosionProof;
+            default: return false;
+            }
+        }
 
         RunOver::Frame FrameOf(CVehicle* a_vehicle)
         {
@@ -152,10 +182,34 @@ namespace AhShitRim::CarHits
             }
             if (lands) {
                 Send(vehicle, proxy, *touch, hit, spawnFeet, a_handover, heavy);
-                if (state.speech.Ready(time)) {
-                    Scenes::SayCrash(a_ped);
-                }
+                SayCrash(a_ped, time, "hit someone with his vehicle");
             }
         }
+    }
+
+    void TakeHit(CPlayerPed* a_ped, unsigned char a_attack, float a_damage, const CVector& a_at)
+    {
+        CVehicle*  vehicle = a_ped ? Vehicles::Driven(a_ped) : nullptr;
+        const auto attack = static_cast<VehicleHits::Attack>(a_attack);
+        if (!vehicle || vehicle->m_nStatus == STATUS_WRECKED || !std::isfinite(a_damage) || a_damage <= 0.0f) {
+            return;  // he got out (or it blew up) before the hit came
+        }
+        if (!vehicle->bCanBeDamaged || Warded(vehicle, attack)) {
+            if (state.warded++ == 0) {
+                Log(std::format("car hits: Skyrim's {} on vehicle {} does nothing: San Andreas has it proof against it", VehicleHits::NameOf(attack), vehicle->m_nModelIndex));
+            }
+            return;
+        }
+        const float before = vehicle->m_fHealth;
+        const float damage = (std::min)(a_damage, VehicleHits::kDamageMax) * (vehicle->bTakeLessDamage ? 0.25f : 1.0f);  // a stronger one, as San Andreas has it
+        vehicle->m_fHealth = (std::max)(0.0f, before - damage);
+        state.taken++;
+        if (state.loggedTaken < kLoggedHits) {
+            state.loggedTaken++;
+            const CVector& at = vehicle->GetPosition();
+            Log(std::format("car hits: Skyrim's {} hit vehicle {} {:.1f} m from its middle: health {:.0f} -> {:.0f}", VehicleHits::NameOf(attack), vehicle->m_nModelIndex,
+                (a_at - at).Magnitude(), before, vehicle->m_fHealth));
+        }
+        SayCrash(a_ped, Now(), "has his vehicle hit");
     }
 }

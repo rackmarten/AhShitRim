@@ -257,6 +257,7 @@ namespace AhShitRim::Body
         for (std::uint32_t i = 0; i < seats; i++) {
             out.seats[i] = BlendBone(a.seats[i], b.seats[i], t);
         }
+        out.vehicleFrame = BlendBone(a.vehicleFrame, b.vehicleFrame, t);  // v31: how a vehicle is turned, for its box
         return out;
     }
 
@@ -288,7 +289,7 @@ namespace AhShitRim::Body
                 return false;
             }
         }
-        return true;
+        return finite(a_body.vehicleFrame.rotation, 4) && finite(a_body.vehicleFrame.translation, 3) && finite(a_body.boxMin, 3) && finite(a_body.boxMax, 3);
     }
 
     // Plays San Andreas's 30 frames a second back smoothly at Skyrim's rate, kDelayMs behind.

@@ -52,8 +52,9 @@ namespace AhShitRim::Scenes
 
     bool Following();
 
-    // CJ's vehicle hit someone (v28, CarHits): he says one of his CRASH_CAR lines now, San Andreas's pick.
-    void SayCrash(CPlayerPed* a_ped);
+    // CJ's vehicle hit someone (v28, CarHits), or someone hit it (v31, a_why says which for the log): he says one of
+    // his CRASH_CAR lines now, San Andreas's pick.
+    void SayCrash(CPlayerPed* a_ped, const char* a_why = "hit someone with his vehicle");
 
     // A hit of CJ's that Skyrim counted (the Hit command, v13): a fight line for a blow, a shoot line for
     // a burst's first hit, now and then.

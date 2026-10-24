@@ -28,9 +28,19 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v31: Skyrim's hits on CJ's vehicle")
+{
+    CHECK(kProtocolVersion == 31);
+    CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
+    CHECK(offsetof(BodyState, vehicleFrame) == 2036);
+    CHECK(offsetof(BodyState, boxMin) == 2064);
+    CHECK(offsetof(BodyState, boxMax) == 2076);
+    CHECK(sizeof(BodyState) == 2088);
+    CHECK(sizeof(BodySlot) == 2112);  // 64 bytes larger: every slot after the body slot and both rings move
+}
+
 TEST_CASE("protocol v30: HUD sounds")
 {
-    CHECK(kProtocolVersion == 30);  // FrontendSound's type and payload are checked with the v19 constants
     CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 11);
 }
 
@@ -227,7 +237,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8406848);
+    CHECK(kMappingSize == 8407360);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -239,7 +249,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v28 slot and ring layout")
+TEST_CASE("the v31 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
@@ -295,26 +305,26 @@ TEST_CASE("the v28 slot and ring layout")
     CHECK(offsetof(AudioSlot, value) == 8);
     CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
     CHECK(kOffsetBodySlot == 640);
-    CHECK(sizeof(BodySlot) == 2048);
+    CHECK(sizeof(BodySlot) == 2112);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 2036);
+    CHECK(sizeof(BodyState) == 2088);  // v31: the vehicle frame and box after the seats
     CHECK(offsetof(BodyState, seatCount) == 1948);
     CHECK(offsetof(BodyState, seats) == 1952);
     CHECK(offsetof(BodyState, cameraUp) == 1856);
     CHECK(offsetof(BodyState, health) == 1868);
     CHECK(offsetof(BodyState, engine) == 1872);
     CHECK(offsetof(BodyState, hiddenParts) == 1884);
-    CHECK(kOffsetVehicleSlots == 2688);
+    CHECK(kOffsetVehicleSlots == 2752);
     CHECK(kOffsetVehicleSlots % 64 == 0);
-    CHECK(kOffsetWeaponSlots == 2688 + 4 * 2048);
+    CHECK(kOffsetWeaponSlots == 2752 + 4 * 2112);
     CHECK(kOffsetWeaponSlots % 64 == 0);
-    CHECK(kOffsetGearSlot == 10880 + 2 * 2048);
+    CHECK(kOffsetGearSlot == 11200 + 2 * 2112);
     CHECK(kOffsetGearSlot % 64 == 0);
-    CHECK(kOffsetProxySlot == kOffsetGearSlot + 2048);
+    CHECK(kOffsetProxySlot == kOffsetGearSlot + 2112);
     CHECK(kOffsetProxySlot % 64 == 0);
     CHECK(kOffsetRingToSanAndreas == kOffsetProxySlot + 1088);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4212480);
+    CHECK(kOffsetRingToSkyrim == 4212992);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);

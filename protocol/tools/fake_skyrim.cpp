@@ -6,7 +6,8 @@
 // drives it with W and gets out again, then spawns a Sanchez, rides it a little and spawns a ZR-350,
 // and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
 // CJ in it and turned its wheels, that it has a passenger seat and (v28) hits a person 20 m ahead and stops against a
-// mammoth further on (actor proxies, impacts back). A re-anchor in the ZR-350 (fast travel, far off and far below)
+// mammoth further on (actor proxies, impacts back), and (v31) has its collision box in its slot and loses health to
+// HitVehicle effects. A re-anchor in the ZR-350 (fast travel, far off and far below)
 // takes CJ out and removes the vehicles, holds him until ground comes there, and he walks on it.
 // Scenes (v9) there: CJ turns to a speaker, gestures at a shout and a swear (v16), follows a walking Skyrim player,
 // sits where it sits and walks on when it lets go. Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
@@ -30,6 +31,7 @@
 #include "../cpp/input.h"
 #include "../cpp/radio.h"
 #include "../cpp/run_over.h"
+#include "../cpp/vehicle_hits.h"
 #include "../cpp/link.h"
 #include "../cpp/pose.h"
 #include "../cpp/skin_model.h"
@@ -432,6 +434,34 @@ int main(int argc, char** argv)
     input.SetKey(Input::kDikSpace, true);  // handbrake
     run(3.0, [] { return false; });
     input.SetKey(Input::kDikSpace, false);
+
+    // Skyrim's hits on the vehicle (v31): its slot has its collision box and frame, and two of a giant's blows take
+    // their damage off its health (three would set it on fire, and the run goes on in it).
+    Protocol::BodyState hitFrom{};
+    vehicleIn(0, hitFrom);
+    const auto  carFrame = VehicleHits::FrameOf(hitFrom.vehicleFrame, { 0.0f, 0.0f, 0.0f });
+    const float boxWide = (hitFrom.boxMax[0] - hitFrom.boxMin[0]) * Pose::kMetersPerUnit, boxLong = (hitFrom.boxMax[1] - hitFrom.boxMin[1]) * Pose::kMetersPerUnit;
+    const float carFacing = carFrame.forward.x * fx + carFrame.forward.y * fy;  // its forward against the heading it reported
+    std::printf("hitboxes: the Sandking's box is %.2f m wide, %.2f m long, %.2f m high; its frame's forward is %.2f along its heading\n", boxWide, boxLong,
+        (hitFrom.boxMax[2] - hitFrom.boxMin[2]) * Pose::kMetersPerUnit, carFacing);
+    failed += !(VehicleHits::HasBox({ { hitFrom.boxMin[0], hitFrom.boxMin[1], hitFrom.boxMin[2] }, { hitFrom.boxMax[0], hitFrom.boxMax[1], hitFrom.boxMax[2] } }) &&
+                boxWide > 1.5f && boxWide < 3.5f && boxLong > 3.5f && boxLong < 7.0f && carFacing > 0.9f);
+    const float blow = VehicleHits::DamageOf({ VehicleHits::Attack::Claws, RunOver::Build::Giant });
+    for (int i = 0; i < 2; i++) {
+        Protocol::EffectEvent hit{};
+        hit.handover = handoverId;
+        hit.kind = static_cast<std::uint8_t>(Protocol::EffectKind::HitVehicle);
+        hit.weaponType = static_cast<std::uint8_t>(VehicleHits::Attack::Claws);
+        std::copy(std::begin(hitFrom.feet), std::end(hitFrom.feet), hit.at);
+        hit.seconds = blow;
+        link.Send(Protocol::MessageType::Effect, &hit, sizeof(hit));
+    }
+    Protocol::BodyState hitAfter{};
+    run(1.0, [&] { return vehicleIn(0, hitAfter) && hitAfter.health < hitFrom.health - 1.5f * blow; });
+    std::printf("hitboxes: two of a giant's blows took the Sandking from %.0f to %.0f health%s\n", hitFrom.health, hitAfter.health,
+        (hitAfter.flags & Protocol::kBodyBurning) ? ", and it burns" : "");
+    failed += !(hitAfter.health <= (std::max)(0.0f, hitFrom.health - 2.0f * blow) + 1.0f);
+
     press(Input::kDikF);
     const bool gotOut = run(6.0, [&] { return !inVehicle(); });
     std::printf("vehicles: CJ %s the Sandking\n", gotOut ? "got out of" : "did not get out of");

@@ -4,6 +4,7 @@
 #include "link/LinkService.h"
 #include "audio/SaAudio.h"
 #include "collision/CollisionSampler.h"
+#include "debug/HitTest.h"
 #include "debug/StreamTest.h"
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
@@ -30,6 +31,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
             AhShitRim::SaHud::Load();
             AhShitRim::Audio::OnDataLoaded();
             AhShitRim::StreamTest::OnDataLoaded();
+            AhShitRim::HitTest::OnDataLoaded();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
             AhShitRim::StreamTest::OnPostLoadGame();
