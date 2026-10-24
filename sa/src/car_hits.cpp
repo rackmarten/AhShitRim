@@ -44,10 +44,10 @@ namespace AhShitRim::CarHits
         CVector    Cv(const Pose::Vec3& a_v) { return CVector(a_v.x, a_v.y, a_v.z); }
 
         // CJ's crash line, one every RunOver::kSpeechGap at most, whether he hit someone or someone hit his vehicle.
-        void SayCrash(CPlayerPed* a_ped, double a_now)
+        void SayCrash(CPlayerPed* a_ped, double a_now, const char* a_why)
         {
             if (state.speech.Ready(a_now)) {
-                Scenes::SayCrash(a_ped);
+                Scenes::SayCrash(a_ped, a_why);
             }
         }
 
@@ -182,7 +182,7 @@ namespace AhShitRim::CarHits
             }
             if (lands) {
                 Send(vehicle, proxy, *touch, hit, spawnFeet, a_handover, heavy);
-                SayCrash(a_ped, time);
+                SayCrash(a_ped, time, "hit someone with his vehicle");
             }
         }
     }
@@ -210,6 +210,6 @@ namespace AhShitRim::CarHits
             Log(std::format("car hits: Skyrim's {} hit vehicle {} {:.1f} m from its middle: health {:.0f} -> {:.0f}", VehicleHits::NameOf(attack), vehicle->m_nModelIndex,
                 (a_at - at).Magnitude(), before, vehicle->m_fHealth));
         }
-        SayCrash(a_ped, Now());
+        SayCrash(a_ped, Now(), "has his vehicle hit");
     }
 }

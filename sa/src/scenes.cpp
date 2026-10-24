@@ -308,10 +308,10 @@ namespace AhShitRim::Scenes
 
     bool Following() { return state.following; }
 
-    void SayCrash(CPlayerPed* a_ped)
+    void SayCrash(CPlayerPed* a_ped, const char* a_why)
     {
         if (a_ped && !state.following) {
-            SayNow(a_ped, kCrashCar, g_crashLines, "hit someone with his vehicle");
+            SayNow(a_ped, kCrashCar, g_crashLines, a_why);
         }
     }
 }
