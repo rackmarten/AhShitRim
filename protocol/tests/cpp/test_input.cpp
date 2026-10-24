@@ -176,8 +176,22 @@ TEST_CASE("each press of a spawn key asks for its vehicle once")
     s = b.Build(5, true, true);
     CHECK(s.spawnModel == 520);
     CHECK(s.spawnCount == 3);
+    CHECK(s.spawnFlags == 0);
     b.RequestSpawn(0);  // nothing
     CHECK(b.Build(6, true, true).spawnCount == 3);
+
+    // AIR + a plane's name: the same request, flying.
+    b.RequestSpawn(577, Protocol::kSpawnAirborne);
+    s = b.Build(7, true, true);
+    CHECK(s.spawnModel == 577);
+    CHECK(s.spawnCount == 4);
+    CHECK(s.spawnFlags == Protocol::kSpawnAirborne);
+    CHECK(b.Build(8, true, false).spawnFlags == Protocol::kSpawnAirborne);  // a menu doesn't take it back
+    // A spawn key after it asks for its vehicle on the ground.
+    b.SetKey(kDikBackslash, true);
+    s = b.Build(9, true, true);
+    CHECK(s.spawnCount == 5);
+    CHECK(s.spawnFlags == 0);
 }
 
 TEST_CASE("in a vehicle the keys take San Andreas's vehicle layout")

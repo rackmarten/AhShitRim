@@ -6,6 +6,10 @@
 // jetpack on, flies up, swaps it for the parachute, skydives, opens the chute and lands. Prints what it sees and exits
 // non-zero when a check fails. Built with the protocol tests; run it through scripts/fake-vehicles.ps1 while San
 // Andreas runs (launch-sa.ps1), with Skyrim closed.
+//
+// Then the cheats' vehicles (v22): with BSXSGGC on, a parked car rammed floats up, and AIR + a plane's name puts CJ in
+// it high up at flying speed, still flying after holding W, while AIR + a motorbike spawns it on the ground.
+// AHSHITRIM_ONLY=cheats runs only those.
 
 #include <algorithm>
 #include <chrono>
@@ -19,7 +23,9 @@
 #include <thread>
 #include <vector>
 
+#include "../cpp/air_spawn.h"
 #include "../cpp/body.h"
+#include "../cpp/cheats.h"
 #include "../cpp/collision.h"
 #include "../cpp/input.h"
 #include "../cpp/link.h"
@@ -244,10 +250,99 @@ int main()
         return in;
     };
 
+    // The cheats' vehicles. Returns the checks that failed.
+    const auto cheats = [&] {
+        int bad = 0;
+        // BSXSGGC: a parked car CJ's car rams floats up. Spawn two, get into the nearer, and steer at the other.
+        {
+            const auto& row = *Cheats::Find(Cheats::SaCheat::CarsFloatAway);
+            const auto  on = Cheats::CommandFor(row, true);
+            link.Send(Protocol::MessageType::Cheat, &on, sizeof(on));
+            Protocol::BodyState first{}, second{};
+            const int  a = spawn(415, "CHEETAH", first);
+            const int  b = spawn(411, "INFERNU", second);
+            const bool in = a >= 0 && b >= 0 && board("a car");
+            Protocol::BodyState driven{};
+            const int hit = link.ReadVehicle(static_cast<std::uint32_t>(a), driven) && (driven.flags & Protocol::kBodyDriven) ? b : a;
+            Protocol::BodyState parked{};
+            link.ReadVehicle(static_cast<std::uint32_t>(hit), parked);
+            const float before = parked.feet[2];
+            float       rose = 0.0f;
+            input.SetKey(Input::kDikW, true);
+            run(15.0, [&] {
+                const auto          p = player();
+                Protocol::BodyState t{};
+                link.ReadVehicle(static_cast<std::uint32_t>(hit), t);
+                rose = (std::max)(rose, (t.feet[2] - before) * Pose::kMetersPerUnit);
+                float turn = std::atan2(t.feet[0] - p.offset[0], t.feet[1] - p.offset[1]) - p.vehicleHeading;
+                while (turn > 3.14159265f) {
+                    turn -= 6.2831853f;
+                }
+                while (turn < -3.14159265f) {
+                    turn += 6.2831853f;
+                }
+                input.SetKey(Input::kDikD, turn > 0.1f);
+                input.SetKey(Input::kDikA, turn < -0.1f);
+                return rose > 3.0f;
+            });
+            input.ReleaseAll();
+            wait(2.0);
+            Protocol::BodyState after{};
+            link.ReadVehicle(static_cast<std::uint32_t>(hit), after);
+            rose = (std::max)(rose, (after.feet[2] - before) * Pose::kMetersPerUnit);
+            std::printf("BSXSGGC: %s, the parked %s rose %.1f m (%s)\n", in ? "CJ drove at it" : "CJ NEVER DROVE", hit == a ? "Cheetah" : "Infernus", rose,
+                rose > 3.0f ? "floats away" : "DID NOT FLOAT");
+            bad += !(in && rose > 3.0f);
+            const auto off = Cheats::CommandFor(row, false);
+            link.Send(Protocol::MessageType::Cheat, &off, sizeof(off));
+            fresh();
+        }
+        // AIR + a plane: CJ in it, high up, flying fast enough, and still up after holding W.
+        for (const auto& [model, name] : { std::pair{ std::uint16_t{ 577 }, "AT400" }, std::pair{ std::uint16_t{ 593 }, "DODO" },
+                 std::pair{ std::uint16_t{ 592 }, "ANDROM" }, std::pair{ std::uint16_t{ 511 }, "BEAGLE" } }) {
+            input.RequestSpawn(model, Protocol::kSpawnAirborne);
+            const bool in = run(10.0, inVehicle);
+            wait(0.5);
+            const float up = height(), fast = speed();
+            input.SetKey(Input::kDikW, true);
+            float low = up;
+            run(10.0, [&] {
+                low = (std::min)(low, height());
+                return false;
+            });
+            input.SetKey(Input::kDikW, false);
+            const float later = height(), still = speed();
+            std::printf("AIR%s: CJ %s, %.0f m up at %.1f m/s; after 10 s of W %.0f m up (lowest %.0f) at %.1f m/s\n", name,
+                in ? "at the controls" : "NOT IN IT", up, fast, later, low, still);
+            bad += !(in && up > AirSpawn::kHeight - 15.0f && fast > 20.0f && low > 60.0f && still > 20.0f);
+            fresh();
+        }
+        // AIR + a motorbike: on the ground, CJ on foot.
+        {
+            Protocol::BodyState bike{};
+            input.RequestSpawn(468, Protocol::kSpawnAirborne);
+            const bool spawned = run(10.0, [&] { return find("SANCHEZ", bike) >= 0; });
+            wait(1.0);
+            find("SANCHEZ", bike);
+            const float z = bike.feet[2] * Pose::kMetersPerUnit;
+            std::printf("AIRSANCHEZ: %s, %.1f m up, CJ %s\n", spawned ? "spawned" : "MISSING", z, inVehicle() ? "IN IT" : "on foot");
+            bad += !(spawned && std::abs(z) < 5.0f && !inVehicle());
+            fresh();
+        }
+        return bad;
+    };
+
     int failed = 0;
     publish(true);
     run(5.0, [&] { return player().handover == handoverId && (player().flags & Protocol::kPlayerGrounded); });
     wait(1.5);
+    if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && std::string(only) == "cheats") {
+        failed += cheats();
+        publish(false);
+        link.Tick(ms());
+        std::printf("%s\n", failed ? "SOME CHECKS FAILED" : "all checks passed");
+        return failed ? 2 : 0;
+    }
 
     // Land: the NRG-500 and the BMX ride.
     for (const auto& [model, name, metres] : { std::tuple{ std::uint16_t{ 522 }, "NRG500", 10.0f }, std::tuple{ std::uint16_t{ 481 }, "BMX", 3.0f } }) {
@@ -527,6 +622,9 @@ int main()
             canopy ? "out" : "NEVER OUT", floatFall, landed ? "landed" : "DID NOT LAND", kept ? "STILL CARRIED" : "used up", p.damage);
         failed += !(fastest > 10.0f && canopy && floatFall < 8.0f && landed && !kept);
     }
+
+    fresh();
+    failed += cheats();
 
     publish(false);
     link.Tick(ms());

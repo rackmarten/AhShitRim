@@ -3,6 +3,8 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "mega_punch.h"
+#include "player/CheatCodes.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -153,13 +155,14 @@ namespace AhShitRim::Shots
             return Damage::ClassOf(id ? id : "", race->HasKeywordString("ActorTypeDragon"));
         }
 
+        // a_skyrimDamage, when over 0, is the damage itself (a mega punch's), not worked out from San Andreas's.
         void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
-            bool a_blood = true)
+            bool a_blood = true, float a_skyrimDamage = 0.0f)
         {
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
+            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
 
@@ -196,7 +199,7 @@ namespace AhShitRim::Shots
             }
 
             state.actorHits++;
-            if (melee && !actor->IsDead() && Roll() < Damage::StaggerChance(a_shot.weaponType)) {
+            if (melee && a_skyrimDamage <= 0.0f && !actor->IsDead() && Roll() < Damage::StaggerChance(a_shot.weaponType)) {
                 Stagger(actor, a_player);
             }
             if (state.logged < kLoggedHits) {
@@ -387,6 +390,24 @@ namespace AhShitRim::Shots
             return (std::max)(kActorRadiusMin, std::isfinite(half) ? half : 0.0f);
         }
 
+        // IAVENJQ's blow (protocol/cpp/mega_punch.h): the victim's whole health, and thrown far from CJ unless it's a giant,
+        // a mammoth or a dragon. An essential actor kneels instead of dying, as from any blow.
+        void MegaBlow(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_facing, float a_saDamage)
+        {
+            auto*       actor = a_victim.actor;
+            const float health = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            Hurt(a_player, a_victim, a_shot, a_facing, a_saDamage, true, MegaPunch::DamageFor(health));
+            const auto  cls = ClassOfRace(actor);
+            const float knock = MegaPunch::KnockFor(cls);
+            auto*       process = actor->GetActorRuntimeData().currentProcess;
+            if (knock > 0.0f && process) {
+                const auto from = MegaPunch::KnockFrom({ a_victim.at.x, a_victim.at.y, a_victim.at.z }, { a_facing.x, a_facing.y, a_facing.z });
+                process->KnockExplosion(actor, RE::NiPoint3(from.x, from.y, from.z), knock);
+            }
+            SKSE::log::info("shots: mega punch ({}) on {} ({:08X}): {:.0f} health, {}", a_shot.weaponType, actor->GetName(), actor->GetFormID(), health,
+                knock > 0.0f ? std::format("thrown with {:.0f}", knock) : std::string("too big to throw"));
+        }
+
         void Blow(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             state.blows++;
@@ -401,7 +422,8 @@ namespace AhShitRim::Shots
             if (!lists) {
                 return;
             }
-            bool landedAny = false;
+            bool       landedAny = false;
+            const bool mega = CheatCodes::On(Cheats::SaCheat::MegaPunch) && MegaPunch::Punches(a_shot.weaponType);
             for (auto& handle : lists->highActorHandles) {
                 auto  ptr = handle.get();
                 auto* actor = ptr.get();
@@ -422,7 +444,11 @@ namespace AhShitRim::Shots
                 victim.at = RE::NiPoint3(point.x, point.y, feet.z + height);
                 victim.normal = -facing;
                 const float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
-                Hurt(a_player, victim, a_shot, facing, sa);
+                if (mega) {
+                    MegaBlow(a_player, victim, a_shot, facing, sa);
+                } else {
+                    Hurt(a_player, victim, a_shot, facing, sa);
+                }
                 landedAny = true;
             }
             if (landedAny) {
