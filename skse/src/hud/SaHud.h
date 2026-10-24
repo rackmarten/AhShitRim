@@ -19,7 +19,7 @@ namespace AhShitRim::SaHud
     {
         Wasted,         // "wasted", grey Gothic in the middle
         Busted,         // "busted"
-        MissionPassed,  // "mission passed!", gold Pricedown in the middle
+        MissionPassed,  // "mission passed!", gold Pricedown in the middle, and "respect +" in white under it
     };
 
     void Load();  // reads the San Andreas files and hooks the overlay; call on kDataLoaded

@@ -15,15 +15,17 @@ class CPlayerPed;
 //   scanner, distant gunfire.
 // - The mouse wheel in Skyrim dials the radio (Radio::Dial). After San Andreas's stations come Radio
 //   Sovngarde and Sweetroll FM: San Andreas's radio is off there, and Skyrim plays them.
+// - Sound cues (v24, InputState.cue, protocol/cpp/missions.h), whoever has the player: the mission passed
+//   tune and CJ's intro line, by San Andreas's own routines and ids.
 // Game thread only.
 namespace AhShitRim::Audio
 {
     void Install();  // hooks; at ASI load
 
-    // From the pad update, with each input read: the wheel's radio steps.
+    // From the pad update, with each input read: the wheel's radio steps, a new sound cue.
     void OnInput(const Protocol::InputState& a_input, bool a_inVehicle);
 
-    // Once a frame after the simulation: volumes, pausing.
+    // Once a frame after the simulation: volumes, pausing, the cue playing.
     void Update(bool a_owned, bool a_paused);
 
     // The radio in CJ's pose: station and retuning.

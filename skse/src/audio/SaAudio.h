@@ -15,8 +15,10 @@ namespace AhShitRim::Audio
     void OnDataLoaded();  // finds Skyrim's sound categories; call on kDataLoaded
 
     // Every frame from PlayerCharacter::Update. a_pose is CJ's newest pose (nullptr while Skyrim has
-    // the player or there is none); a_paused while a Skyrim menu pauses the game.
-    void Update(float a_delta, bool a_owned, bool a_paused, const Protocol::PlayerState* a_pose);
+    // the player or there is none); a_paused while a Skyrim menu pauses the game; a_cue while San
+    // Andreas plays a sound cue (v24: the mission passed tune, CJ's intro line), which is heard
+    // whoever has the player and pauses Skyrim's music as a station does.
+    void Update(float a_delta, bool a_owned, bool a_paused, const Protocol::PlayerState* a_pose, bool a_cue = false);
 
     // A pausing menu opened: the station Skyrim plays pauses at once (PlayerCharacter::Update stops while the
     // game is paused; the next Update resumes it).

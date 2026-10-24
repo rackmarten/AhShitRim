@@ -1,10 +1,12 @@
 #include "audio.h"
 
 #include "log.h"
+#include "missions.h"
 #include "radio.h"
 
 #include <plugin.h>
 
+#include <CAECutsceneTrackManager.h>
 #include <CAudioEngine.h>
 
 #include <safetyhook.hpp>
@@ -23,6 +25,15 @@ namespace AhShitRim::Audio
         constexpr std::uintptr_t kPauseAllSounds = 0x507430;      // CAudioEngine::PauseAllSounds (thiscall)
         constexpr std::uintptr_t kResumeAllSounds = 0x507440;     // CAudioEngine::ResumeAllSounds (thiscall)
         constexpr std::uintptr_t kRetuneInProgress = 0x506FF0;    // CAudioEngine::IsRadioRetuneInProgress (thiscall)
+        constexpr std::uintptr_t kPreloadBeatTrack = 0x507F40;    // CAudioEngine::PreloadBeatTrack(int16) (thiscall)
+        constexpr std::uintptr_t kPlayBeatTrack = 0x507180;       // CAudioEngine::PlayPreloadedBeatTrack(bool missionComplete) (thiscall)
+        constexpr std::uintptr_t kPreloadMissionAudio = 0x507290;  // CAudioEngine::PreloadMissionAudio(uint8 slot, int32 id) (thiscall)
+        constexpr std::uintptr_t kMissionAudioStatus = 0x5072A0;  // CAudioEngine::GetMissionAudioLoadingStatus(uint8) (thiscall): 1 loaded
+        constexpr std::uintptr_t kPlayMissionAudio = 0x5072B0;    // CAudioEngine::PlayLoadedMissionAudio(uint8) (thiscall)
+        constexpr std::uintptr_t kMissionAudioDone = 0x5072C0;    // CAudioEngine::IsMissionAudioSampleFinished(uint8) (thiscall)
+        constexpr std::uintptr_t kClearMissionAudio = 0x5072F0;   // CAudioEngine::ClearMissionAudio(uint8) (thiscall)
+        constexpr std::uint8_t   kMissionAudioSlot = 0;           // of San Andreas's four; no script uses them here
+        constexpr std::uint64_t  kLineStartMs = 500;              // the line counts as over only this long after it was set playing
 
         // The world's ambience, hooked to do nothing.
         constexpr std::uintptr_t kNoOps[] = {
@@ -52,6 +63,15 @@ namespace AhShitRim::Audio
             std::uint64_t dialedMs = 0;
             std::int8_t   actual = Protocol::kRadioNone - 1;  // San Andreas's own station id, last logged
             std::int8_t   reported = Protocol::kRadioNone - 1;
+
+            // v24: the sound cue playing (Protocol::kCue*), 0 for none.
+            bool          haveCue = false;
+            std::uint16_t cueCount = 0;
+            std::uint8_t  cue = 0;
+            std::uint64_t cueMs = 0;            // when it started
+            bool          lineLoaded = false;  // the intro line was loaded and set playing
+            std::uint64_t linePlayMs = 0;      // when
+            unsigned long trackStatus = 8;     // the tune's CAECutsceneTrackManager status last seen (3 playing, 8 idle)
         } state;
 
         void __cdecl NoOp() {}
@@ -76,6 +96,72 @@ namespace AhShitRim::Audio
         {
             return plugin::CallMethodAndReturn<bool, kRetuneInProgress, CAudioEngine*>(&AudioEngine);
         }
+
+        void EndCue()
+        {
+            if (state.cue == Protocol::kCueIntroLine) {
+                plugin::CallMethod<kClearMissionAudio, CAudioEngine*, std::uint8_t>(&AudioEngine, kMissionAudioSlot);
+            }
+            state.cue = 0;
+        }
+
+        // A cue Skyrim asked for, by San Andreas's own routines and ids, as its scripts play them: the mission
+        // passed tune as PLAY_MISSION_PASSED_TUNE 1 does (the radio stops for it and comes back after), CJ's
+        // intro line as LOAD_MISSION_AUDIO and PLAY_MISSION_AUDIO do (played once loaded, in ServiceCue).
+        void StartCue(std::uint8_t a_cue)
+        {
+            if (state.cue) {
+                EndCue();
+            }
+            if (a_cue == Protocol::kCueMissionPassed) {
+                plugin::CallMethod<kPreloadBeatTrack, CAudioEngine*, std::int16_t>(&AudioEngine, Missions::kMissionPassedBeat);
+                plugin::CallMethod<kPlayBeatTrack, CAudioEngine*, bool>(&AudioEngine, true);
+                Log("audio: the mission passed tune");
+            } else if (a_cue == Protocol::kCueIntroLine) {
+                plugin::CallMethod<kPreloadMissionAudio, CAudioEngine*, std::uint8_t, std::int32_t>(&AudioEngine, kMissionAudioSlot, Missions::kIntroLineAudio);
+                state.lineLoaded = false;
+                Log("audio: CJ's intro line, loading");
+            } else {
+                return;
+            }
+            state.cue = a_cue;
+            state.cueMs = ::GetTickCount64();
+        }
+
+        // The cue playing: the intro line plays once loaded and is cleared once over. Every cue ends after its
+        // time at most (Missions::CueSeconds).
+        void ServiceCue()
+        {
+            if (!state.cue) {
+                return;
+            }
+            const auto elapsed = ::GetTickCount64() - state.cueMs;
+            if (state.cue == Protocol::kCueIntroLine) {
+                if (!state.lineLoaded &&
+                    plugin::CallMethodAndReturn<std::int8_t, kMissionAudioStatus, CAudioEngine*, std::uint8_t>(&AudioEngine, kMissionAudioSlot) == 1) {
+                    plugin::CallMethod<kPlayMissionAudio, CAudioEngine*, std::uint8_t>(&AudioEngine, kMissionAudioSlot);
+                    state.lineLoaded = true;
+                    state.linePlayMs = ::GetTickCount64();
+                    Log(std::format("audio: CJ's intro line plays ({} ms to load)", elapsed));
+                } else if (state.lineLoaded && ::GetTickCount64() - state.linePlayMs > kLineStartMs && plugin::CallMethodAndReturn<bool, kMissionAudioDone, CAudioEngine*, std::uint8_t>(&AudioEngine, kMissionAudioSlot)) {
+                    Log(std::format("audio: CJ's intro line over after {} ms", ::GetTickCount64() - state.linePlayMs));
+                    EndCue();
+                    return;
+                }
+            } else if (const auto status = AECutsceneTrackManager.m_nStatus; status != state.trackStatus) {
+                // The tune: loading (0..2), playing (3), stopping (4..7), done (8).
+                if (status == 3 || status == 8) {
+                    Log(std::format("audio: the mission passed tune {} after {} ms", status == 3 ? "plays" : "is over", elapsed));
+                }
+                state.trackStatus = status;
+            }
+            if (elapsed > static_cast<std::uint64_t>(Missions::CueSeconds(state.cue) * 1000.0f)) {
+                if (state.cue == Protocol::kCueIntroLine && !state.lineLoaded) {
+                    Log("audio: CJ's intro line never loaded");
+                }
+                EndCue();
+            }
+        }
     }
 
     void Install()
@@ -94,6 +180,12 @@ namespace AhShitRim::Audio
         const int steps = state.haveWheel ? static_cast<std::int16_t>(a_input.radioNext - state.radioNext) -
                                                 static_cast<std::int16_t>(a_input.radioPrev - state.radioPrev)
                                           : 0;
+        // A sound cue (v24), whoever has the player. The first value read only seeds the count.
+        if (state.haveCue && a_input.cueCount != state.cueCount) {
+            StartCue(a_input.cue);
+        }
+        state.haveCue = true;
+        state.cueCount = a_input.cueCount;
         // While Skyrim has the player nothing dials, and a Skyrim that restarted counts from 0 again.
         state.haveWheel = owned;
         state.radioNext = a_input.radioNext;
@@ -111,8 +203,10 @@ namespace AhShitRim::Audio
 
     void Update(bool a_owned, bool a_paused)
     {
+        ServiceCue();
+        // While Skyrim has the player San Andreas is heard only for a cue, which Skyrim keeps the volumes up for.
         Protocol::AudioState audio{};
-        if (!a_owned || !GetLink().ReadAudio(audio)) {
+        if (!(a_owned || state.cue) || !GetLink().ReadAudio(audio)) {
             audio = {};
         }
         const int effects = ToVolume(audio.effects);

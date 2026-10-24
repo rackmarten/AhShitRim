@@ -83,7 +83,7 @@ namespace AhShitRim::Audio
                 state.pausedMusic = nullptr;
             }
             if (a_silence != state.silenced) {
-                SKSE::log::info("audio: Skyrim's music {}", a_silence ? "paused for the radio" : "back");
+                SKSE::log::info("audio: Skyrim's music {}", a_silence ? "paused for San Andreas" : "back");
                 state.silenced = a_silence;
             }
         }
@@ -202,10 +202,10 @@ namespace AhShitRim::Audio
         SKSE::log::info("audio: Sweetroll FM has {} of {} tracks installed in Data\\Music\\AhShitRim\\SweetrollFM", installed.size(), Radio::kSweetrollTracks.size());
     }
 
-    void Update(float a_delta, bool a_owned, bool a_paused, const Protocol::PlayerState* a_pose)
+    void Update(float a_delta, bool a_owned, bool a_paused, const Protocol::PlayerState* a_pose, bool a_cue)
     {
         auto& link = LinkService::Get();
-        const auto volumes = Radio::FromSliders(state.masterVolume ? state.masterVolume->GetFloat() : 1.0f, Volume(state.effects), Volume(state.music), a_owned);
+        const auto volumes = Radio::FromSliders(state.masterVolume ? state.masterVolume->GetFloat() : 1.0f, Volume(state.effects), Volume(state.music), a_owned, a_cue);
         Protocol::AudioState audio{};
         audio.effects = volumes.effects;
         audio.music = volumes.music;
@@ -239,9 +239,9 @@ namespace AhShitRim::Audio
             state.retuning = retuning;
         }
 
-        SilenceSkyrimMusic(Radio::Plays(station));
-        if (a_paused) {
-            SetPaused(true);
+        SilenceSkyrimMusic(Radio::Plays(station) || a_cue);
+        if (a_paused || a_cue) {
+            SetPaused(true);  // a cue: San Andreas stops its own radio for the tune too
         } else if (Radio::SkyrimPlays(station) && !retuning && (station != Radio::kSweetroll || state.sweetroll.Size() > 0)) {
             PlayStation(a_delta, volumes.music);
         }

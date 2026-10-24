@@ -338,6 +338,13 @@ namespace AhShitRim::Input
             _lineKind = a_kind;
         }
 
+        // A sound for San Andreas to play (v24, Protocol::kCue*): the mission passed tune, CJ's intro line.
+        void AddCue(std::uint8_t a_cue)
+        {
+            _cueCount++;
+            _cue = a_cue;
+        }
+
         // Everything released, e.g. when ownership ends. Mouse totals keep accumulating.
         void ReleaseAll()
         {
@@ -368,6 +375,8 @@ namespace AhShitRim::Input
             s.swearCount = _swearCount;
             s.lineCount = _lineCount;
             s.lineKind = _lineKind;
+            s.cueCount = _cueCount;
+            s.cue = _cue;
             if (!a_live) {
                 return s;
             }
@@ -431,6 +440,8 @@ namespace AhShitRim::Input
         std::uint16_t _swearCount = 0;
         std::uint16_t _lineCount = 0;
         std::uint8_t  _lineKind = 0;
+        std::uint16_t _cueCount = 0;
+        std::uint8_t  _cue = 0;
     };
 
     // The San Andreas side: an InputState as CControllerState values (pad mode 0), for CJ on foot or

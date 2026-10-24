@@ -8,6 +8,7 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
+#include "debug/MissionTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
@@ -24,6 +25,7 @@
 #include "player/GunRewards.h"
 #include "player/Respawns.h"
 #include "player/Looting.h"
+#include "player/Missions.h"
 #include "player/Conversation.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
@@ -43,6 +45,7 @@ namespace AhShitRim::PlayerSync
         struct State
         {
             bool           owned = false;
+            bool           linkUp = false;  // the link was up last frame
             std::uint32_t  handover = 0;
             float          heading = 0.0f;   // the player's heading when the handover started, or the last re-anchor
             RE::NiPoint3   anchor;           // the player's position then
@@ -939,6 +942,13 @@ namespace AhShitRim::PlayerSync
                         Projectiles::Queue(a_data, a_size);
                     }
                 });
+                // The link coming up while Skyrim has the player: San Andreas's first read of the input only seeds its
+                // counts, so it reads them as they stand before a sound cue needs one.
+                const bool up = LinkService::Get().IsUp();
+                if (up && !state.linkUp && !state.owned) {
+                    Publish();
+                }
+                state.linkUp = up;
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
@@ -951,7 +961,15 @@ namespace AhShitRim::PlayerSync
                 CheatCodes::Update();
                 Police::Sweep();
                 GunRewards::Update();
+                MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
+                if (a_delta > 0.0f) {
+                    // A quest's title or its mission passed, CJ's intro line: San Andreas plays the sound, whoever has the player.
+                    if (const auto cue = Missions::Update(a_delta)) {
+                        state.input.AddCue(cue);
+                        Publish();
+                    }
+                }
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -959,7 +977,7 @@ namespace AhShitRim::PlayerSync
                     SaHud::ShowHelp("Screenshot saved", 3.0f);
                 }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
-                Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
+                Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr, Missions::CuePlaying());
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
@@ -1249,6 +1267,8 @@ namespace AhShitRim::PlayerSync
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
+        Missions::OnDataLoaded();
+        MissionTest::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -1267,6 +1287,7 @@ namespace AhShitRim::PlayerSync
         state.resumePending = false;
         GunRewards::OnGameLoad();
         Respawns::OnGameLoad();
+        Missions::OnGameLoad();
         Release("game loading");
         CheatCodes::OnGameLoad();
         Police::OnGameLoad();

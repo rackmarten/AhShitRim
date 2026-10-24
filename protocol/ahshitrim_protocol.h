@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 23;
+    inline constexpr std::uint32_t kProtocolVersion = 24;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -168,16 +168,21 @@ namespace AhShitRim::Protocol
         std::uint16_t lineCount;       // v21: counts lines Skyrim asks CJ to say; a new value has him say one of lineKind
         std::uint8_t  lineKind;        // v21: Dialogue::Category (protocol/cpp/dialogue.h): greet, agree, refuse, ask, threaten, joke, goodbye
         std::uint8_t  spawnFlags;      // v22 (a reserved byte before): kSpawn*, how the spawn request with spawnCount wants spawnModel
+        std::uint16_t cueCount;        // v24: counts sound cues Skyrim asks for; a new value plays cue, also while Skyrim has the player
+        std::uint8_t  cue;             // v24: kCue*
+        std::uint8_t  reserved2;
     };
 
     inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
+    inline constexpr std::uint8_t kCueMissionPassed = 1;  // InputState.cue (v24): San Andreas's mission passed tune (PLAY_MISSION_PASSED_TUNE 1)
+    inline constexpr std::uint8_t kCueIntroLine = 2;      // CJ's "Ah shit, here we go again." (the intro's voice-over, mission audio)
 
     struct InputSlot
     {
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[24];  // v9: keeps the later slots on a 64-byte boundary
+        std::uint8_t  pad[20];  // v9: keeps the later slots on a 64-byte boundary
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -544,7 +549,7 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 112);
+    static_assert(sizeof(InputState) == 116);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
@@ -568,6 +573,8 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(InputState, lineCount) == 108);
     static_assert(offsetof(InputState, lineKind) == 110);
     static_assert(offsetof(InputState, spawnFlags) == 111);
+    static_assert(offsetof(InputState, cueCount) == 112);
+    static_assert(offsetof(InputState, cue) == 114);
     static_assert(sizeof(InputSlot) == 144);
     static_assert(sizeof(WeaponEntry) == 8);
     static_assert(sizeof(WeaponCommand) == 8 + kWeaponSlotCount * sizeof(WeaponEntry) + 24);
