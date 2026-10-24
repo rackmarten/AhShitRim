@@ -481,6 +481,18 @@ namespace AhShitRim::Wanted
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
     }
 
+    // ---- Copies left in a save ----
+
+    // Earlier builds made some of ours as copies of a guard about, from the base Skyrim had built for him at runtime (form
+    // ID FFxxxxxx). A save made while one was out holds that copy and the runtime base; when a load then clears that
+    // world, Skyrim frees the base before the copy's fight and crashes in its combat code (SkyrimSE.exe+01DCDE4, +01DCB69,
+    // +1B75B78, +06C4F5A: 1 load in 15 from such a save, in the load test). Skyrim never makes an actor from a runtime
+    // base, so a runtime actor whose base it was made from is runtime is one of those: taken out once a loaded game has
+    // settled. a_madeFrom is the base it was made from (a levelled one's original base, else its own).
+    constexpr bool LeftoverCopy(std::uint32_t a_actorID, std::uint32_t a_madeFrom) { return a_actorID >= 0xFF000000 && a_madeFrom >= 0xFF000000; }
+
+    inline constexpr float kLeftoverSettle = 3.0f;  // seconds of a settled game after a load before they're looked for
+
     // ---- Quick save and quickload ----
 
     // As in San Andreas, no saving while wanted: no quick save or quickload while stars show or any of ours are still

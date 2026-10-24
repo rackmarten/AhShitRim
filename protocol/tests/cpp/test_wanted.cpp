@@ -443,6 +443,15 @@ TEST_CASE("the leash: on CJ never pulled, a stray after a while, a lost one soon
     CHECK(kLeashGap >= 3.0f);  // a path takes a moment to build
 }
 
+TEST_CASE("a copy made from a runtime base, left in a save by an earlier build, is found; Skyrim's own actors aren't")
+{
+    CHECK(LeftoverCopy(0xFF000E6E, 0xFF000D73));        // the load test's crasher: an Imperial Soldier made from a guard's runtime base
+    CHECK_FALSE(LeftoverCopy(0xFF000E6C, 0x000872A2));  // one of ours made from the game's own record (a runtime base of its own is normal)
+    CHECK_FALSE(LeftoverCopy(0xFF000DB6, 0x00023ABF));  // an ice wolf made from its record
+    CHECK_FALSE(LeftoverCopy(0x000D8C56, 0x000D8C50));  // a guard placed in the game
+    CHECK_FALSE(LeftoverCopy(0x000D8C56, 0xFF000DD5));  // a placed actor with a runtime base: Skyrim's own levelled guard
+}
+
 TEST_CASE("no quick save or quickload while wanted or while any of ours are out")
 {
     const float later = kQuickAfterGone + 1.0f;

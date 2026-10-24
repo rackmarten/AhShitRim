@@ -9,6 +9,7 @@
 #include "debug/StreamTest.h"
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
+#include "player/Police.h"
 #include "player/SaveState.h"
 
 namespace
@@ -56,6 +57,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         case SKSE::MessagingInterface::kPostLoadGame:
             AhShitRim::StreamTest::OnPostLoadGame();
             AhShitRim::LoadTest::OnPostLoadGame();
+            AhShitRim::Police::OnPostLoadGame();
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
         case SKSE::MessagingInterface::kNewGame:

@@ -73,6 +73,7 @@ namespace AhShitRim::Police
             RE::ObjectRefHandle actor;
             RE::ObjectRefHandle horse;
             int                 step = 0;  // 0 disable the actor, 1 delete it if it's no actor, 2 disable the horse, 3 (nothing)
+            bool                purge = false;  // a copy left in a save: deleted too, actor or not, so no save keeps it
         };
 
         // Where walking out of a barracks door puts the player: the door's own teleport.
@@ -125,6 +126,8 @@ namespace AhShitRim::Police
             float                    chasedTimer = 0.0f;  // seconds since his last chased line
             std::vector<std::pair<RE::TESRace*, bool>> mountedRaces;  // races ours ride with, and whether they had mounted combat
             std::vector<RE::ActorHandle> downFighters;  // who fought the player as it was knocked down
+            bool                     lookForLeftovers = false;  // a game loaded: copies left in it by earlier builds are looked for
+            float                    leftoverSettle = 0.0f;     // seconds the loaded game has run settled
             std::chrono::steady_clock::time_point goneAt;  // when the last of ours leaving was taken out
             Knock::Rejoin            rejoin;           // and for how long they're set on it again
         } state;
@@ -432,8 +435,8 @@ namespace AhShitRim::Police
                     if (it->step % 2 == 0) {
                         Unlink(ref->As<RE::Actor>());
                         ref->Disable();
-                    } else if (!ref->As<RE::Actor>()) {
-                        ref->SetDelete(true);  // a ground probe
+                    } else if (!ref->As<RE::Actor>() || it->purge) {
+                        ref->SetDelete(true);  // a ground probe, or a copy left in a save
                     }
                 }
                 if (++it->step >= 4) {
@@ -1231,8 +1234,56 @@ namespace AhShitRim::Police
         std::mutex g_pendingLock;
         Pending    g_pending;
 
-        void RunFrame()
+        // Copies left in a loaded save by earlier builds (Wanted::LeftoverCopy): every fight with them ends and they're taken
+        // out, deleted too, a step a frame like ours leaving. Looked for once a loaded game has settled.
+        void PurgeLeftovers(float a_delta)
         {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* ui = RE::UI::GetSingleton();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            const bool settled = player && player->Is3DLoaded() && cell && cell->IsAttached() &&
+                                 !(ui && (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) || ui->GameIsPaused()));
+            state.leftoverSettle = settled ? state.leftoverSettle + a_delta : 0.0f;
+            if (state.leftoverSettle < Wanted::kLeftoverSettle) {
+                return;
+            }
+            state.lookForLeftovers = false;
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            std::vector<RE::NiPointer<RE::Actor>> found;
+            lists->ForAllActors([&](RE::Actor* a_actor) {
+                if (a_actor && !a_actor->IsDisabled()) {
+                    auto*       leveled = a_actor->extraList.GetByType<RE::ExtraLeveledCreature>();
+                    const auto* madeFrom = leveled && leveled->originalBase ? static_cast<RE::TESForm*>(leveled->originalBase)
+                                                                           : static_cast<RE::TESForm*>(a_actor->GetActorBase());
+                    if (madeFrom && Wanted::LeftoverCopy(a_actor->GetFormID(), madeFrom->GetFormID())) {
+                        found.emplace_back(a_actor);
+                    }
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+            for (const auto& actor : found) {
+                SKSE::log::info("police: {:08X} '{}' is a copy left in the save, made from runtime base {:08X}: taken out", actor->GetFormID(), actor->GetName(),
+                    actor->extraList.GetByType<RE::ExtraLeveledCreature>() ? actor->extraList.GetByType<RE::ExtraLeveledCreature>()->originalBase->GetFormID() : 0);
+                Unlink(actor.get());
+                Leaving leaving;
+                leaving.actor = actor->CreateRefHandle();
+                leaving.purge = true;
+                state.leaving.push_back(leaving);
+            }
+            if (!found.empty()) {
+                state.clearOut = true;  // seen or not
+            }
+            SKSE::log::info("police: the loaded game has settled: {} cop(ies) left in the save by earlier builds", found.size());
+        }
+
+        void RunFrame(float a_delta)
+        {
+            if (state.lookForLeftovers) {
+                PurgeLeftovers(a_delta);
+            }
             Pending p;
             {
                 std::scoped_lock lock(g_pendingLock);
@@ -1355,7 +1406,13 @@ namespace AhShitRim::Police
         }
     }
 
-    void Sweep() { RunFrame(); }
+    void Sweep(float a_delta) { RunFrame(a_delta); }
+
+    void OnPostLoadGame()
+    {
+        state.lookForLeftovers = true;
+        state.leftoverSettle = 0.0f;
+    }
 
     void OnGameLoad()
     {

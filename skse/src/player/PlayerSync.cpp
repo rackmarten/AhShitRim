@@ -962,7 +962,7 @@ namespace AhShitRim::PlayerSync
                 LoadTest::Update(a_player, a_delta);
                 Arms::Update();
                 CheatCodes::Update();
-                Police::Sweep();
+                Police::Sweep(a_delta);
                 GunRewards::Update();
                 Respawns::Update(state.owned, a_delta);
                 Protocol::PlayerState pose{};
