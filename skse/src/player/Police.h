@@ -94,8 +94,8 @@ namespace AhShitRim::Police
     // The game moved the player and CJ was re-anchored there.
     void OnReanchor();
 
-    // A game loads or a new one starts (kPreLoadGame, kNewGame): the bounties are seeded again, nothing spawned is ours
-    // any more, no task queued before it runs, and nothing is done to any actor from here.
+    // A game loads or a new one starts (kPreLoadGame, kNewGame, on the main thread before Skyrim clears its world): ours
+    // stand down (every fight with them ends), then nothing spawned is ours any more and the bounties are seeded again.
     void OnGameLoad();
 
     // The co-save record.

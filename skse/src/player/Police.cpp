@@ -1363,14 +1363,33 @@ namespace AhShitRim::Police
 
     void OnGameLoad()
     {
-        // A load or a new game: Skyrim clears its world, ours with it. Nothing of ours is done to any actor from here (no
-        // fight stopped, nothing disabled), nothing asked before now is run, and no handle of ours outlives it.
+        // A load or a new game, any of them (F9, the pause menu, the reload after a death, the console): SKSE says so on the
+        // main thread before Skyrim clears its world. Ours stand down first: every fight with one of them ends (theirs and
+        // their opponents'), as the load's clearing of a fight with them in it crashed (SkyrimSE.exe+01DCDE4). Nothing is
+        // disabled (all at once mid-fight crashed too); Skyrim's clearing takes them with the old world. Nothing asked
+        // before now is run, and no handle of ours outlives it.
         {
             std::scoped_lock lock(g_pendingLock);
             g_pending = {};
         }
         if (!state.spawned.empty() || !state.leaving.empty()) {
-            SKSE::log::info("police: a load: {} of ours and {} leaving are left to Skyrim's own clearing", state.spawned.size(), state.leaving.size());
+            int stood = 0;
+            const auto standDown = [&](const RE::ObjectRefHandle& a_handle) {
+                auto  ref = a_handle.get();
+                auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                if (actor && !ref->IsDisabled()) {
+                    Unlink(actor);
+                    stood++;
+                }
+            };
+            for (const auto& s : state.spawned) {
+                standDown(s.actor);
+            }
+            for (const auto& l : state.leaving) {
+                standDown(l.actor);
+            }
+            SKSE::log::info("police: a load: {} of ours and {} leaving stand down ({} out of every fight), then go with Skyrim's clearing", state.spawned.size(),
+                state.leaving.size(), stood);
         }
         state.downFighters.clear();
         state.rejoin.Reset();
