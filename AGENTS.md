@@ -36,6 +36,7 @@ So CI can check your logic, put anything that doesn't need a game in a header un
 - A new shared memory slot or ring, or any other layout change, bumps `kProtocolVersion` in `protocol/ahshitrim_protocol.h` and updates `docs/PROTOCOL.md`.
 - Branding: no "GTA" in names (files, types, the mod's UI). Never commit Rockstar or Bethesda assets; the plugins read what they need from the user's own installs at runtime.
 - Don't touch `docs/ROADMAP.md`: it's the user's own untracked file.
+- Branches (`docs/DEV_SETUP.md`, "Branches and releases"): `main` is development, `production` is what players get. Feature PRs go against `main`; hotfix PRs branch from and go against `production` (`fix-<slug>`). Merge into `production` with a merge commit, never squash. Never create tags or GitHub releases: the maintainer does.
 - Add an entry under `## [Unreleased]` in `CHANGELOG.md` for changes players or developers notice (agent notes like this file don't need one).
 
 ## References

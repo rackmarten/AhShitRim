@@ -131,7 +131,7 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 ## CI
 
-Every pull request that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
+Every pull request and every push to `main` or `production` that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
 
 - `protocol-tests-linux`: `scripts/test.sh` (below) with gcc, as a headless session runs it.
 - `build`: `scripts/wine/build.sh` (below): both plugins with the real MSVC under Wine, then the whole doctest suite under Wine, the link's tests included. The checkout and build folders stay on the runner (`clean: false`), so a typical PR builds in a minute or two; the first build after a fresh runner or a CommonLib bump takes about 25 minutes. If it fails or hangs (`cl.exe` under Wine now and then spins forever on one file), the job stops Wine and runs it once more. It uploads `AhShitRim-<commit>` with `AhShitRim.dll`, `AhShitRim.asi` and `AhShitRim.map`, kept for 7 days.
@@ -196,6 +196,73 @@ Known gaps:
 - Compiling with every core (`-j 10`) on 16 GB once crashed `c2.dll` (an `int3`) partway through CommonLibSSE, most likely out of memory, so `build.sh` defaults to half the cores (`JOBS` overrides). If a compile crashes, run it again; ninja carries on where it stopped.
 - Fixed along the way: CommonLibSSE's `lib.exe` call never started, because CMake on a Linux host puts all ~520 objects on one command line, over Windows' 32767 characters, and msvc-wine's wrapper then waits on its pipes forever (`long-args.sh` now). Forcing Ninja response files instead broke every compile (msvc-wine never rewrites the `/home/...` paths inside them). Then `lib.exe` couldn't open its 300th object (`LNK1104`): Wine holds a few file descriptors per mapped object, past the soft limit of 1024, so `build.sh` raises it.
 - The launcher's Pester tests (`scripts/test.ps1`) and `scripts/package.ps1` don't run here; they need PowerShell on Windows.
+
+## Branches and releases
+
+From 0.1 on there are two long-lived branches:
+
+- **`main`** is the development version. Features and fixes for the next release go there through pull requests, as before.
+- **`production`** is what players get. A release is `main` merged into `production`, and release tags (`v0.1.0`, `v0.1.1`, ...) exist only on `production`, each on the commit its release zip is built from.
+- **Hotfixes** for players branch from `production` (`fix-<slug>`), go through a pull request into `production`, are tagged there, and `production` is then merged back into `main`.
+
+CI builds every push to either branch and every pull request into either. Merge pull requests into `production` with a merge commit, never squash, so `main` and `production` keep a shared history and the merge back stays small.
+
+### Cutting a release
+
+1. On `main`, through an ordinary pull request: set the version (`VERSION` in `skse/CMakeLists.txt` and `sa/CMakeLists.txt`, `version-semver` in `skse/vcpkg.json` and `protocol/vcpkg.json`), and in `CHANGELOG.md` rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` with a new empty `## [Unreleased]` above it. Merge it.
+2. Open the release pull request from `main` into `production`, wait for CI, and merge it with a merge commit:
+
+   ```bash
+   gh pr create --base production --head main --title "Release X.Y.Z" --body "Release notes: CHANGELOG.md, X.Y.Z"
+   gh pr merge --merge <number>
+   ```
+
+3. Tag the merge on `production` and push the tag:
+
+   ```bash
+   git fetch origin
+   git switch production
+   git merge --ff-only origin/production
+   git tag -a vX.Y.Z -m "AhShitRim X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+4. Build the zip from the tag on the desktop (`scripts/build.ps1`, then `scripts/package.ps1`; run `scripts/encode-music.ps1` first if Sweetroll FM's tracks ship) and publish it as the tag's release:
+
+   ```bash
+   gh release create vX.Y.Z out/release/AhShitRim-X.Y.Z.zip --title "AhShitRim X.Y.Z" --notes-file <release notes>
+   ```
+
+### A hotfix
+
+1. Branch from `production`, fix it, and set the patch version and its `CHANGELOG.md` section (`## [X.Y.Z+1] - YYYY-MM-DD`) on the same branch:
+
+   ```bash
+   git fetch origin
+   git switch -c fix-<slug> origin/production
+   ```
+
+2. Push it and open the pull request into `production`; once CI is green, merge it with a merge commit:
+
+   ```bash
+   git push -u origin fix-<slug>
+   gh pr create --base production --title "Fix: <what>"
+   gh pr merge --merge <number>
+   ```
+
+3. Tag it on `production` and publish it, as steps 3 and 4 of a release.
+4. Merge `production` back into `main`, through a pull request so CI checks the result:
+
+   ```bash
+   git switch -c merge-production-vX.Y.Z origin/main
+   git merge --no-ff origin/production -m "Merge production (vX.Y.Z) into main"
+   git push -u origin merge-production-vX.Y.Z
+   gh pr create --base main --title "Merge production (vX.Y.Z) into main"
+   ```
+
+   Keep `main`'s own version and `## [Unreleased]` section in the conflict, with the hotfix's changelog section below it. A hotfix should avoid changing the shared memory's layout; if it has to, it takes a `kProtocolVersion` above `main`'s, and `main` renumbers on the merge back.
+
+Agents open feature pull requests against `main` and hotfix pull requests against `production`, and never create tags or releases: those are the maintainer's.
 
 ## How the builds work
 
