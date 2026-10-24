@@ -1,6 +1,7 @@
 #include "runner.h"
 
 #include "audio.h"
+#include "car_hits.h"
 #include "chunk_world.h"
 #include "cj_body.h"
 #include "cj_busted.h"
@@ -483,6 +484,9 @@ namespace AhShitRim::Runner
                 state.carPending = false;
                 Vehicles::Restore(ped, state.spawn, state.car);
             }
+            // Skyrim's actors push back on CJ's vehicle before it is posed and published, so a car a mammoth stopped is
+            // drawn where it stopped.
+            CarHits::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);

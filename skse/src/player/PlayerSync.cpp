@@ -28,7 +28,9 @@
 #include "player/Missions.h"
 #include "player/Conversation.h"
 #include "player/Particles.h"
+#include "player/CarHits.h"
 #include "player/Projectiles.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
 #include "player/VehicleFx.h"
@@ -438,7 +440,10 @@ namespace AhShitRim::PlayerSync
         // smoke and fire (VehicleFx). A slot whose vehicle is gone reads with no flags and draws nothing.
         void DrawVehicles(RE::PlayerCharacter* a_player, float a_delta)
         {
-            const double now = NowMs();
+            const double        now = NowMs();
+            Protocol::BodyState driven{};
+            RE::NiPoint3        drivenFeet;
+            bool                anyDriven = false;
             for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
                 // A read that stayed torn keeps drawing from what came before.
                 Protocol::BodyState vehicle{};
@@ -459,8 +464,15 @@ namespace AhShitRim::PlayerSync
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    if ((pose.flags & Protocol::kBodyDriven) != 0) {
+                        driven = pose;
+                        drivenFeet = feet;
+                        anyDriven = true;
+                    }
                 }
             }
+            // CJ's followers ride in his (v28), smoothed with it.
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
         }
 
         // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed,
@@ -509,6 +521,8 @@ namespace AhShitRim::PlayerSync
             VehicleFx::Clear();
             Particles::Clear();
             People::Clear();
+            CarHits::Clear();
+            Riders::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
@@ -593,6 +607,8 @@ namespace AhShitRim::PlayerSync
             VehicleFx::Clear();
             Particles::Clear();
             People::Clear();
+            CarHits::Clear();
+            Riders::Clear();
             Activation::Clear();
             AmmuNation::Close();
             state.reanchoring = true;
@@ -902,6 +918,7 @@ namespace AhShitRim::PlayerSync
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             // The heat seeker aims while CJ aims it, and in the Hydra (v23) while its lock-on, the handbrake key, is held.
@@ -960,6 +977,8 @@ namespace AhShitRim::PlayerSync
                         Projectiles::Queue(a_data, a_size);
                     } else if (a_type == Protocol::MessageType::PickupEvent) {
                         WorldPickups::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::Impact && state.owned) {
+                        CarHits::Queue(a_data, a_size);
                     }
                 });
                 // The link coming up while Skyrim has the player: San Andreas's first read of the input only seeds its
@@ -1291,6 +1310,7 @@ namespace AhShitRim::PlayerSync
         Missions::OnDataLoaded();
         MissionTest::OnDataLoaded();
         Shouting::OnDataLoaded();
+        Riders::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

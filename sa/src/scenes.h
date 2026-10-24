@@ -23,6 +23,7 @@ namespace AhShitRim::Protocol
 // - Talking (v21): a new InputState.lineCount has CJ say the next of his lines of lineKind
 //   (protocol/cpp/dialogue.h's categories: greet, agree, refuse, ask, threaten, joke, goodbye), cutting
 //   off his last line, also while he follows Skyrim's player in a scene.
+// - Crashing (v28): CarHits has him say a CRASH_CAR line when his vehicle hits someone.
 // Game thread only.
 namespace AhShitRim::Scenes
 {
@@ -42,4 +43,7 @@ namespace AhShitRim::Scenes
     void End(CPlayerPed* a_ped);
 
     bool Following();
+
+    // CJ's vehicle hit someone (v28, CarHits): he says one of his CRASH_CAR lines now, San Andreas's pick.
+    void SayCrash(CPlayerPed* a_ped);
 }

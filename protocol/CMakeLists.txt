@@ -75,6 +75,8 @@ add_executable(protocol_tests
     tests/cpp/test_air_spawn.cpp
     tests/cpp/test_missions.cpp
     tests/cpp/test_pickups.cpp
+    tests/cpp/test_run_over.cpp
+    tests/cpp/test_passengers.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

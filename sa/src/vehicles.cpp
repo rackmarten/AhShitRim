@@ -558,6 +558,42 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // A passenger seat in the vehicle's own frame, as CPed::GetSeatPositionInVehicle places San Andreas's passengers:
+        // the first on the front seat dummy (a bike's or a quad's on the back one), the second on the back one
+        // mirrored to the left, the third on the back one.
+        CVector SeatOf(CVehicleModelInfo* a_info, CVehicle* a_vehicle, int a_seat)
+        {
+            const CVector& front = a_info->m_pVehicleStruct->m_avDummyPos[4];  // DUMMY_SEAT_FRONT
+            const CVector& back = a_info->m_pVehicleStruct->m_avDummyPos[5];   // DUMMY_SEAT_REAR
+            switch (a_seat) {
+            case 0: return a_vehicle->m_nVehicleClass == VEHICLE_BIKE || a_vehicle->m_nVehicleSubClass == VEHICLE_QUAD ? back : front;
+            case 1: return CVector(-back.x, back.y, back.z);
+            default: return back;
+            }
+        }
+
+        // Its passenger seats (v28) for Skyrim to seat CJ's followers in: as many as San Andreas lets ride
+        // (m_nMaxPassengers) and its model has a dummy for, each where SetPedPositionInCar puts a passenger (on a
+        // bike's lean matrix, so a pillion leans with it), turned as the vehicle.
+        void PublishSeats(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            auto* info = InfoOf(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pVehicleStruct || Wrecked(a_vehicle)) {
+                return;
+            }
+            const CMatrix& m = a_vehicle->m_nVehicleClass == VEHICLE_BIKE ? static_cast<CBike*>(a_vehicle)->m_mLeanMatrix : static_cast<const CMatrix&>(a_vehicle->GetMatrix());
+            const auto     count = (std::min)(static_cast<std::uint32_t>(a_vehicle->m_nMaxPassengers), Protocol::kSeatMax);
+            for (std::uint32_t i = 0; i < count; i++) {
+                const CVector local = SeatOf(info, a_vehicle, static_cast<int>(i));
+                if (local.x == 0.0f && local.y == 0.0f && local.z == 0.0f) {
+                    break;  // no dummy for it: no seat
+                }
+                Body::RwRows rows{ Vec(m.right), Vec(m.up), Vec(m.at), Vec(m.pos + m.right * local.x + m.up * local.y + m.at * local.z) };
+                a_out.seats[i] = Body::ToBone(rows, Vec(a_vehicle->GetPosition()));
+                a_out.seatCount = i + 1;
+            }
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -599,6 +635,7 @@ namespace AhShitRim::Vehicles
                     s.hiddenParts |= 1ull << i;
                 }
             }
+            PublishSeats(a_vehicle, s);
             for (const auto& extra : slot.extras) {
                 auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
                 const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));

@@ -211,6 +211,18 @@ namespace AhShitRim::Body
         }
     }
 
+    inline Protocol::BodyBone BlendBone(const Protocol::BodyBone& a, const Protocol::BodyBone& b, float t)
+    {
+        const Quat q = Nlerp({ a.rotation[0], a.rotation[1], a.rotation[2], a.rotation[3] }, { b.rotation[0], b.rotation[1], b.rotation[2], b.rotation[3] }, t);
+        Protocol::BodyBone out{};
+        out.rotation[0] = q.x;
+        out.rotation[1] = q.y;
+        out.rotation[2] = q.z;
+        out.rotation[3] = q.w;
+        Lerp3(a.translation, b.translation, t, out.translation);
+        return out;
+    }
+
     // a at t = 0, b at t = 1; everything else (frame, handover, model) is b's.
     inline Protocol::BodyState Blend(const Protocol::BodyState& a, const Protocol::BodyState& b, float t)
     {
@@ -238,15 +250,12 @@ namespace AhShitRim::Body
         }
         const std::uint32_t count = (std::min)(b.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
-            const auto& ba = a.bones[i];
-            const auto& bb = b.bones[i];
-            const Quat  q = Nlerp({ ba.rotation[0], ba.rotation[1], ba.rotation[2], ba.rotation[3] },
-                 { bb.rotation[0], bb.rotation[1], bb.rotation[2], bb.rotation[3] }, t);
-            out.bones[i].rotation[0] = q.x;
-            out.bones[i].rotation[1] = q.y;
-            out.bones[i].rotation[2] = q.z;
-            out.bones[i].rotation[3] = q.w;
-            Lerp3(ba.translation, bb.translation, t, out.bones[i].translation);
+            out.bones[i] = BlendBone(a.bones[i], b.bones[i], t);
+        }
+        // A vehicle's passenger seats (v28) go with it.
+        const std::uint32_t seats = (std::min)((std::min)(a.seatCount, b.seatCount), Protocol::kSeatMax);
+        for (std::uint32_t i = 0; i < seats; i++) {
+            out.seats[i] = BlendBone(a.seats[i], b.seats[i], t);
         }
         return out;
     }
@@ -270,6 +279,12 @@ namespace AhShitRim::Body
         const std::uint32_t count = (std::min)(a_body.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
             if (!finite(a_body.bones[i].rotation, 4) || !finite(a_body.bones[i].translation, 3)) {
+                return false;
+            }
+        }
+        const std::uint32_t seats = (std::min)(a_body.seatCount, Protocol::kSeatMax);
+        for (std::uint32_t i = 0; i < seats; i++) {
+            if (!finite(a_body.seats[i].rotation, 4) || !finite(a_body.seats[i].translation, 3)) {
                 return false;
             }
         }
