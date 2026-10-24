@@ -88,6 +88,7 @@ The full list is in the [README](../README.md#keys).
 - **San Andreas closes or crashes at start**: another ASI mod is the usual suspect. Only SilentPatch and the ASI loader are tested; move other `.asi` files out of the San Andreas folder and its `scripts` folder.
 - **F10 does nothing**: San Andreas isn't running or AhShitRim isn't loaded in Skyrim. Check `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` for `link up`, and that the launcher got San Andreas ready.
 - **No San Andreas HUD in Skyrim**: `Data\SKSE\Plugins\AhShitRim.ini` doesn't point at San Andreas. Run the launcher again, it rewrites it.
+- **Both games go silent and stay silent**: if your sound comes from the monitor's speakers (HDMI or DisplayPort audio), the display turning off takes that audio device with it, and neither game reconnects when it comes back; restart both games to get sound again. While San Andreas has the player, AhShitRim keeps the display on, but with Skyrim in control (or the screen locked) Windows's display timeout still applies. Headphones or speakers on the PC's own audio jack don't go away, or set "Turn off my screen" in Windows's power settings to Never while you play.
 - **Skyrim crashes at start, or SKSE says the plugin is incompatible**: the game updated. Update SKSE and Address Library to match.
 
 The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, San Andreas's in its `scripts\AhShitRim.log`.
