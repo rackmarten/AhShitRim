@@ -41,7 +41,15 @@ function Record([string] $what, [string] $detail) {
     Add-Content -Path $Results -Value ('{0},{1},{2},{3},"{4}"' -f (Get-Date -Format 's'), $Label, $what, $cycle, $detail)
     Write-Host "$(Get-Date -Format T) cycle ${cycle}: $what $detail"
 }
-function Stop-Games { Get-Process SkyrimSE, skse64_loader, gta_sa -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 5 }
+# A crashing Skyrim can refuse to be stopped for a moment (its crash logger still writing): tried again until it's gone.
+function Stop-Games {
+    for ($i = 0; $i -lt 12; $i++) {
+        $left = Get-Process SkyrimSE, skse64_loader, gta_sa -ErrorAction SilentlyContinue
+        if (-not $left) { break }
+        $left | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
+    }
+}
 function Start-Games {
     & "$PSScriptRoot/launch-sa.ps1" | Out-Null
     Start-Process -WorkingDirectory $skyrim (Join-Path $skyrim 'skse64_loader.exe')
