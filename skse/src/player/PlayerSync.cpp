@@ -29,6 +29,7 @@
 #include "player/Conversation.h"
 #include "player/Projectiles.h"
 #include "player/Shots.h"
+#include "player/Shouting.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "pose.h"
@@ -722,14 +723,16 @@ namespace AhShitRim::PlayerSync
         }
 
         // Skyrim's own Shout key fires the shout from the player, which stands where CJ does and
-        // looks where San Andreas's camera looks; San Andreas plays CJ's gesture when it goes off.
+        // looks where San Andreas's camera looks; San Andreas plays CJ's gesture and says his line for
+        // the shout and its words when it goes off (Shouting).
         void WatchShout(RE::PlayerCharacter* a_player)
         {
             const float recovery = a_player->GetVoiceRecoveryTime();
             if (Scene::ShoutReleased(state.voiceRecovery, recovery)) {
                 state.shoutCount++;
+                state.input.AddLine(Shouting::Released(a_player, recovery));  // CJ's line for it
                 const auto* power = a_player->GetActorRuntimeData().selectedPower;
-                SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures", power ? power->GetName() : "?", recovery);
+                SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures and shouts", power ? power->GetName() : "?", recovery);
             }
             state.voiceRecovery = recovery;
         }
@@ -970,6 +973,7 @@ namespace AhShitRim::PlayerSync
                         Publish();
                     }
                 }
+                Shouting::Update(a_player, state.owned);
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -1269,6 +1273,7 @@ namespace AhShitRim::PlayerSync
         Respawns::OnDataLoaded();
         Missions::OnDataLoaded();
         MissionTest::OnDataLoaded();
+        Shouting::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }

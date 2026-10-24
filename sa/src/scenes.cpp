@@ -5,6 +5,7 @@
 #include "log.h"
 #include "pose.h"
 #include "scene.h"
+#include "thuum.h"
 #include "vehicles.h"
 #include "voice_lines.h"
 #include "wanted.h"
@@ -114,6 +115,8 @@ namespace AhShitRim::Scenes
         }
         std::array<VoiceLines::Deck, Dialogue::kCategoryCount> g_dialogueLines{ DialogueDeck(0), DialogueDeck(1), DialogueDeck(2), DialogueDeck(3),
             DialogueDeck(4), DialogueDeck(5), DialogueDeck(6), DialogueDeck(7) };
+        // His lines for each of Skyrim's shouts and the words charged (thuum.h), and his generic ones.
+        Thuum::Voice g_shoutLines(VoiceLines::kShoutPicks, VoiceLines::kShoutGeneric, ::GetTickCount() * 53u);
         const CAEPedSpeechAudioEntity* g_forcedFor = nullptr;
         VoiceLines::Line               g_forced{};
 
@@ -187,26 +190,29 @@ namespace AhShitRim::Scenes
     void Install()
     {
         g_getSoundAndBankIds = RedirectCall(kCallGetSoundAndBankIds, &GetSoundAndBankIdsHook);
-        Log(std::format("scenes: {} insult and {} swear lines picked{}", VoiceLines::kInsult.size(), VoiceLines::kSwear.size(),
+        Log(std::format("scenes: {} insult, {} swear and {} shout lines picked ({} generic){}", VoiceLines::kInsult.size(), VoiceLines::kSwear.size(),
+            VoiceLines::kShoutPicks.size(), VoiceLines::kShoutGeneric.size(),
             g_getSoundAndBankIds ? "" : ", but San Andreas picks them (no hook), and CJ keeps quiet in conversations"));
     }
 
     bool OnInput(CPlayerPed* a_ped, const Protocol::InputState& a_input, bool a_owned)
     {
         state.input = a_input;
+        const bool wasted = (a_input.flags & Protocol::kInputWasted) != 0;
+        const bool canSpeak = a_owned && !state.following && !wasted;
         // The first value read only seeds the count, as for the spawn keys.
-        if (state.haveShout && a_input.shoutCount != state.shoutCount && a_owned && !Vehicles::Driven(a_ped) && !state.following) {
-            PlayOnce(a_ped, kShovePartial);
-            PlayOnce(a_ped, kFaceAnger);
-            Log("scenes: Skyrim's player shouted, CJ gestures");
+        if (state.haveShout && a_input.shoutCount != state.shoutCount && a_owned) {
+            if (!Vehicles::Driven(a_ped) && !state.following) {
+                PlayOnce(a_ped, kShovePartial);
+                PlayOnce(a_ped, kFaceAnger);
+                Log("scenes: Skyrim's player shouted, CJ gestures");
+            }
         }
         state.shoutCount = a_input.shoutCount;
         state.haveShout = true;
 
         // The insult and swear keys (v16): CJ's own lines, also out of the window in a vehicle; an insult
         // on foot comes with the finger.
-        const bool wasted = (a_input.flags & Protocol::kInputWasted) != 0;
-        const bool canSpeak = a_owned && !state.following && !wasted;
         if (state.haveSpeech && a_input.insultCount != state.insultCount && canSpeak) {
             SayNow(a_ped, kInsultMale, g_insultLines, "insults");
             if (!Vehicles::Driven(a_ped) && !a_ped->m_pVehicle) {
@@ -219,7 +225,15 @@ namespace AhShitRim::Scenes
         // A line Skyrim asks for (v21): CJ's answer in a conversation, also in a scene. Only his own lines:
         // the insult context merely carries them, so without the hook he says nothing.
         const auto kind = a_input.lineKind;
-        if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && (kind == Wanted::kLineChased || kind == Wanted::kLineArrested)) {
+        if (state.haveSpeech && a_input.lineCount != state.lineCount && canSpeak && Thuum::IsShout(kind)) {
+            // v25, the Thu'um: his line for the shout and its words, where the Dragonborn's voice was.
+            const int  shout = Thuum::ShoutOf(kind);
+            const int  words = Thuum::WordsOf(kind);
+            const int  pool = g_shoutLines.PoolWords(shout, words);
+            const auto what = std::format("shouts ({}, {} word{}: {})", shout >= 0 ? Thuum::kShouts[shout].name : "not one of the table's", words,
+                words == 1 ? "" : "s", pool ? std::format("its {}-word lines", pool) : std::string("his generic lines"));
+            SayNow(a_ped, kInsultMale, g_shoutLines.For(shout, words), what.c_str());
+        } else if (state.haveSpeech && a_input.lineCount != state.lineCount && a_owned && !wasted && (kind == Wanted::kLineChased || kind == Wanted::kLineArrested)) {
             // v22, the wanted level: San Andreas's own lines of CJ's for it, as it picks them.
             static VoiceLines::Deck none;
             SayNow(a_ped, kind == Wanted::kLineChased ? kChased : kArrested, none, kind == Wanted::kLineChased ? "is chased" : "is arrested");

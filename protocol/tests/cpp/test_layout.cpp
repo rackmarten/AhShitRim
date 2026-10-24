@@ -28,9 +28,14 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v25: the shout's voice")
+{
+    CHECK(kProtocolVersion == 25);
+    CHECK(sizeof(InputState) == 116);  // a shout goes as a lineKind (Thuum::kLineShout), no new field
+}
+
 TEST_CASE("protocol v24: sound cues")
 {
-    CHECK(kProtocolVersion == 24);
     CHECK(kCueMissionPassed == 1);
     CHECK(kCueIntroLine == 2);
 }

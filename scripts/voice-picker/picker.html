@@ -29,17 +29,27 @@
   summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
   summary .n { color: var(--muted); font-size: 13px; }
   summary .picked { margin-left: auto; font-size: 13px; color: var(--accent); }
-  .lines { padding: 0 14px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
-  .row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
+  .lines { padding: 0 14px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 6px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
   .row.playing { border-color: var(--play); }
   .row button.play { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; flex: none; }
   .row .label { flex: 1; font-variant-numeric: tabular-nums; font-size: 13px; }
   .row .label small { color: var(--muted); }
+  .row .label .text { display: block; font-variant-numeric: normal; font-size: 14px; color: var(--text); }
+  .row .label .text.unsure { color: var(--muted); font-style: italic; }
+  .row .label mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
   .chip { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 5px; padding: 2px 7px; font: 600 12px system-ui; cursor: pointer; }
   .chip.x.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .chip.m.on { background: var(--swear-soft); color: var(--swear); border-color: var(--swear); }
   .cat { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 5px; padding: 1px 2px; font: 600 12px system-ui; }
   .cat.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chip.col { min-width: 28px; }
+  .chip.col.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .row .picks { display: inline-flex; gap: 4px; flex: none; }
+  .row .label .tags { display: block; color: var(--accent); font-size: 12px; }
+  .row .label .tags:empty { display: none; }
+  .chooser { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+  .chooser select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; max-width: 100%; }
   footer { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
   footer .count { font-variant-numeric: tabular-nums; }
   footer button { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
@@ -50,12 +60,14 @@
 <body>
 <header>
   <h1>CJ voice picker</h1>
-  <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key, or give it a category for CJ's answers in Skyrim's conversations (greet, agree, refuse, ask, threaten, joke, goodbye). Your picks are kept in this browser; download them when you're done.</p>
+  <p>Every line in CJ's speech banks, by San Andreas's speech context and his mood voice. Press ▶ to listen, then mark a line <b>X</b> for the insult key or <b>MMB</b> for the swear key, give it a category for CJ's answers in Skyrim's conversations (greet, agree, refuse, ask, threaten, joke, goodbye), or press <b>+</b> to pick it for the shout column chosen above: what CJ yells for that shout and number of words, in place of the dragon words. A shout with no picks of its own falls back to its nearest word count, then to <b>any shout</b>. Your picks are kept in this browser; download them when you're done.</p>
+  <p id="transcripts"></p>
   <p>In AhShitRim CJ is always in the <b>CR</b> mood (no wanted level, no mission just passed), so the game on its own only plays the CR lines. Your picks play whatever the mood.</p>
   <div class="controls">
-    <input type="search" id="search" placeholder="Filter contexts (insult, crash, fight…)">
+    <input type="search" id="search" placeholder="Search what he says, the context or the voice (homie, crash, AG2…)">
     <span id="moods"></span>
   </div>
+  <div class="controls" id="columns"></div>
 </header>
 <main id="list"></main>
 <footer>
@@ -64,17 +76,52 @@
   <button id="clear">Clear picks</button>
   <button class="primary" id="download">Download voice-picks.json</button>
 </footer>
+<script src="transcripts.js"></script>
 <script>
 const data = /*DATA*/null;
+// What each line says, from transcribe.py (Whisper on your own machine; never committed). Optional.
+const transcripts = (window.transcripts && window.transcripts.lines) || {};
+const transcribed = Object.keys(transcripts).length;
+document.getElementById('transcripts').textContent = transcribed
+  ? `${transcribed} lines transcribed by Whisper (${window.transcripts.model}); greyed text is a guess it wasn't sure of. Search finds words in them.`
+  : 'No transcripts yet: run uv run scripts/voice-picker/transcribe.py to search what CJ says.';
+const escape = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const moodNames = {
   AG: 'angry, gang', AR: 'angry (wanted 2-3)', CD: 'calm, well dressed', CF: 'calm, fat', CG: 'calm, gang',
   CR: 'calm (AhShitRim)', PG: 'panicked, gang', PR: 'panicked (wanted 4+)', WG: 'winning, gang', WR: 'winning (mission passed)',
 };
-const categories = ['greet', 'agree', 'refuse', 'ask', 'threaten', 'joke', 'goodbye'];
+// What a line can be picked for: groups of columns. A column's id is its key in voice-picks.json,
+// which apply.mjs writes into protocol/cpp/voice_lines.h. A group shows on each line as
+//   chips:  a toggle per column (a few columns),
+//   menu:   one menu, and a line goes in at most one of the group's columns,
+//   column: one toggle for the column chosen above the list (many columns).
+// More kinds of picks (CJ's lines for other triggers) add a group here and their arrays to apply.mjs.
+const words = w => `${w} word${w > 1 ? 's' : ''}`;
+const groups = [
+  { name: 'Keys', kind: 'chips', columns: [
+    { id: 'insult', label: 'X', title: 'the insult key (X)', css: 'x' },
+    { id: 'swear', label: 'MMB', title: 'the swear key (middle mouse)', css: 'm' },
+  ] },
+  { name: 'Conversation', kind: 'menu', none: 'talk', columns: ['greet', 'agree', 'refuse', 'ask', 'threaten', 'joke', 'goodbye'].map(c => ({ id: c, label: c, title: `conversations: ${c}` })) },
+  { name: 'Shouts', kind: 'column', columns: [
+    { id: 'shout.generic', label: 'any shout', title: 'any shout without lines of its own', part: 'Generic' },
+    ...(data.shouts || []).flatMap(s => [1, 2, 3].map(w => ({ id: `shout.${s.key}.${w}`, label: `${s.name} ${w}`, title: `${s.name}, ${words(w)}`, part: s.name, words: w }))),
+  ] },
+];
+const columns = groups.flatMap(g => g.columns);
+const byId = new Map(columns.map(c => [c.id, c]));
+
+// Picks are kept in this browser: { picks: { column id: ["bank:sound", ...] }, current: { group: column id } }.
+// The page before the shout columns kept { x, m, d }, read once.
 const store = (() => { try { return JSON.parse(localStorage.getItem('cj-voice-picks')) || {}; } catch { return {}; } })();
-const picks = { x: new Set(store.x || []), m: new Set(store.m || []), d: new Map(Object.entries(store.d || {})) };  // d: line -> dialogue category
-const save = () => { try { localStorage.setItem('cj-voice-picks', JSON.stringify({ x: [...picks.x], m: [...picks.m], d: Object.fromEntries(picks.d) })); } catch {} };
-const picked = key => picks.x.has(key) || picks.m.has(key) || picks.d.has(key);
+const picks = new Map(columns.map(c => [c.id, new Set(store.picks?.[c.id] || [])]));
+for (const key of store.x || []) picks.get('insult').add(key);
+for (const key of store.m || []) picks.get('swear').add(key);
+for (const [key, c] of Object.entries(store.d || {})) picks.get(c)?.add(key);
+const current = {};
+for (const g of groups.filter(g => g.kind === 'column')) current[g.name] = byId.has(store.current?.[g.name]) ? store.current[g.name] : g.columns[0].id;
+const save = () => { try { localStorage.setItem('cj-voice-picks', JSON.stringify({ picks: Object.fromEntries([...picks].map(([id, set]) => [id, [...set]])), current })); } catch {} };
+const picked = key => columns.some(c => picks.get(c.id).has(key));
 let moodsOn = new Set(Object.keys(moodNames));
 let onlyPicked = false;
 
@@ -88,6 +135,29 @@ for (const [code, name] of Object.entries(moodNames)) {
   moodsEl.append(l);
 }
 
+// Each column group's chooser, with each column's count of picks.
+const choosers = document.getElementById('columns');
+const chooserOf = {};
+for (const g of groups.filter(g => g.kind === 'column')) {
+  const label = document.createElement('label');
+  label.className = 'chooser';
+  label.innerHTML = `Picking for ${g.name.toLowerCase()}: <select></select>`;
+  const select = label.querySelector('select');
+  select.onchange = () => { current[g.name] = select.value; save(); refreshAll(); };
+  chooserOf[g.name] = select;
+  choosers.append(label);
+}
+function fillChoosers() {
+  for (const g of groups.filter(g => g.kind === 'column')) {
+    const parts = new Map();
+    for (const c of g.columns) parts.set(c.part, [...(parts.get(c.part) || []), c]);
+    const select = chooserOf[g.name];
+    select.innerHTML = [...parts].map(([part, cs]) => `<optgroup label="${escape(part)}">${cs.map(c =>
+      `<option value="${c.id}">${escape(c.words ? `${c.part}, ${words(c.words)}` : c.title)}${picks.get(c.id).size ? ` (${picks.get(c.id).size})` : ''}</option>`).join('')}</optgroup>`).join('');
+    select.value = current[g.name];
+  }
+}
+
 const player = new Audio();
 let playingRow = null;
 function play(row, key) {
@@ -99,6 +169,64 @@ function play(row, key) {
   row.classList.add('playing');
 }
 player.onended = () => { if (playingRow) playingRow.classList.remove('playing'); playingRow = null; };
+
+// A line's pick controls, one per group, and a tag line naming the column groups' picks it's in;
+// returns the function that brings them up to date.
+function controls(box, tags, key) {
+  const refresh = [];
+  const toggle = id => {
+    const set = picks.get(id);
+    set.has(key) ? set.delete(key) : set.add(key);
+    changed(update);
+  };
+  for (const g of groups) {
+    if (g.kind === 'chips') {
+      for (const c of g.columns) {
+        const chip = document.createElement('button');
+        chip.className = `chip ${c.css || ''}`;
+        chip.textContent = c.label;
+        chip.title = c.title;
+        chip.onclick = () => toggle(c.id);
+        refresh.push(() => chip.classList.toggle('on', picks.get(c.id).has(key)));
+        box.append(chip);
+      }
+    } else if (g.kind === 'menu') {
+      const select = document.createElement('select');
+      select.className = 'cat';
+      select.title = g.name;
+      select.innerHTML = `<option value="">${g.none}</option>${g.columns.map(c => `<option value="${c.id}">${c.label}</option>`).join('')}`;
+      select.onchange = () => {
+        for (const c of g.columns) picks.get(c.id).delete(key);
+        if (select.value) picks.get(select.value).add(key);
+        changed(update);
+      };
+      refresh.push(() => {
+        const c = g.columns.find(c => picks.get(c.id).has(key));
+        select.value = c ? c.id : '';
+        select.classList.toggle('on', !!c);
+      });
+      box.append(select);
+    } else {
+      const chip = document.createElement('button');
+      chip.className = 'chip col';
+      chip.onclick = () => toggle(current[g.name]);
+      refresh.push(() => {
+        const c = byId.get(current[g.name]);
+        const on = picks.get(c.id).has(key);
+        chip.classList.toggle('on', on);
+        chip.textContent = on ? '✓' : '+';
+        chip.title = `${on ? 'Take it out of' : 'Pick it for'} ${c.title}`;
+      });
+      box.append(chip);
+    }
+  }
+  refresh.push(() => {
+    tags.textContent = groups.filter(g => g.kind === 'column').flatMap(g => g.columns).filter(c => picks.get(c.id).has(key)).map(c => c.label).join(' · ');
+  });
+  const update = () => refresh.forEach(f => f());
+  update();
+  return update;
+}
 
 const list = document.getElementById('list');
 const sections = [];
@@ -116,49 +244,59 @@ for (const ctx of data.contexts) {
     const key = `${line.bank}:${line.sound}`;
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = `<button class="play" title="Play">▶</button><span class="label">${line.voice} #${line.sound} <small>${data.seconds[key] ?? '?'} s</small></span><button class="chip x">X</button><button class="chip m">MMB</button><select class="cat" title="Dialogue category"><option value="">talk</option>${categories.map(c => `<option>${c}</option>`).join('')}</select>`;
+    const said = transcripts[key];
+    row.innerHTML = `<button class="play" title="Play">▶</button><span class="label">${line.voice} #${line.sound} <small>${data.seconds[key] ?? '?'} s</small><span class="text"></span><span class="tags"></span></span><span class="picks"></span>`;
     row.querySelector('.play').onclick = () => play(row, key);
-    for (const which of ['x', 'm']) {
-      const chip = row.querySelector('.chip.' + which);
-      chip.classList.toggle('on', picks[which].has(key));
-      chip.onclick = () => {
-        picks[which].has(key) ? picks[which].delete(key) : picks[which].add(key);
-        chip.classList.toggle('on', picks[which].has(key));
-        save(); counts();
-      };
+    const update = controls(row.querySelector('.picks'), row.querySelector('.tags'), key);
+    const text = row.querySelector('.text');
+    if (said) {
+      text.textContent = said.text || '…';
+      text.classList.toggle('unsure', said.confidence < 0.5 || said.noSpeech > 0.6);
+      text.title = `confidence ${said.confidence}`;
     }
-    const cat = row.querySelector('.cat');
-    cat.value = picks.d.get(key) || '';
-    cat.classList.toggle('on', !!cat.value);
-    cat.onchange = () => {
-      cat.value ? picks.d.set(key, cat.value) : picks.d.delete(key);
-      cat.classList.toggle('on', !!cat.value);
-      save(); counts();
-    };
     grid.append(row);
-    return { row, key, mood: line.voice.slice(0, 2) };
+    const words = [said?.text ?? '', ctx.name, ctx.name.replace(/_/g, ' '), line.voice].join(' ').toLowerCase();
+    return { row, key, text, said: said?.text ?? '', words, update, mood: line.voice.slice(0, 2) };
   });
   list.append(det);
   sections.push({ ctx, det, rows });
 }
 
+function changed(update) {
+  update();
+  save();
+  counts();
+}
+function refreshAll() {
+  for (const s of sections) s.rows.forEach(r => r.update());
+  counts();
+}
 function counts() {
-  document.getElementById('count').textContent = `X: ${picks.x.size} · MMB: ${picks.m.size} · talk: ${picks.d.size}`;
+  const size = c => picks.get(c.id).size;
+  document.getElementById('count').textContent = groups.map(g => g.kind === 'chips'
+    ? g.columns.map(c => `${c.label}: ${size(c)}`).join(' · ')
+    : `${g.name.toLowerCase()}: ${g.columns.reduce((n, c) => n + size(c), 0)}`).join(' · ');
   for (const s of sections) {
     const n = s.rows.filter(r => picked(r.key)).length;
     s.det.querySelector('.picked').textContent = n ? `${n} picked` : '';
   }
+  fillChoosers();
 }
+// Every word of the search has to be in the line's text, its context or its voice.
 function filter() {
-  const q = document.getElementById('search').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const terms = q.split(/\s+/).filter(Boolean);
+  const mark = terms.length ? new RegExp(terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi') : null;
   for (const s of sections) {
     let shown = 0;
     for (const r of s.rows) {
-      const ok = moodsOn.has(r.mood) && (!onlyPicked || picked(r.key));
+      const ok = moodsOn.has(r.mood) && (!onlyPicked || picked(r.key)) && terms.every(t => r.words.includes(t));
       r.row.classList.toggle('hidden', !ok);
       shown += ok;
+      if (r.said) r.text.innerHTML = mark ? escape(r.said).replace(mark, m => `<mark>${m}</mark>`) : escape(r.said);
     }
-    s.det.classList.toggle('hidden', !shown || (q && !s.ctx.name.toLowerCase().includes(q)));
+    s.det.classList.toggle('hidden', !shown);
+    if (terms.length) s.det.open = shown > 0;
   }
 }
 document.getElementById('search').oninput = filter;
@@ -170,10 +308,8 @@ document.getElementById('only').onclick = e => {
 };
 document.getElementById('clear').onclick = () => {
   if (!confirm('Clear every pick?')) return;
-  picks.x.clear(); picks.m.clear(); picks.d.clear(); save();
-  document.querySelectorAll('.chip.on, .cat.on').forEach(c => c.classList.remove('on'));
-  document.querySelectorAll('.cat').forEach(c => { c.value = ''; });
-  counts(); filter();
+  picks.forEach(set => set.clear());
+  save(); refreshAll(); filter();
 };
 document.getElementById('download').onclick = () => {
   const describe = key => {
@@ -182,10 +318,10 @@ document.getElementById('download').onclick = () => {
     const ctx = data.contexts.find(c => { const r = c.ranges[bank - data.firstBank]; return r && sound >= r[0] && sound <= r[1]; });
     return { bank, sound, voice, context: ctx ? ctx.name : '?' };
   };
-  const out = { insult: [...picks.x].map(describe), swear: [...picks.m].map(describe) };
-  for (const c of categories) {
-    const lines = [...picks.d].filter(([, v]) => v === c).map(([k]) => describe(k));
-    if (lines.length) out[c] = lines;
+  // Every column with picks; the keys' always, as apply.mjs rewrites them from the file.
+  const out = {};
+  for (const c of columns) {
+    if (picks.get(c.id).size || c.id === 'insult' || c.id === 'swear') out[c.id] = [...picks.get(c.id)].map(describe);
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));

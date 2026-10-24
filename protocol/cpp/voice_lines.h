@@ -1,5 +1,5 @@
-// CJ's lines for the insult (X) and swear (middle mouse) keys and his answers in Skyrim's
-// conversations, picked by ear from his speech banks with scripts/voice-picker (extract.mjs builds the
+// CJ's lines for the insult (X) and swear (middle mouse) keys, his answers in Skyrim's conversations
+// and his Thu'um, picked by ear from his speech banks with scripts/voice-picker (extract.mjs builds the
 // page, apply.mjs writes the picks below). Each line is a San Andreas sound bank (690 to 709,
 // SPC_PA's 20 voices of CJ's moods) and a sound in it; the San Andreas plugin plays it in place of the
 // one its speech code would pick. A key with no picks plays San Andreas's own choice for its context.
@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace AhShitRim::VoiceLines
@@ -23,6 +24,14 @@ namespace AhShitRim::VoiceLines
 
     inline constexpr std::uint16_t kFirstBank = 690;  // SND_BANK_SPC_PA_AG
     inline constexpr std::uint16_t kLastBank = 709;   // SND_BANK_SPC_PA_WR2
+
+    // A line picked for one of Skyrim's shouts (protocol/cpp/thuum.h's kShouts key) and word count.
+    struct ShoutPick
+    {
+        std::string_view shout;
+        std::uint8_t     words;  // 1 to 3
+        Line             line;
+    };
 
     // clang-format off
     // --- picks (scripts/voice-picker/apply.mjs) ---
@@ -188,6 +197,45 @@ namespace AhShitRim::VoiceLines
         Line{ 701, 325 },  // CR2 SHOP_LEAVE
     };
     // --- end of dialogue picks ---
+
+    // CJ's Thu'um (protocol/cpp/thuum.h): his lines for each shout and word count, from the picker's
+    // shout columns, and the generic pool any shout without picks falls back to. With none picked the
+    // generic pool holds his angry fight lines (AG, AG2, AR, AR2 FIGHT; apply.mjs --defaults).
+    // --- shout picks (scripts/voice-picker/apply.mjs) ---
+    inline constexpr std::array<ShoutPick, 0> kShoutPicks{};
+    inline constexpr std::array kShoutGeneric{
+        Line{ 690, 38 },  // AG FIGHT
+        Line{ 690, 39 },  // AG FIGHT
+        Line{ 690, 40 },  // AG FIGHT
+        Line{ 690, 41 },  // AG FIGHT
+        Line{ 690, 42 },  // AG FIGHT
+        Line{ 690, 43 },  // AG FIGHT
+        Line{ 690, 44 },  // AG FIGHT
+        Line{ 690, 45 },  // AG FIGHT
+        Line{ 691, 37 },  // AG2 FIGHT
+        Line{ 691, 38 },  // AG2 FIGHT
+        Line{ 691, 39 },  // AG2 FIGHT
+        Line{ 691, 40 },  // AG2 FIGHT
+        Line{ 691, 41 },  // AG2 FIGHT
+        Line{ 692, 39 },  // AR FIGHT
+        Line{ 692, 40 },  // AR FIGHT
+        Line{ 692, 41 },  // AR FIGHT
+        Line{ 692, 42 },  // AR FIGHT
+        Line{ 692, 43 },  // AR FIGHT
+        Line{ 692, 44 },  // AR FIGHT
+        Line{ 692, 45 },  // AR FIGHT
+        Line{ 692, 46 },  // AR FIGHT
+        Line{ 692, 47 },  // AR FIGHT
+        Line{ 693, 36 },  // AR2 FIGHT
+        Line{ 693, 37 },  // AR2 FIGHT
+        Line{ 693, 38 },  // AR2 FIGHT
+        Line{ 693, 39 },  // AR2 FIGHT
+        Line{ 693, 40 },  // AR2 FIGHT
+        Line{ 693, 41 },  // AR2 FIGHT
+        Line{ 693, 42 },  // AR2 FIGHT
+        Line{ 693, 43 },  // AR2 FIGHT
+    };
+    // --- end of shout picks ---
     // clang-format on
 
     constexpr bool Valid(const Line& a_line) { return a_line.bank >= kFirstBank && a_line.bank <= kLastBank && a_line.sound < 400; }
