@@ -820,8 +820,8 @@ namespace AhShitRim::Projectiles
             p.weapon = WeaponOf(p.type);
             p.place = frame.place;
             if (p.kind == Kind::Rocket && SeeksHeat(state.cjWeapon, state.vehicleModel)) {
-                // San Andreas fires a plain rocket from the heat seeker (and the Hydra) without a lock of its own (it
-                // locks on to vehicles only): Skyrim's lock steers it.
+                // San Andreas fires a plain rocket from the heat seeker (and the Hydra; the Hunter, ours only) without a lock of
+                // its own (it locks on to vehicles only): Skyrim's lock steers it.
                 if (!state.vehicleModel) {
                     p.weapon = Weapons::RocketLauncherHs;
                 }

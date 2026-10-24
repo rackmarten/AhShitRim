@@ -26,7 +26,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Mouse | Mouse | Look around | Look around |
 | Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
 | Space | **Left Shift or Right Ctrl** | Jump | |
-| Space | **Space or Right Ctrl** | | Handbrake; in the Hydra, held, its lock-on (see the left and right mouse buttons) |
+| Space | **Space or Right Ctrl** | | Handbrake; in the Hydra or the Hunter, held, the heat-seeker lock-on (see the left and right mouse buttons) |
 | Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
@@ -44,7 +44,7 @@ While San Andreas has the player (F10), the keys follow San Andreas's keyboard l
 | Insert or 4 / Delete or R | Same | | Next / previous radio station |
 | Right mouse button | Right mouse button | Aim: San Andreas's lock-on and free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights | The vehicle's second weapon (San Andreas's secondary fire, L1): the Hunter's machine gun, the Hydra's missiles (heat-seeking once Space has held a dragon, mammoth, giant, centurion or rider in view until its marker turns red), the Rustler's and Seasparrow's guns; on a BMX or mountain bike the bunny hop (hold to crouch, let go to jump) |
 | Left Ctrl or numpad 0 | Left Ctrl or numpad 0 | Left Ctrl: crouch (modern layout) | Same as the right mouse button |
-| Left mouse button | Left mouse button | Fire (a melee weapon attacks); with the parachute in the air, open it | The vehicle's weapon (San Andreas's fire): the Hunter's rockets, the Hydra's flares, the Rhino's cannon (its turret follows the camera, either mouse button fires it); a car's nitro |
+| Left mouse button | Left mouse button | Fire (a melee weapon attacks); with the parachute in the air, open it | The vehicle's weapon (San Andreas's fire): the Hunter's rockets (heat-seeking once Space has locked on, as the Hydra's: AhShitRim's own, San Andreas's Hunter only fires them unguided), the Hydra's flares, the Rhino's cannon (its turret follows the camera, either mouse button fires it); a car's nitro |
 | Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
 | Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |

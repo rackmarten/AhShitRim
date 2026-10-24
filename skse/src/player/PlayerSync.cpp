@@ -844,7 +844,7 @@ namespace AhShitRim::PlayerSync
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
-            // The heat seeker aims while CJ aims it, and in the Hydra (v23) while its lock-on, the handbrake key, is held.
+            // The heat seeker aims while CJ aims it, and in the Hydra or the Hunter (v23) while the lock-on, the handbrake key, is held.
             const std::uint16_t vehicleModel = valid && (pose.flags & Protocol::kPlayerInVehicle) ? pose.vehicleModel : 0;
             const bool          seekerAimed = vehicleModel ? state.input.HandbrakeHeld() && !MenuHasInput() : valid && (pose.weaponFlags & Protocol::kWeaponAiming);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
