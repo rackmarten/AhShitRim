@@ -5,6 +5,9 @@
 // camera mode, and (v13) the Shot messages each one sends: bullets, shotgun shots, melee blows.
 // Also sets a loadout the way a loaded save does and checks it came back as sent, skills and all, and
 // sends Hit commands and checks they raise the skill.
+// AHSHITRIM_SITUATIONS_ONLY=1 instead plays through the situations CJ talks in on his own (v24: punches,
+// bursts, aiming, a stealth kill, gold, a shop, a chase, 95 s idle for a song) for San Andreas's log
+// (scripts/logs.ps1) to show which lines he said and which he kept back.
 // Exits non-zero when a weapon doesn't show up in the hand, doesn't switch, doesn't fire or sends no shot.
 // Built with the protocol tests; run it through scripts/fake-weapons.ps1 while San Andreas runs
 // (launch-sa.ps1) and Skyrim is closed.
@@ -226,6 +229,62 @@ int main()
                 run(1.0);
             }
         }
+        return 0;
+    }
+
+    // AHSHITRIM_SITUATIONS_ONLY=1 (v24): what may have CJ talk on his own, for San Andreas's log to show
+    // which lines he says and which he keeps back (protocol/cpp/situations.h), then quit.
+    if (const char* only = std::getenv("AHSHITRIM_SITUATIONS_ONLY"); only && *only == '1') {
+        const auto step = [&](const char* a_what, double a_wait) {
+            std::printf("situations: %s\n", a_what);
+            run(a_wait);
+        };
+        Protocol::WeaponEntry one[Protocol::kWeaponSlotCount]{};  // a Hit's count
+        one[0].ammo = 1;
+        run(5.0);
+        for (int i = 0; i < 6; ++i) {
+            command(Protocol::WeaponCommandKind::Hit, 0, one);  // fists
+            step("a punch lands", 4.5);
+        }
+        Protocol::WeaponEntry pistol[Protocol::kWeaponSlotCount]{};
+        pistol[0].ammo = 200;
+        command(Protocol::WeaponCommandKind::GiveWeapon, Weapons::Pistol, pistol);
+        run(1.0);
+        input.AddWheel(true);  // from fists to the pistol
+        run(1.0);
+        std::printf("situations: holding weapon %u\n", pose().weaponType);
+        for (int burst = 0; burst < 4; ++burst) {
+            command(Protocol::WeaponCommandKind::Hit, Weapons::Pistol, one);
+            run(0.3);
+            command(Protocol::WeaponCommandKind::Hit, Weapons::Pistol, one);
+            step("a burst hits", 4.5);
+        }
+        input.SetAim(true);
+        step("aiming the pistol", 2.0);
+        input.SetAim(false);
+        step("aim off", 4.5);
+        input.AddStealthKill();
+        step("a stealth kill", 4.5);
+        for (int i = 0; i < 3; ++i) {
+            input.AddCash();
+            step("gold looted", 4.5);
+        }
+        input.AddShopBuy();
+        step("bought in a shop", 4.5);
+        input.AddShopLeave();
+        step("left the shop", 4.5);
+        input.SetHostileNear(true);
+        input.SetKey(Input::kDikW, true);
+        input.SetKey(Input::kDikLeftShift, true);
+        step("sprinting with a hostile near", 3.0);
+        input.SetKey(Input::kDikW, false);
+        input.SetKey(Input::kDikLeftShift, false);
+        input.SetHostileNear(false);
+        step("standing still for 95 s: he should sing", 95.0);
+        input.SetKey(Input::kDikW, true);
+        step("walking off: the song stops", 2.0);
+        input.SetKey(Input::kDikW, false);
+        run(1.0);
         return 0;
     }
 

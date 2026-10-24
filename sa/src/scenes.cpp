@@ -167,8 +167,9 @@ namespace AhShitRim::Scenes
             // says against Skyrim's world, and the quiet before a trigger speaks starts over.
             if (const auto* cj = FindPlayerPed(); cj && a_speech == &cj->m_pedSpeech && sound >= 0 && (a_context < kPainStart || a_context == kPainHighFall)) {
                 g_chatter.Heard(Now());
+                const auto* fields = reinterpret_cast<const std::uint8_t*>(a_speech);
                 Log(std::format("scenes: San Andreas has CJ say a line of context {} (bank {} sound {})", a_context,
-                    *reinterpret_cast<const short*>(reinterpret_cast<const std::uint8_t*>(a_speech) + kSpeechBankId), sound));
+                    *reinterpret_cast<const short*>(fields + kSpeechBankId), *reinterpret_cast<const short*>(fields + kSpeechSoundId)));
             }
             return sound;
         }
