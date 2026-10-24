@@ -324,7 +324,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[8];  // v23: 2048 bytes, keeping the later slots on 64-byte boundaries
+        std::uint8_t  pad[8];  // v23: 2048 bytes, keeping the later slots on 64-byte boundaries (v24: 8 left after the vehicle's frame and box)
     };
 
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v23): a giant, mammoth or dragon, which stops a car like a wall

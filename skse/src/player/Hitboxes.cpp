@@ -24,7 +24,6 @@ namespace AhShitRim::Hitboxes
         constexpr float       kHeavyReach = 350.0f;    // a giant's club, a mammoth's tusks, a dragon's bite
         constexpr double      kSwingWait = 0.15;       // a swing seen reaching the box waits this long for Skyrim's own hit (it knows a power attack)
         constexpr std::size_t kQueueMax = 32;
-        constexpr std::uint32_t kNoShooter = 0x80000000;  // a trap's projectile: gated by its own handle
 
         using Vec3 = Pose::Vec3;
 
@@ -130,8 +129,8 @@ namespace AhShitRim::Hitboxes
             state.sent++;
             if (state.logged < kLogged) {
                 state.logged++;
-                auto* attacker = (a_id & kNoShooter) ? nullptr : RE::TESForm::LookupByID<RE::Actor>(a_id);
-                SKSE::log::info("hitboxes: {} ({:08X}) hit CJ's vehicle with {} ({}): {:.0f} of its health{}", attacker ? attacker->GetName() : "a trap", a_id,
+                auto* attacker = RE::TESForm::LookupByID<RE::Actor>(a_id);
+                SKSE::log::info("hitboxes: {} ({:08X}) hit CJ's vehicle with {} ({}): {:.0f} of its health{}", attacker ? attacker->GetName() : "someone gone", a_id,
                     VehicleHits::NameOf(a_blow.attack), a_how, damage, state.cover == VehicleHits::Cover::Open ? ", CJ on it takes half of Skyrim's own" : "");
             }
         }
@@ -186,8 +185,9 @@ namespace AhShitRim::Hitboxes
                             continue;
                         }
                         const auto shooterRef = data.shooter.get();
-                        if (shooterRef.get() == a_player) {
-                            continue;  // CJ's own (the flamethrower's flames)
+                        auto*      shooter = shooterRef ? shooterRef->As<RE::Actor>() : nullptr;
+                        if (!shooter || shooter == a_player || shooter->GetActorRuntimeData().currentCombatTarget.get().get() != a_player) {
+                            continue;  // CJ's own (the flamethrower's flames), a trap's, or a guard's at a bandit across the road
                         }
                         const auto at = projectile->GetPosition();
                         if (at.GetDistance(Ni(state.frame.pos)) > kScanRange) {
@@ -204,12 +204,11 @@ namespace AhShitRim::Hitboxes
                             continue;
                         }
                         state.counted.insert(id);
-                        auto*        shooter = shooterRef ? shooterRef->As<RE::Actor>() : nullptr;
                         RE::TESForm* source = data.weaponSource ? static_cast<RE::TESForm*>(data.weaponSource) : static_cast<RE::TESForm*>(data.spell);
                         const auto   blow = BlowOf(shooter, source, projectile->GetProjectileBase(), false, false);
                         const auto   point = last->second + (at - last->second) * *enters;
                         state.byBox++;
-                        Count(shooter ? shooter->GetFormID() : (id | kNoShooter), blow, point, a_anchor, a_handover, a_now, "into its box");
+                        Count(shooter->GetFormID(), blow, point, a_anchor, a_handover, a_now, "into its box");
                         const bool arrow = blow.attack == VehicleHits::Attack::Arrow || blow.attack == VehicleHits::Attack::Bolt;
                         if (arrow && state.cover == VehicleHits::Cover::Closed) {
                             stop.push_back(ptr);
@@ -250,8 +249,8 @@ namespace AhShitRim::Hitboxes
                 }
                 auto* equipped = a_actor->GetEquippedObject(false);
                 auto* weapon = equipped ? equipped->As<RE::TESObjectWEAP>() : nullptr;
-                if (weapon && (weapon->IsBow() || weapon->IsCrossbow() || weapon->IsStaff())) {
-                    return RE::BSContainer::ForEachResult::kContinue;  // a shot, which Scan sees
+                if ((weapon && (weapon->IsBow() || weapon->IsCrossbow() || weapon->IsStaff())) || (equipped && equipped->IsMagicItem())) {
+                    return RE::BSContainer::ForEachResult::kContinue;  // a shot or a spell, which Scan sees
                 }
                 const auto  build = BuildOf(a_actor);
                 const float reach = RunOver::Heavy(build) ? kHeavyReach : kCombatReach * (weapon ? weapon->weaponData.reach : 1.0f) * a_actor->GetScale();

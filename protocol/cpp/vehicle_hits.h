@@ -3,7 +3,7 @@
 // inside: Skyrim works out what hit it and how hard (the damage table below), sends it to San Andreas as a
 // HitVehicle effect, and San Andreas takes it off the vehicle's health, down to smoke, fire and the blow-up. In an
 // open vehicle (a bike, a bicycle, a quad) CJ keeps half of what Skyrim does to him and the vehicle takes half of the
-// table. A
+// table (a blast all of it). A
 // wanted CJ's stopped car also sends the nearest pursuer to the driver's door to bust him (DoorRun). Header-only and
 // free of game types, so the protocol tests cover it.
 //

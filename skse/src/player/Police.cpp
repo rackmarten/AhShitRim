@@ -474,7 +474,8 @@ namespace AhShitRim::Police
             const auto feet = a_player->GetPosition();
             int        joined = 0;
             lists->ForEachHighActor([&](RE::Actor* a_actor) {
-                if (Pursues(a_actor) && !IsSpawned(a_actor) && !Fights(a_actor, a_player) && a_actor->GetPosition().GetDistance(feet) <= a_radius) {
+                if (Pursues(a_actor) && !IsSpawned(a_actor) && !Fights(a_actor, a_player) && a_actor->GetFormID() != state.doorRun.Runner() &&
+                    a_actor->GetPosition().GetDistance(feet) <= a_radius) {  // not the one running for the door
                     joined += a_actor->StartCombat(a_player) ? 1 : 0;
                 }
                 return RE::BSContainer::ForEachResult::kContinue;

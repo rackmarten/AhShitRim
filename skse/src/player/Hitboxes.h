@@ -12,9 +12,9 @@ namespace AhShitRim::Protocol
 // sa/src/car_hits.cpp). While CJ is in a vehicle the vehicle's shape is San Andreas's collision box, sent in its slot
 // and drawn where Skyrim draws the vehicle. This
 //  - counts what hits it: Skyrim's own hits on the player (TESHitEvent: blows, arrows, spells, blasts), every
-//    projectile that flies into the box (an arrow that would have missed the player inside, a spell, a dragon's
-//    breath), and every melee swing that reaches it (a giant at the bonnet, a wolf at the boot), each attacker's once
-//    every VehicleHits::kGate,
+//    projectile from someone fighting the player that flies into the box (an arrow that would have missed the player
+//    inside, a spell, a dragon's breath), and every melee swing that reaches it (a giant at the bonnet, a wolf at
+//    the boot), each attacker's once every VehicleHits::kGate,
 //  - sends each as a HitVehicle effect, its damage from the table by attack and weight, for San Andreas to take off
 //    the vehicle's health (smoke, fire, the blow-up) and CJ to say a line,
 //  - stops arrows at the box in a closed vehicle, and tells Vitals how much of Skyrim's damage to the player CJ keeps
