@@ -338,15 +338,16 @@ namespace AhShitRim::Wanted
     }
 
     // The share of their damage guards and ours deal CJ, by the stars: Skyrim's guards hit far harder and more often than
-    // San Andreas's cops, who miss most of their shots, so a fight in town starts gentle and gets deadly: a quarter at 1
-    // star (and when they fight him with none, resisting arrest), half at 3, all of it from 4.
+    // San Andreas's cops, who miss most of their shots, so a fight in town starts gentler and gets deadly: a quarter when
+    // they fight him with no stars (resisting arrest), 0.4 at 1 star, up by 0.15 a star to all of it from 5.
     constexpr float GuardDamage(int a_stars)
     {
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 0:
-        case 1: return 0.25f;
-        case 2: return 0.375f;
-        case 3: return 0.5f;
+        case 0: return 0.25f;
+        case 1: return 0.4f;
+        case 2: return 0.55f;
+        case 3: return 0.7f;
+        case 4: return 0.85f;
         default: return 1.0f;
         }
     }

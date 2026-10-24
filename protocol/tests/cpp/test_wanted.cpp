@@ -227,15 +227,17 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
     CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Mammoth)] == 1);
 }
 
-TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
+TEST_CASE("guards hit CJ a quarter with no stars, 0.4 at 1, more with each star, fully from 5")
 {
     CHECK(GuardDamage(0) == 0.25f);
-    CHECK(GuardDamage(1) == 0.25f);
-    CHECK(GuardDamage(3) == 0.5f);
-    CHECK(GuardDamage(4) == 1.0f);
+    CHECK(GuardDamage(1) == doctest::Approx(0.4f));
+    CHECK(GuardDamage(1) >= 0.25f);  // tier 1 at least a quarter (the user's call after testing)
+    CHECK(GuardDamage(3) == doctest::Approx(0.7f));
+    CHECK(GuardDamage(4) < 1.0f);
+    CHECK(GuardDamage(5) == 1.0f);
     CHECK(GuardDamage(6) == 1.0f);
-    for (int stars = 0; stars < kMaxStars; stars++) {
-        CHECK(GuardDamage(stars + 1) >= GuardDamage(stars));
+    for (int stars = 0; stars < kMaxStars - 1; stars++) {
+        CHECK(GuardDamage(stars + 1) > GuardDamage(stars));  // every star up to 5 hits harder
     }
     CHECK(GiveBack(-40.0f, 0.25f) == doctest::Approx(30.0f));  // Skyrim's damage comes negative or positive
     CHECK(GiveBack(40.0f, 0.5f) == doctest::Approx(20.0f));
