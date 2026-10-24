@@ -1,6 +1,7 @@
 #include "model_sender.h"
 
 #include "log.h"
+#include "skin_model.h"
 
 #include <Windows.h>
 
@@ -27,6 +28,13 @@ namespace AhShitRim::ModelSender
             std::uint64_t        startMs = 0;
             bool                 wasUp = false;
         } state;
+    }
+
+    std::uint32_t NewId()
+    {
+        static std::uint32_t last = 0;
+        last = SkinModel::NextId(last, ::GetTickCount64());
+        return last;
     }
 
     void Set(int a_key, std::uint32_t a_id, std::vector<std::vector<std::uint8_t>> a_chunks, std::string a_label)

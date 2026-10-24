@@ -229,7 +229,7 @@ namespace AhShitRim::WorldPickups
             for (std::uint32_t i = 0; i < model.partCount; ++i) {
                 pose.bones[i] = Explosives::PartBone(turn, model.parts[i]);
             }
-            return ModelView::Show(pose, a_middle);
+            return ModelView::Show(pose, a_middle, kSize);
         }
 
         // ---- Taking one ----

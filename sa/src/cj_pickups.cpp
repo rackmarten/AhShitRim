@@ -57,7 +57,6 @@ namespace AhShitRim::CjPickups
         {
             std::deque<Protocol::PickupCommand> commands;
             std::map<std::uint16_t, Model>      models;  // by Pickups::ModelKey
-            std::uint32_t                       builds = 0;
             int                                 nextKey = ModelSender::kPickupKey;
         } state;
 
@@ -151,7 +150,7 @@ namespace AhShitRim::CjPickups
                 return nullptr;
             }
             model.failed = false;
-            model.id = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;
+            model.id = ModelSender::NewId();
             ModelSender::Set(state.nextKey++, model.id, SkinModel::Chunks(model.id, blob), std::format("pickups: the {}'s model {}", label, index));
             return &model;
         }

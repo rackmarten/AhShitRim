@@ -26,8 +26,9 @@ namespace AhShitRim::ModelView
     bool Has(std::uint32_t a_model);
 
     // Draws model a_pose.model posed by a_pose with its origin (CJ's feet, a vehicle's position) at
-    // a_origin (Skyrim world units), this frame. False when that model isn't built.
-    bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin);
+    // a_origin (Skyrim world units), this frame, a_scale times its size (v23: a pickup's twice). False when that model
+    // isn't built.
+    bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
 
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();

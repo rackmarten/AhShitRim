@@ -97,7 +97,6 @@ namespace AhShitRim::CjProjectiles
         struct State
         {
             std::map<int, Model> models;  // by San Andreas's model index
-            std::uint32_t        builds = 0;
             std::set<int>        logged;  // projectile types logged once
             std::uint32_t        nextId = 0;
             std::vector<StandIn> standIns;
@@ -159,7 +158,7 @@ namespace AhShitRim::CjProjectiles
             if (parts.size() > Protocol::kProjectilePartMax) {
                 Log(std::format("projectiles: model {} has {} parts, the first {} are drawn", index, parts.size(), Protocol::kProjectilePartMax));
             }
-            model.id = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;
+            model.id = ModelSender::NewId();
             ModelSender::Set(ModelSender::kProjectileKey + (a_type - Weapons::Grenade), model.id, SkinModel::Chunks(model.id, blob),
                 std::format("projectiles: model {} for projectile {}", index, a_type));
             return &model;

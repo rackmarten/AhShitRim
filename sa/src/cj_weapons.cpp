@@ -101,7 +101,6 @@ namespace AhShitRim::CjWeapons
             bool                              shown = false;
             std::uint32_t                     ids[Protocol::kWeaponHandMax] = {};
             bool                              sentTwin = false;
-            std::uint32_t                     builds = 0;
             // For the pose.
             std::uint8_t                      lastType = 0;
             std::uint8_t                      lastSlot = 0;
@@ -402,7 +401,7 @@ namespace AhShitRim::CjWeapons
         void SendHand(int a_hand, Cache& a_cache, eWeaponType a_type)
         {
             if (!a_cache.ids[a_hand]) {
-                a_cache.ids[a_hand] = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;
+                a_cache.ids[a_hand] = ModelSender::NewId();
             }
             state.ids[a_hand] = a_cache.ids[a_hand];
             auto chunks = SkinModel::Chunks(state.ids[a_hand], a_cache.blob);

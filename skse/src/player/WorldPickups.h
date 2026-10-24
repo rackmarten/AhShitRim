@@ -15,8 +15,9 @@ namespace AhShitRim::Protocol
 //    first time one is near,
 //  - gives CJ what he walks into (San Andreas's rule) and he wants: full health, full armour, the gold, a weapon
 //    with San Andreas's street ammo, the parachute in his hands, the jetpack on; San Andreas plays its sound,
-//  - brings a taken one back as San Andreas does (30 s, armour 6 minutes, once CJ is 10 m away), the one-offs
-//    never: the co-save keeps those,
+//  - brings a taken one back as San Andreas does (30 s, armour and the heavy weapons 6 minutes, once CJ is 10 m
+//    away), the one-offs (the gold) never: the co-save keeps those,
+//  - draws them at twice San Andreas's size,
 //  - puts a heart in front of CJ, where the camera sees it, when he is down to a quarter of his health (at most
 //    once every 3 minutes),
 //  - and keeps the pickups San Andreas drops (the jetpack CJ takes off) where they fell, until he takes them again

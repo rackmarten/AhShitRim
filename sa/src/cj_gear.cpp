@@ -76,11 +76,8 @@ namespace AhShitRim::CjGear
             bool             blockLoaded = false;
             Model            jetpack;
             Model            chuteModel;
-            std::uint32_t    builds = 0;
             bool             shown = false;    // the gear slot holds something
         } state;
-
-        std::uint32_t NewId() { return (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1; }
 
         Body::RwRows ToFrame(const RwMatrix& a_m)
         {
@@ -250,7 +247,7 @@ namespace AhShitRim::CjGear
                 model.failed = true;
                 return false;
             }
-            model.id = NewId();
+            model.id = ModelSender::NewId();
             model.boneCount = static_cast<std::uint32_t>((std::min)(model.parts.size(), static_cast<std::size_t>(Protocol::kBodyBoneMax)));
             ModelSender::Set(ModelSender::kGearKey, model.id, SkinModel::Chunks(model.id, blob), "gear: the jetpack's model");
             return true;
@@ -260,9 +257,12 @@ namespace AhShitRim::CjGear
         {
             auto* task = Jetpack(a_ped);
             if (!task || !task->m_pJetPackClump || state.jetpack.failed) {
+                state.jetpack.clump = nullptr;
                 return false;
             }
-            if (task->m_pJetPackClump != state.jetpack.clump && !BuildJetpack(task->m_pJetPackClump)) {
+            // Its parts are read again every frame: the jetpack put on again after it was dropped is a new clump, often
+            // at the old one's address, and the old one's parts are gone (posed, it showed nothing but the flames).
+            if (!BuildJetpack(task->m_pJetPackClump)) {
                 return false;
             }
             PlaceJetpack(a_ped, task);
@@ -467,7 +467,7 @@ namespace AhShitRim::CjGear
                     state.chuteModel.failed = true;
                     return false;
                 }
-                state.chuteModel.id = NewId();
+                state.chuteModel.id = ModelSender::NewId();
                 ModelSender::Set(ModelSender::kGearKey + 1, state.chuteModel.id, SkinModel::Chunks(state.chuteModel.id, blob), "gear: the parachute's model");
             }
             auto s = Slot(Protocol::kBodyParachute, state.chuteModel, a_feet, a_spawnFeet, a_handover, a_frame);

@@ -101,18 +101,46 @@ TEST_CASE("parachute: the fall watch follows his feet down from where he last st
     CHECK(watch.Dropped() == 0.0f);
 }
 
+TEST_CASE("parachute: the fall eases into its terminal speed, as San Andreas's air resistance does")
+{
+    // San Andreas's own ped: 20 m/s2 and a drag on the square of the speed, towards about 59 m/s.
+    float v = 0.0f;
+    for (int i = 0; i < 30; ++i) {
+        v = FallStep(v, 59.2f, 1.0f / 30.0f);
+    }
+    CHECK(v == doctest::Approx(19.3f).epsilon(0.05));
+    // The skydive from where it starts (5 m/s): no constant pull up to a wall at 40 m/s.
+    float fall = 5.0f, last = 0.0f, gainBefore = 1e9f;
+    for (int second = 1; second <= 4; ++second) {
+        const float before = fall;
+        for (int i = 0; i < 30; ++i) {
+            fall = FallStep(fall, kFreefallFall, 1.0f / 30.0f);
+        }
+        const float gain = fall - before;
+        CHECK(gain < gainBefore);  // each second adds less than the one before
+        CHECK(gain > 0.0f);
+        gainBefore = gain;
+        last = fall;
+    }
+    CHECK(last < kFreefallFall);
+    CHECK(last > 0.9f * kFreefallFall);
+    // Faster than the terminal speed (out of a dive), the air brakes him to it.
+    CHECK(FallStep(55.0f, kFreefallFall, 0.1f) < 55.0f);
+    CHECK(FallStep(55.0f, kFreefallFall, 0.1f) > kFreefallFall);
+}
+
 TEST_CASE("parachute: the freefall reaches its speed, faster diving, and turns with A and D")
 {
     State s = Step({}, Falling(8.0f, 500.0f), {}, 0.03f);
-    s = Run(s, Falling(0.0f, 500.0f), {}, 5.0f);
-    CHECK(s.fall == doctest::Approx(kFreefallFall));
+    s = Run(s, Falling(0.0f, 500.0f), {}, 6.0f);
+    CHECK(s.fall == doctest::Approx(kFreefallFall).epsilon(0.02));
     CHECK(s.forward == doctest::Approx(kFreefallForward).epsilon(0.05));
     CHECK(s.turn == 0.0f);
 
     Keys dive;
     dive.pitch = 1.0f;
-    s = Run(s, Falling(0.0f, 500.0f), dive, 5.0f);
-    CHECK(s.fall == doctest::Approx(kDiveFall));
+    s = Run(s, Falling(0.0f, 500.0f), dive, 6.0f);
+    CHECK(s.fall == doctest::Approx(kDiveFall).epsilon(0.02));
     CHECK(s.forward == doctest::Approx(kDiveForward).epsilon(0.05));
     // Out of the dive the air brakes him back to the flat speed, not at once.
     s = Step(s, Falling(0.0f, 500.0f), {}, 1.0f / 30.0f);
