@@ -445,14 +445,18 @@ TEST_CASE("the leash: on CJ never pulled, a stray after a while, a lost one soon
 
 TEST_CASE("no quick save or quickload while wanted or while any of ours are out")
 {
-    CHECK(QuickAllowed(0, 0, 0));
-    CHECK_FALSE(QuickAllowed(6, 7, 0));   // F9 at 6 stars with the force out: the crash
-    CHECK_FALSE(QuickAllowed(1, 0, 0));   // wanted, nobody spawned yet
-    CHECK_FALSE(QuickAllowed(0, 0, 12));  // ASNAEB just sent twelve off: not until they're gone
-    CHECK_FALSE(QuickAllowed(0, 3, 0));
-    // ASNAEB, LJSPQK, AEZAKMI, then F9: AEZAKMI clears the stars and sends ours off; F9 waits until they're gone.
-    CHECK_FALSE(QuickAllowed(0, 0, 9));
-    CHECK(QuickAllowed(0, 0, 0));
+    const float later = kQuickAfterGone + 1.0f;
+    CHECK(QuickAllowed(0, 0, 0, later));
+    CHECK_FALSE(QuickAllowed(6, 7, 0, later));   // F9 at 6 stars with the force out: the crash
+    CHECK_FALSE(QuickAllowed(1, 0, 0, later));   // wanted, nobody spawned yet
+    CHECK_FALSE(QuickAllowed(0, 0, 12, later));  // ASNAEB just sent twelve off: not until they're gone
+    CHECK_FALSE(QuickAllowed(0, 3, 0, later));
+    // ASNAEB, LJSPQK, AEZAKMI, then F9: AEZAKMI clears the stars and sends ours off at once; F9 waits until they're gone
+    // and a moment more (the final build's crash: one leaving, then a load a second later).
+    CHECK_FALSE(QuickAllowed(0, 0, 1, later));
+    CHECK_FALSE(QuickAllowed(0, 0, 0, 0.5f));
+    CHECK_FALSE(QuickAllowed(0, 0, 0, kQuickAfterGone - 0.1f));
+    CHECK(QuickAllowed(0, 0, 0, kQuickAfterGone));
 }
 
 TEST_CASE("ours are one side: the hold's guards' factions, their own left, the crime faction always")
@@ -474,20 +478,18 @@ TEST_CASE("ours are one side: the hold's guards' factions, their own left, the c
     CHECK(kOursAggression == 1.0f);  // the player (an enemy), not everyone
 }
 
-TEST_CASE("ours copy generic guards only, never a unique or named NPC")
+TEST_CASE("ours are made from the game's own records, never a runtime form or a unique NPC")
 {
-    CHECK(Copyable(false, "Whiterun Guard", "Whiterun Guard"));
-    CHECK(Copyable(false, "Windhelm Guard", "Whiterun Guard"));  // a hold's guards by another name of the same kind
-    CHECK(Copyable(false, "Guard", "Whiterun Guard"));
-    CHECK(Copyable(false, "Imperial Soldier", "Whiterun Guard"));
-    CHECK(Copyable(false, "Stormcloak Battlemage", "Whiterun Guard"));
-    CHECK_FALSE(Copyable(true, "Whiterun Guard", "Whiterun Guard"));     // flagged unique, whatever he's called
-    CHECK_FALSE(Copyable(false, "Commander Caius", "Whiterun Guard"));   // a name of his own
-    CHECK_FALSE(Copyable(true, "Commander Caius", "Whiterun Guard"));
-    CHECK_FALSE(Copyable(false, "Irileth", "Whiterun Guard"));
-    CHECK_FALSE(Copyable(false, "Guard Captain", "Whiterun Guard"));
-    CHECK_FALSE(Copyable(false, "Lifeguard", "Whiterun Guard"));         // a word that only ends like one
-    CHECK_FALSE(Copyable(false, "", "Whiterun Guard"));
+    for (const auto& hold : kHolds) {
+        CHECK(Spawnable(hold.guard, false));  // every hold's guard record is the game's own
+    }
+    CHECK(Spawnable(kCaptainImperial, false));
+    CHECK(Spawnable(kSoldiersSons, false));
+    CHECK(Spawnable(0x00017145, false));         // a soldier picked from the levelled list
+    CHECK_FALSE(Spawnable(0xFF000D73, false));   // a base Skyrim made at runtime for a levelled or templated actor
+    CHECK_FALSE(Spawnable(0xFF000868, false));   // the base of a Whiterun guard about, which copies used to share
+    CHECK_FALSE(Spawnable(0x0001A69F, true));    // a unique NPC (Commander Caius)
+    CHECK_FALSE(Spawnable(0, false));
 }
 
 TEST_CASE("a levelled list's soldier: anyone up to the player's level, else the lowest")
