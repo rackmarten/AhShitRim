@@ -80,7 +80,7 @@ namespace AhShitRim::Police
 
     // Whether a quick save or quickload may go ahead (Wanted::QuickAllowed): no stars, none of ours out. When it may not,
     // ours that are only leaving are taken out at once, so it can be done again in a moment.
-    bool QuickAllowed();
+    bool QuickAllowed(bool a_pressed);
 
     // Busted is running and the player can't act.
     bool IsBusted();

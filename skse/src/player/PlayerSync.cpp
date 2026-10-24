@@ -14,6 +14,7 @@
 #include "hud/SaHud.h"
 #include "input.h"
 #include "knock.h"
+#include "wanted.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/AmmuNation.h"
@@ -1010,15 +1011,27 @@ namespace AhShitRim::PlayerSync
         // pursuit mid-fight in it crashed in its combat code; quicksaves and quickloads wait until the heat is gone.
         struct QuickSaveLoadHook
         {
+            // Skyrim asks this of every input event (every key, the mouse): only F5's and F9's own (their user events) are
+            // looked at, and the message comes once per press, at most every few seconds (Wanted::QuickNag).
             static bool thunk(RE::QuickSaveLoadHandler* a_handler, RE::InputEvent* a_event)
             {
-                if (state.owned && a_event && !Police::QuickAllowed()) {
-                    if (auto* button = a_event->AsButtonEvent(); button && button->IsDown()) {
-                        SaHud::ShowHelp("Lose the heat first. You can't quick save or quickload while the law is after you.");
-                    }
-                    return false;
+                auto* button = state.owned && a_event ? a_event->AsButtonEvent() : nullptr;
+                auto* events = RE::UserEvents::GetSingleton();
+                if (!button || !events || (button->QUserEvent() != events->quicksave && button->QUserEvent() != events->quickload)) {
+                    return original(a_handler, a_event);
                 }
-                return original(a_handler, a_event);
+                const bool pressed = button->IsDown();
+                if (Police::QuickAllowed(pressed)) {
+                    return original(a_handler, a_event);
+                }
+                static auto shown = std::chrono::steady_clock::time_point{};
+                const auto  now = std::chrono::steady_clock::now();
+                const float since = shown == std::chrono::steady_clock::time_point{} ? 1e9f : std::chrono::duration<float>(now - shown).count();
+                if (Wanted::QuickNag(pressed, since)) {
+                    shown = now;
+                    SaHud::ShowHelp("Lose the heat first. You can't quick save or quickload while the law is after you.", 4.0f);
+                }
+                return false;
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };

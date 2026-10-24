@@ -489,6 +489,11 @@ namespace AhShitRim::Wanted
     // (SkyrimSE.exe+01DCDE4, a quickload at 6 stars). a_ours spawned and alive, a_leaving still to be taken out,
     // a_sinceGone seconds since the last one went.
     inline constexpr float kQuickAfterGone = 2.0f;
+    inline constexpr float kQuickNagEvery = 4.0f;  // "Lose the heat first" at most this often, and only for a key pressed
+
+    // Whether a refused F5 or F9 shows "Lose the heat first": only as the key goes down (not while it's held, nor for
+    // anything the player didn't press), and not again within kQuickNagEvery.
+    constexpr bool QuickNag(bool a_pressed, float a_sinceLast) { return a_pressed && a_sinceLast >= kQuickNagEvery; }
 
     constexpr bool QuickAllowed(int a_stars, int a_ours, int a_leaving, float a_sinceGone)
     {

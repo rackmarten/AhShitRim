@@ -752,6 +752,7 @@ namespace AhShitRim::Police
                 const bool ready = !horse || (s.age >= kMountAfter + kFightAfter && s.onHorse) || s.age >= kMountAfter + kMountWait;
                 if (!s.fighting && s.age >= kMountAfter && ready) {
                     s.fighting = true;
+                    Enlist(actor);  // again now it's in: a levelled or templated one has its factions only once its base is built
                     const bool fights = actor->StartCombat(a_player);
                     SKSE::log::info("police: {} {:08X} goes for CJ ({}{})", Wanted::NameOf(s.unit), actor->GetFormID(), fights ? "fighting" : "won't fight",
                         horse ? (actor->IsOnMount() ? ", mounted" : ", on foot") : "");
@@ -1302,7 +1303,7 @@ namespace AhShitRim::Police
         g_pending.retarget = true;
     }
 
-    bool QuickAllowed()
+    bool QuickAllowed(bool a_pressed)
     {
         const int alive = static_cast<int>(std::count_if(state.spawned.begin(), state.spawned.end(), [](const Spawned& a_s) {
             auto ref = a_s.actor.get();
@@ -1314,7 +1315,7 @@ namespace AhShitRim::Police
         if (!allowed && state.pursuit.Stars() == 0 && alive == 0) {
             state.clearOut = true;  // only leaving ones: out of sight or not, they go now
         }
-        if (!allowed) {
+        if (!allowed && a_pressed) {
             SKSE::log::info("police: a quick save or quickload refused: {} star(s), {} of ours out, {} leaving, the last gone {:.1f} s ago", state.pursuit.Stars(),
                 alive, state.leaving.size(), sinceGone);
         }

@@ -457,6 +457,11 @@ TEST_CASE("no quick save or quickload while wanted or while any of ours are out"
     CHECK_FALSE(QuickAllowed(0, 0, 0, 0.5f));
     CHECK_FALSE(QuickAllowed(0, 0, 0, kQuickAfterGone - 0.1f));
     CHECK(QuickAllowed(0, 0, 0, kQuickAfterGone));
+    // The message: once per press, not while held, not more often than kQuickNagEvery.
+    CHECK(QuickNag(true, 100.0f));
+    CHECK_FALSE(QuickNag(false, 100.0f));                 // held or repeated: refused silently
+    CHECK_FALSE(QuickNag(true, kQuickNagEvery - 0.1f));   // pressed again right away
+    CHECK(QuickNag(true, kQuickNagEvery));
 }
 
 TEST_CASE("ours are one side: the hold's guards' factions, their own left, the crime faction always")
