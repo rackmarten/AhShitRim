@@ -54,43 +54,67 @@ namespace AhShitRim::RadarScene
             return std::nullopt;
         }
 
-        // The Ammu-Nations: where each shopkeeper stands in the editor (the forge), found once.
+        // The Ammu-Nations: where each shopkeeper stands in the editor (the forge), or for one who stands
+        // inside (Warmaiden's counter), the door outside that leads in.
         struct Shop
         {
             RE::NiPoint3       at;
             const RE::TESForm* space = nullptr;
         };
 
-        std::vector<Shop>& Shops()
+        std::vector<Shop>& Shops(const RE::TESForm* a_here)
         {
-            static std::vector<Shop> shops;
-            static bool              found = false;
-            if (found) {
+            static std::vector<Shop>  shops;
+            static const RE::TESForm* lookedIn = nullptr;
+            // Looked for again in each new space until there are some (the keepers' references may come later).
+            if (!shops.empty() || a_here == lookedIn) {
                 return shops;
             }
-            found = true;
-            std::vector<RE::Actor*> keepers;
+            lookedIn = a_here;
+            std::vector<RE::Actor*>                                           keepers;
+            std::vector<std::pair<RE::TESObjectREFR*, RE::TESObjectCELL*>> doors;  // a load door outside, and the interior it leads to
             {
                 const auto& [forms, lock] = RE::TESForm::GetAllForms();
                 const RE::BSReadLockGuard guard(lock);
                 if (forms) {
                     for (const auto& [id, form] : *forms) {
-                        auto* actor = form ? form->As<RE::Actor>() : nullptr;
-                        auto* base = actor ? actor->GetActorBase() : nullptr;
-                        if (base && AhShitRim::Shop::ShopkeeperOf(base->GetFormID())) {
-                            keepers.push_back(actor);
+                        auto* ref = form ? form->As<RE::TESObjectREFR>() : nullptr;
+                        if (!ref) {
+                            continue;
+                        }
+                        if (auto* actor = ref->As<RE::Actor>()) {
+                            auto* base = actor->GetActorBase();
+                            if (base && AhShitRim::Shop::ShopkeeperOf(base->GetFormID())) {
+                                keepers.push_back(actor);
+                            }
+                        } else if (ref->extraList.HasType(RE::ExtraDataType::kTeleport)) {
+                            const auto inside = ref->extraList.GetTeleportLinkedDoor().get();
+                            auto*      cell = inside ? inside->GetParentCell() : nullptr;
+                            if (cell && cell->IsInteriorCell()) {
+                                doors.emplace_back(ref, cell);
+                            }
                         }
                     }
                 }
             }
             for (auto* actor : keepers) {
                 RE::NiPoint3 at, rotation;
-                RE::TESForm* space = nullptr;
-                if (!actor->GetEditorLocation(at, rotation, space, nullptr)) {
+                RE::TESForm* where = nullptr;
+                if (!actor->GetEditorLocation(at, rotation, where, nullptr)) {
                     at = actor->GetPosition();
-                    space = actor->GetParentCell();
+                    where = actor->GetParentCell();
                 }
-                Shop shop{ at, SpaceOf(space) };
+                Shop shop{ at, SpaceOf(where) };
+                if (const auto* cell = shop.space ? shop.space->As<RE::TESObjectCELL>() : nullptr) {
+                    shop.space = nullptr;
+                    for (const auto& [door, inside] : doors) {
+                        const auto* outside = SpaceOf(door);
+                        if (inside == cell && outside && outside->Is(RE::FormType::WorldSpace)) {
+                            shop = { door->GetPosition(), outside };
+                            break;
+                        }
+                    }
+                }
                 // Two keepers of the same shop (Warmaiden's) show as one.
                 const bool same = std::any_of(shops.begin(), shops.end(), [&](const Shop& a_other) {
                     return a_other.space == shop.space && a_other.at.GetDistance(shop.at) < 40.0f * Pose::kUnitsPerMeter;
@@ -127,28 +151,30 @@ namespace AhShitRim::RadarScene
             }
         }
 
-        // What the compass points to.
+        // What the compass points to, copied out under its lock first.
+        std::vector<std::pair<RE::TESQuest*, RE::TESQuestTarget*>> targets;
         {
             const RE::BSSpinLockGuard guard(a_player->GetQuestTargetsLock());
-            for (const auto& [quest, targets] : a_player->GetQuestTargets()) {
-                if (!quest || !targets) {
-                    continue;
-                }
-                for (auto* target : *targets) {
-                    if (!target) {
-                        continue;
-                    }
-                    RE::ObjectRefHandle handle;
-                    target->GetTargetRef(handle, false, quest);
-                    const auto ref = handle.get();
-                    if (const auto where = Locate(ref.get(), &target->teleportPath, here)) {
-                        Add(a_out, Radar::Kind::Quest, *where);
+            for (const auto& [quest, list] : a_player->GetQuestTargets()) {
+                if (quest && list) {
+                    for (auto* target : *list) {
+                        if (target) {
+                            targets.emplace_back(quest, target);
+                        }
                     }
                 }
             }
         }
+        for (const auto& [quest, target] : targets) {
+            RE::ObjectRefHandle handle;
+            target->GetTargetRef(handle, false, quest);
+            const auto ref = handle.get();
+            if (const auto where = Locate(ref.get(), &target->teleportPath, here)) {
+                Add(a_out, Radar::Kind::Quest, *where);
+            }
+        }
 
-        for (const auto& shop : Shops()) {
+        for (const auto& shop : Shops(here)) {
             if (shop.space == here) {
                 Add(a_out, Radar::Kind::Shop, shop.at);
             }
