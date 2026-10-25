@@ -991,7 +991,7 @@ namespace AhShitRim::PlayerSync
                 const auto actions = state.input.Build(0, true, true);
                 AmmuNation::Update(a_player, { actions.moveY, actions.buttons, std::exchange(state.shopActivate, false) }, a_delta, valid ? &pose : nullptr);
             }
-            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
+            Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
