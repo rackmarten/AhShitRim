@@ -30,7 +30,7 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v35: passengers, busts and vehicle proofs")
 {
-    CHECK(kProtocolVersion == 35);
+    CHECK(kProtocolVersion == 36);
     CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
     CHECK(kPlayerGettingInOut == 0x40);
     CHECK(kBodyBulletProof == 0x80);
@@ -360,4 +360,13 @@ TEST_CASE("the v31 slot and ring layout")
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);
     CHECK(sizeof(CollisionChunkHeader) == 40);
+}
+
+TEST_CASE("protocol v36: the worldspace the player is in, for the parked vehicles")
+{
+    CHECK(offsetof(InputState, world) == 115);  // the byte reserved before
+    CHECK(sizeof(InputState) == 124);
+    CHECK(kWorldNone == 0);
+    CHECK(kWorldTamriel == 1);
+    CHECK(kWorldWhiterun == 2);
 }

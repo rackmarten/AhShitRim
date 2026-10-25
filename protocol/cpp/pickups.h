@@ -170,6 +170,40 @@ namespace AhShitRim::Pickups
 
     inline constexpr std::uint32_t WorldForm(World a_world) { return a_world == World::Whiterun ? 0x0001A26Fu : 0x0000003Cu; }
 
+    // InputState.world (v36): the world a spot is in, as Skyrim tells San Andreas where the player is.
+    inline constexpr std::uint8_t WorldByte(World a_world) { return a_world == World::Whiterun ? Protocol::kWorldWhiterun : Protocol::kWorldTamriel; }
+
+    // Where the player is, for InputState.world: a_form the worldspace's form id, kWorldNone in an interior or a
+    // worldspace no table uses (another city's, Solstheim's).
+    inline constexpr std::uint8_t WorldByteOf(std::uint32_t a_form, bool a_interior)
+    {
+        if (a_interior) {
+            return Protocol::kWorldNone;
+        }
+        for (auto world : { World::Tamriel, World::Whiterun }) {
+            if (a_form == WorldForm(world)) {
+                return WorldByte(world);
+            }
+        }
+        return Protocol::kWorldNone;
+    }
+
+    // Skyrim's nine holds, so the tables can be checked to cover each.
+    enum class Hold : std::uint8_t
+    {
+        Whiterun,
+        Falkreath,
+        Reach,
+        Haafingar,
+        Hjaalmarch,
+        Pale,
+        Winterhold,
+        Eastmarch,
+        Rift,
+    };
+
+    inline constexpr int kHolds = 9;
+
     struct Spot
     {
         std::uint16_t    id;        // for good: the co-save names one-offs by it
@@ -178,6 +212,7 @@ namespace AhShitRim::Pickups
         std::uint16_t    amount;    // a weapon's ammo (0: its street ammo), a wad's gold
         Respawn          respawn;
         World            world;
+        Hold             hold;
         Vec3             at;        // Skyrim units
         bool             top;       // on top of something (a roof): set down on the first thing under it from high above
         std::string_view name;
@@ -189,61 +224,109 @@ namespace AhShitRim::Pickups
     // clang-format off
     inline constexpr Spot kSpots[] = {
         // Parachutes on high spots, for base jumps.
-        { 1, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 56368.0f, -48511.0f, 36379.0f }, false, "the Throat of the World" },
-        { 2, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 52071.0f, -36267.0f, 22569.0f }, false, "High Hrothgar's terrace" },
-        { 3, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 1482.0f, -41162.0f, 5727.0f }, false, "the top of Bleak Falls Barrow" },
-        { 4, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Whiterun, { 28313.0f, 1734.0f, 602.0f }, true, "the top of Dragonsreach" },
-        { 5, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 66950.0f, -99471.0f, 17302.0f }, false, "Arcwind Point" },
-        { 6, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 184396.0f, -113417.0f, 18674.0f }, false, "Forelhost" },
-        { 7, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 111395.0f, 77770.0f, 2380.0f }, false, "the Shrine of Azura" },
-        { 8, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 116435.0f, 111418.0f, -7744.0f }, false, "the College of Winterhold" },
-        { 9, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 95163.0f, 67275.0f, 259.0f }, false, "Mount Anthor" },
-        { 10, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, { 149285.0f, -115997.0f, 12543.0f }, false, "Darklight Tower" },
+        { 1, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 56368.0f, -48511.0f, 36379.0f }, false, "the Throat of the World" },
+        { 2, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 52071.0f, -36267.0f, 22569.0f }, false, "High Hrothgar's terrace" },
+        { 3, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 1482.0f, -41162.0f, 5727.0f }, false, "the top of Bleak Falls Barrow" },
+        { 4, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Whiterun, Hold::Whiterun, { 28313.0f, 1734.0f, 602.0f }, true, "the top of Dragonsreach" },
+        { 5, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 66950.0f, -99471.0f, 17302.0f }, false, "Arcwind Point" },
+        { 6, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Rift, { 184396.0f, -113417.0f, 18674.0f }, false, "Forelhost" },
+        { 7, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 111395.0f, 77770.0f, 2380.0f }, false, "the Shrine of Azura" },
+        { 8, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 116435.0f, 111418.0f, -7744.0f }, false, "the College of Winterhold" },
+        { 9, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 95163.0f, 67275.0f, 259.0f }, false, "Mount Anthor" },
+        { 10, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Rift, { 149285.0f, -115997.0f, 12543.0f }, false, "Darklight Tower" },
+        { 11, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -91689.0f, -35972.0f, 1956.0f }, false, "Bard's Leap Summit" },
+        { 12, Kind::Parachute, Weapons::Parachute, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -139695.0f, -12857.0f, -1337.0f }, false, "Reachwind Eyrie" },
 
-        // Armour, two or three spots in each hold.
-        { 20, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 22243.0f, -44616.0f, -136.0f }, false, "Riverwood" },
-        { 21, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 31343.0f, 12926.0f, -4995.0f }, false, "Whitewatch Tower" },
-        { 22, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -83782.0f, 7902.0f, -4118.0f }, false, "Rorikstead" },
-        { 23, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -30566.0f, -86850.0f, -3124.0f }, false, "Falkreath" },
-        { 24, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -35219.0f, -72845.0f, 1475.0f }, false, "Falkreath Watchtower" },
-        { 25, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 77183.0f, -65456.0f, 10869.0f }, false, "Ivarstead" },
-        { 26, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 167976.0f, -72409.0f, 9118.0f }, false, "Fort Greenwall" },
-        { 27, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 121354.0f, -34306.0f, -9809.0f }, false, "Darkwater Crossing" },
-        { 28, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 149758.0f, 35761.0f, -13237.0f }, false, "Hollyfrost Farm" },
-        { 29, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 100336.0f, -22861.0f, -9313.0f }, false, "Fort Amol" },
-        { 30, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 109299.0f, 102777.0f, -8867.0f }, false, "Winterhold" },
-        { 31, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 112486.0f, 53761.0f, -3032.0f }, false, "Fort Kastav" },
-        { 32, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 33278.0f, 105558.0f, -13633.0f }, false, "Dawnstar" },
-        { 33, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { 28971.0f, 61699.0f, -8536.0f }, false, "Fort Dunstad" },
-        { 34, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -38384.0f, 63751.0f, -13910.0f }, false, "Morthal" },
-        { 35, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -57034.0f, 69662.0f, -11155.0f }, false, "Fort Snowhawk" },
-        { 36, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -66223.0f, 98839.0f, -13882.0f }, false, "the Solitude docks" },
-        { 37, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -101407.0f, 84423.0f, -12003.0f }, false, "Dragon Bridge" },
-        { 38, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -171151.0f, 6555.0f, -3920.0f }, false, "the Markarth stables" },
-        { 39, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, { -132797.0f, 38451.0f, -6200.0f }, false, "Karthwasten" },
+        // Armour, three or four spots in each hold.
+        { 20, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Whiterun, { 22243.0f, -44616.0f, -136.0f }, false, "Riverwood" },
+        { 21, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Whiterun, { 31343.0f, 12926.0f, -4995.0f }, false, "Whitewatch Tower" },
+        { 22, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Whiterun, { -83782.0f, 7902.0f, -4118.0f }, false, "Rorikstead" },
+        { 23, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Falkreath, { -30566.0f, -86850.0f, -3124.0f }, false, "Falkreath" },
+        { 24, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Falkreath, { -35219.0f, -72845.0f, 1475.0f }, false, "Falkreath Watchtower" },
+        { 25, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Rift, { 77183.0f, -65456.0f, 10869.0f }, false, "Ivarstead" },
+        { 26, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Rift, { 167976.0f, -72409.0f, 9118.0f }, false, "Fort Greenwall" },
+        { 27, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Eastmarch, { 121354.0f, -34306.0f, -9809.0f }, false, "Darkwater Crossing" },
+        { 28, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Eastmarch, { 149758.0f, 35761.0f, -13237.0f }, false, "Hollyfrost Farm" },
+        { 29, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Eastmarch, { 100336.0f, -22861.0f, -9313.0f }, false, "Fort Amol" },
+        { 30, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Winterhold, { 109299.0f, 102777.0f, -8867.0f }, false, "Winterhold" },
+        { 31, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Winterhold, { 112486.0f, 53761.0f, -3032.0f }, false, "Fort Kastav" },
+        { 32, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Pale, { 33278.0f, 105558.0f, -13633.0f }, false, "Dawnstar" },
+        { 33, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Pale, { 28971.0f, 61699.0f, -8536.0f }, false, "Fort Dunstad" },
+        { 34, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Hjaalmarch, { -38384.0f, 63751.0f, -13910.0f }, false, "Morthal" },
+        { 35, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Hjaalmarch, { -57034.0f, 69662.0f, -11155.0f }, false, "Fort Snowhawk" },
+        { 36, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Haafingar, { -66223.0f, 98839.0f, -13882.0f }, false, "the Solitude docks" },
+        { 37, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Haafingar, { -101407.0f, 84423.0f, -12003.0f }, false, "Dragon Bridge" },
+        { 38, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Reach, { -171151.0f, 6555.0f, -3920.0f }, false, "the Markarth stables" },
+        { 39, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Reach, { -132797.0f, 38451.0f, -6200.0f }, false, "Karthwasten" },
+        { 40, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Falkreath, { 19737.0f, -79337.0f, 8449.0f }, false, "Helgen" },
+        { 41, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Falkreath, { 2807.0f, -59216.0f, 1436.0f }, false, "the Guardian Stones" },
+        { 42, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Whiterun, { 19072.0f, -18080.0f, -4360.0f }, false, "Pelagia Farm" },
+        { 43, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Haafingar, { -74344.0f, 96470.0f, -11512.0f }, false, "Katla's Farm" },
+        { 44, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Haafingar, { -112292.0f, 114083.0f, -5402.0f }, false, "Fort Hraggstad" },
+        { 45, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Reach, { -114906.0f, -7748.0f, -5452.0f }, false, "Old Hroldan" },
+        { 46, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Reach, { -165398.0f, 861.0f, -4501.0f }, false, "Left Hand Mine" },
+        { 47, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Hjaalmarch, { -6557.0f, 64347.0f, -11432.0f }, false, "Stonehills" },
+        { 48, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Pale, { 73031.0f, 45290.0f, -6517.0f }, false, "Heljarchen" },
+        { 49, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Winterhold, { 126661.0f, 76981.0f, -7957.0f }, false, "Whistling Mine" },
+        { 100, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Eastmarch, { 134765.0f, 12937.0f, -12073.0f }, false, "Kynesgrove" },
+        { 101, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Rift, { 163299.0f, -60431.0f, 7107.0f }, false, "Shor's Stone" },
+        { 102, Kind::Armour, 0, 0, Respawn::Slow, World::Tamriel, Hold::Rift, { 133312.0f, -96128.0f, 10702.0f }, false, "Heartwood Mill" },
 
-        // Hearts in a few villages, beside their armour.
-        { 50, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, { 22243.0f + kBeside, -44616.0f, -136.0f }, false, "Riverwood" },
-        { 51, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, { 77183.0f + kBeside, -65456.0f, 10869.0f }, false, "Ivarstead" },
-        { 52, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, { -101407.0f + kBeside, 84423.0f, -12003.0f }, false, "Dragon Bridge" },
-        { 53, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, { 109299.0f + kBeside, 102777.0f, -8867.0f }, false, "Winterhold" },
+        // Hearts in villages, beside their armour.
+        { 50, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 22243.0f + kBeside, -44616.0f, -136.0f }, false, "Riverwood" },
+        { 51, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Rift, { 77183.0f + kBeside, -65456.0f, 10869.0f }, false, "Ivarstead" },
+        { 52, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Haafingar, { -101407.0f + kBeside, 84423.0f, -12003.0f }, false, "Dragon Bridge" },
+        { 53, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 109299.0f + kBeside, 102777.0f, -8867.0f }, false, "Winterhold" },
+        { 54, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { -83782.0f + kBeside, 7902.0f, -4118.0f }, false, "Rorikstead" },
+        { 55, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { -30566.0f + kBeside, -86850.0f, -3124.0f }, false, "Falkreath" },
+        { 56, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Hjaalmarch, { -38384.0f + kBeside, 63751.0f, -13910.0f }, false, "Morthal" },
+        { 57, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Pale, { 33278.0f + kBeside, 105558.0f, -13633.0f }, false, "Dawnstar" },
+        { 58, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -132797.0f + kBeside, 38451.0f, -6200.0f }, false, "Karthwasten" },
+        { 59, Kind::Health, 0, 0, Respawn::Street, World::Tamriel, Hold::Eastmarch, { 121354.0f + kBeside, -34306.0f, -9809.0f }, false, "Darkwater Crossing" },
 
-        // Weapons lying about, back like San Andreas's street ones.
-        { 60, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, { 22243.0f - kBeside, -44616.0f, -136.0f }, false, "Riverwood" },
-        { 61, Kind::Weapon, Weapons::Shotgun, 0, Respawn::Street, World::Tamriel, { -13759.0f, -8448.0f, -5552.0f }, false, "Fort Greymoor" },
-        { 62, Kind::Weapon, Weapons::Tec9, 0, Respawn::Street, World::Tamriel, { -39379.0f, -18164.0f, -5479.0f }, false, "Sleeping Tree Camp" },
-        { 63, Kind::Weapon, Weapons::Ak47, 0, Respawn::Street, World::Tamriel, { -72571.0f, -24475.0f, 183.0f }, false, "Fort Sungard" },
-        { 64, Kind::Weapon, Weapons::SniperRifle, 0, Respawn::Street, World::Tamriel, { -57305.0f, -62109.0f, 1767.0f }, false, "Bannermist Tower" },
-        { 65, Kind::Weapon, Weapons::Molotov, 0, Respawn::Street, World::Tamriel, { 16500.0f, 18919.0f, -4177.0f }, false, "Halted Stream Camp" },
+        // Weapons lying about, back like San Andreas's street ones: handguns and SMGs most, a few shotguns and rifles.
+        { 60, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 22243.0f - kBeside, -44616.0f, -136.0f }, false, "Riverwood" },
+        { 61, Kind::Weapon, Weapons::Shotgun, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { -13759.0f, -8448.0f, -5552.0f }, false, "Fort Greymoor" },
+        { 62, Kind::Weapon, Weapons::Tec9, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { -39379.0f, -18164.0f, -5479.0f }, false, "Sleeping Tree Camp" },
+        { 63, Kind::Weapon, Weapons::Ak47, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -72571.0f, -24475.0f, 183.0f }, false, "Fort Sungard" },
+        { 64, Kind::Weapon, Weapons::SniperRifle, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { -57305.0f, -62109.0f, 1767.0f }, false, "Bannermist Tower" },
+        { 65, Kind::Weapon, Weapons::Molotov, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 16500.0f, 18919.0f, -4177.0f }, false, "Halted Stream Camp" },
+        { 66, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 19737.0f + kBeside, -79337.0f, 8449.0f }, false, "Helgen" },
+        { 67, Kind::Weapon, Weapons::MicroUzi, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 2807.0f + kBeside, -59216.0f, 1436.0f }, false, "the Guardian Stones" },
+        { 68, Kind::Weapon, Weapons::Sawnoff, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 8249.0f, -57383.0f, 1491.0f }, false, "Embershard Mine" },
+        { 69, Kind::Weapon, Weapons::DesertEagle, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 19072.0f + kBeside, -18080.0f, -4360.0f }, false, "Pelagia Farm" },
+        { 70, Kind::Weapon, Weapons::Mp5, 0, Respawn::Street, World::Tamriel, Hold::Whiterun, { 17390.0f, -10404.0f, -4520.0f }, false, "the Whiterun stables" },
+        { 71, Kind::Weapon, Weapons::PistolSilenced, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { -41600.0f, -83776.0f, -4368.0f }, false, "the Dark Brotherhood's door" },
+        { 72, Kind::Weapon, Weapons::Mp5, 0, Respawn::Street, World::Tamriel, Hold::Haafingar, { -101407.0f, 84423.0f + kBeside, -12003.0f }, false, "Dragon Bridge" },
+        { 73, Kind::Weapon, Weapons::MicroUzi, 0, Respawn::Street, World::Tamriel, Hold::Haafingar, { -78436.0f, 90134.0f, -13845.0f }, false, "the Solitude sawmill" },
+        { 74, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, Hold::Hjaalmarch, { -38384.0f - kBeside, 63751.0f, -13910.0f }, false, "Morthal" },
+        { 75, Kind::Weapon, Weapons::Tec9, 0, Respawn::Street, World::Tamriel, Hold::Pale, { 33278.0f - kBeside, 105558.0f, -13633.0f }, false, "Dawnstar" },
+        { 76, Kind::Weapon, Weapons::DesertEagle, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 109299.0f - kBeside, 102777.0f, -8867.0f }, false, "Winterhold" },
+        { 77, Kind::Weapon, Weapons::Shotgun, 0, Respawn::Street, World::Tamriel, Hold::Eastmarch, { 134765.0f + kBeside, 12937.0f, -12073.0f }, false, "Kynesgrove" },
+        { 78, Kind::Weapon, Weapons::Mp5, 0, Respawn::Street, World::Tamriel, Hold::Eastmarch, { 121354.0f - kBeside, -34306.0f, -9809.0f }, false, "Darkwater Crossing" },
+        { 79, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, Hold::Rift, { 163299.0f + kBeside, -60431.0f, 7107.0f }, false, "Shor's Stone" },
+        { 85, Kind::Weapon, Weapons::MicroUzi, 0, Respawn::Street, World::Tamriel, Hold::Rift, { 77183.0f - kBeside, -65456.0f, 10869.0f }, false, "Ivarstead" },
+        { 86, Kind::Weapon, Weapons::Sawnoff, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -132797.0f - kBeside, 38451.0f, -6200.0f }, false, "Karthwasten" },
+        { 87, Kind::Weapon, Weapons::Tec9, 0, Respawn::Street, World::Tamriel, Hold::Reach, { -114906.0f + kBeside, -7748.0f, -5452.0f }, false, "Old Hroldan" },
+        { 88, Kind::Weapon, Weapons::Ak47, 0, Respawn::Street, World::Tamriel, Hold::Haafingar, { -112292.0f + kBeside, 114083.0f, -5402.0f }, false, "Fort Hraggstad" },
+        { 89, Kind::Weapon, Weapons::CountryRifle, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { -56672.0f, -54925.0f, 1559.0f }, false, "Hunter's Rest" },
+        { 90, Kind::Weapon, Weapons::M4, 0, Respawn::Street, World::Tamriel, Hold::Winterhold, { 112486.0f + kBeside, 53761.0f, -3032.0f }, false, "Fort Kastav" },
+        { 91, Kind::Weapon, Weapons::Spas12, 0, Respawn::Street, World::Tamriel, Hold::Pale, { 28971.0f + kBeside, 61699.0f, -8536.0f }, false, "Fort Dunstad" },
+        { 92, Kind::Weapon, Weapons::Grenade, 0, Respawn::Street, World::Tamriel, Hold::Falkreath, { 33279.0f, -91842.0f, 13182.0f }, false, "Fort Neugrad" },
+        { 93, Kind::Weapon, Weapons::Pistol, 0, Respawn::Street, World::Tamriel, Hold::Pale, { 73031.0f + kBeside, 45290.0f, -6517.0f }, false, "Heljarchen" },
 
-        // The heavy weapons, back like armour: as in San Andreas a weapon comes back once CJ has been away.
-        { 80, Kind::Weapon, Weapons::RocketLauncher, 10, Respawn::Slow, World::Tamriel, { -18641.0f, 42159.0f, -7849.0f }, false, "Labyrinthian" },
-        { 81, Kind::Weapon, Weapons::Minigun, 500, Respawn::Slow, World::Tamriel, { -5431.0f, 48292.0f, 344.0f }, false, "Skyborn Altar" },
+        // The heavy weapons, back like armour and tucked away: as in San Andreas a weapon comes back once CJ has been away.
+        { 80, Kind::Weapon, Weapons::RocketLauncher, 10, Respawn::Slow, World::Tamriel, Hold::Hjaalmarch, { -18641.0f, 42159.0f, -7849.0f }, false, "Labyrinthian" },
+        { 81, Kind::Weapon, Weapons::Minigun, 500, Respawn::Slow, World::Tamriel, Hold::Hjaalmarch, { -5431.0f, 48292.0f, 344.0f }, false, "Skyborn Altar" },
+        { 94, Kind::Weapon, Weapons::Flamethrower, 0, Respawn::Slow, World::Tamriel, Hold::Rift, { 193225.0f, -84050.0f, 10682.0f }, false, "Giant's Grove" },
+        { 95, Kind::Weapon, Weapons::RocketLauncherHs, 0, Respawn::Slow, World::Tamriel, Hold::Haafingar, { -144430.0f, 117428.0f, -13587.0f }, false, "Northwatch Keep" },
 
         // One-offs, taken for good: stashes of gold.
-        { 82, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, { -89950.0f, -36677.0f, 1868.0f }, false, "Lost Valley Redoubt" },
-        { 83, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, { -23080.0f, 88177.0f, -13778.0f }, false, "Ustengrav" },
-        { 84, Kind::Money, 0, 300, Respawn::Once, World::Tamriel, { 100514.0f, 5878.0f, -7900.0f }, false, "Gallows Rock" },
+        { 82, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, Hold::Reach, { -89950.0f, -36677.0f, 1868.0f }, false, "Lost Valley Redoubt" },
+        { 83, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, Hold::Hjaalmarch, { -23080.0f, 88177.0f, -13778.0f }, false, "Ustengrav" },
+        { 84, Kind::Money, 0, 300, Respawn::Once, World::Tamriel, Hold::Eastmarch, { 100514.0f, 5878.0f, -7900.0f }, false, "Gallows Rock" },
+        { 96, Kind::Money, 0, 500, Respawn::Once, World::Tamriel, Hold::Reach, { -180420.0f, -19104.0f, 6589.0f }, false, "Dead Crone Rock" },
+        { 97, Kind::Money, 0, 300, Respawn::Once, World::Tamriel, Hold::Pale, { 57393.0f, 115440.0f, -11717.0f }, false, "Yngvild" },
     };
     // clang-format on
 
@@ -373,7 +456,7 @@ namespace AhShitRim::Pickups
 
     // ---- The pistol when he runs dry ----
     //
-    // Weapons aren't laid about Skyrim yet, so when CJ has rounds for none of his guns (or no gun at all), a pistol with a
+    // The weapon spots are kilometres apart, so when CJ has rounds for none of his guns (or no gun at all), a pistol with a
     // clip turns up in front of him, as the heart does: 2 s after he ran dry, one at a time, only while he is CJ (San
     // Andreas has the player and he is his own), and gone after 2 minutes or 60 m. Unlike the heart it has no cooldown:
     // its rounds end the dry spell, and the next comes only when he is empty again. So he can always fight on and has a

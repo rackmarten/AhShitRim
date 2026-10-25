@@ -505,6 +505,8 @@ namespace AhShitRim::Runner
             CarHits::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());
             CjMelee::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());  // on foot: bumping into them, the lock-on
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
+            Vehicles::UpdateParked(ped, state.spawn, kSpawnLift, state.lastInput.anchor, state.lastInput.world,
+                state.owned && !state.wasted && !Scenes::Following() && ChunkWorld::Ready());
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
