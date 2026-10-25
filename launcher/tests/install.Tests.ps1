@@ -359,6 +359,24 @@ Describe 'Find-SkyrimPartZip' {
     }
 }
 
+Describe 'Get-Mo2MissingProblems' {
+    It 'says how to add the release''s zip in MO2, or to let the launcher install it' {
+        $problems = @(Get-Mo2MissingProblems 'C:\AhShitRim\AhShitRim-Skyrim-0.1.0.zip' $false $false)
+        $problems.Count | Should -Be 1
+        $problems[0] | Should -BeLike '*pick C:\AhShitRim\AhShitRim-Skyrim-0.1.0.zip,*'
+        $problems[0] | Should -BeLike '*ModManager=None*'
+    }
+    It 'names the zip generically in a repo checkout' {
+        @(Get-Mo2MissingProblems $null $false $false)[0] | Should -BeLike '*AhShitRim-Skyrim-<version>.zip from the release*'
+    }
+    It 'tells to take out a loose plugin, by uninstall when the launcher put it there' {
+        $loose = @(Get-Mo2MissingProblems $null $true $false)
+        $loose.Count | Should -Be 2
+        $loose[1] | Should -BeLike '*delete AhShitRim.dll and AhShitRim.pdb*'
+        (Get-Mo2MissingProblems $null $true $true)[1] | Should -BeLike '*Uninstall AhShitRim.bat*'
+    }
+}
+
 Describe 'Get-ModManager' {
     It 'takes the configured choice first, in any case' {
         Get-ModManager 'none' $true $true | Should -Be 'None'

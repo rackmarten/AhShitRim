@@ -23,6 +23,10 @@ $out = Join-Path $RepoRoot 'out/release'
 $stage = Join-Path $out "AhShitRim-$Version"
 $skyrimStage = Join-Path $out "AhShitRim-Skyrim-$Version"
 $zip = "$stage.zip"
+# The unzipped release folder is handy to play from, but then it holds the launcher's own files, which
+# the clean-up below would delete with the rest: stop instead of wiping someone's setup.
+$inUse = @('launcher.ini', 'Screenshots', 'Tools' | Where-Object { Test-Path (Join-Path $stage $_) })
+if ($inUse) { throw "$stage is in use as a game folder (it has $($inUse -join ', ')). Copy the release elsewhere to play from, or move those out, then package again." }
 foreach ($path in $stage, $skyrimStage, $zip) { if (Test-Path $path) { Remove-Item -Recurse -Force $path } }
 
 function Add-File($source, $root, $destDir) {
