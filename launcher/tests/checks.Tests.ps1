@@ -269,12 +269,12 @@ Describe 'Get-LinkVersionProblem' {
         $problem = Get-LinkVersionProblem $old $new 'C:\Skyrim\Data\SKSE\Plugins\AhShitRim.dll' 'C:\SA\scripts\AhShitRim.asi'
         $problem | Should -Match 'from before 0\.1\.0'
         $problem | Should -Match 'AhShitRim 0\.1\.0 \(link version 35\)'
-        $problem | Should -Match 'Replace C:\Skyrim\Data\SKSE\Plugins\AhShitRim\.dll'
+        $problem | Should -BeLike '*Replace C:\Skyrim\Data\SKSE\Plugins\AhShitRim.dll *'
     }
     It 'names the older ASI to replace' {
         $problem = Get-LinkVersionProblem $newer $new 'C:\dll' 'C:\SA\scripts\AhShitRim.asi'
         $problem | Should -Match 'link version 36.*link version 35'
-        $problem | Should -Match 'Replace C:\SA\scripts\AhShitRim\.asi'
+        $problem | Should -BeLike '*Replace C:\SA\scripts\AhShitRim.asi *'
     }
     It 'asks for both when neither has a stamp' {
         Get-LinkVersionProblem $old $old 'C:\dll' 'C:\asi' | Should -Match 'Install both'
