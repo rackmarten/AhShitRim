@@ -54,7 +54,7 @@ namespace AhShitRim::Police
 
     // Every frame, owned or not, at the end of the player's update on the main thread: the police's frame as Update
     // recorded it, and one step of taking out the spawned pursuers that are leaving.
-    void Sweep();
+    void Sweep(float a_delta);
 
     // Whether a guard's hit was eased (Wanted::GuardDamage) and left the player standing since the last call: a bleedout
     // the whole hit began is then stopped, not Wasted. Taken once.
@@ -94,9 +94,13 @@ namespace AhShitRim::Police
     // The game moved the player and CJ was re-anchored there.
     void OnReanchor();
 
-    // A game loads or a new one starts (kPreLoadGame, kNewGame, on the main thread before Skyrim clears its world): ours
-    // stand down (every fight with them ends), then nothing spawned is ours any more and the bounties are seeded again.
+    // A game loads or a new one starts (kPreLoadGame, kNewGame): nothing is done to any actor, nothing spawned is ours any
+    // more, and the bounties are seeded again.
     void OnGameLoad();
+
+    // A game has loaded (kPostLoadGame): once it has settled, copies left in the save by earlier builds
+    // (Wanted::LeftoverCopy) are taken out.
+    void OnPostLoadGame();
 
     // The co-save record.
     void Save(SKSE::SerializationInterface* a_intfc);

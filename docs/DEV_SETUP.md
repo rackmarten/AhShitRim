@@ -129,6 +129,17 @@ CJ's lines for his keys, conversations and shouts are picked by ear on a local p
 
 Milestone 1's ground check: from the stables outside Whiterun, walk up the road to the gate, over the rough tundra beside it, and (F10 again inside the city) up the steps to Dragonsreach. CJ should never fall through or hover, and San Andreas's log should show no `below the ground` line on normal ground.
 
+### Load test
+
+`scripts/load-test.ps1` runs hundreds of loads unattended and counts the crashes: copy any two saves to `StressA` and
+`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it (it closes and starts both games
+itself, so nobody else may be using them). The SKSE plugin's load test (`[Debug] LoadTest` in `AhShitRim.ini`, which the
+script sets) alternates loads between the two saves and runs one scenario per cycle (idle, people scared, a 6-star chase
+loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before each load.
+A crash, a hang or Skyrim gone is recorded with its cycle, the games are started again and the test goes on. Results:
+`Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
+
 ## CI
 
 Every pull request and every push to `main` or `production` that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
