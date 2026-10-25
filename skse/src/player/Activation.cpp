@@ -3,6 +3,7 @@
 #include "activate.h"
 #include "hud/SaHud.h"
 #include "player/AmmuNation.h"
+#include "player/Conversation.h"
 #include "player/Looting.h"
 
 namespace AhShitRim::Activation
@@ -225,6 +226,10 @@ namespace AhShitRim::Activation
         }
         state.target = {};
         if (AmmuNation::Open(ref.get(), a_layout) || Looting::Activate(a_player, ref.get())) {
+            return true;
+        }
+        if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead() && !Conversation::MayTalk()) {
+            SKSE::log::info("activation: {:08X} not talked to, CJ is moving too fast", ref->GetFormID());
             return true;
         }
         SKSE::log::info("activation: {:08X} activated by the player ({})", ref->GetFormID(), state.prompt);

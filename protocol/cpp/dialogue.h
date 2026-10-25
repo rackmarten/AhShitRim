@@ -188,6 +188,19 @@ namespace AhShitRim::Dialogue
         return category != Category::None ? category : Classify(a_text);
     }
 
+    // ---- Who may talk ----
+
+    inline constexpr float kTalkSpeedMax = 2.5f;  // m/s: a brisk walk (San Andreas's walk is about 1.5, its jog about 4)
+
+    // While CJ has the player, nobody starts a dialogue with him, neither he with E nor someone walking up
+    // to him or force-greeting him, while he is in a vehicle or moving faster than a walk: the cutscene
+    // takes the controls, and a vehicle would run on without him. A speed that isn't a number counts as
+    // moving.
+    constexpr bool MayTalk(bool a_inVehicle, float a_metersPerSecond)
+    {
+        return !a_inVehicle && a_metersPerSecond <= kTalkSpeedMax;
+    }
+
     // ---- Noticing a pick ----
 
     // The player picking a topic in the open dialogue, from what Skyrim's MenuTopicManager shows
