@@ -8,8 +8,8 @@
 //
 // How they're classified, first match wins:
 //   1. protocol/tools/topic-hand.json, FormID (hex) -> category: picks made by hand
-//   2. with EIGHTBALL_KEY set, the homelab's local LLM through 8-ball's OpenAI-compatible API
-//      (EIGHTBALL_URL, default https://8ball.uncik.com/openai/v1)
+//   2. with EIGHTBALL_URL and EIGHTBALL_KEY set, a local LLM through 8-ball's OpenAI-compatible API
+//      (EIGHTBALL_URL is the API's base, ending in /openai/v1)
 //   3. the keyword rule, the same as the plugin's runtime fallback (Dialogue::Classify in
 //      protocol/cpp/dialogue.h); keep the two in step. These are left out of the header, since the
 //      plugin comes to the same answer on its own
@@ -207,7 +207,7 @@ function topics(skyrim) {
 }
 
 async function askLlm(items) {
-    const url = (process.env.EIGHTBALL_URL ?? 'https://8ball.uncik.com/openai/v1').replace(/\/$/, '');
+    const url = process.env.EIGHTBALL_URL.replace(/\/$/, '');
     const prompt = `Each line below is something the player character says in a Skyrim conversation. ` +
         `Answer with one word per line, in the same order, the category of what the player says: ` +
         `${kCategories.join(', ')}. "agree" includes accepting a task or handing something over; ` +
@@ -228,7 +228,7 @@ async function main() {
     const all = topics(skyrimPath());
     const hand = fs.existsSync(handFile) ? JSON.parse(fs.readFileSync(handFile, 'utf8')) : {};
     const byLlm = new Map();
-    if (process.env.EIGHTBALL_KEY) {
+    if (process.env.EIGHTBALL_URL && process.env.EIGHTBALL_KEY) {
         for (let i = 0; i < all.length; i += 40) {
             const batch = all.slice(i, i + 40);
             (await askLlm(batch.map(t => t.prompts[0] ?? t.text))).forEach((c, j) => c && byLlm.set(batch[j].formId, c));
