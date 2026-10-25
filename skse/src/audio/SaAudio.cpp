@@ -245,7 +245,7 @@ namespace AhShitRim::Audio
         if (a_paused || a_cue) {
             SetPaused(true);  // a cue: San Andreas stops its own radio for the tune too
         } else if (Radio::SkyrimPlays(station) && !retuning && (station != Radio::kSweetroll || state.sweetroll.Size() > 0)) {
-            PlayStation(a_delta, volumes.music);
+            PlayStation(a_delta, Radio::StationVolume(volumes));
         }
     }
 }

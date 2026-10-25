@@ -31,6 +31,27 @@ TEST_CASE("a sound cue is heard while Skyrim has the player")
     CHECK(v.effects == doctest::Approx(0.4f));
 }
 
+TEST_CASE("Skyrim's stations play as loud as San Andreas's, which follow effects once music is set high")
+{
+    // San Andreas's rule: 4 dB down, and more with music set far above effects.
+    CHECK(SaRadioDb({ 1.0f, 0.2f }) == doctest::Approx(-4.0f));
+    CHECK(SaRadioDb({ 0.53f, 0.31f }) == doctest::Approx(-8.34f).epsilon(0.01));
+    CHECK(SaRadioDb({ 0.0f, 0.5f }) == doctest::Approx(-4.0f));
+
+    // At the sliders it was measured at, a station plays 6 dB over its music volume.
+    CHECK(StationVolume({ 0.53f, 0.31f }) == doctest::Approx(0.31f * 2.0f).epsilon(0.01));
+
+    // With music above effects / 2.8, more music doesn't make it louder, as in San Andreas.
+    CHECK(StationVolume({ 0.53f, 0.62f }) == doctest::Approx(StationVolume({ 0.53f, 0.31f })).epsilon(0.001));
+    CHECK(StationVolume({ 0.8f, 0.62f }) > StationVolume({ 0.53f, 0.62f }));
+
+    // Below that it follows music, never past full volume, and silent with no music.
+    CHECK(StationVolume({ 1.0f, 0.1f }) < StationVolume({ 1.0f, 0.2f }));
+    CHECK(StationVolume({ 1.0f, 1.0f }) <= 1.0f);
+    CHECK(StationVolume({ 1.0f, 0.0f }) == 0.0f);
+    CHECK(StationVolume(FromSliders(1.0f, 1.0f, 1.0f, false)) == 0.0f);
+}
+
 TEST_CASE("exploration tracks follow the time of day")
 {
     CHECK(ExploreFor(6.0f).data() == kExploreMorning.data());
