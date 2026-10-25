@@ -1,6 +1,7 @@
 #include "player/Police.h"
 
 #include "hud/SaHud.h"
+#include "player/CombatBalance.h"
 #include "player/CheatCodes.h"
 #include "player/Vitals.h"
 #include "knock.h"
@@ -1187,8 +1188,9 @@ namespace AhShitRim::Police
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // A guard's (any hold's) or one of ours' hit on the player while CJ has it: only the stars' share of it
-        // (Wanted::GuardDamage), the rest given back as it lands. Bandits, wolves and the rest hit as Skyrim has them.
+        // A hit of Skyrim's people on the player while CJ has it (Skyrim's difficulty already on it): [Balance] DamageTaken of
+        // it (Balance), for a guard (any hold's) or one of ours times the stars' share (Wanted::GuardDamage), and CJ's armour
+        // takes it first (Vitals::TakeHit). The rest is given back, or the more taken, as it lands.
         struct HealthDamageHook
         {
             static void thunk(RE::PlayerCharacter* a_player, RE::Actor* a_attacker, float a_damage)
@@ -1199,20 +1201,25 @@ namespace AhShitRim::Police
                     state.blowAt = std::chrono::steady_clock::now();
                 }
                 static bool inside = false;
-                if (!state.owned || inside || !a_attacker || a_attacker->IsPlayerRef() || !(a_attacker->IsGuard() || IsSpawned(a_attacker)) ||
-                    state.sequence.Running()) {
+                if (!state.owned || inside || !a_attacker || a_attacker->IsPlayerRef() || state.sequence.Running() || Vitals::IsInvincible()) {
                     return;
                 }
-                const float share = Wanted::GuardDamage(state.pursuit.Stars());
-                const float back = Wanted::GiveBack(a_damage, share);
-                if (back <= 0.0f) {
-                    return;
-                }
+                // The stars' share only for guards (any hold's) and ours: bandits, creatures and the rest never get it.
+                const bool  guard = a_attacker->IsGuard() || IsSpawned(a_attacker);
+                const float factor = Balance::TakenFactor(guard ? Wanted::GuardDamage(state.pursuit.Stars()) : 1.0f);
+                const float armor = Vitals::Armor();
                 inside = true;
-                auto* values = a_player->AsActorValueOwner();
-                values->RestoreActorValue(RE::ActorValue::kHealth, back);
+                const float back = Vitals::TakeHit(a_player, a_damage, factor);
                 inside = false;
-                state.spared = state.spared || values->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
+                if (back > 0.0f) {
+                    state.spared = state.spared || a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
+                }
+                static int logged = 0;
+                if (logged < 12) {
+                    logged++;
+                    SKSE::log::info("police: {:08X} ({}{}) hit CJ for {:.1f} health, x{:.2f}: armour {:.0f} -> {:.0f}, health {:+.1f} of it given back", a_attacker->GetFormID(),
+                        a_attacker->GetName(), guard ? ", a guard" : "", a_damage, factor, armor, Vitals::Armor(), back);
+                }
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };

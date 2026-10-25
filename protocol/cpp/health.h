@@ -73,4 +73,16 @@ namespace AhShitRim::Health
         s.health = (a_damage - absorbed) / kSaFullHealth * (std::max)(a_skyrimMax, 0.0f);
         return s;
     }
+
+    // A hit Skyrim's people landed (a_damage of Skyrim's health) through CJ's armour first, as San Andreas's
+    // AccountForPedArmour takes a bullet or a blow: its share of a full bar is that many San Andreas points, the
+    // armour takes them point for point and the rest is the health to take.
+    inline Split AbsorbSkyrim(float a_armor, float a_damage, float a_skyrimMax)
+    {
+        if (!(a_skyrimMax > 0.0f) || !std::isfinite(a_skyrimMax)) {
+            return { std::clamp(std::isfinite(a_armor) ? a_armor : 0.0f, 0.0f, kSaFullHealth), std::isfinite(a_damage) ? (std::max)(a_damage, 0.0f) : 0.0f };
+        }
+        a_damage = std::isfinite(a_damage) ? (std::max)(a_damage, 0.0f) : 0.0f;
+        return Absorb(a_armor, a_damage / a_skyrimMax * kSaFullHealth, a_skyrimMax);
+    }
 }

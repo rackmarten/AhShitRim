@@ -25,6 +25,7 @@
 #include "player/Arms.h"
 #include "player/Chatter.h"
 #include "player/CheatCodes.h"
+#include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/GunRewards.h"
@@ -1453,6 +1454,7 @@ namespace AhShitRim::PlayerSync
         SKSE::log::info("player sync: the dev vehicle keys (; picks, ' spawns) are {} ([Debug] VehicleKeys={}), {} picks{} ([Debug] Vehicles={}), the first {}",
             state.devKeys ? "on" : "off", devKeys.empty() ? "unset" : devKeys, state.devPicker.Count(), devList.empty() ? " built in" : "",
             devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
+        Balance::OnDataLoaded();
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();

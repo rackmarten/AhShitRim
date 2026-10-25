@@ -149,7 +149,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - Out of the guards' sight for a few seconds the stars flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars.
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
 - As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
-- Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5.
+- Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
 - In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
 - Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard ends the stars too.
 
@@ -188,6 +188,23 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 | `[Input]` | `KeyLayout` | `Modern` (default) or `Classic`, the keys above |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
+
+## Combat balance
+
+How hard CJ hits and how hard he's hit, under `[Balance]` in `Data/SKSE/Plugins/AhShitRim.ini` (read when the game starts):
+
+```ini
+[Balance]
+CJDamage=1.0         ; CJ's guns and explosives, times this (melee isn't touched)
+DamageTaken=1.0      ; what Skyrim's people and creatures do to CJ, times this
+FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn't
+```
+
+- With `FollowDifficulty=1` CJ's guns and explosives get Skyrim's own multiplier for the player's damage at the difficulty you play (`fDiffMultHPByPC*`): twice at Novice, as before at Adept, half at Master, a quarter at Legendary. Fists and melee weapons stay as they are. Skyrim already puts its difficulty on what its people do to the player, CJ included.
+- So at Master a Colt 45 needs about twice the shots it did: 9 body shots for a level 6 bandit instead of 5. `CJDamage=0.5` with `FollowDifficulty=0` gives that at any difficulty.
+- CJ's body armour (the blue bar) now takes Skyrim's hits first, as San Andreas's armour takes bullets and blows: a hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health.
+- `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
+- BAGUVIX still blocks everything.
 
 ## Known issues
 

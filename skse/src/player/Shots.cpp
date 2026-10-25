@@ -8,6 +8,7 @@
 #include "player/Particles.h"
 #include "player/Chatter.h"
 #include "player/ObjectHits.h"
+#include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -166,7 +167,7 @@ namespace AhShitRim::Shots
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
+            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * Balance::DealtFactor(a_player, a_shot.weaponType);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
             // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
