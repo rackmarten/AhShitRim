@@ -297,19 +297,33 @@ namespace AhShitRim::Vitals
             }
         }
 
-        // a_damage of Skyrim's health times a_factor, through CJ's armour first when San Andreas's would take a_kind:
-        // the health to take. Busted, the arrest takes nothing.
-        float ArmourFirst(RE::PlayerCharacter* a_player, float a_damage, float a_factor, Health::Kind a_kind)
+        // A hit reported as a_reported (either sign) times a_factor, through CJ's armour first when San Andreas's would
+        // take a_kind (Health::Settle); the armour taken. Busted, the arrest takes no armour.
+        Health::Settled ArmourFirst(RE::PlayerCharacter* a_player, float a_reported, float a_factor, Health::Kind a_kind)
         {
-            const float scaled = a_damage * (std::isfinite(a_factor) ? (std::max)(a_factor, 0.0f) : 1.0f);
-            if (!Health::ArmourTakes(a_kind) || Police::IsBusted()) {
-                return scaled;
+            const auto settled = Health::Settle(state.armor, a_reported, a_factor, MaxHealth(a_player), a_kind, !Police::IsBusted());
+            if (settled.armor != state.armor) {
+                SetArmor(settled.armor);
             }
-            const auto split = Health::AbsorbSkyrim(state.armor, scaled, MaxHealth(a_player));
-            if (split.armor != state.armor) {
-                SetArmor(split.armor);
+            return settled;
+        }
+
+        // A Skyrim fire effect (a spell's, a trap's, burning oil's) is on the player.
+        bool BurningInSkyrim(RE::PlayerCharacter* a_player)
+        {
+            auto* target = a_player->AsMagicTarget();
+            auto* effects = target ? target->GetActiveEffectList() : nullptr;
+            if (!effects) {
+                return false;
             }
-            return split.health;
+            for (auto* effect : *effects) {
+                const auto* base = effect ? effect->GetBaseObject() : nullptr;
+                if (base && base->data.resistVariable == RE::ActorValue::kResistFire && base->IsDetrimental() &&
+                    !effect->flags.any(RE::ActiveEffect::Flag::kDispelled, RE::ActiveEffect::Flag::kInactive)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         Health::Resist ResistOf(RE::ActiveEffect* a_effect)
@@ -335,8 +349,20 @@ namespace AhShitRim::Vitals
         {
             static void thunk(RE::ValueModifierEffect* a_effect, RE::Actor* a_actor, float a_value, RE::ActorValue a_av)
             {
-                if (!state.owned || a_av != RE::ActorValue::kHealth || !(a_value < 0.0f) || !a_actor || !a_actor->IsPlayerRef() || state.invincible ||
-                    state.sequence.Running() || state.own > 0) {
+                if (!state.owned || a_av != RE::ActorValue::kHealth || !a_actor || !a_actor->IsPlayerRef() || !std::isfinite(a_value) || a_value == 0.0f) {
+                    original(a_effect, a_actor, a_value, a_av);
+                    return;
+                }
+                // Damage comes as a negative change, or as an amount on a harmful effect: either sign is handled.
+                const auto* base = a_effect ? a_effect->GetBaseObject() : nullptr;
+                const bool  harmful = a_value < 0.0f || (base && base->IsDetrimental());
+                static int  seen = 0;
+                if (seen < 8) {
+                    seen++;
+                    SKSE::log::info("vitals: {} ({:08X}) changes the player's health by {:.2f} ({}harmful)", base ? base->GetName() : "?", base ? base->GetFormID() : 0,
+                        a_value, harmful ? "" : "not ");
+                }
+                if (!harmful || state.invincible || state.sequence.Running() || state.own > 0) {
                     original(a_effect, a_actor, a_value, a_av);
                     return;
                 }
@@ -346,23 +372,22 @@ namespace AhShitRim::Vitals
                 const auto  caster = a_effect->caster.get();
                 const float factor = Balance::TakenFactor(Police::ShareFor(caster.get()));
                 const float armor = state.armor;
-                const float health = ArmourFirst(player, -a_value, factor, kind);
+                const auto  settled = ArmourFirst(player, a_value, factor, kind);
                 ++state.magic;
-                original(a_effect, a_actor, -health, a_av);
+                original(a_effect, a_actor, a_value < 0.0f ? -settled.health : settled.health, a_av);
                 --state.magic;
-                if (health < -a_value) {
+                if (settled.back > 0.0f) {
                     Police::NoteSpared(player);
                 }
                 if (Health::SetsAlight(kind)) {
                     Projectiles::BurnCj(player);
                 }
                 static int logged = 0;
-                if (logged < 16) {
+                if (logged < 40) {
                     logged++;
-                    const auto* base = a_effect->GetBaseObject();
                     SKSE::log::info("vitals: {} ({:08X}, resist {}) from {} took {:.2f} health, x{:.2f}: armour {:.0f} -> {:.0f}, {:.2f} off health",
-                        base ? base->GetName() : "?", base ? base->GetFormID() : 0, static_cast<int>(resist), caster ? caster->GetName() : "nobody", -a_value, factor,
-                        armor, state.armor, health);
+                        base ? base->GetName() : "?", base ? base->GetFormID() : 0, static_cast<int>(resist), caster ? caster->GetName() : "nobody",
+                        Health::DamageOf(a_value), factor, armor, state.armor, settled.health);
                 }
             }
             static inline REL::Relocation<decltype(thunk)> original;
@@ -396,12 +421,15 @@ namespace AhShitRim::Vitals
         }
     }
 
-    float TakeHit(RE::PlayerCharacter* a_player, float a_damage, float a_factor, Health::Kind a_kind)
+    float TakeHit(RE::PlayerCharacter* a_player, float a_reported, float a_factor, Health::Kind a_kind)
     {
-        if (!a_player || state.sequence.Running() || state.invincible || !std::isfinite(a_damage) || !(a_damage > 0.0f)) {
+        if (!a_player || state.sequence.Running() || state.invincible || !(Health::DamageOf(a_reported) > 0.0f)) {
             return 0.0f;
         }
-        const float back = a_damage - ArmourFirst(a_player, a_damage, a_factor, a_kind);
+        if (BurningInSkyrim(a_player)) {
+            Projectiles::BurnCj(a_player);  // a fire trap's or spell's hit
+        }
+        const float back = ArmourFirst(a_player, a_reported, a_factor, a_kind).back;
         auto*       values = a_player->AsActorValueOwner();
         Own         own;
         if (back > 0.0f) {
@@ -498,6 +526,9 @@ namespace AhShitRim::Vitals
         }
         if (damage > 0.0f) {
             Apply(a_player, damage);
+        }
+        if (BurningInSkyrim(a_player)) {
+            Projectiles::BurnCj(a_player);  // Skyrim's fire on the player, however it came: San Andreas sets CJ alight
         }
         // A guard's hit put the essential player down, but his eased share of it (Police) left it standing: no Wasted.
         if (Police::TakeSpared() && Bleeding(a_player) && a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {

@@ -44,11 +44,12 @@ namespace AhShitRim::Vitals
     // Hooks Skyrim's magic damage (the value modifier effects), so it goes through CJ's armour first too.
     void Install();
 
-    // A hit that just took a_damage off the player's health (Police's HandleHealthDamage hook): it becomes a_factor of it
+    // A hit that just took a_reported (either sign: HandleHealthDamage's is negative) off the player's health (Police's
+    // HandleHealthDamage hook): it becomes a_factor of it
     // ([Balance] DamageTaken, the stars' share for guards), CJ's armour taking it first as San Andreas's does (every kind
     // but drowning, falls, poison and disease, Health::ArmourTakes), the more taken or the rest given back. Returns the
     // health given back (negative: taken on top). Nothing while Wasted runs or BAGUVIX is on.
-    float TakeHit(RE::PlayerCharacter* a_player, float a_damage, float a_factor, Health::Kind a_kind);
+    float TakeHit(RE::PlayerCharacter* a_player, float a_reported, float a_factor, Health::Kind a_kind);
 
     // Our own damage (San Andreas's, a hit's difference, a magic effect's) is being taken off the player: not a new hit.
     bool OwnDamage();
