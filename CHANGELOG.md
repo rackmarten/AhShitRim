@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- San Andreas could crash right after CJ took over the player, once the ground under him was in (`exception 0xC0000005 at 0x00415DAE` in its log, issue #87). San Andreas allocates a chunk's collision without clearing its header, so a chunk could come out flagged as having face groups, and the camera's collision then read triangles past the chunk's own. The header's flags and shadow fields are now cleared whenever a chunk is filled.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.
