@@ -91,6 +91,7 @@ add_executable(protocol_tests
     tests/cpp/test_radar.cpp
     tests/cpp/test_settle.cpp
     tests/cpp/test_balance.cpp
+    tests/cpp/test_vehicle_lights.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 35;
+    inline constexpr std::uint32_t kProtocolVersion = 36;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -182,23 +182,29 @@ namespace AhShitRim::Protocol
         std::uint8_t  spawnFlags;      // v22 (a reserved byte before): kSpawn*, how the spawn request with spawnCount wants spawnModel
         std::uint16_t cueCount;        // v24: counts sound cues Skyrim asks for; a new value plays cue, also while Skyrim has the player
         std::uint8_t  cue;             // v24: kCue*
-        std::uint8_t  reserved2;
+        std::uint8_t  sky;             // v36 (a reserved byte before): kSky*, Skyrim's sky for San Andreas's vehicle lights
         std::uint16_t stealthKillCount;  // v29: counts kills the player made sneaking, unseen; a new value may have CJ say a stealth kill line (protocol/cpp/situations.h)
         std::uint16_t cashCount;         // v29: counts gold the player gained outside a shop; looting gold
         std::uint16_t shopBuyCount;      // v29: counts gold spent in barter or Ammu-Nation; buying
         std::uint16_t shopLeaveCount;    // v29: counts shops closed after buying in them; leaving
+        std::uint16_t minuteOfDay;       // v36, with kSkyClock: Skyrim's time of day in minutes (0..1439), San Andreas's clock
+        std::uint16_t reserved3;
     };
 
     inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
     inline constexpr std::uint8_t kCueMissionPassed = 1;  // InputState.cue (v24): San Andreas's mission passed tune (PLAY_MISSION_PASSED_TUNE 1)
     inline constexpr std::uint8_t kCueIntroLine = 2;      // CJ's "Ah shit, here we go again." (the intro's voice-over, mission audio)
 
+    inline constexpr std::uint8_t kSkyClock = 0x1;  // InputState.sky (v36): minuteOfDay holds Skyrim's time of day
+    inline constexpr std::uint8_t kSkyWet = 0x2;    // it rains or snows in Skyrim: San Andreas's wet roads, which turn its lights on
+    inline constexpr std::uint8_t kSkyDark = 0x4;   // the player is in an interior: its lights come on as in San Andreas's tunnels
+
     struct InputSlot
     {
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[12];  // v9: keeps the later slots on a 64-byte boundary (v24, v29: fewer for the larger input)
+        std::uint8_t  pad[8];  // v9: keeps the later slots on a 64-byte boundary (v24, v29, v36: fewer for the larger input)
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -335,6 +341,21 @@ namespace AhShitRim::Protocol
         std::uint8_t flags;        // kFx*
     };
 
+    inline constexpr std::uint8_t kLightFrontRight = 0x1;  // BodyLights.lit (v36): the headlight at front (the right one of a pair)
+    inline constexpr std::uint8_t kLightFrontLeft = 0x2;   // its mirror, front's x negated (a car's left one)
+    inline constexpr std::uint8_t kLightRearRight = 0x4;   // the tail light at rear (the right one of a pair)
+    inline constexpr std::uint8_t kLightRearLeft = 0x8;    // its mirror
+
+    // v36, vehicle slots: its headlights and tail lights, which San Andreas switches (protocol/cpp/vehicle_lights.h).
+    // Where the model's light dummies are and which lamps burn now; Skyrim lights the scene from them.
+    struct BodyLights
+    {
+        std::int16_t front[3];  // the main headlight dummy (m_avDummyPos[0]) in the vehicle's frame (vehicleFrame), Skyrim units; zero for none
+        std::int16_t rear[3];   // the main tail light dummy (m_avDummyPos[1]), likewise
+        std::uint8_t lit;       // kLight*: the lamps burning now
+        std::uint8_t reserved[3];
+    };
+
     struct BodyState
     {
         std::uint32_t frame;             // San Andreas frame counter, as PlayerState.frame
@@ -360,14 +381,15 @@ namespace AhShitRim::Protocol
         BodyBone      vehicleFrame;      // v31, vehicle slots: how the vehicle is turned (its matrix: X right, Y forward, Z up), translation zero; zero elsewhere
         float         boxMin[3];         // v31, vehicle slots: its collision box (its col model's bounds) in that frame from feet, Skyrim units; zero elsewhere
         float         boxMax[3];
+        BodyLights    lights;            // v36, vehicle slots: its headlights and tail lights; zero elsewhere
     };
 
+    // 2112 bytes, keeping the later slots on 64-byte boundaries (v26, v28, v31 padded it; v36's lights fill it).
     struct BodySlot
     {
         std::uint32_t seq;
         std::uint32_t reserved;
         BodyState     value;
-        std::uint8_t  pad[16];  // v26, v28, v31: 2112 bytes, keeping the later slots on 64-byte boundaries
     };
 
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v28): a giant, mammoth or dragon, which stops a car like a wall
@@ -717,7 +739,9 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 124);
+    static_assert(sizeof(InputState) == 128);
+    static_assert(offsetof(InputState, sky) == 115);
+    static_assert(offsetof(InputState, minuteOfDay) == 124);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
@@ -805,7 +829,9 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(BodyFx, along) == 24);
     static_assert(offsetof(BodyFx, ground) == 48);
     static_assert(offsetof(BodyFx, gas) == 52);
-    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36 + 56 + 4 + kSeatMax * 28 + 28 + 24);
+    static_assert(sizeof(BodyLights) == 16);
+    static_assert(sizeof(BodyState) == 64 + kBodyBoneMax * 28 + 36 + 56 + 4 + kSeatMax * 28 + 28 + 24 + 16);
+    static_assert(offsetof(BodyState, lights) == 64 + kBodyBoneMax * 28 + 96 + kSeatMax * 28 + 28 + 24);
     static_assert(offsetof(BodyState, fx) == 64 + kBodyBoneMax * 28 + 36);
     static_assert(offsetof(BodyState, seatCount) == 64 + kBodyBoneMax * 28 + 36 + 56);
     static_assert(offsetof(BodyState, seats) == 64 + kBodyBoneMax * 28 + 96);

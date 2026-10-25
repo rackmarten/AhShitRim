@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Headlights and tail lights (protocol v36). San Andreas switches its vehicles' lights by its own rule (`CVehicle::GetVehicleLightsStatus`: from 21:00 to 6:00, from 20:xx and until 6:xx by each vehicle's own minute, on wet roads), now on Skyrim's clock and sky: Skyrim sends its time of day, its rain or snow, and whether the player is in an interior (San Andreas's tunnels, lights forced on, the ZR-350's pop-ups up), and San Andreas's clock follows Skyrim's. Each vehicle slot says where the model's headlight and tail light dummies are and which lamps burn (engine on, not wrecked, not smashed), and Skyrim lights the scene there: a warm white point light on the road 5 m ahead of the headlights and a red glow behind the tail lights. Game-free tests for the clock, the sky and the lamp rule.
+- Oil burns GTA style: a bullet of CJ's that lands in a pool of Skyrim's oil (an activator with the `TrapExplosiveGas` script, the oil on the floor of Bleak Falls Barrow and a fallen lamp's spill) sets it alight, sent to it as his fire is, as well as his fire and blasts already did. Game-free tests for what lights oil and when a bullet lands in a pool.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.
