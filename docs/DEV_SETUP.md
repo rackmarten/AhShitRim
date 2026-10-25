@@ -79,7 +79,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 scripts/build.ps1                  # both halves, Release
 scripts/build.ps1 -Target skse     # SKSE plugin only (-Configuration Debug for a debug build)
 scripts/build.ps1 -Target sa       # San Andreas ASI only
-scripts/test.ps1                   # game-free unit tests: protocol layout, link, rings, input mapping, pose, collision chunks, floating origin, fall rescue, CJ's model, skinning, interpolation, texture decoding (doctest), and the launcher's checks (Pester 5)
+scripts/test.ps1                   # game-free unit tests: protocol layout, link, rings, input mapping, pose, collision chunks, floating origin, fall rescue, CJ's model, skinning, interpolation, texture decoding (doctest), and the launcher's checks and install steps (Pester 5)
 scripts/deploy-local.ps1           # copy both plugins into the games (close the games first)
 scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader log
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground

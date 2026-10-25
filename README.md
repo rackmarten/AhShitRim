@@ -41,13 +41,13 @@ You need your own copies of both games: nothing from either is in this repositor
 
 ## Download and install
 
-Download `AhShitRim-0.1.0.zip` from [Releases](https://github.com/rackmarten/AhShitRim/releases/latest) and follow [docs/INSTALL.md](docs/INSTALL.md), step by step. You need:
+Download `AhShitRim-0.1.0.zip` from [Releases](https://github.com/rackmarten/AhShitRim/releases/latest), extract it into a folder of its own and double-click `Start AhShitRim.bat`. [docs/INSTALL.md](docs/INSTALL.md) has every step, and the manual way. You need:
 
 - Windows 10/11 and a PC that can run both games at once (San Andreas is light)
 - [The Elder Scrolls V: Skyrim Special Edition](https://store.steampowered.com/app/489830/), either Anniversary Edition (1.6.317 or later; the latest Steam version, 1.7.104, is the one tested most) or Special Edition 1.5.97, with the [SKSE64](https://skse.silverlock.org) build and the [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) file for that version. The same AhShitRim works on both
-- [Grand Theft Auto: San Andreas](https://store.steampowered.com/app/12120/) (Steam), **downgraded to 1.0 US** with a downgrader, plus an ASI loader. One exe version means one set of memory addresses. The Definitive Edition is a different engine and won't work.
+- [Grand Theft Auto: San Andreas](https://store.steampowered.com/app/12120/) (Steam), the classic game. AhShitRim runs on its 1.0 US exe only (one exe version means one set of memory addresses), and the launcher's setup gets you there. The Definitive Edition is a different engine and won't work.
 
-The Skyrim part goes in with your mod manager. The launcher, `Start AhShitRim.bat`, checks both games, puts San Andreas's part in place, paints the radar's map from your own plugins, and starts both games.
+The first time, the launcher's setup finds San Andreas, copies it so your original stays untouched, downloads the open-source downgrader and runs it on the copy, and adds an ASI loader, all in a few clicks. It installs AhShitRim's Skyrim part into Skyrim's `Data` folder for you (`Uninstall AhShitRim.bat` takes it out again), or you install it with Mod Organizer 2 or Vortex. After that, every launch checks both games, puts San Andreas's part in place, paints the radar's map from your own plugins, and starts both games.
 
 ## What you can do
 
