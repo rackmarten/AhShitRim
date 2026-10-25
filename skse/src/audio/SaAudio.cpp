@@ -243,7 +243,7 @@ namespace AhShitRim::Audio
         if (a_paused) {
             SetPaused(true);
         } else if (Radio::SkyrimPlays(station) && !retuning && (station != Radio::kSweetroll || state.sweetroll.Size() > 0)) {
-            PlayStation(a_delta, volumes.music);
+            PlayStation(a_delta, Radio::StationVolume(volumes));
         }
     }
 }

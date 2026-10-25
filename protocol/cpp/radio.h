@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <span>
@@ -39,6 +40,33 @@ namespace AhShitRim::Radio
         }
         const float master = std::clamp(a_master, 0.0f, 1.0f);
         return { master * std::clamp(a_effects, 0.0f, 1.0f), master * std::clamp(a_music, 0.0f, 1.0f) };
+    }
+
+    // How far San Andreas turns its radio down under its music volume, in dB
+    // (CAERadioTrackManager::UpdateRadioVolumes): 4 dB, and 20 log10(effects / music) - 9 more where
+    // that is below 0, so with music above about effects / 2.8 the radio follows the effects volume.
+    inline float SaRadioDb(Volumes a_volumes)
+    {
+        if (a_volumes.effects <= 0.0f || a_volumes.music <= 0.0f) {
+            return -4.0f;
+        }
+        return -4.0f + (std::min)(0.0f, 20.0f * std::log10(a_volumes.effects / a_volumes.music) - 9.0f);
+    }
+
+    // Skyrim plays a station's tracks this much louder than San Andreas's rule above, for the
+    // difference in the two games' mixing: measured in game at effects 0.53 and music 0.31, where a
+    // track at music volume came out 6 dB under San Andreas's stations (SaRadioDb -8.3 dB there).
+    inline constexpr float kStationMakeupDb = 14.3f;
+
+    // The volume Skyrim plays Radio Sovngarde and Sweetroll FM at (0..1), as loud as San Andreas's own
+    // stations at the same sliders; silent while Skyrim has the player.
+    inline float StationVolume(Volumes a_volumes)
+    {
+        if (a_volumes.music <= 0.0f) {
+            return 0.0f;
+        }
+        const float gain = std::pow(10.0f, (kStationMakeupDb + SaRadioDb(a_volumes)) / 20.0f);
+        return std::clamp(a_volumes.music * gain, 0.0f, 1.0f);
     }
 
     // ---- Stations ----
