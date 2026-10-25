@@ -13,10 +13,10 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+  # Every PR runs, docs-only ones too: `build` and `protocol-tests-linux` are required checks on
+  # main and production, and a check that never reports would block the merge. The `changes` job
+  # skips them instead, and GitHub counts a skipped job as passed.
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
   workflow_dispatch:
     inputs:
       windows:
@@ -29,10 +29,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Whether a PR touches more than docs/ and Markdown files (pushes and manual runs always build).
+  # On GitHub's own runner, free on a public repo, so a docs-only PR never waits for arcade.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] || git diff --name-only "$BASE" HEAD | grep -qvE '^docs/|\.md$'; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
   # The game-free doctest cases with gcc (scripts/test.sh), as a headless Linux session runs them.
   # The repo is public, so anyone can open a PR from a fork: its code never runs on arcade.
   protocol-tests-linux:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, msvc-wine]
     steps:
       # clean: false keeps the build folders, which the build job below shares with this one.
@@ -46,7 +67,8 @@ jobs:
   # Both plugins and the whole doctest suite (the link's tests too) with MSVC under Wine
   # (scripts/wine/build.sh). The build folders stay on the runner, so most runs are incremental.
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, msvc-wine]
     timeout-minutes: 90
     steps:
