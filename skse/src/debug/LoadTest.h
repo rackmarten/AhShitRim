@@ -7,8 +7,8 @@
 //   idle, flee (a blast scares the people about), chase (6 stars, the next load with the force out), asnaeb and aezakmi
 //   (6 stars, cleared with the cheat), travel (a coc to Riverwood, its load screen), handback (F10 hands it back).
 // LoadTestScenarios=chase,asnaeb (any of those names) runs only those, in turn.
-// LoadTestSaveAs=Name saves the game under that name once, after the first load has settled (a save cleaned of
-// anything the police takes out after a load).
+// LoadTestSaveAs=Name saves the game under that name once, after the last cycle's load has settled (a save cleaned
+// of anything the police takes out after a load).
 // Each cycle is counted in Documents/My Games/AhShitRim/loadtest-progress.txt before it starts, so after a crash the
 // game, started again, goes on with the next one; every step goes to loadtest.csv beside it. Nothing is saved. Main
 // thread only.

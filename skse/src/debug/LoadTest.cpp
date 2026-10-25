@@ -335,7 +335,7 @@ namespace AhShitRim::LoadTest
         state.timer += a_delta;
         switch (state.phase) {
         case Phase::Settling:
-            if (state.timer >= kSettleSeconds && !state.saveAs.empty()) {
+            if (state.timer >= kSettleSeconds && !state.saveAs.empty() && state.cycle == state.cycles) {
                 // After a load the police takes out copies left in the save (3 s settled, then a step a frame): a moment
                 // more, then this game is saved under its own name, without them.
                 if (state.timer >= kSettleSeconds + 4.0f) {
