@@ -370,6 +370,7 @@ namespace AhShitRim::Shots
                     ObjectHits::Struck(a_player, blocker, Traps::Hit::Bullet, a_shot.weaponType,
                         a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType, a_shot.skill));
                 }
+                ObjectHits::BulletLanded(a_player, at, a_shot.weaponType);  // oil there catches fire
             } else {
                 state.misses++;
             }

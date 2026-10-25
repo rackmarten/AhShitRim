@@ -28,9 +28,28 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v36: vehicle lights")
+{
+    CHECK(kProtocolVersion == 36);
+    CHECK(offsetof(InputState, sky) == 115);  // the reserved byte before
+    CHECK(offsetof(InputState, minuteOfDay) == 124);
+    CHECK(sizeof(InputState) == 128);
+    CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
+    CHECK(kSkyClock == 0x1);
+    CHECK(kSkyWet == 0x2);
+    CHECK(kSkyDark == 0x4);
+    CHECK(sizeof(BodyLights) == 16);
+    CHECK(offsetof(BodyState, lights) == 2088);
+    CHECK(sizeof(BodyState) == 2104);
+    CHECK(sizeof(BodySlot) == 2112);  // in the slot's padding
+    CHECK(kLightFrontRight == 0x1);
+    CHECK(kLightFrontLeft == 0x2);
+    CHECK(kLightRearRight == 0x4);
+    CHECK(kLightRearLeft == 0x8);
+}
+
 TEST_CASE("protocol v35: passengers, busts and vehicle proofs")
 {
-    CHECK(kProtocolVersion == 35);
     CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
     CHECK(kPlayerGettingInOut == 0x40);
     CHECK(kBodyBulletProof == 0x80);
@@ -64,7 +83,6 @@ TEST_CASE("protocol v31: Skyrim's hits on CJ's vehicle")
     CHECK(offsetof(BodyState, vehicleFrame) == 2036);
     CHECK(offsetof(BodyState, boxMin) == 2064);
     CHECK(offsetof(BodyState, boxMax) == 2076);
-    CHECK(sizeof(BodyState) == 2088);
     CHECK(sizeof(BodySlot) == 2112);  // 64 bytes larger: every slot after the body slot and both rings move
 }
 
@@ -75,7 +93,6 @@ TEST_CASE("protocol v30: HUD sounds")
 
 TEST_CASE("protocol v29: CJ talking on his own")
 {
-    CHECK(sizeof(InputState) == 124);
     CHECK(offsetof(InputState, stealthKillCount) == 116);
     CHECK(offsetof(InputState, cashCount) == 118);
     CHECK(offsetof(InputState, shopBuyCount) == 120);
@@ -284,7 +301,7 @@ TEST_CASE("the v31 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 124);
+    CHECK(sizeof(InputState) == 128);  // v36
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
@@ -338,7 +355,7 @@ TEST_CASE("the v31 slot and ring layout")
     CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 2112);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 2088);  // v31: the vehicle frame and box after the seats
+    CHECK(sizeof(BodyState) == 2104);  // v31: the vehicle frame and box after the seats; v36: the lights
     CHECK(offsetof(BodyState, seatCount) == 1948);
     CHECK(offsetof(BodyState, seats) == 1952);
     CHECK(offsetof(BodyState, cameraUp) == 1856);

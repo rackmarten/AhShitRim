@@ -362,6 +362,7 @@ namespace AhShitRim::Runner
             state.wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
             Vitals::SetWasted(a_ped, state.wasted, state.wasted && (a_input.flags & Protocol::kInputWastedCamera) != 0);
             CjBusted::Set(a_ped, owned && (a_input.flags & Protocol::kInputBusted) != 0);  // v22
+            Vehicles::SetSky(a_input.sky, a_input.minuteOfDay);  // v36: the vehicles' lights
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
                 state.carPending = false;

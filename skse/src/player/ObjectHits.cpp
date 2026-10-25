@@ -4,7 +4,9 @@
 #include "explosives.h"
 
 #include <chrono>
+#include <cstring>
 #include <format>
+#include <vector>
 
 namespace AhShitRim::ObjectHits
 {
@@ -15,9 +17,11 @@ namespace AhShitRim::ObjectHits
 
         struct State
         {
-            Traps::Scorched scorched;
-            int             logged = 0;
-            double          lastCone = 0.0;
+            Traps::Scorched                  scorched;
+            int                              logged = 0;
+            double                           lastCone = 0.0;
+            std::vector<RE::ObjectRefHandle> oil;  // the oil pools round the player, looked for every Traps::kOilScanEvery
+            double                           oilScanned = -1e9;
         } state;
 
         double NowSeconds()
@@ -92,6 +96,50 @@ namespace AhShitRim::ObjectHits
             });
         }
 
+        // Whether a script of a_name (or one deriving from it) is attached to a_ref, by Papyrus's own list.
+        bool HasScript(RE::TESObjectREFR* a_ref, const char* a_name)
+        {
+            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+            auto* policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
+            if (!policy) {
+                return false;
+            }
+            const auto handle = policy->GetHandleForObject(a_ref->GetFormType(), a_ref);
+            if (handle == policy->EmptyHandle()) {
+                return false;
+            }
+            RE::BSSpinLockGuard lock(vm->attachedScriptsLock);
+            const auto          it = vm->attachedScripts.find(handle);
+            if (it == vm->attachedScripts.end()) {
+                return false;
+            }
+            for (const auto& script : it->second) {
+                for (const auto* type = script ? script->GetTypeInfo() : nullptr; type; type = type->GetParent()) {
+                    if (const char* name = type->GetName(); name && _stricmp(name, a_name) == 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // The oil pools within Traps::kOilScanRadius of the player: activators with Skyrim's oil script.
+        void ScanOil(RE::PlayerCharacter* a_player)
+        {
+            state.oil.clear();
+            auto* tes = RE::TES::GetSingleton();
+            if (!tes) {
+                return;
+            }
+            tes->ForEachReferenceInRange(a_player, Traps::kOilScanRadius, [&](RE::TESObjectREFR* a_ref) {
+                const auto* base = a_ref ? a_ref->GetBaseObject() : nullptr;
+                if (base && BaseOf(base) == Traps::Base::Activator && a_ref->Get3D() && !a_ref->IsDisabled() && HasScript(a_ref, Traps::kOilScript)) {
+                    state.oil.push_back(a_ref->GetHandle());
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+        }
+
         void Burn(RE::PlayerCharacter* a_player, const std::vector<RE::TESObjectREFR*>& a_refs, Traps::Hit a_hit, std::uint8_t a_weapon, float a_skyrimDamage)
         {
             const double now = NowSeconds();
@@ -113,6 +161,33 @@ namespace AhShitRim::ObjectHits
     void Struck(RE::PlayerCharacter* a_player, RE::TESObjectREFR* a_ref, Traps::Hit a_hit, std::uint8_t a_weapon, float a_saDamage)
     {
         Land(a_player, a_ref, a_hit, a_weapon, Traps::SkyrimDamage(a_saDamage, a_weapon));
+    }
+
+    void BulletLanded(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, std::uint8_t a_weapon)
+    {
+        if (!Traps::IgnitesOil(Traps::Hit::Bullet)) {
+            return;
+        }
+        const double now = NowSeconds();
+        if (now - state.oilScanned >= Traps::kOilScanEvery) {
+            state.oilScanned = now;
+            ScanOil(a_player);
+        }
+        for (const auto& handle : state.oil) {
+            const auto ref = handle.get();
+            auto*      root = ref ? ref->Get3D() : nullptr;
+            if (!root) {
+                continue;
+            }
+            const auto& bound = root->worldBound;
+            if (Traps::InOil({ a_at.x, a_at.y, a_at.z }, { bound.center.x, bound.center.y, bound.center.z }, bound.radius) &&
+                state.scorched.Takes(ref->GetFormID(), now)) {
+                if (state.logged < kLogged) {
+                    SKSE::log::info("object hits: CJ's bullet of weapon {} landed in the oil {:08X}, sent to it as fire", a_weapon, ref->GetFormID());
+                }
+                Land(a_player, ref.get(), Traps::Hit::Fire, a_weapon, 0.0f);
+            }
+        }
     }
 
     void FireCone(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range)
@@ -139,5 +214,7 @@ namespace AhShitRim::ObjectHits
     void Clear()
     {
         state.scorched.Clear();
+        state.oil.clear();
+        state.oilScanned = -1e9;
     }
 }
