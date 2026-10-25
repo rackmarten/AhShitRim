@@ -126,9 +126,9 @@ TEST_CASE("the wanted share is a layer on top, for guards and ours only")
 {
     const Settings s;
     CHECK(Taken(s, 1.0f) == doctest::Approx(1.0f));  // bandits, creatures: no stars in it
-    CHECK(Taken(s, Wanted::GuardDamage(1)) == doctest::Approx(0.25f));
-    CHECK(Taken(s, Wanted::GuardDamage(3)) == doctest::Approx(0.5f));
+    CHECK(Taken(s, Wanted::GuardDamage(1)) == doctest::Approx(0.4f));  // the tiers as protocol/cpp/wanted.h has them
+    CHECK(Taken(s, Wanted::GuardDamage(3)) == doctest::Approx(0.7f));
     CHECK(Taken(s, Wanted::GuardDamage(5)) == doctest::Approx(1.0f));
-    CHECK(Taken(Parse("", "2", ""), Wanted::GuardDamage(1)) == doctest::Approx(0.5f));
+    CHECK(Taken(Parse("", "2", ""), Wanted::GuardDamage(1)) == doctest::Approx(0.8f));
     CHECK(Taken(s, NAN) == doctest::Approx(1.0f));
 }
