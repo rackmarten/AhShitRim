@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Skyrim Special Edition 1.5.97 support. The SKSE plugin was already one DLL for SE and AE; its one Anniversary Edition only address (SpeakSound, which lets Skyrim's people say their lines about CJ's magic out loud) now has its SE id too, so on SE they're heard instead of only subtitled. The launcher no longer turns SE away: on 1.5.x it checks for SKSE's SE build and Address Library's Special Edition file (`version-1-5-97-0.bin`), on 1.6 and later for the AE ones as before. INSTALL lists the SE files, and DEV_SETUP has the SE test steps and the audit of every address the plugin uses. For developers: `scripts/hit-test.ps1 -NewGame` runs the hit test from a new game instead of the most recent save, for SE, which can't load the AE saves.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

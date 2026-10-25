@@ -28,8 +28,8 @@ namespace AhShitRim::People
         constexpr RE::FormID kGunSpell = 0x00012FCD;           // Flames: the spell a gunshot is cast as, to Skyrim
 
         // Actor::SpeakSoundFunction (the console's SpeakSound): the actor says a voice file, lip sync and all, as
-        // in dialogue. Address Library id 37542 on Anniversary Edition (Skyrim Together's); on Special Edition the
-        // line only shows as a subtitle.
+        // in dialogue. Address Library ids 36541 (Special Edition) and 37542 (Anniversary Edition), as po3-Tweaks
+        // and OStim hook it; the signature is Skyrim Together's.
         using SpeakSoundFn = float (*)(RE::Actor*, const char*, std::uint32_t*, std::uint32_t, std::uint32_t, std::uint32_t, std::uint64_t,
             std::uint64_t, std::uint64_t, bool, std::uint64_t, bool, bool, bool);
 
@@ -400,7 +400,7 @@ namespace AhShitRim::People
         }
         state.enabled = Ini::Value("Reactions", "Enabled") != "0";
         state.gunSpell = RE::TESForm::LookupByID<RE::SpellItem>(kGunSpell);
-        state.speak = REL::Module::IsAE() ? reinterpret_cast<SpeakSoundFn>(REL::ID(37542).address()) : nullptr;
+        state.speak = REL::Module::IsVR() ? nullptr : reinterpret_cast<SpeakSoundFn>(REL::RelocationID(36541, 37542).address());
         SKSE::log::info("people: reactions {}; cowering idle {}; gunshots cast {}; lines about the magic {}", state.enabled ? "on" : "off",
             state.cower ? std::format("{:08X}", state.cower->GetFormID()) : std::string("not found (aimed at, people flee)"),
             state.gunSpell ? state.gunSpell->GetName() : "nothing (Flames not found)", state.speak ? "spoken" : "as subtitles only (no SpeakSound on this game version)");
