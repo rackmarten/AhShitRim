@@ -20,7 +20,8 @@
 // stays with Skyrim (see docs/PROTOCOL.md#input).
 // v23 adds the rest of San Andreas's PC vehicle keys (InitDefaultControlConfiguration) where Skyrim doesn't
 // need them: Left Alt and Right Ctrl fire like the left mouse button, Left Ctrl and numpad 0 like the right one
-// (a bicycle's bunny hop), the middle mouse button looks behind, V and Home change the camera distance, 2 and
+// (a bicycle's bunny hop), the middle mouse button looks behind, V and Home change the camera distance (#911: on foot
+// too, San Andreas's three chase distances), 2 and
 // numpad + are the sub-mission key with numpad 5 (a plane's landing gear), Caps Lock is the horn in both
 // layouts, Insert and 4 tune the next station and Delete and R the one before. F5 (San Andreas's track skip)
 // stays Skyrim's quick save.
@@ -488,7 +489,7 @@ namespace AhShitRim::Input
         std::int16_t rightStickX = 0;     // in a vehicle (v19): the turret keys, left negative
         std::int16_t rightStickY = 0;     // in a vehicle (v19): the turret keys, up (numpad 8) negative
         std::int16_t shockButtonR = 0;    // in a vehicle (v20): the sub-mission key, the hydraulics' jump, a plane's landing gear
-        std::int16_t select = 0;          // in a vehicle (v23): the next camera distance
+        std::int16_t select = 0;          // in a vehicle (v23) and on foot (#911): the next camera distance
     };
 
     constexpr std::int16_t Stick(float a_value)
@@ -502,13 +503,14 @@ namespace AhShitRim::Input
     // the horn, the up and down arrows lean a bike forward and back; v19: the mouse buttons fire the
     // vehicle's weapons, Q and E look left and right, the numpad is the right stick; v23: the keyboard's fire
     // keys join the mouse buttons, look behind is both shoulders, the camera key select). On foot the arrows
-    // walk like W and S.
+    // walk like W and S, and (#911) the camera key is select too: San Andreas's three chase distances.
     constexpr PadState ToPad(const Protocol::InputState& a_input, bool a_inVehicle = false)
     {
         const auto held = [&](std::uint32_t a_button) -> std::int16_t { return (a_input.buttons & a_button) ? 255 : 0; };
         PadState   p;
         p.leftStickX = Stick(a_input.moveX);
         p.buttonTriangle = held(Protocol::kButtonEnterExit);
+        p.select = held(Protocol::kButtonCameraView);
         const float lean = ((a_input.buttons & Protocol::kButtonLeanForward) ? 1.0f : 0.0f) - ((a_input.buttons & Protocol::kButtonLeanBack) ? 1.0f : 0.0f);
         if (a_inVehicle) {
             p.leftStickY = Stick(-lean);  // stick forward (negative) leans forward
@@ -521,7 +523,6 @@ namespace AhShitRim::Input
             p.leftShoulder1 = held(Protocol::kButtonAim | Protocol::kButtonVehicleFireAlt);
             p.leftShoulder2 = held(Protocol::kButtonLookLeft | Protocol::kButtonLookBehind);
             p.rightShoulder2 = held(Protocol::kButtonLookRight | Protocol::kButtonLookBehind);
-            p.select = held(Protocol::kButtonCameraView);
             const auto axis = [&](std::uint32_t a_neg, std::uint32_t a_pos) {
                 return Stick(((a_input.buttons & a_pos) ? 1.0f : 0.0f) - ((a_input.buttons & a_neg) ? 1.0f : 0.0f));
             };
