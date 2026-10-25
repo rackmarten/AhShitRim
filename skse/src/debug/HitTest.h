@@ -2,7 +2,8 @@
 
 // A check, off unless AhShitRim.ini asks for it (v31): Skyrim's attacks on CJ's vehicle without anyone at the keys. With
 // [Debug] HitTest=hits or HitTest=bust it loads the most recent save from the main menu, goes to a cell (HitTestStart,
-// `coc` Riverwood by default), hands the player to San Andreas with CJ in a Sandking, and then
+// `coc` Riverwood by default; with HitTestNewGame=1 it skips the save and starts a new game there, for a game version
+// none of the saves is from, such as Special Edition 1.5.97), hands the player to San Andreas with CJ in a Sandking, and then
 //  - hits: places a giant and two of Whiterun's guards 12 m ahead and sets them on the player, so their blows land on
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,

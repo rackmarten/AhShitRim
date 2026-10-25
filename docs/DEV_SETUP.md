@@ -8,9 +8,9 @@ The toolchain is one install: **Build Tools for Visual Studio 2022** (compiler o
 
 You need your own copies of both games. Nothing from them is ever committed to this repo.
 
-### Skyrim Anniversary Edition
+### Skyrim Anniversary Edition (or Special Edition)
 
-1. Install **The Elder Scrolls V: Skyrim Special Edition** from Steam, with the Anniversary upgrade if you own it. Keep it on the latest Steam version.
+1. Install **The Elder Scrolls V: Skyrim Special Edition** from Steam, with the Anniversary upgrade if you own it. Keep it on the latest Steam version. To test Special Edition 1.5.97 as well, see [Testing on Skyrim Special Edition 1.5.97](#testing-on-skyrim-special-edition-1597).
 2. Stop Steam from updating it behind your back: Steam > Skyrim > Properties > Updates > "Only update this game when I launch it", and launch through SKSE, not Steam.
 3. Install **SKSE64** for your runtime from <https://skse.silverlock.org/> (the "Current Anniversary Edition build"). Copy `skse64_loader.exe`, `skse64_*.dll` and the `Data` folder contents next to `SkyrimSE.exe`.
 4. Install **Address Library for SKSE Plugins** from <https://www.nexusmods.com/skyrimspecialedition/mods/32444>, the "All in one (Anniversary Edition)" file. Its `versionlib-*.bin` files go into `Data\SKSE\Plugins`.
@@ -139,6 +139,25 @@ loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step an
 A crash, a hang or Skyrim gone is recorded with its cycle, the games are started again and the test goes on. Results:
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
 `-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
+
+### Testing on Skyrim Special Edition 1.5.97
+
+The same `AhShitRim.dll` loads on SE 1.5.97 and AE (CommonLibSSE-NG picks each address for the running game; see [Skyrim SE and AE](#skyrim-se-and-ae)), so there is no separate SE build. Test SE on a second copy of the game so the AE install stays as it is. A copy set up for PerkeleRim's SE test works as it is.
+
+1. Copy the whole Skyrim folder somewhere outside the Steam library so Steam never updates it, and downgrade the copy to 1.5.97 (a Skyrim downgrade patcher from Nexus, or Steam's `download_depot` with the 1.5.97 manifests). `SkyrimSE.exe` > Properties > Details > File version reads `1.5.97.0`.
+2. In the copy: SKSE64's **Special Edition build** (2.0.20, `skse64_1_5_97.dll`) instead of the AE one, and Address Library's **Special Edition** file (`version-1-5-97-0.bin` in `Data\SKSE\Plugins`).
+3. Point `SkyrimPath` in `local.props` at the copy and run `scripts/restart-games.ps1` (it deploys there). Set `SkyrimPath` back when you're done. Other SKSE plugins in the copy (PerkeleRim's) load too; move them out for a clean test. SE and AE share `Documents\My Games\Skyrim Special Edition`, so saves and logs land in the same place, and AE saves with Creation Club content may not load on SE: use an SE save or a new game.
+4. Run the release launcher against the copy once: it must name `version-1-5-97-0.bin`, not `versionlib-*`, if Address Library is missing.
+5. `scripts/hit-test.ps1 -NewGame` (and `-Scenario bust -NewGame`) runs the hit test on SE without a save: it starts a new game in Riverwood from the main menu instead of loading the most recent save, which is an AE one. Keep Skyrim's window in front: it pauses while it isn't, and the test then times out. A new level 1 character can die from the giant's first blow in the `hits` scenario; `bust` gets through.
+
+Then check:
+
+- [ ] `AhShitRim.log` says `Skyrim runtime 1.5.97.0`, `link up`, `people: ... lines about the magic spoken` (SpeakSound found) and `hits go through Skyrim's own hit` (the melee hit's call site found).
+- [ ] F10 hands over to San Andreas and back; walking, looking and the camera follow CJ (PlayerCharacter `Update` hook, vfunc `0xAD`), and Skyrim's own movement keys stay blocked (input handler hooks, vfunc `0x1`).
+- [ ] Drive a vehicle and shoot; Skyrim's people take the hits and fight back, and a hit on CJ in a car comes off San Andreas's health (`HandleHealthDamage`, vfunc `0x104`).
+- [ ] Talk to someone: the subtitle shows in San Andreas's style (`HUDMenu` and `SetDialogueWithPlayer` hooks); get busted and pay a fine (`GoToPrison` `0xB9`, `PayFine` `0xBB`).
+
+Anything that fails here is an SE vs AE difference: note which check failed and the last lines of `AhShitRim.log`.
 
 ## CI
 
@@ -281,7 +300,32 @@ Agents open feature pull requests against `main` and hotfix pull requests agains
 
 - CMake + Ninja with the MSVC x64 toolset, C++23, dependencies from vcpkg in manifest mode (`skse/vcpkg.json`, pinned by the baseline in `skse/vcpkg-configuration.json`), triplet `x64-windows-static-md`. Same setup as PerkeleRim.
 - **CommonLib:** [`alandtse/CommonLibSSE-NG`](https://github.com/alandtse/CommonLibSSE-NG) as a submodule at `skse/extern/CommonLibSSE-NG`, pinned to release tag `v10.1.0`. It's the maintained continuation of CommonLibSSE-NG, supports the current AE runtimes, builds one DLL for SE, AE and VR, and uses Address Library. Licence: GPL-3.0-or-later with a modding exception.
+- **Skyrim SE and AE:** see [below](#skyrim-se-and-ae).
 - To bump CommonLib: `git -C skse/extern/CommonLibSSE-NG fetch --tags && git -C skse/extern/CommonLibSSE-NG checkout <tag>`, copy its `vcpkg-configuration.json` baseline into `skse/vcpkg-configuration.json`, add any new dependencies from its `vcpkg.json` to `skse/vcpkg.json`, then rebuild.
+
+### Skyrim SE and AE
+
+One `AhShitRim.dll` runs on Special Edition 1.5.97 and on Anniversary Edition (1.6.317 and later; 1.7.104 is the one tested most). CommonLibSSE-NG is built with all its runtimes on (`ENABLE_SKYRIM_SE`, `ENABLE_SKYRIM_AE`, `ENABLE_SKYRIM_VR`, its defaults; the prebuilt bundle CI links is the same "all" configuration), and `add_commonlibsse_plugin` declares the plugin Address Library based and struct independent, so AE's SKSE loads it on every AE version, while SE's SKSE (2.0.x) loads it through the `SKSEPlugin_Query` export CommonLib adds. Every game address comes from Address Library at runtime: SE's `version-1-5-97-0.bin` or AE's `versionlib-*.bin`. VR isn't supported (vfunc indices below are SE/AE ones).
+
+Rules for new code: give every address both ids, `RELOCATION_ID(se, ae)` (`REL::RelocationID`), and every offset into a function both offsets, `REL::Relocate(se, ae)`. Never a bare `REL::ID(n)`: it means a different function on the other edition. Use CommonLib's runtime data accessors (`GetActorRuntimeData()` and the like) instead of raw member offsets. The SE twin of an AE id is usually in CommonLibSSE-NG itself, or in an open source plugin that hooks the same function (search GitHub for the AE id).
+
+The audit for 0.1 (every address, hook and offset in `skse/src`):
+
+| Where | What | SE 1.5.97 | AE | Notes |
+|---|---|---|---|---|
+| `Police.cpp`, `Respawns.cpp` | `TESObjectREFR::MoveTo_Impl` | id 56227 | id 56626 | `RELOCATION_ID` |
+| `Shots.cpp` | the melee hit's call to Skyrim's own hit processing | id 37673 + `0x3C0` | id 38627 + `0x4A8` | `RELOCATION_ID` + `REL::Relocate`; the call is checked for `E8`, else hits only take health (logged) |
+| `People.cpp` | `Actor::SpeakSoundFunction` | id 36541 | id 37542 | AE only until 0.1 (SE showed subtitles only); SE id as po3-Tweaks and OStim use it |
+| `PlayerSync.cpp` | `PlayerCharacter::Update` | vfunc `0xAD` | `0xAD` | vtable from CommonLib (`VTABLE_*`, both ids) |
+| `PlayerSync.cpp` | input handlers' `CanProcess` (movement, look, sprint, activate... and the camera states' input) | vfunc `0x1` | `0x1` | |
+| `Police.cpp` | `GoToPrison`, `PayFine`, `HandleHealthDamage` | `0xB9`, `0xBB`, `0x104` | the same | |
+| `Conversation.cpp` | `HUDMenu::ProcessMessage`, `Character::SetDialogueWithPlayer` | `0x4`, `0x41` | the same | |
+| `Vitals.cpp` | the value modifier effects' `ModifyActorValue` | `0x20` | `0x20` | seven effect vtables |
+| `ModelView.cpp` | `NiSourceTexture`, `NiAlphaProperty` vtables (objects built by hand) | CommonLib ids | CommonLib ids | same layout on both |
+| `StaticMeshes.cpp` | Havok shape fields (`+0x40`, `+0x50`) | same | same | Havok's own layout, unchanged between editions |
+| `Overlay.cpp` | `IDXGISwapChain::Present` (slot 8) | same | same | DirectX's, not Skyrim's |
+
+Every `RELOCATION_ID` and `VariantID` in `skse/src` and in CommonLibSSE-NG was also checked against the installed `version-1-5-97-0.bin`: every SE id is there. Struct layouts that differ between the editions are CommonLib's runtime accessors, which the multi-runtime build enforces at compile time. Nothing in the plugin needs Creation Club content (its forms are all `Skyrim.esm`'s), and the radar painter skips plugins that aren't there (`Skyrim.ccc` on SE).
 
 ### San Andreas plugin (`sa/`)
 

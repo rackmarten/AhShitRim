@@ -38,8 +38,22 @@ namespace AhShitRim::HitTest
             float              timer = 0.0f;
             float              logTimer = 0.0f;
             float              combatTimer = 0.0f;
+            bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
         } state;
+
+        void RunConsole(const std::string& a_command)
+        {
+            auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+            auto* script = factory ? factory->Create() : nullptr;
+            if (!script) {
+                return;
+            }
+            script->SetCommand(a_command);
+            script->CompileAndRun(nullptr);
+            delete script;
+            SKSE::log::info("hit test: ran '{}'", a_command);
+        }
 
         void TryLoad(int a_try)
         {
@@ -47,7 +61,9 @@ namespace AhShitRim::HitTest
                 std::this_thread::sleep_for(std::chrono::seconds(2));
                 SKSE::GetTaskInterface()->AddTask([a_try] {
                     auto* saves = RE::BGSSaveLoadManager::GetSingleton();
-                    if (saves && saves->PopulateSaveList() && saves->LoadMostRecentSaveGame()) {
+                    if (state.newGame) {
+                        RunConsole("coc " + state.start);  // from the main menu: a new game there
+                    } else if (saves && saves->PopulateSaveList() && saves->LoadMostRecentSaveGame()) {
                         SKSE::log::info("hit test: loading the most recent save");
                     } else if (a_try < 10) {
                         TryLoad(a_try + 1);
@@ -71,19 +87,6 @@ namespace AhShitRim::HitTest
                 return RE::BSEventNotifyControl::kContinue;
             }
         } menuSink;
-
-        void RunConsole(const std::string& a_command)
-        {
-            auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-            auto* script = factory ? factory->Create() : nullptr;
-            if (!script) {
-                return;
-            }
-            script->SetCommand(a_command);
-            script->CompileAndRun(nullptr);
-            delete script;
-            SKSE::log::info("hit test: ran '{}'", a_command);
-        }
 
         bool InVehicle()
         {
@@ -151,11 +154,12 @@ namespace AhShitRim::HitTest
             } catch (...) {
             }
         }
+        state.newGame = Ini::Value("Debug", "HitTestNewGame") == "1";
         state.phase = Phase::MainMenu;
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
         }
-        SKSE::log::info("hit test: on ({}), from {} for {:.0f} s", scenario, state.start, state.seconds);
+        SKSE::log::info("hit test: on ({}), from {} for {:.0f} s{}", scenario, state.start, state.seconds, state.newGame ? ", a new game" : "");
     }
 
     void Update(RE::PlayerCharacter* a_player, float a_delta)

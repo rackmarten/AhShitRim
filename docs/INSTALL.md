@@ -1,6 +1,6 @@
 # Installing AhShitRim
 
-AhShitRim runs **Skyrim Anniversary Edition** and **GTA: San Andreas** side by side: San Andreas runs hidden and simulates CJ, Skyrim draws him. You need your own copies of both games, and a PC that can run them at once (San Andreas is light). Windows 10 or 11.
+AhShitRim runs **Skyrim** (Anniversary Edition, or Special Edition 1.5.97) and **GTA: San Andreas** side by side: San Andreas runs hidden and simulates CJ, Skyrim draws him. You need your own copies of both games, and a PC that can run them at once (San Andreas is light). Windows 10 or 11.
 
 The release zip has:
 
@@ -16,6 +16,8 @@ The release zip has:
 2. Install **SKSE64** from <https://skse.silverlock.org> (the "Current Anniversary Edition build"): open the archive and copy `skse64_loader.exe` and the `skse64_*.dll` files next to `SkyrimSE.exe`.
 3. Install **Address Library for SKSE Plugins** from <https://www.nexusmods.com/skyrimspecialedition/mods/32444>, the "All in one (Anniversary Edition)" file: with your mod manager, or without one by copying the archive's `SKSE` folder into Skyrim's `Data` folder.
 4. Install the classic Steam **Grand Theft Auto: San Andreas** (not the Definitive Edition, which is a different engine and won't work). Steam > Properties > Updates: only update when launched.
+
+**Staying on Special Edition 1.5.97** (a downgraded copy, or a modlist that needs it)? AhShitRim works there too, with the same files. Take SKSE64's "Special Edition build" (2.0.20, `skse64_1_5_97.dll`) and Address Library's "All in one (Special Edition)" file instead: it has `version-1-5-97-0.bin`, where the Anniversary Edition file has `versionlib-*.bin`. Check the version under `SkyrimSE.exe` > Properties > Details > File version. Older Special Edition versions (1.5.80 and before) aren't supported.
 
 Already playing PerkeleRim? Then Skyrim is ready as it is.
 
@@ -98,8 +100,8 @@ The full list is in the [README](../README.md#keys).
 - **Setup can't download the downgrader or the ASI loader, or says a file "isn't the file AhShitRim expects"**: the download failed or was changed on the way, so nothing was run. Check your internet connection (and that nothing blocks github.com) and run the launcher again, or set San Andreas up by hand (above).
 - **The downgrader doesn't offer a 1.0 US downgrade for your San Andreas**: it patches Steam's current build. A Rockstar Games Launcher or retail install may be another build; see the downgrader's page for what it supports, or use the Steam version.
 - **Setup won't copy into a folder**: it refuses Program Files (Windows keeps it read-only for games), a folder that already has files in it, a folder inside the original install, and a drive with too little room. Pick another one.
-- **"Skyrim ... is a Special Edition runtime"**: AhShitRim needs Anniversary Edition (1.6.317 or later). Let Steam update Skyrim, then update SKSE and Address Library to match.
-- **"SKSE64 is for another Skyrim version"** or **"Address Library ... is not installed for Skyrim 1.6.x"**: Skyrim updated. Get the SKSE build and Address Library file for the version named in the message.
+- **"Skyrim ... is too old"**: AhShitRim needs Special Edition 1.5.97 or Anniversary Edition (1.6.317 or later). Let Steam update Skyrim, then update SKSE and Address Library to match.
+- **"SKSE64 is for another Skyrim version"** or **"Address Library ... is not installed for Skyrim 1.x"**: Skyrim updated, or SKSE and Address Library are for the other edition. Get the SKSE build and Address Library file for the version named in the message: on 1.5.97 the Special Edition ones (`skse64_1_5_97.dll`, `version-1-5-97-0.bin`), on 1.6 and later the Anniversary Edition ones (`versionlib-*.bin`).
 - **"AhShitRim's Skyrim part is not installed"**: install `AhShitRim-Skyrim-<version>.zip` with your mod manager (step 3) and enable it. With Vortex, deploy. With MO2, the mod has to be ticked in the profile MO2 has selected (the launcher says so when it isn't). With a portable MO2 install, add `Mo2Path=<the MO2 folder>` to `launcher.ini` so the launcher can find its mods. To have the launcher install it instead, set `ModManager=None` in `launcher.ini`.
 - **"A loose AhShitRim.dll is in Skyrim's own Data\SKSE\Plugins as well"** (yellow): an older copy sits in Skyrim's real Data folder, outside any mod manager. The launcher starts Skyrim through MO2 anyway, but that copy loads whenever Skyrim starts without MO2. Run `Uninstall AhShitRim.bat` if the launcher installed it, or delete `AhShitRim.dll` (and `AhShitRim.pdb`) from `<Skyrim>\Data\SKSE\Plugins`; leave `AhShitRim.ini` there, the launcher writes it.
 - **The launcher finds the wrong ModOrganizer.exe, or asks for it every time**: set `Mo2Exe=<path to ModOrganizer.exe>` in `launcher.ini`.
