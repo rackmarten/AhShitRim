@@ -59,6 +59,7 @@ add_executable(protocol_tests
     tests/cpp/test_vehicle_damage.cpp
     tests/cpp/test_smoke_model.cpp
     tests/cpp/test_puff_model.cpp
+    tests/cpp/test_traps.cpp
     tests/cpp/test_reactions.cpp
     tests/cpp/test_cheats.cpp
     tests/cpp/test_mercy.cpp

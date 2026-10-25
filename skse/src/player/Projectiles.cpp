@@ -5,6 +5,7 @@
 #include "explosives.h"
 #include "link/LinkService.h"
 #include "player/People.h"
+#include "player/ObjectHits.h"
 #include "player/Puffs.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
@@ -406,6 +407,9 @@ namespace AhShitRim::Projectiles
                 Vitals::Hurt(a_player, self);
             }
             Log(std::format("{} went off, {} caught, CJ took {:.0f}", a_weapon, caught, self));
+            // The webs, lamps and oil round it: a Molotov's burst as fire, the others as a blast.
+            ObjectHits::Around(a_player, a_at, BlastOf(a_kind).radius, a_kind == Kind::Molotov ? Traps::Hit::Fire : Traps::Hit::Blast,
+                Traps::SkyrimDamage(BlastOf(a_kind).damage, a_weapon));
             return self;
         }
 
@@ -888,6 +892,7 @@ namespace AhShitRim::Projectiles
                 Shots::Hurt(a_player, a_actor, Weapons::Molotov, kFirePerSecond * kGasTick, a_actor->GetPosition(), RE::NiPoint3(0.0f, 0.0f, 1.0f), false);
                 SetBurning(a_player, a_actor, now);
             });
+            ObjectHits::Around(a_player, a_fire.at, kFirePatchRadius, Traps::Hit::Fire);  // the oil it spreads over catches
             return true;
         }
 
@@ -1125,6 +1130,7 @@ namespace AhShitRim::Projectiles
             }
             SetBurning(a_player, a_actor, now);
         });
+        ObjectHits::FireCone(a_player, origin, dir, range);
     }
 
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
@@ -1184,5 +1190,6 @@ namespace AhShitRim::Projectiles
         state.coughs.clear();
         state.doused.clear();
         Puffs::Clear();
+        ObjectHits::Clear();
     }
 }

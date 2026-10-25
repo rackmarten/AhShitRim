@@ -1,6 +1,8 @@
 #include "collision/StaticMeshes.h"
 
 #include "collision.h"
+#include "player/ObjectHits.h"
+#include "traps.h"
 
 namespace AhShitRim::StaticMeshes
 {
@@ -407,13 +409,18 @@ namespace AhShitRim::StaticMeshes
             }
             bool       moves = false;
             const auto before = chunk.triangles.size();
+            const bool destructible = ObjectHits::Destructible(a_ref);
+            // A web stops Skyrim's player until it is torn (its chunks are read again then).
+            const auto wanted = [&](const RE::hkpRigidBody& a_body) {
+                return Wanted(a_body) || Traps::KeepsCollision(static_cast<int>(a_body.collidable.GetCollisionLayer()), destructible);
+            };
             RE::BSVisit::TraverseScenegraphCollision(root, [&](RE::bhkNiCollisionObject* a_object) {
                 auto* body = a_object ? skyrim_cast<RE::bhkRigidBody*>(a_object->body.get()) : nullptr;
                 auto* hk = body ? static_cast<RE::hkpRigidBody*>(body->referencedObject.get()) : nullptr;
-                if (hk && hk->world && !Wanted(*hk)) {
+                if (hk && hk->world && !wanted(*hk)) {
                     chunk.otherLayers[static_cast<int>(hk->collidable.GetCollisionLayer())]++;
                 }
-                if (!hk || !hk->world || !Wanted(*hk)) {
+                if (!hk || !hk->world || !wanted(*hk)) {
                     return RE::BSVisit::BSVisitControl::kContinue;
                 }
                 // Havok's own transform: bhkRigidBody::GetTransform leaves out a bhkRigidBodyT's offset.
