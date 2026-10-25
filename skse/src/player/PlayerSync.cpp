@@ -1175,6 +1175,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
         Conversation::Install();
         Police::Install();
+        Vitals::Install();
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 

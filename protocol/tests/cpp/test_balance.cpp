@@ -20,7 +20,7 @@ namespace
         return kTargets[0];
     }
 
-    int AtMaster(std::uint8_t a_type, std::string_view a_target) { return ShotsToKill(Settings{}, a_type, Named(a_target), kByPlayer[kMaster]); }
+    int At(int a_difficulty, std::uint8_t a_type, std::string_view a_target) { return ShotsToKill(Settings{}, a_type, Named(a_target), a_difficulty); }
 }
 
 TEST_CASE("the defaults follow the difficulty and leave Skyrim's hits on CJ as they are")
@@ -54,57 +54,62 @@ TEST_CASE("ini factors and switches are read, and nonsense falls back")
     CHECK_FALSE(s.followDifficulty);
 }
 
-TEST_CASE("a multiplier the game doesn't give is Skyrim.esm's for the difficulty")
-{
-    CHECK(OrDefault(0.0f, kByPlayer, kMaster) == doctest::Approx(0.5f));
-    CHECK(OrDefault(NAN, kToPlayer, 5) == doctest::Approx(3.0f));
-    CHECK(OrDefault(0.6f, kByPlayer, kMaster) == doctest::Approx(0.6f));  // a mod's own value wins
-    CHECK(OrDefault(0.0f, kByPlayer, 9) == doctest::Approx(1.0f));        // out of range is Adept
-    CHECK((kSuffixes[kMaster] == "VH"));
-}
-
-TEST_CASE("CJ's guns follow the difficulty: half at Master, as before at Adept; melee as it is")
+TEST_CASE("CJ deals what the player would a difficulty harder, never under 0.25; melee as it is")
 {
     const Settings s;
-    CHECK(Dealt(s, Weapons::Pistol, kByPlayer[kAdept]) == doctest::Approx(1.0f));
-    CHECK(Dealt(s, Weapons::Pistol, kByPlayer[kMaster]) == doctest::Approx(0.5f));
-    CHECK(Dealt(s, Weapons::RocketLauncher, kByPlayer[kMaster]) == doctest::Approx(0.5f));
-    CHECK(Dealt(s, Weapons::Pistol, kByPlayer[0]) == doctest::Approx(2.0f));
-    CHECK(Dealt(s, Weapons::Unarmed, kByPlayer[kMaster]) == doctest::Approx(1.0f));
-    CHECK(Dealt(s, Weapons::BaseballBat, kByPlayer[5]) == doctest::Approx(1.0f));
-    CHECK(Dealt(s, Weapons::Chainsaw, kByPlayer[kMaster]) == doctest::Approx(1.0f));
+    CHECK(Dealt(s, Weapons::Pistol, 0) == doctest::Approx(1.5f));
+    CHECK(Dealt(s, Weapons::Pistol, 1) == doctest::Approx(1.0f));
+    CHECK(Dealt(s, Weapons::Pistol, kAdept) == doctest::Approx(0.75f));
+    CHECK(Dealt(s, Weapons::Pistol, 3) == doctest::Approx(0.5f));
+    CHECK(Dealt(s, Weapons::Pistol, kMaster) == doctest::Approx(0.25f));
+    CHECK(Dealt(s, Weapons::Pistol, 5) == doctest::Approx(0.25f));  // the floor
+    CHECK(Dealt(s, Weapons::Pistol, 9) == doctest::Approx(0.75f));  // out of range is Adept
+    CHECK(Dealt(s, Weapons::RocketLauncher, kMaster) == doctest::Approx(0.25f));
+    CHECK(Dealt(s, Weapons::Unarmed, kMaster) == doctest::Approx(1.0f));
+    CHECK(Dealt(s, Weapons::BaseballBat, 5) == doctest::Approx(1.0f));
+    CHECK(Dealt(s, Weapons::Chainsaw, kMaster) == doctest::Approx(1.0f));
 
     const Settings fixed = Parse("0.5", "", "off");
-    CHECK(Dealt(fixed, Weapons::M4, kByPlayer[kMaster]) == doctest::Approx(0.5f));
-    CHECK(Dealt(fixed, Weapons::M4, kByPlayer[0]) == doctest::Approx(0.5f));
-    CHECK(Dealt(fixed, Weapons::Unarmed, kByPlayer[0]) == doctest::Approx(1.0f));
+    CHECK(Dealt(fixed, Weapons::M4, kMaster) == doctest::Approx(0.5f));
+    CHECK(Dealt(fixed, Weapons::M4, 0) == doctest::Approx(0.5f));
+    CHECK(Dealt(fixed, Weapons::Unarmed, 0) == doctest::Approx(1.0f));
 }
 
-TEST_CASE("the example fights at Master: body shots to kill (docs/DESIGN.md)")
+TEST_CASE("the example fights: body shots to kill at Adept and Master (docs/DESIGN.md)")
 {
     using namespace Weapons;
-    // The log's bandit took 5 Colt 45 body shots before; twice that now.
-    CHECK(ShotsToKill(Settings{}, Pistol, Named("bandit"), kByPlayer[kAdept]) == 5);
+    // The log's bandit took 5 Colt 45 body shots at Master before.
+    CHECK(Damage::HitsToKill(90.0f, Damage::ToSkyrim(0.0f, Pistol, Damage::Part::Torso, 6, Damage::Class::Normal)) == 5);
 
-    CHECK(AtMaster(Pistol, "bandit") == 9);
-    CHECK(AtMaster(Shotgun, "bandit") == 3);
-    CHECK(AtMaster(M4, "bandit") == 8);
+    CHECK(At(kAdept, Pistol, "bandit") == 6);
+    CHECK(At(kAdept, Shotgun, "bandit") == 2);
+    CHECK(At(kAdept, M4, "bandit") == 5);
+    CHECK(At(kMaster, Pistol, "bandit") == 18);
+    CHECK(At(kMaster, Shotgun, "bandit") == 6);
+    CHECK(At(kMaster, M4, "bandit") == 15);
 
-    CHECK(AtMaster(Pistol, "restless draugr") == 15);
-    CHECK(AtMaster(Shotgun, "restless draugr") == 5);
-    CHECK(AtMaster(M4, "restless draugr") == 13);
+    for (const auto* name : { "restless draugr", "large frostbite spider" }) {
+        CHECK(At(kAdept, Pistol, name) == 10);
+        CHECK(At(kAdept, Shotgun, name) == 4);
+        CHECK(At(kAdept, M4, name) == 9);
+        CHECK(At(kMaster, Pistol, name) == 30);
+        CHECK(At(kMaster, Shotgun, name) == 10);
+        CHECK(At(kMaster, M4, name) == 25);
+    }
 
-    CHECK(AtMaster(Pistol, "large frostbite spider") == 15);
-    CHECK(AtMaster(Shotgun, "large frostbite spider") == 5);
-    CHECK(AtMaster(M4, "large frostbite spider") == 13);
+    CHECK(At(kAdept, Pistol, "giant frostbite spider") == 32);
+    CHECK(At(kAdept, Shotgun, "giant frostbite spider") == 10);
+    CHECK(At(kAdept, M4, "giant frostbite spider") == 27);
+    CHECK(At(kMaster, Pistol, "giant frostbite spider") == 95);
+    CHECK(At(kMaster, Shotgun, "giant frostbite spider") == 30);
+    CHECK(At(kMaster, M4, "giant frostbite spider") == 79);
 
-    CHECK(AtMaster(Pistol, "giant frostbite spider") == 48);
-    CHECK(AtMaster(Shotgun, "giant frostbite spider") == 15);
-    CHECK(AtMaster(M4, "giant frostbite spider") == 40);
-
-    CHECK(AtMaster(Pistol, "giant") == 211);
-    CHECK(AtMaster(Shotgun, "giant") == 66);
-    CHECK(AtMaster(M4, "giant") == 176);
+    CHECK(At(kAdept, Pistol, "giant") == 141);
+    CHECK(At(kAdept, Shotgun, "giant") == 44);
+    CHECK(At(kAdept, M4, "giant") == 117);
+    CHECK(At(kMaster, Pistol, "giant") == 421);
+    CHECK(At(kMaster, Shotgun, "giant") == 132);
+    CHECK(At(kMaster, M4, "giant") == 351);
 }
 
 TEST_CASE("the example fights at Master: hits that kill unarmoured CJ (docs/DESIGN.md)")

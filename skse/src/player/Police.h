@@ -57,6 +57,13 @@ namespace AhShitRim::Police
     // the whole hit began is then stopped, not Wasted. Taken once.
     bool TakeSpared();
 
+    // The stars' share of a_attacker's hits on CJ (Wanted::GuardDamage): a guard's (any hold's) or one of ours', else 1
+    // (nobody, a trap, bandits, creatures).
+    float ShareFor(RE::Actor* a_attacker);
+
+    // A hit given back left the player with health: no Wasted for its bleedout (TakeSpared).
+    void NoteSpared(RE::PlayerCharacter* a_player);
+
     // San Andreas's wanted cheats (CheatCodes): a_how 1 two more stars (OSRBLHH), 2 six (LJSPQK), 0 none (ASNAEB). The
     // pursuit is the last hold's, else the one the player stands in, else Whiterun's; the bounty is left alone. Not
     // while AEZAKMI is on.

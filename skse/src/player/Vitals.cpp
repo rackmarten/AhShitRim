@@ -3,7 +3,9 @@
 #include "health.h"
 #include "pose.h"
 #include "hud/SaHud.h"
+#include "player/CombatBalance.h"
 #include "player/Police.h"
+#include "player/Projectiles.h"
 #include "wasted.h"
 
 #include <chrono>
@@ -36,7 +38,17 @@ namespace AhShitRim::Vitals
             bool                       invincible = false;  // BAGUVIX
             bool                       skillsFrozen = false;  // the hit-trained skills' progress when BAGUVIX went on was noted
             float                      frozenXp[3] = {};      // kHitSkills' xp then
+            bool                       owned = false;         // San Andreas has the player
+            int                        own = 0;               // our own damage being taken: not a hit of Skyrim's
+            int                        magic = 0;             // a magic effect's damage being taken (EffectDamageHook)
         } state;
+
+        // Our own damage on the player, which Police's HandleHealthDamage hook leaves alone.
+        struct Own
+        {
+            Own() { ++state.own; }
+            ~Own() { --state.own; }
+        };
 
         // The skills being hit trains (Skyrim's own), held where they were while BAGUVIX is on: hits that do nothing
         // shouldn't level the player up.
@@ -253,10 +265,102 @@ namespace AhShitRim::Vitals
             SKSE::log::info("vitals: San Andreas hit CJ for {:.1f} ({:.1f} armour left, {:.1f} health taken)", a_damage, split.armor, split.health);
             state.armor = split.armor;
             if (split.health > 0.0f) {
+                Own own;
                 a_player->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kHealth, split.health);
             }
         }
+
+        // a_damage of Skyrim's health times a_factor, through CJ's armour first when San Andreas's would take a_kind:
+        // the health to take. Busted, the arrest takes nothing.
+        float ArmourFirst(RE::PlayerCharacter* a_player, float a_damage, float a_factor, Health::Kind a_kind)
+        {
+            const float scaled = a_damage * (std::isfinite(a_factor) ? (std::max)(a_factor, 0.0f) : 1.0f);
+            if (!Health::ArmourTakes(a_kind) || Police::IsBusted()) {
+                return scaled;
+            }
+            const auto split = Health::AbsorbSkyrim(state.armor, scaled, MaxHealth(a_player));
+            if (split.armor != state.armor) {
+                SetArmor(split.armor);
+            }
+            return split.health;
+        }
+
+        Health::Resist ResistOf(RE::ActiveEffect* a_effect)
+        {
+            const auto* base = a_effect ? a_effect->GetBaseObject() : nullptr;
+            switch (base ? base->data.resistVariable : RE::ActorValue::kNone) {
+            case RE::ActorValue::kResistFire: return Health::Resist::Fire;
+            case RE::ActorValue::kResistFrost: return Health::Resist::Frost;
+            case RE::ActorValue::kResistShock: return Health::Resist::Shock;
+            case RE::ActorValue::kResistMagic: return Health::Resist::Magic;
+            case RE::ActorValue::kPoisonResist: return Health::Resist::Poison;
+            case RE::ActorValue::kResistDisease: return Health::Resist::Disease;
+            default: return Health::Resist::None;
+            }
+        }
+
+        // Skyrim's harmful magic on the player's health (spells, enchanted weapons, traps' and hazards' spells such as
+        // burning oil, poisons): ValueModifierEffect::ModifyActorValue (vfunc 0x20) of each effect class that has one.
+        // While CJ has the player its damage is [Balance] DamageTaken of it, times the stars' share for a guard's, through
+        // CJ's armour first (not poison or disease), and fire sets CJ alight in San Andreas.
+        template <int I>
+        struct EffectDamageHook
+        {
+            static void thunk(RE::ValueModifierEffect* a_effect, RE::Actor* a_actor, float a_value, RE::ActorValue a_av)
+            {
+                if (!state.owned || a_av != RE::ActorValue::kHealth || !(a_value < 0.0f) || !a_actor || !a_actor->IsPlayerRef() || state.invincible ||
+                    state.sequence.Running() || state.own > 0) {
+                    original(a_effect, a_actor, a_value, a_av);
+                    return;
+                }
+                auto*       player = static_cast<RE::PlayerCharacter*>(a_actor);
+                const auto  resist = ResistOf(a_effect);
+                const auto  kind = Health::OfEffect(resist);
+                const auto  caster = a_effect->caster.get();
+                const float factor = Balance::TakenFactor(Police::ShareFor(caster.get()));
+                const float armor = state.armor;
+                const float health = ArmourFirst(player, -a_value, factor, kind);
+                ++state.magic;
+                original(a_effect, a_actor, -health, a_av);
+                --state.magic;
+                if (health < -a_value) {
+                    Police::NoteSpared(player);
+                }
+                if (Health::SetsAlight(kind)) {
+                    Projectiles::BurnCj(player);
+                }
+                static int logged = 0;
+                if (logged < 16) {
+                    logged++;
+                    const auto* base = a_effect->GetBaseObject();
+                    SKSE::log::info("vitals: {} ({:08X}, resist {}) from {} took {:.2f} health, x{:.2f}: armour {:.0f} -> {:.0f}, {:.2f} off health",
+                        base ? base->GetName() : "?", base ? base->GetFormID() : 0, static_cast<int>(resist), caster ? caster->GetName() : "nobody", -a_value, factor,
+                        armor, state.armor, health);
+                }
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+
+            static void Install(REL::VariantID a_vtable)
+            {
+                REL::Relocation<std::uintptr_t> vtable{ a_vtable };
+                original = vtable.write_vfunc(0x20, thunk);
+            }
+        };
     }
+
+    void Install()
+    {
+        EffectDamageHook<0>::Install(RE::VTABLE_ValueModifierEffect[0]);
+        EffectDamageHook<1>::Install(RE::VTABLE_AbsorbEffect[0]);
+        EffectDamageHook<2>::Install(RE::VTABLE_AccumulatingValueModifierEffect[0]);
+        EffectDamageHook<3>::Install(RE::VTABLE_DualValueModifierEffect[0]);
+        EffectDamageHook<4>::Install(RE::VTABLE_PeakValueModifierEffect[0]);
+        EffectDamageHook<5>::Install(RE::VTABLE_TargetValueModifierEffect[0]);
+        EffectDamageHook<6>::Install(RE::VTABLE_ValueAndConditionsEffect[0]);
+        SKSE::log::info("vitals: the value modifier effects' ModifyActorValue hooked: Skyrim's magic on CJ goes through his armour first");
+    }
+
+    bool OwnDamage() { return state.own > 0 || state.magic > 0; }
 
     void Hurt(RE::PlayerCharacter* a_player, float a_damage)
     {
@@ -265,17 +369,14 @@ namespace AhShitRim::Vitals
         }
     }
 
-    float TakeHit(RE::PlayerCharacter* a_player, float a_damage, float a_factor)
+    float TakeHit(RE::PlayerCharacter* a_player, float a_damage, float a_factor, Health::Kind a_kind)
     {
         if (!a_player || state.sequence.Running() || state.invincible || !std::isfinite(a_damage) || !(a_damage > 0.0f)) {
             return 0.0f;
         }
-        const auto  split = Health::AbsorbSkyrim(state.armor, a_damage * (std::isfinite(a_factor) ? (std::max)(a_factor, 0.0f) : 1.0f), MaxHealth(a_player));
-        const float back = a_damage - split.health;
-        if (split.armor != state.armor) {
-            SetArmor(split.armor);
-        }
-        auto* values = a_player->AsActorValueOwner();
+        const float back = a_damage - ArmourFirst(a_player, a_damage, a_factor, a_kind);
+        auto*       values = a_player->AsActorValueOwner();
+        Own         own;
         if (back > 0.0f) {
             values->RestoreActorValue(RE::ActorValue::kHealth, back);
         } else if (back < 0.0f) {
@@ -286,6 +387,7 @@ namespace AhShitRim::Vitals
 
     void OnTakeOver(RE::PlayerCharacter* a_player)
     {
+        state.owned = true;
         state.meter.Reset();
         state.sequence.Cancel();
         state.tracked = false;
@@ -300,6 +402,7 @@ namespace AhShitRim::Vitals
             state.sequence.Cancel();
             SKSE::log::info("vitals: Wasted ended with the handover");
         }
+        state.owned = false;
         EndShow();
         SetEssential(a_player, false);
         state.meter.Reset();

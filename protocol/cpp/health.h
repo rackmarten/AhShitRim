@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace AhShitRim::Health
 {
@@ -73,6 +74,61 @@ namespace AhShitRim::Health
         s.health = (a_damage - absorbed) / kSaFullHealth * (std::max)(a_skyrimMax, 0.0f);
         return s;
     }
+
+    // ---- What hurt CJ ----
+
+    // What took Skyrim's health off the player while CJ has it, as far as Skyrim tells.
+    enum class Kind : std::uint8_t
+    {
+        Blow,      // a weapon, an arrow, a creature's bite, claw or club, a trap's blade, spikes or rocks, a blast
+        Fire,      // a fire spell, a fire trap, burning oil
+        Frost,
+        Shock,
+        Magic,     // any other harmful magic (an absorb, a drain)
+        Poison,
+        Disease,
+        Fall,
+        Drowning,
+    };
+
+    // The actor value that resists a magic effect (EffectSetting's resist variable), as far as it matters here.
+    enum class Resist : std::uint8_t
+    {
+        None,
+        Fire,
+        Frost,
+        Shock,
+        Magic,
+        Poison,
+        Disease,
+    };
+
+    // San Andreas's armour takes every kind of damage but drowning and falls (CPedDamageResponseCalculator::
+    // AccountForPedArmour); Skyrim's poison and disease have nothing like them there and go to health too.
+    constexpr bool ArmourTakes(Kind a_kind)
+    {
+        return a_kind != Kind::Poison && a_kind != Kind::Disease && a_kind != Kind::Fall && a_kind != Kind::Drowning;
+    }
+
+    // Fire sets CJ alight, as San Andreas's does.
+    constexpr bool SetsAlight(Kind a_kind) { return a_kind == Kind::Fire; }
+
+    // A harmful magic effect's kind, by what resists it.
+    constexpr Kind OfEffect(Resist a_resist)
+    {
+        switch (a_resist) {
+        case Resist::Fire: return Kind::Fire;
+        case Resist::Frost: return Kind::Frost;
+        case Resist::Shock: return Kind::Shock;
+        case Resist::Poison: return Kind::Poison;
+        case Resist::Disease: return Kind::Disease;
+        default: return Kind::Magic;
+        }
+    }
+
+    // A hit with no magic effect behind it: a blow, whoever (or whatever trap) dealt it, but drowning when nobody did
+    // and the player is under water. Skyrim's own falls never land while CJ has the player (PlayerSync zeroes them).
+    constexpr Kind OfHit(bool a_attacker, bool a_underwater) { return !a_attacker && a_underwater ? Kind::Drowning : Kind::Blow; }
 
     // A hit Skyrim's people landed (a_damage of Skyrim's health) through CJ's armour first, as San Andreas's
     // AccountForPedArmour takes a bullet or a blow: its share of a full bar is that many San Andreas points, the

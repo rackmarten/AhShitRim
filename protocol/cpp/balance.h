@@ -4,15 +4,16 @@
 //
 // Balanced for the fights a player has most, bandits, draugr, spiders, giants: the wanted level's share for guards
 // and ours (Wanted::GuardDamage) is a layer of its own on top, for them only.
-// - CJ's guns and explosives (Damage::ToSkyrim, Shots): times CJDamage, and Skyrim's "damage by the player"
-//   multiplier for the difficulty (fDiffMultHPByPC*: half at Master) when FollowDifficulty is on, since Skyrim's
-//   own hit doesn't apply it to ours as it does to the player's sword. Melee is left as it is.
+// - CJ's guns and explosives (Damage::ToSkyrim, Shots): times CJDamage, and kDealt for the difficulty when
+//   FollowDifficulty is on: Skyrim's own "damage by the player" multipliers (fDiffMultHPByPC*) a difficulty harder,
+//   since Skyrim's own hit doesn't apply its own to ours as it does to the player's sword. Melee is left as it is.
 // - Skyrim's people's and creatures' hits on the player: Skyrim has already put its difficulty on them
 //   (fDiffMultHPToPC*), so only times DamageTaken, then CJ's armour takes them first (Health::AbsorbSkyrim).
 //
-// Tuning: the user plays at Master, where a Colt 45 body shot took 20 off a level 6 bandit (91 health). Following the
-// difficulty halves the guns there (10 a body shot); unarmed CJ already took about the right damage, so DamageTaken
-// stays 1. kFights below are the example fights at Master with the defaults; the doctests hold them.
+// Tuning: at Master a Colt 45 body shot took 20 off a level 6 bandit (91 health). Skyrim's own multipliers made Adept
+// feel like Apprentice and Master hard, so CJ deals what the next harder difficulty would give the player: 0.75 at
+// Adept, 0.25 at Master and at Legendary (the floor). Unarmed CJ already took about the right damage, so
+// DamageTaken stays 1. kTargets below are the example fights; the doctests hold them.
 
 #pragma once
 
@@ -34,11 +35,11 @@ namespace AhShitRim::Balance
     inline constexpr int kAdept = 2;
     inline constexpr int kMaster = 4;
 
-    // The suffix of each difficulty's game settings: fDiffMultHPByPC<suffix>, fDiffMultHPToPC<suffix>.
-    inline constexpr std::array<std::string_view, kDifficulties> kSuffixes = { "VE", "E", "N", "H", "VH", "L" };
+    // What CJ's guns deal at each difficulty: Skyrim.esm's fDiffMultHPByPC* (2, 1.5, 1, 0.75, 0.5, 0.25) one step down,
+    // Legendary's staying at Master's 0.25, the floor.
+    inline constexpr std::array<float, kDifficulties> kDealt = { 1.5f, 1.0f, 0.75f, 0.5f, 0.25f, 0.25f };
 
-    // Skyrim.esm's values, for when a setting can't be read: what the player deals and takes.
-    inline constexpr std::array<float, kDifficulties> kByPlayer = { 2.0f, 1.5f, 1.0f, 0.75f, 0.5f, 0.25f };
+    // Skyrim.esm's fDiffMultHPToPC*: what Skyrim already does to what the player takes (for the example fights).
     inline constexpr std::array<float, kDifficulties> kToPlayer = { 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f };
 
     inline constexpr float kMaxFactor = 10.0f;
@@ -89,20 +90,14 @@ namespace AhShitRim::Balance
     // A difficulty out of range is Adept's.
     constexpr int Clamp(int a_difficulty) { return a_difficulty >= 0 && a_difficulty < kDifficulties ? a_difficulty : kAdept; }
 
-    // A multiplier read from the game, else Skyrim.esm's for that difficulty.
-    inline float OrDefault(float a_read, const std::array<float, kDifficulties>& a_table, int a_difficulty)
-    {
-        return std::isfinite(a_read) && a_read > 0.0f ? a_read : a_table[Clamp(a_difficulty)];
-    }
-
-    // What the damage of CJ's weapon a_type is multiplied by: a_byPlayer is the difficulty's fDiffMultHPByPC. Melee
-    // (fists, bats, knives, the chainsaw) as it is.
-    inline float Dealt(const Settings& a_settings, std::uint8_t a_type, float a_byPlayer)
+    // What the damage of CJ's weapon a_type is multiplied by at a_difficulty. Melee (fists, bats, knives, the chainsaw)
+    // as it is.
+    inline float Dealt(const Settings& a_settings, std::uint8_t a_type, int a_difficulty)
     {
         if (Weapons::IsMelee(a_type)) {
             return 1.0f;
         }
-        return a_settings.cjDamage * (a_settings.followDifficulty ? a_byPlayer : 1.0f);
+        return a_settings.cjDamage * (a_settings.followDifficulty ? kDealt[Clamp(a_difficulty)] : 1.0f);
     }
 
     // What a hit of Skyrim's people on the player is multiplied by, a_share being the stars' share for guards and ours
@@ -131,9 +126,9 @@ namespace AhShitRim::Balance
     } };
 
     // Body shots of a_type for CJ to kill a_target, every shotgun pellet landing.
-    inline int ShotsToKill(const Settings& a_settings, std::uint8_t a_type, const Target& a_target, float a_byPlayer)
+    inline int ShotsToKill(const Settings& a_settings, std::uint8_t a_type, const Target& a_target, int a_difficulty)
     {
-        const float hit = Damage::ToSkyrim(0.0f, a_type, Damage::Part::Torso, a_target.level, a_target.cls) * Dealt(a_settings, a_type, a_byPlayer);
+        const float hit = Damage::ToSkyrim(0.0f, a_type, Damage::Part::Torso, a_target.level, a_target.cls) * Dealt(a_settings, a_type, a_difficulty);
         return Damage::HitsToKill(a_target.health, hit * static_cast<float>(Damage::Pellets(a_type)));
     }
 
