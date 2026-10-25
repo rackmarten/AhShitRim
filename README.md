@@ -64,7 +64,7 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
-- **San Andreas's HUD** with its **radar**, fonts and text styles, its radio (plus Radio Sovngarde), and **its cheat codes**, typed straight into Skyrim.
+- **San Andreas's HUD** with its **radar**, fonts and text styles, its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
 
 Skyrim's player stays the real player underneath, so quests, dialogue, bounties, kill credit and saves keep working. CJ's weapons, armour, skills, car and wanted level go in the SKSE co-save next to your Skyrim save.
 
@@ -133,7 +133,7 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 **CJ talks on his own** now and then: when a punch lands, a burst of gunfire hits, he aims a gun on foot, after a sneak kill, when he loots gold, buys at Ammu-Nation and leaves, sprints away from a fight, or crashes hard. Left idle for a minute and a half, he sings.
 
-**Sound.** San Andreas plays CJ's, his vehicles' and his speech's sounds itself, at Skyrim's volume sliders. In a vehicle the radio plays San Andreas's stations, then **Radio Sovngarde**: Skyrim's own music (the main theme, combat and exploration tracks, the bards' instrumentals). **Sweetroll FM**, AhShitRim's own station of public domain music, comes in 0.1.1: in 0.1 its place on the dial says "Sweetroll FM - off air" and stays silent.
+**Sound.** San Andreas plays CJ's, his vehicles' and his speech's sounds itself, at Skyrim's volume sliders. In a vehicle the radio plays San Andreas's stations, then **Radio Sovngarde**: Skyrim's own music (the main theme, combat and exploration tracks, the bards' instrumentals). After it comes **Sweetroll FM**, AhShitRim's own station: about half an hour of public domain (CC0) bard, tavern and folk music, shuffled so every track plays once before any repeats. Skyrim's own music stops while either station plays.
 
 ## The radar
 
@@ -193,7 +193,6 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 
 - **The main quest** beyond Helgen isn't fully played through as CJ yet. If something blocks the way (a scene, a door, a menu), F10 hands the player back to Skyrim.
 - **Helgen**: the intro (the cart and the execution) isn't supported as CJ: play it as Skyrim's own player and press F10 afterwards. CJ's "Ah shit, here we go again." still plays in the cart.
-- **Sweetroll FM** comes in 0.1.1: its tracks aren't in 0.1, so its place on the dial is silent.
 - **Camera**: San Andreas's third-person camera only, no first person.
 - **CJ and the vehicles** cast no shadow, and CJ always wears his starting clothes.
 - **Vehicle looks**: damage isn't shown (dents, broken windows and lost doors), and lights aren't drawn. The Hydra's flares are invisible (they still work), and its jet exhaust, missile trails, heat haze, a submerged exhaust's bubbles and the rotor dust's sand and water versions aren't drawn. Muzzle flashes are round where San Andreas stretches them along the barrel.
@@ -219,7 +218,7 @@ Found something else? Open an [issue](https://github.com/rackmarten/AhShitRim/is
 
 This repository and its releases contain **no assets from San Andreas or Skyrim**, and contributions must not add any. You need your own copies of both games. Models, sounds and textures are read from your installs at play time, never converted or redistributed.
 
-The one exception will be our own music: Sweetroll FM's tracks, CC0 (public domain) music by other artists, listed with their sources in [`music/CREDITS.md`](music/CREDITS.md), ship from 0.1.1.
+The one exception is our own music: Sweetroll FM's 11 tracks, CC0 (public domain) music by other artists, listed with their sources in [`music/CREDITS.md`](music/CREDITS.md). Still nothing from either game.
 
 ## How it works
 
@@ -234,6 +233,7 @@ Building it yourself: [docs/DEV_SETUP.md](docs/DEV_SETUP.md). Design: [docs/DESI
 - [CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG) for the SKSE plugin, and [plugin-sdk](https://github.com/DK22Pac/plugin-sdk) for the San Andreas one.
 - [gta-reversed](https://github.com/gta-reversed/gta-reversed), whose reading of San Andreas's code this mod leans on everywhere.
 - [DirectXTK](https://github.com/microsoft/DirectXTK) for the overlay, [doctest](https://github.com/doctest/doctest) for the tests.
+- Sweetroll FM's music: RandomMind, DST, Spring Spring, Yoiyami, David-Sky Marchant and Stephen Warde Anderson, who dedicated it to the public domain ([`music/CREDITS.md`](music/CREDITS.md)).
 - [PerkeleRim](https://github.com/rackmarten/PerkeleRim), the My Summer Car mod whose two-games-at-once design this one follows.
 
 ## License

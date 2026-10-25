@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.1.0] - unreleased
 
-The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues. Sweetroll FM's tracks come in 0.1.1.
+The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.
 
 ### Added
 
@@ -63,7 +63,7 @@ The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart t
 
 ### Changed
 
-- Sweetroll FM's place on the radio dial says "Sweetroll FM - off air" while none of its tracks are installed (0.1 ships without them), instead of only its name over silence.
+- Sweetroll FM's place on the radio dial says "Sweetroll FM - off air" while none of its tracks are installed (a build packaged without them), instead of only its name over silence.
 - From 3 stars the hold sets its tamed wolves on CJ instead of mounted guards (who never got on their horses): 2 at 3 stars, 3 at 4, 4 at 5 and 6, ice wolves from 5, spawned out of sight like the rest. They take the guards' own factions, as do the captain, the wizards and the soldiers, so they all fight on one side (the captain and a wolf used to fall out over a stray blow), don't bust CJ at the car door, and leave with the stars. A wolf runs about as fast as CJ sprints, and its SpeedMult keeps up with CJ however he goes, faster the further behind it is (half as fast again by 3000 units back, at most six times, about 48 m/s), so a car doesn't shake them for long. Soldiers are 2 at 5 stars and 1 at 6, and the guard wizards 1 at 6, to make room. Game-free tests for the wolves' tiers and the speed rule.
 - Skyrim's plugin log keeps the last two runs' as `AhShitRim.1.log` and `AhShitRim.2.log`, so a crash's log is still there after starting the game again.
 - The wanted pursuit keeps coming: the first reinforcement spawns 1.5 s after the stars call for them, then one every 6 s at 2 stars down to 2.5 s at 6, and after CJ kills them all the next wave comes after 10 s (6 s at 6 stars), before he loses a star just for nobody being left to see him (before, the gap outlasted the second star, and at 1 star nobody came again). The hold's soldiers now come at 5 and 6 stars: their levelled lists made no actor, so every try failed and the guards meant to come after them never did either. 3 riders from 4 stars. Spawns try twice as many spots out of sight, near and far, so a city's walls and terraces turn fewer of them down.
