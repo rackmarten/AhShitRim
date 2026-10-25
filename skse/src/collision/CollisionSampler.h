@@ -14,4 +14,5 @@ namespace AhShitRim::CollisionSampler
     void Stop();                                                         // Skyrim took the player back
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_velocity);  // every frame while San Andreas owns the player; velocity in units/s
     void OnDataLoaded();  // a door opening or closing reads the chunks around it again once it has swung
+    void Reread(const RE::NiPoint3& a_at, float a_afterSeconds);  // something at a_at changed (a web torn): its chunks are read again after a_afterSeconds
 }

@@ -251,7 +251,7 @@ namespace AhShitRim::CollisionSampler
                         }
                     }
                 }
-                SKSE::log::info("collision: a door at ({:.0f},{:.0f},{:.0f}) moved, reading its chunks again", p.x, p.y, p.z);
+                SKSE::log::info("collision: a door or an object at ({:.0f},{:.0f},{:.0f}) changed, reading its chunks again", p.x, p.y, p.z);
                 return true;
             });
         }
@@ -306,6 +306,13 @@ namespace AhShitRim::CollisionSampler
         static DoorSink doorSink;
         if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
             events->AddEventSink<RE::TESOpenCloseEvent>(&doorSink);
+        }
+    }
+
+    void Reread(const RE::NiPoint3& a_at, float a_afterSeconds)
+    {
+        if (state.active) {
+            state.doors.emplace_back(a_at, Clock::now() + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<float>(a_afterSeconds)));
         }
     }
 

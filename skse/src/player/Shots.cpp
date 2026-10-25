@@ -7,6 +7,7 @@
 #include "player/CheatCodes.h"
 #include "player/Particles.h"
 #include "player/Chatter.h"
+#include "player/ObjectHits.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -21,6 +22,7 @@ namespace AhShitRim::Shots
         constexpr int         kPassMax = 8;           // things a bullet goes through (the player, the dead) before it gives up
         constexpr float       kMeleeSearch = 600.0f;  // actors this close to the blow are looked at
         constexpr float       kActorRadiusMin = 20.0f;
+        constexpr float       kBlowObjectReach = 45.0f;  // units each way along CJ's facing a blow finds an object in
         constexpr float       kImpactScale = 2.5f;    // the arrows' impacts, bigger for a bullet
         constexpr int         kLoggedHits = 12;       // the first hits are logged in full, then a summary
         constexpr int         kLoggedBlocks = 20;     // and the first things that stop a bullet
@@ -324,8 +326,8 @@ namespace AhShitRim::Shots
                     auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
                     auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
                     const auto  layer = output.rootCollidable->GetCollisionLayer();
-                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer))) {
-                        from = distance + 1.0f;  // through the player's own body, the dead and the clutter
+                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
+                        from = distance + 1.0f;  // through the player's own body, the dead and the clutter (not a lamp or a web)
                         continue;
                     }
                     at = origin + dir * distance;
@@ -363,6 +365,10 @@ namespace AhShitRim::Shots
                     material = RE::BGSMaterialType::GetMaterialType(RE::MATERIAL_ID::kStone);  // a shape without one
                 }
                 PlayImpact(cell, ImpactFor(state.bulletSet, material), at, normal, nullptr);
+                if (blocker) {
+                    ObjectHits::Struck(a_player, blocker, Traps::Hit::Bullet, a_shot.weaponType,
+                        a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType, a_shot.skill));
+                }
             } else {
                 state.misses++;
             }
@@ -418,6 +424,65 @@ namespace AhShitRim::Shots
                 knock > 0.0f ? std::format("thrown with {:.0f}", knock) : std::string("too big to throw"));
         }
 
+        // The first object a blow's line from a_from to a_to meets: what stops a bullet, or anything destructible
+        // (a web). Actors and the player are passed through; nullptr for none, or for the land.
+        RE::TESObjectREFR* ObjectOn(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_from, const RE::NiPoint3& a_to)
+        {
+            auto* cell = a_player->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            const float length = a_from.GetDistance(a_to);
+            if (!world || !(length > 1.0f)) {
+                return nullptr;
+            }
+            const RE::NiPoint3 dir = (a_to - a_from) / length;
+            const float        scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(state.layer);
+            input.to = RE::hkVector4(a_to.x * scale, a_to.y * scale, a_to.z * scale, 0.0f);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               from = 0.0f;
+            for (int pass = 0; pass < kPassMax; ++pass) {
+                const RE::NiPoint3 start = a_from + dir * from;
+                input.from = RE::hkVector4(start.x * scale, start.y * scale, start.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return nullptr;
+                }
+                const float distance = from + (length - from) * output.hitFraction;
+                auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
+                if (ref && ref != a_player && !ref->As<RE::Actor>() && (Blocks(output.rootCollidable->GetCollisionLayer()) || ObjectHits::Destructible(ref))) {
+                    return ref;
+                }
+                if (!ref && Blocks(output.rootCollidable->GetCollisionLayer())) {
+                    return nullptr;  // the land
+                }
+                from = distance + 1.0f;
+            }
+            return nullptr;
+        }
+
+        // A blow lands on the object in front of it too (a web), once per strike, the chainsaw's as its cuts.
+        void BlowOnObject(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_point, const RE::NiPoint3& a_facing, double a_now)
+        {
+            RE::NiPoint3 facing = a_facing;
+            if (!(facing.Unitize() > 1e-4f)) {
+                return;
+            }
+            const float reach = (std::max)(a_shot.range, kBlowObjectReach);
+            auto*       ref = ObjectOn(a_player, a_point - facing * reach, a_point + facing * reach);
+            if (!ref) {
+                return;
+            }
+            const bool  saw = a_shot.weaponType == Weapons::Chainsaw;
+            const float landed = state.landed.Lands(ref->GetFormID(), a_shot.strike, a_now, saw);
+            if (landed > 0.0f) {
+                ObjectHits::Struck(a_player, ref, Traps::Hit::Blow, a_shot.weaponType,
+                    Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed));
+            }
+        }
+
         void Blow(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             state.blows++;
@@ -463,6 +528,8 @@ namespace AhShitRim::Shots
             }
             if (landedAny) {
                 state.hits.Add(a_shot.weaponType);
+            } else {
+                BlowOnObject(a_player, a_shot, point, facing, now);
             }
         }
 
