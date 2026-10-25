@@ -484,9 +484,10 @@ namespace AhShitRim::Wanted
     // ---- Copies left in a save ----
 
     // Earlier builds made some of ours as copies of a guard about, from the base Skyrim had built for him at runtime (form
-    // ID FFxxxxxx). A save made while one was out holds that copy and the runtime base; when a load then clears that
-    // world, Skyrim frees the base before the copy's fight and crashes in its combat code (SkyrimSE.exe+01DCDE4, +01DCB69,
-    // +1B75B78, +06C4F5A: 1 load in 15 from such a save, in the load test). Skyrim never makes an actor from a runtime
+    // ID FFxxxxxx). A save made while one was out holds that copy, mid-fight, and the runtime base; loading that save
+    // crashes Skyrim now and then as it restores the copy's fight (SkyrimSE.exe+01DCDE4, +01DCB69, +1B75B78, +06C4F5A, in
+    // its combat code, inside the load, before any of ours runs). Nothing can make loading such a save safe, but once it
+    // has loaded the copy is found and taken out, so the next save is clean. Skyrim never makes an actor from a runtime
     // base, so a runtime actor whose base it was made from is runtime is one of those: taken out once a loaded game has
     // settled. a_madeFrom is the base it was made from (a levelled one's original base, else its own).
     constexpr bool LeftoverCopy(std::uint32_t a_actorID, std::uint32_t a_madeFrom) { return a_actorID >= 0xFF000000 && a_madeFrom >= 0xFF000000; }
