@@ -199,6 +199,7 @@ $problems = @(Get-SkyrimProblems (Get-Item $skyrimExe).VersionInfo.FileVersion (
 # --- San Andreas ----------------------------------------------------------------------------
 
 # Steam undid the downgrade, or the ASI loader went missing: setup's steps offer to fix it (wizard.ps1).
+if (Repair-SaExeName $sa) { Write-Host "Copied the 1.0 US gta-sa.exe to gta_sa.exe in $sa" }
 $saVersion = Get-SaFolderVersion $sa
 if (-not (Test-Path (Join-Path $sa 'gta_sa.exe')) -or ($saVersion -and -not $saVersion.Supported)) { [void] (Invoke-SaDowngrade $sa (Join-Path $Root 'Tools')) }
 if (-not (Get-SaFolderAsiLoader $sa)) { [void] (Invoke-AsiLoaderSetup $sa (Join-Path $Root 'Tools')) }

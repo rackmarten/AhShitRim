@@ -96,25 +96,20 @@ Describe 'Select-SaInstalls' {
     }
 }
 
-Describe 'Get-SaCopyDestination' {
-    It 'uses a new or empty folder as it is' {
-        Get-SaCopyDestination "$TestDrive\new" | Should -Be "$TestDrive\new"
-        New-Item -ItemType Directory "$TestDrive\blank" | Out-Null
-        Get-SaCopyDestination "$TestDrive\blank\" | Should -Be "$TestDrive\blank"
-    }
-    It 'makes a folder of its own in a drive root' {
-        Get-SaCopyDestination 'D:\' | Should -Be 'D:\San Andreas (AhShitRim)'
-        Get-SaCopyDestination 'D:' | Should -Be 'D:\San Andreas (AhShitRim)'
-    }
-    It 'makes a folder of its own inside one with files' {
-        New-Item -ItemType File -Force "$TestDrive\games\other.txt" | Out-Null
-        Get-SaCopyDestination "$TestDrive\games" | Should -Be "$TestDrive\games\San Andreas (AhShitRim)"
-    }
-}
-
 Describe 'Get-SaCopyProblem' {
     It 'accepts an empty folder elsewhere with room' {
         Get-SaCopyProblem 'C:\Steam\SA' "$TestDrive\copy-ok" 1GB 10GB | Should -BeNullOrEmpty
+        New-Item -ItemType Directory "$TestDrive\blank" | Out-Null
+        Get-SaCopyProblem 'C:\Steam\SA' "$TestDrive\blank" 1GB 10GB | Should -BeNullOrEmpty
+    }
+    It 'refuses a drive''s root' {
+        Get-SaCopyProblem 'C:\Steam\SA' 'D:\' 1GB 10GB | Should -BeLike '*folder of its own*'
+        Get-SaCopyProblem 'C:\Steam\SA' 'D:' 1GB 10GB | Should -BeLike '*folder of its own*'
+    }
+    It 'refuses a folder inside an earlier copy of San Andreas' {
+        New-Item -ItemType File -Force "$TestDrive\earlier\gta_sa.exe" | Out-Null
+        Get-SaCopyProblem 'C:\Steam\SA' "$TestDrive\earlier\San Andreas (AhShitRim)" 1GB 10GB | Should -BeLike '*already has San Andreas*'
+        Get-SaCopyProblem 'C:\Steam\SA' "$TestDrive\earlier\models\deeper" 1GB 10GB | Should -BeLike "*$TestDrive\earlier already has*"
     }
     It 'refuses a folder inside the original, or the other way round' {
         Get-SaCopyProblem 'C:\Steam\SA' 'C:\Steam\SA\copy' 1GB 10GB | Should -BeLike '*inside*'
@@ -186,6 +181,34 @@ Describe 'Save-VerifiedDownload' {
         New-Item -ItemType File -Force "$TestDrive\tools-kept\tool.exe" -Value 'the real tool' | Out-Null
         $download = [pscustomobject] @{ Url = 'https://invalid.invalid/tool.exe'; Sha256 = $hash; File = 'tool.exe' }
         Save-VerifiedDownload $download "$TestDrive\tools-kept" | Should -Be "$TestDrive\tools-kept\tool.exe"
+    }
+}
+
+Describe 'Repair-SaExeName' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '..\checks.ps1')
+        # Get-SaExeVersion knows the exes by MD5: one fake exe is made 1.0 US for these tests.
+        $fake = Join-Path $TestDrive 'fake-exe.bin'
+        Set-Content -LiteralPath $fake 'a downgraded exe' -NoNewline
+        $fakeMd5 = (Get-FileHash -LiteralPath $fake -Algorithm MD5).Hash.ToLowerInvariant()
+        $SaExeVersions[$fakeMd5] = @{ Name = '1.0 US (test)'; Supported = $true }
+    }
+    It 'copies a 1.0 US gta-sa.exe to a missing gta_sa.exe' {
+        New-Item -ItemType Directory "$TestDrive\only-steam-name" | Out-Null
+        Copy-Item $fake "$TestDrive\only-steam-name\gta-sa.exe"
+        Repair-SaExeName "$TestDrive\only-steam-name" | Should -BeTrue
+        (Get-FileHash "$TestDrive\only-steam-name\gta_sa.exe" -Algorithm MD5).Hash.ToLowerInvariant() | Should -Be $fakeMd5
+        Repair-SaExeName "$TestDrive\only-steam-name" | Should -BeFalse
+    }
+    It 'leaves Steam''s own exe and an existing gta_sa.exe alone' {
+        New-Item -ItemType File -Force "$TestDrive\steam-build\gta-sa.exe" -Value 'the current Steam exe' | Out-Null
+        Repair-SaExeName "$TestDrive\steam-build" | Should -BeFalse
+        Test-Path "$TestDrive\steam-build\gta_sa.exe" | Should -BeFalse
+        New-Item -ItemType Directory "$TestDrive\both" | Out-Null
+        Copy-Item $fake "$TestDrive\both\gta-sa.exe"
+        New-Item -ItemType File "$TestDrive\both\gta_sa.exe" -Value 'kept' | Out-Null
+        Repair-SaExeName "$TestDrive\both" | Should -BeFalse
+        Get-Content "$TestDrive\both\gta_sa.exe" | Should -Be 'kept'
     }
 }
 

@@ -59,13 +59,24 @@ function Select-SaSource($Installs) {
 # $Source when the player prefers to downgrade it in place; $null when they cancel.
 function Invoke-SaCopy([string] $Source) {
     $bytes = Get-FolderSize $Source
-    $answer = Show-Message "Make a separate copy of San Andreas for AhShitRim? (Recommended)`n`nYour original install stays as it is, and Steam can't undo the downgrade on the copy. It needs $(Format-Size $bytes) of free space.`n`nYes: pick where the copy goes.`nNo: downgrade $Source itself." 'YesNoCancel' 'Question'
+    $answer = Show-Message "Make a separate copy of San Andreas for AhShitRim? (Recommended)`n`nYour original install stays as it is, and Steam can't undo the downgrade on the copy. It needs $(Format-Size $bytes) of free space.`n`nYes: pick the folder for the copy. San Andreas goes straight into it, so pick an empty one or make one with Make New Folder (for example C:\Games\San Andreas AhShitRim).`nNo: downgrade $Source itself." 'YesNoCancel' 'Question'
     if ($answer -eq 'Cancel') { return $null }
     if ($answer -eq 'No') { return $Source }
     while ($true) {
-        $picked = Select-Folder 'Where should the copy of San Andreas go? An empty folder, or one to make "San Andreas (AhShitRim)" in.' "$([IO.Path]::GetPathRoot($Source))"
+        $picked = Select-Folder 'The folder for the copy of San Andreas. It goes straight into this folder: pick an empty one, or make one with Make New Folder. A folder with San Andreas in it already can be used as it is.' "$([IO.Path]::GetPathRoot($Source))"
         if (-not $picked) { return $null }
-        $dest = Get-SaCopyDestination $picked
+        # A folder that holds San Andreas already (an earlier setup's copy) is offered as it is, never copied into.
+        $existing = Select-SaInstalls @($picked) | Select-Object -First 1
+        if ($existing -and -not (Test-SamePath $existing.Path $Source)) {
+            $version = Get-SaFolderVersion $existing.Path
+            $what = if ($version) { $version.Name } elseif ($existing.Exe -eq 'gta-sa.exe') { 'the current Steam version' } else { 'an exe AhShitRim doesn''t know' }
+            $answer = Show-Message "$($existing.Path) already has San Andreas in it ($what), perhaps the copy from an earlier setup.`n`nYes: use it as AhShitRim's San Andreas (setup downgrades it if it still needs that).`nNo: pick another folder for a new copy." 'YesNoCancel' 'Question'
+            if ($answer -eq 'Yes') { return $existing.Path }
+            if ($answer -eq 'Cancel') { return $null }
+            continue
+        }
+        $dest = $picked.TrimEnd('\')
+        if ($dest -match '^[A-Za-z]:$') { $dest += '\' }
         $problem = Get-SaCopyProblem $Source $dest $bytes (Get-FreeBytes $dest)
         if (-not $problem) { break }
         if ((Show-Message $problem 'RetryCancel' 'Warning') -ne 'Retry') { return $null }
@@ -79,27 +90,27 @@ function Invoke-SaCopy([string] $Source) {
 
 # Downloads and runs the downgrader until $SaPath has a 1.0 US gta_sa.exe. $true when it has one.
 function Invoke-SaDowngrade([string] $SaPath, [string] $ToolsDir) {
+    # The downgrader may leave the 1.0 US exe as gta-sa.exe alone (install.ps1).
+    if (Repair-SaExeName $SaPath) { Write-Host "Copied the 1.0 US gta-sa.exe to gta_sa.exe in $SaPath" }
+    $version = Get-SaFolderVersion $SaPath
+    if ($version -and $version.Supported) { Write-Host "San Andreas in $SaPath is $($version.Name)."; return $true }
+    $what = if ($version) { $version.Name } elseif (Test-Path -LiteralPath (Join-Path $SaPath 'gta_sa.exe')) { 'an exe AhShitRim doesn''t know' } else { 'the current Steam version' }
+    Show-Message "San Andreas in $SaPath is $what. AhShitRim runs on 1.0 US only, so it gets downgraded once with the open-source downgrader." | Out-Null
+    $download = $PinnedDownloads.Downgrader
+    if (-not (Confirm-Download $download)) { return $false }
+    try { Write-Host "Downloading $($download.Name) ($(Format-Size $download.Size))"; $exe = Save-VerifiedDownload $download (Join-Path $ToolsDir 'downgrader') }
+    catch { Show-Message $_.Exception.Message 'OK' 'Error' | Out-Null; return $false }
     while ($true) {
-        $version = Get-SaFolderVersion $SaPath
-        if ($version -and $version.Supported) { Write-Host "San Andreas in $SaPath is $($version.Name)."; return $true }
-        $what = if ($version) { $version.Name } elseif (Test-Path -LiteralPath (Join-Path $SaPath 'gta_sa.exe')) { 'an exe AhShitRim doesn''t know' } else { 'the current Steam version' }
-        Show-Message "San Andreas in $SaPath is $what. AhShitRim runs on 1.0 US only, so it gets downgraded once with the open-source downgrader." | Out-Null
-        $download = $PinnedDownloads.Downgrader
-        if (-not (Confirm-Download $download)) { return $false }
-        try { Write-Host "Downloading $($download.Name) ($(Format-Size $download.Size))"; $exe = Save-VerifiedDownload $download (Join-Path $ToolsDir 'downgrader') }
-        catch { Show-Message $_.Exception.Message 'OK' 'Error' | Out-Null; return $false }
         Set-Clipboard -Value $SaPath
-        Show-Message ("The downgrader opens next. In it:`n`n" +
-            "1. Choose this folder as the game folder (it's on the clipboard, paste it with Ctrl+V):`n   $SaPath`n" +
-            "2. Downgrade it to 1.0 US. If it asks to download its patches, say yes.`n" +
-            "3. Optional: install SilentPatch from its mod list. Leave the other mods out, AhShitRim isn't tested with them.`n" +
-            "4. Close the downgrader. Setup carries on from there.") | Out-Null
+        Show-Message ("In the downgrader, set Path to:`n`n   $SaPath`n`n(It's copied: click Path, Ctrl+A, Ctrl+V. It may show another San Andreas.)`n`n" +
+            "Then press Start Downgrade (say yes to its patches), and close it. SilentPatch is optional; leave the other mods out.") | Out-Null
         Write-Host 'Waiting for the downgrader to close'
         try { Start-Process -Wait -FilePath $exe -WorkingDirectory (Split-Path $exe) }
         catch { Show-Message "Couldn't start the downgrader: $($_.Exception.Message)" 'OK' 'Error' | Out-Null; return $false }
+        if (Repair-SaExeName $SaPath) { Write-Host "Copied the 1.0 US gta-sa.exe to gta_sa.exe in $SaPath" }
         $version = Get-SaFolderVersion $SaPath
-        if ($version -and $version.Supported) { continue }
-        if ((Show-Message "gta_sa.exe in $SaPath still isn't 1.0 US. Run the downgrader again?" 'RetryCancel' 'Warning') -ne 'Retry') { return $false }
+        if ($version -and $version.Supported) { Write-Host "San Andreas in $SaPath is $($version.Name)."; return $true }
+        if ((Show-Message "San Andreas in this folder still isn't 1.0 US:`n$SaPath`n`nIf the downgrader said it's already 1.0 US, its Path showed another folder. Run it again and check its Path first?" 'RetryCancel' 'Warning') -ne 'Retry') { return $false }
     }
 }
 
