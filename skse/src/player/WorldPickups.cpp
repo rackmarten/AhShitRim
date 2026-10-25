@@ -46,7 +46,7 @@ namespace AhShitRim::WorldPickups
             RE::NiPoint3 middle;
         };
 
-        // A pickup that isn't in the table: the heart, or one San Andreas dropped.
+        // A pickup that isn't in the table: the heart, the pistol when CJ runs dry, or one San Andreas dropped.
         struct Loose
         {
             Kind          kind = Kind::None;
@@ -55,6 +55,7 @@ namespace AhShitRim::WorldPickups
             RE::NiPoint3  middle;
             double        born = 0.0;
             bool          heart = false;
+            bool          dry = false;    // the pistol for CJ out of rounds
             bool          armed = false;  // CJ has stepped off it since it came (he drops the jetpack at his feet)
             bool          emptied = false;  // a weapon whose rounds went into CJ's gun
             bool          offered = false;  // a weapon whose swap the help box offered
@@ -75,6 +76,7 @@ namespace AhShitRim::WorldPickups
             bool                             offering = false;     // this frame CJ stands on a weapon E swaps him for
             bool                             swapPressed = false;  // E since the last frame, while offering
             HeartRule                        heart;
+            DryRule                          dry;
             float                            heartRetry = 0.0f;
             double                           clock = 0.0;  // seconds San Andreas has had the player, the respawns' clock
             std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> copies;  // (model, nth shown) to its copy's id
@@ -412,7 +414,8 @@ namespace AhShitRim::WorldPickups
 
         // ---- The heart and San Andreas's own ----
 
-        void SpawnHeart(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, float a_heading)
+        // a_pickup in front of CJ where the camera sees it, on solid ground (the heart's places). False when there's no such place.
+        bool SpawnInFront(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, float a_heading, Loose a_pickup, std::string_view a_why)
         {
             for (const auto& place : HeartPlaces(V(a_feet), a_heading)) {
                 RE::NiPoint3 ground;
@@ -423,25 +426,23 @@ namespace AhShitRim::WorldPickups
                 if (!InSight(a_player, middle)) {
                     continue;
                 }
-                Loose heart;
-                heart.kind = Kind::Health;
-                heart.middle = middle;
-                heart.born = state.clock;
-                heart.heart = true;
-                heart.place = PlaceOf(a_player);
-                state.loose.push_back(heart);
-                state.heart.Spawned(state.clock);
-                Log(std::format("CJ is hurt: a heart at ({:.0f},{:.0f},{:.0f}), {:.1f} m from him", middle.x, middle.y, middle.z, middle.GetDistance(a_feet) / kMeter));
-                return;
+                a_pickup.middle = middle;
+                a_pickup.born = state.clock;
+                a_pickup.place = PlaceOf(a_player);
+                state.loose.push_back(a_pickup);
+                SKSE::log::info("pickups: {}: the {} at ({:.0f},{:.0f},{:.0f}), {:.1f} m from him", a_why, NameOf(a_pickup.kind), middle.x, middle.y, middle.z,
+                    middle.GetDistance(a_feet) / kMeter);
+                return true;
             }
+            return false;
         }
 
         void UpdateLoose(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, const Cj* a_cj, std::map<std::uint32_t, std::uint32_t>& a_shown)
         {
             const void* place = PlaceOf(a_player);
             for (auto it = state.loose.begin(); it != state.loose.end();) {
-                const bool gone = it->place != place ||
-                                  (it->heart && (state.clock - it->born > kHeartLife || it->middle.GetDistance(a_feet) > kHeartGone));
+                const bool gone = it->place != place || (it->heart && (state.clock - it->born > kHeartLife || it->middle.GetDistance(a_feet) > kHeartGone)) ||
+                                  (it->dry && (state.clock - it->born > kPistolLife || it->middle.GetDistance(a_feet) > kPistolGone));
                 if (gone) {
                     it = state.loose.erase(it);
                     continue;
@@ -455,7 +456,7 @@ namespace AhShitRim::WorldPickups
                 }
                 if (a_cj && it->armed && touches && it->kind == Kind::Weapon && Wants(it->kind, *a_cj)) {
                     if (TouchWeapon(a_player, *a_cj, it->weapon, it->amount ? it->amount : StreetAmmo(it->weapon), it->emptied, it->offered,
-                            "where San Andreas dropped it")) {
+                            it->dry ? "the pistol for CJ out of rounds" : "where San Andreas dropped it")) {
                         it = state.loose.erase(it);
                         continue;
                     }
@@ -533,7 +534,24 @@ namespace AhShitRim::WorldPickups
             const bool heartOut = std::any_of(state.loose.begin(), state.loose.end(), [](const Loose& a_loose) { return a_loose.heart; });
             if (state.heartRetry <= 0.0f && !cj.inVehicle && state.heart.Due(cj.health, cj.healthMax, state.clock, heartOut)) {
                 state.heartRetry = kHeartRetry;
-                SpawnHeart(a_player, feet, a_pose->viewHeading);
+                Loose heart;
+                heart.kind = Kind::Health;
+                heart.heart = true;
+                if (SpawnInFront(a_player, feet, a_pose->viewHeading, heart, "CJ is hurt")) {
+                    state.heart.Spawned(state.clock);
+                }
+            }
+        }
+        // Out of rounds for every gun: a pistol with a clip in front of him, as the heart.
+        const bool pistolOut = std::any_of(state.loose.begin(), state.loose.end(), [](const Loose& a_loose) { return a_loose.dry; });
+        if (state.dry.Due(free && !cj.inVehicle, free && OutOfRounds(cj.loadout), pistolOut, state.clock)) {
+            Loose pistol;
+            pistol.kind = Kind::Weapon;
+            pistol.weapon = Weapons::Pistol;
+            pistol.amount = kPistolRounds;
+            pistol.dry = true;
+            if (SpawnInFront(a_player, feet, a_pose->viewHeading, pistol, "CJ is out of rounds")) {
+                state.dry.Spawned();
             }
         }
         std::map<std::uint32_t, std::uint32_t> shown;  // by model: how many are drawn with it so far
@@ -568,6 +586,7 @@ namespace AhShitRim::WorldPickups
     {
         state.board.Restore(a_taken);
         state.heart.Reset();
+        state.dry.Reset();
         Clear();
         SKSE::log::info("pickups: the loaded save took {} one-off pickups", a_taken.size());
     }
@@ -576,6 +595,7 @@ namespace AhShitRim::WorldPickups
     {
         state.board.Clear();
         state.heart.Reset();
+        state.dry.Reset();
         Clear();
     }
 }

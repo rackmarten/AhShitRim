@@ -371,6 +371,64 @@ namespace AhShitRim::Pickups
         return out;
     }
 
+    // ---- The pistol when he runs dry ----
+    //
+    // Weapons aren't laid about Skyrim yet, so when CJ has rounds for none of his guns (or no gun at all), a pistol with a
+    // clip turns up in front of him, as the heart does: 2 s after he ran dry, one at a time, only while he is CJ (San
+    // Andreas has the player and he is his own), and gone after 2 minutes or 60 m. Unlike the heart it has no cooldown:
+    // its rounds end the dry spell, and the next comes only when he is empty again. So he can always fight on and has a
+    // crosshair to aim at keys, locks and levers.
+
+    inline constexpr float         kDryDelay = 2.0f;
+    inline constexpr float         kPistolLife = kHeartLife;
+    inline constexpr float         kPistolGone = kHeartGone;
+    inline constexpr std::uint32_t kPistolRounds = 17;  // a clip: weapon.dat's for the 9mm
+
+    // A gun: San Andreas's handgun, shotgun, SMG, rifle, sniper and heavy slots (2 to 7), the ones with a crosshair.
+    constexpr bool IsGun(std::uint8_t a_type)
+    {
+        const auto slot = Shop::SlotOf(a_type);
+        return Weapons::Carried(a_type) && slot >= 2 && slot <= 7;
+    }
+
+    // Whether none of CJ's guns has a round left (no gun counts as none).
+    inline bool OutOfRounds(const Weapons::Loadout& a_loadout)
+    {
+        for (const auto& entry : a_loadout) {
+            if (IsGun(entry.type) && entry.ammo > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    class DryRule
+    {
+    public:
+        // Every frame: whether a pistol should turn up now. a_cj: San Andreas has the player and CJ is his own (not in a
+        // vehicle, a scene or Wasted); a_dry: OutOfRounds; a_out: one is out already.
+        bool Due(bool a_cj, bool a_dry, bool a_out, double a_now)
+        {
+            if (!a_cj || !a_dry || a_out) {
+                _dryFor = false;
+                return false;
+            }
+            if (!_dryFor) {
+                _dryFor = true;
+                _since = a_now;
+            }
+            return a_now - _since >= kDryDelay;
+        }
+
+        // One came: the next waits for its own 2 s (it was taken without rounds in it, or it went).
+        void Spawned() { _dryFor = false; }
+        void Reset() { _dryFor = false; }
+
+    private:
+        bool   _dryFor = false;  // dry since _since
+        double _since = 0.0;
+    };
+
     // ---- San Andreas's side ----
 
     // The name of the model San Andreas draws a kind with, "" for a weapon (its own model, Weapons::ModelName).

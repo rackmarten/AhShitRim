@@ -288,3 +288,57 @@ TEST_CASE("a swap keeps the old gun's rounds only in the shotgun, SMG and rifle 
     CHECK_FALSE(SharesRounds(Shop::SlotOf(Weapons::Pistol)));
     CHECK_FALSE(SharesRounds(Shop::SlotOf(Weapons::SniperRifle)));
 }
+
+TEST_CASE("out of rounds: no gun of his has any left, or he has none")
+{
+    Weapons::Loadout loadout{};
+    CHECK(OutOfRounds(loadout));  // fists only
+    loadout[1] = { Weapons::Katana, 0, 0, 1 };
+    loadout[8] = { Weapons::Grenade, 0, 0, 4 };
+    CHECK(OutOfRounds(loadout));  // a katana and grenades are no guns
+    loadout[2] = { Weapons::Pistol, 0, 0, 0 };
+    loadout[4] = { Weapons::Mp5, 0, 0, 0 };
+    CHECK(OutOfRounds(loadout));  // the guns he has are empty
+    loadout[4].ammo = 30;
+    CHECK_FALSE(OutOfRounds(loadout));
+    loadout[4].ammo = 0;
+    loadout[7] = { Weapons::Minigun, 0, 0, 500 };
+    CHECK_FALSE(OutOfRounds(loadout));
+    CHECK(IsGun(Weapons::Pistol));
+    CHECK(IsGun(Weapons::SniperRifle));
+    CHECK(IsGun(Weapons::RocketLauncher));
+    CHECK_FALSE(IsGun(Weapons::Katana));
+    CHECK_FALSE(IsGun(Weapons::Grenade));
+    CHECK_FALSE(IsGun(Weapons::Camera));
+    CHECK_FALSE(IsGun(Weapons::Parachute));
+}
+
+TEST_CASE("a pistol turns up 2 s after he ran dry, one at a time and without a cooldown, only while he is CJ")
+{
+    DryRule rule;
+    CHECK_FALSE(rule.Due(true, true, false, 10.0));  // just ran dry
+    CHECK_FALSE(rule.Due(true, true, false, 11.9));
+    CHECK(rule.Due(true, true, false, 12.0));
+    rule.Spawned();
+    CHECK_FALSE(rule.Due(true, true, true, 13.0));  // one is out
+    CHECK_FALSE(rule.Due(true, false, false, 14.0));  // taken: its clip
+    // Empty again: another 2 s later, no cooldown.
+    CHECK_FALSE(rule.Due(true, true, false, 20.0));
+    CHECK(rule.Due(true, true, false, 22.0));
+    // One that went untaken while he stays dry: the next 2 s after.
+    rule.Spawned();
+    CHECK_FALSE(rule.Due(true, true, false, 23.0));
+    CHECK(rule.Due(true, true, false, 25.0));
+
+    DryRule other;
+    CHECK_FALSE(other.Due(false, true, false, 0.0));  // Skyrim has the player, or CJ isn't his own
+    CHECK_FALSE(other.Due(false, true, false, 50.0));
+    CHECK_FALSE(other.Due(true, true, false, 51.0));  // the 2 s start when he is CJ
+    CHECK(other.Due(true, true, false, 53.0));
+    // Rounds again (he picked some up): the wait starts over when he runs dry next.
+    CHECK_FALSE(other.Due(true, false, false, 54.0));
+    CHECK_FALSE(other.Due(true, true, false, 55.0));
+    CHECK(other.Due(true, true, false, 57.0));
+    other.Reset();
+    CHECK_FALSE(other.Due(true, true, false, 58.0));
+}
