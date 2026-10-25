@@ -597,8 +597,8 @@ namespace AhShitRim::CjBody
             if (info && info->m_pColModel) {
                 const CMatrix& m = vehicle->GetMatrix();  // right, up (forward) and at (up) rows
                 const CVector  rel = source - m.pos;
-                const float    seat[3] = { DotProduct(rel, m.right), DotProduct(rel, m.up), DotProduct(rel, m.at) };
-                const float    look[3] = { DotProduct(front, m.right), DotProduct(front, m.up), DotProduct(front, m.at) };
+                const float    seat[3] = { rel.Dot(m.right), rel.Dot(m.up), rel.Dot(m.at) };
+                const float    look[3] = { front.Dot(m.right), front.Dot(m.up), front.Dot(m.at) };
                 const auto&    box = info->m_pColModel->m_boundBox;
                 const float    lo[3] = { box.m_vecMin.x, box.m_vecMin.y, box.m_vecMin.z };
                 const float    hi[3] = { box.m_vecMax.x, box.m_vecMax.y, box.m_vecMax.z };

@@ -188,10 +188,10 @@ namespace AhShitRim::Camera
         }
         // The nearest of the box's sides the way it looks.
         float t = 1e30f;
-        if (dx > 1e-6f) t = std::min(t, (a_max[0] - a_source[0]) / dx);
-        if (dx < -1e-6f) t = std::min(t, (a_min[0] - a_source[0]) / dx);
-        if (dy > 1e-6f) t = std::min(t, (a_max[1] - a_source[1]) / dy);
-        if (dy < -1e-6f) t = std::min(t, (a_min[1] - a_source[1]) / dy);
+        if (dx > 1e-6f) t = (std::min)(t, (a_max[0] - a_source[0]) / dx);
+        if (dx < -1e-6f) t = (std::min)(t, (a_min[0] - a_source[0]) / dx);
+        if (dy > 1e-6f) t = (std::min)(t, (a_max[1] - a_source[1]) / dy);
+        if (dy < -1e-6f) t = (std::min)(t, (a_min[1] - a_source[1]) / dy);
         a_out[0] = a_source[0] + dx * (t + a_margin);
         a_out[1] = a_source[1] + dy * (t + a_margin);
     }
