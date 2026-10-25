@@ -187,3 +187,15 @@ TEST_CASE("a handover puts the untouched ones back to waiting, the taken stay ta
     CHECK(board.StatusOf(20) == Status::Taken);
     CHECK(board.StatusOf(50) == Status::Waiting);  // never seen
 }
+
+TEST_CASE("never put out on top of CJ")
+{
+    const Vehicle::Footprint size{ 1.0f, 2.5f };
+    const Vec3               feet{ 0.0f, 0.0f, 500.0f };
+    const auto               spots = Candidates(feet, 0.0f);  // CJ stands on the spot itself
+    CHECK_FALSE(ClearOfCj(spots[0], size, feet));
+    CHECK_FALSE(ClearOfCj(spots[1], size, feet));  // 3 m off: within its half length and 2 m
+    CHECK(ClearOfCj(spots[1 + kAroundSteps], size, feet));  // 6 m off
+    CHECK(ClearOfCj({ { 4.6f, 0.0f, 500.0f }, { 0.0f, 1.0f, 0.0f }, 0.0f }, size, feet));
+    CHECK_FALSE(ClearOfCj({ { 4.4f, 0.0f, 500.0f }, { 0.0f, 1.0f, 0.0f }, 0.0f }, size, feet));
+}

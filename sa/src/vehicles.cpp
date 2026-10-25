@@ -78,6 +78,7 @@ namespace AhShitRim::Vehicles
             std::string           name;
             int                   parked = -1;       // a parked spot's id while its vehicle stands there untouched (protocol/cpp/parked.h)
             bool                  dropFar = false;  // a parked one, or its wreck: goes once CJ is far and nobody uses it
+            int                   from = -1;        // with dropFar, the spot it was parked at: no other is put out there while it stands
         };
 
         struct State
@@ -268,14 +269,15 @@ namespace AhShitRim::Vehicles
                     return i;
                 }
             }
-            // All taken: the oldest one CJ isn't in goes.
-            auto* ped = FindPlayerPed(0);
-            int   oldest = -1;
+            // All taken: the oldest one CJ isn't in goes, a parked one (or its wreck) before any of his.
+            auto*      ped = FindPlayerPed(0);
+            int        oldest = -1;
+            const auto before = [](const Slot& a, const Slot& b) { return a.dropFar != b.dropFar ? a.dropFar : a.spawned < b.spawned; };
             for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
                 if (ped && (Live(i) == Driven(ped) || Live(i) == ped->m_pVehicle)) {
                     continue;  // in it, or getting in or out of it
                 }
-                if (oldest < 0 || state.slots[i].spawned < state.slots[oldest].spawned) {
+                if (oldest < 0 || before(state.slots[i], state.slots[oldest])) {
                     oldest = i;
                 }
             }
@@ -1168,7 +1170,7 @@ namespace AhShitRim::Vehicles
 
         // Puts a spot's vehicle out: in a free slot (a parked one never pushes another out), once its model is in and
         // the ground under the spot is, on the first place round it that will do (the spawn rule's checks).
-        bool PutOut(const Parked::Spot& a_spot, const Pose::Vec3& a_anchor, const CVector& a_spawnFeet)
+        bool PutOut(const Parked::Spot& a_spot, const Pose::Vec3& a_anchor, const CVector& a_spawnFeet, const CVector& a_feet)
         {
             auto* info = InfoOf(a_spot.model);
             if (!info) {
@@ -1198,11 +1200,13 @@ namespace AhShitRim::Vehicles
             const CVector ground(at.x, at.y, point.m_vecPoint.z);
             const auto    name = NameOf(info, a_spot.model);
             const auto    traits = VehicleKinds::TraitsOf(KindOf(info, a_spot.model));
+            const auto    size = FootprintOf(info);
+            auto          places = Parked::Candidates(Vec(ground), Pose::SanAndreasHeading(a_spot.heading));
+            std::erase_if(places, [&](const Vehicle::Spot& a_place) { return !Parked::ClearOfCj(a_place, size, Vec(a_feet)); });  // never on top of him
             Vehicle::Spot spot;
             float         groundZ = 0.0f;
             int           tried = 0;
-            if (!FirstSpot(Parked::Candidates(Vec(ground), Pose::SanAndreasHeading(a_spot.heading)), ground, ground + CVector(0.0f, 0.0f, 1.0f), FootprintOf(info),
-                    traits.maxUneven, spot, groundZ, tried)) {
+            if (places.empty() || !FirstSpot(places, ground, ground + CVector(0.0f, 0.0f, 1.0f), size, traits.maxUneven, spot, groundZ, tried)) {
                 ParkedWhy(a_spot, std::format("no flat, clear place for the {} ({} tried)", name, tried));
                 return false;
             }
@@ -1219,10 +1223,11 @@ namespace AhShitRim::Vehicles
             slot.name = name;
             slot.parked = a_spot.id;
             slot.dropFar = true;
+            slot.from = a_spot.id;
             ParkedWhy(a_spot, "");
             const CVector& now = vehicle->GetPosition();
             Log(std::format("vehicle: {} parked at spot {} ({}) in slot {} at ({:.1f},{:.1f},{:.1f}), place {} of {}", name, a_spot.id, a_spot.name, index, now.x,
-                now.y, now.z, tried, 1 + Parked::kAroundRings * Parked::kAroundSteps));
+                now.y, now.z, tried, places.size()));
             return true;
         }
     }
@@ -1289,8 +1294,16 @@ namespace AhShitRim::Vehicles
             if (!state.parked.Tick(spot, now, Parked::DistanceTo(spot, a_world, cj)) || tried) {
                 continue;
             }
+            bool wreck = false;  // the last one's wreck still stands there
+            for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && !wreck; i++) {
+                wreck = state.slots[i].dropFar && state.slots[i].from == spot.id && Live(i);
+            }
+            if (wreck) {
+                state.parked.Tried(spot.id, now);
+                continue;
+            }
             tried = true;
-            if (PutOut(spot, anchor, spawnFeet)) {
+            if (PutOut(spot, anchor, spawnFeet, feet)) {
                 state.parked.Out(spot.id);
             } else {
                 state.parked.Tried(spot.id, now);

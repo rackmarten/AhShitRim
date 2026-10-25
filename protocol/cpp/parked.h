@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -181,6 +182,16 @@ namespace AhShitRim::Parked
         return out;
     }
 
+    // A place clear of CJ: the vehicle's middle at least its half length and kKeepOff more from his feet (across), so it
+    // is never made on top of him when he stands on its spot. San Andreas's ground and in-the-way lines don't see peds.
+    inline constexpr float kKeepOff = 2.0f;  // metres
+
+    inline bool ClearOfCj(const Vehicle::Spot& a_spot, const Vehicle::Footprint& a_size, const Vec3& a_feet)
+    {
+        const float reach = (std::max)(a_size.halfLength, a_size.halfWidth) + kKeepOff;
+        return std::hypot(a_spot.center.x - a_feet.x, a_spot.center.y - a_feet.y) >= reach;
+    }
+
     // ---- Taken and back ----
 
     enum class Status : std::uint8_t
@@ -190,8 +201,8 @@ namespace AhShitRim::Parked
         Taken,    // CJ took it, it was wrecked or it went some other way: back after kBackSeconds, once CJ was far
     };
 
-    // Each spot's status, for this session only: a load or a restart starts every spot afresh, as San Andreas's
-    // generators do.
+    // Each spot's status, for this session only: nothing goes in the co-save, and a taken one stays taken over a
+    // Skyrim load until its time is up; restarting the games starts every spot afresh.
     class Board
     {
     public:
