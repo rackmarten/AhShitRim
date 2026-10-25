@@ -22,4 +22,15 @@ namespace AhShitRim::LinkService
         }).detach();
         SKSE::log::info("link: started (protocol v{})", Protocol::kProtocolVersion);
     }
+
+    void ShowMismatch(bool a_now)
+    {
+        static Handshake::Notice notice{ Handshake::kMessageRepeatMs };
+        const std::uint32_t      other = Get().MismatchVersion();
+        const auto               nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const bool               due = notice.Due(other, static_cast<std::uint64_t>(nowMs));
+        if (other && (due || a_now)) {
+            RE::DebugMessageBox(Handshake::MismatchMessage(Protocol::Side::Skyrim, other).c_str());
+        }
+    }
 }

@@ -8,6 +8,46 @@
 #include <cstring>
 #include <format>
 
+// The release a plugin build belongs to (both plugins' CMake set it), for the version stamp.
+#ifndef AHSHITRIM_VERSION
+#    define AHSHITRIM_VERSION "dev"
+#endif
+
+namespace AhShitRim
+{
+    struct VersionStamp
+    {
+        char text[64];
+    };
+
+    consteval VersionStamp MakeVersionStamp()
+    {
+        VersionStamp stamp{};
+        std::size_t  n = 0;
+        auto         put = [&](const char* a_text) {
+            while (*a_text) {
+                stamp.text[n++] = *a_text++;
+            }
+        };
+        put("AhShitRim-link-stamp: protocol ");
+        char digits[10]{};
+        int  count = 0;
+        for (std::uint32_t version = Protocol::kProtocolVersion; version || count == 0; version /= 10) {
+            digits[count++] = static_cast<char>('0' + version % 10);
+        }
+        while (count) {
+            stamp.text[n++] = digits[--count];
+        }
+        put(", release ");
+        put(AHSHITRIM_VERSION);
+        return stamp;
+    }
+}
+
+// The launcher finds this text in AhShitRim.dll and AhShitRim.asi and refuses to start two halves that speak
+// different versions. Exported, so the linker keeps it.
+extern "C" __declspec(dllexport) const AhShitRim::VersionStamp AhShitRimLinkStamp = AhShitRim::MakeVersionStamp();
+
 namespace AhShitRim
 {
     using namespace Protocol;
@@ -109,7 +149,7 @@ namespace AhShitRim
         Detach();
     }
 
-    void Link::TryMap()
+    void Link::TryMap(std::uint64_t a_nowMs)
     {
         HANDLE mapping = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, kMappingSize, _name.c_str());
         if (!mapping) {
@@ -146,63 +186,121 @@ namespace AhShitRim
         }
 
         _mapping = mapping;
+        _mappedMs = a_nowMs;
+        _joined = existed;
         _base.store(base, std::memory_order_release);
-        _state.store(State::Waiting, std::memory_order_release);
-        _log(existed ? "joined shared memory, waiting for peer" : "created shared memory, waiting for peer");
+        if (!existed) {
+            _otherVersion.store(0, std::memory_order_release);
+            _notice.Due(0, a_nowMs);
+            _state.store(State::Waiting, std::memory_order_release);
+            _log("created shared memory, waiting for peer");
+        } else if (GetState() != State::Mismatch) {
+            _state.store(State::Waiting, std::memory_order_release);
+        }
+    }
+
+    namespace
+    {
+        // A peer that crashed leaves its PeerInfo behind; its version only counts while its process runs.
+        bool ProcessAlive(std::uint32_t a_pid)
+        {
+            if (a_pid == 0) {
+                return false;
+            }
+            if (a_pid == ::GetCurrentProcessId()) {
+                return true;
+            }
+            HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, a_pid);
+            if (!process) {
+                return ::GetLastError() == ERROR_ACCESS_DENIED;  // it exists, we just may not look
+            }
+            DWORD      code = 0;
+            const bool alive = ::GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+            ::CloseHandle(process);
+            return alive;
+        }
     }
 
     void Link::Tick(std::uint64_t a_nowMs)
     {
-        const State state = GetState();
-        if (state == State::Disabled) {
-            return;
-        }
         if (!Base()) {
-            TryMap();
+            if (a_nowMs < _retryAtMs) {
+                return;
+            }
+            TryMap(a_nowMs);
             if (!Base()) {
                 return;
             }
         }
 
-        auto* header = At<LinkHeader>(Base(), kOffsetHeader);
-        const std::uint32_t magic = Atomic(header->magic).load(std::memory_order_acquire);
-        if (magic == 0) {
-            return;  // creator is still initializing
-        }
-        if (magic != kMagic || header->headerSize != sizeof(LinkHeader)) {
-            Disable("the shared memory is not an AhShitRim link (unknown magic or header size)");
-            return;
-        }
-
+        auto*     header = At<LinkHeader>(Base(), kOffsetHeader);
         PeerInfo& self = header->peers[static_cast<std::uint32_t>(_side)];
         PeerInfo& peer = header->peers[static_cast<std::uint32_t>(Other(_side))];
 
+        // Until we attach, the section may not be ours. Once attached its header never changes, and only
+        // a section we never attached to is let go of, so no other thread is still using it then.
         if (!_attached.load(std::memory_order_relaxed)) {
-            // Publish ourselves first, even on a version mismatch, so the peer can report it too.
+            const std::uint32_t magic = Atomic(header->magic).load(std::memory_order_acquire);
+            switch (Handshake::CheckSection(magic, header->headerSize, header->mappingSize, header->creatorVersion)) {
+            case Handshake::Section::Initializing:
+                if (a_nowMs - _mappedMs >= Handshake::kInitTimeoutMs) {
+                    _log("the shared memory was never set up (its creator quit halfway), letting go of it");
+                    Release(a_nowMs);
+                }
+                return;
+            case Handshake::Section::Foreign:
+                if (!_foreignLogged) {
+                    _log("the shared memory is not an AhShitRim link (unknown magic or header size), retrying");
+                    _foreignLogged = true;
+                }
+                Release(a_nowMs);
+                return;
+            case Handshake::Section::OtherVersion:
+                // Publish ourselves first, so the other half can report the mismatch too, then let go: the
+                // section dies with its last holder and the next try creates one of ours.
+                Atomic(self.pid).store(::GetCurrentProcessId(), std::memory_order_relaxed);
+                Atomic(self.version).store(kProtocolVersion, std::memory_order_release);
+                Mismatched(Handshake::OtherVersion(Atomic(peer.version).load(std::memory_order_acquire), header->creatorVersion), a_nowMs);
+                Release(a_nowMs);
+                return;
+            case Handshake::Section::Usable:
+                break;
+            }
             Atomic(self.pid).store(::GetCurrentProcessId(), std::memory_order_relaxed);
             Atomic(self.version).store(kProtocolVersion, std::memory_order_release);
-            if (header->creatorVersion != kProtocolVersion || header->mappingSize != kMappingSize) {
-                Disable(std::format(
-                    "protocol mismatch: the shared memory was created with protocol v{}, this {} speaks v{}; update both halves to the same release",
-                    header->creatorVersion, SideName(_side), kProtocolVersion));
-                return;
-            }
             // Anything still in our ring was sent to an earlier instance of us.
             RingHeader* ring = Inbound(Base(), _side);
             Atomic(ring->tail).store(Atomic(ring->head).load(std::memory_order_acquire), std::memory_order_release);
+            _foreignLogged = false;
             _attached.store(true, std::memory_order_release);
+            if (_joined) {
+                _log("joined shared memory, waiting for peer");  // only once it's ours, so opening another version's stays quiet
+            }
         }
 
         Atomic(self.heartbeat).fetch_add(1, std::memory_order_release);
 
         const std::uint32_t peerVersion = Atomic(peer.version).load(std::memory_order_acquire);
         const std::uint32_t peerPid = Atomic(peer.pid).load(std::memory_order_acquire);
-        if (peerVersion != 0 && peerVersion != kProtocolVersion) {
-            Disable(std::format(
-                "protocol mismatch: the {} speaks v{}, this {} speaks v{}; update both halves to the same release",
-                SideName(Other(_side)), peerVersion, SideName(_side), kProtocolVersion));
+        if (peerVersion != 0 && peerVersion != kProtocolVersion && ProcessAlive(peerPid)) {
+            if (GetState() == State::Up) {
+                _log(std::format("link down: the {} now speaks v{}", SideName(Other(_side)), peerVersion));
+            }
+            _peerSeeded = false;
+            _peerSeen = false;
+            Mismatched(peerVersion, a_nowMs);
             return;
         }
+        if (GetState() == State::Mismatch) {
+            // The other version is gone (detached, crashed, or replaced by ours): handshake again.
+            _otherVersion.store(0, std::memory_order_release);
+            _notice.Due(0, a_nowMs);
+            _state.store(State::Waiting, std::memory_order_release);
+            _log(peerVersion == kProtocolVersion ?
+                     std::format("the {} now speaks v{} too, waiting for its heartbeat", SideName(Other(_side)), kProtocolVersion) :
+                     std::format("the {} of another version is gone, waiting for peer", SideName(Other(_side))));
+        }
+        const State state = GetState();
 
         const std::uint64_t heartbeat = Atomic(peer.heartbeat).load(std::memory_order_acquire);
         if (!_peerSeeded) {
@@ -227,10 +325,30 @@ namespace AhShitRim
         }
     }
 
-    void Link::Disable(const std::string& a_reason)
+    void Link::Mismatched(std::uint32_t a_otherVersion, std::uint64_t a_nowMs)
     {
-        _state.store(State::Disabled, std::memory_order_release);
-        _log("link disabled: " + a_reason);
+        _otherVersion.store(a_otherVersion, std::memory_order_release);
+        _state.store(State::Mismatch, std::memory_order_release);
+        if (_notice.Due(a_otherVersion, a_nowMs)) {
+            _log(std::format("protocol mismatch: the {} speaks v{}, this {} speaks v{}; waiting for it to restart with v{}. {}",
+                SideName(Other(_side)), a_otherVersion, SideName(_side), kProtocolVersion, kProtocolVersion,
+                Handshake::MismatchMessage(_side, a_otherVersion)));
+        }
+    }
+
+    // Lets go of a section we never attached to (our PeerInfo, if published, stays for the other half to read)
+    // and opens one again after kRemapMs.
+    void Link::Release(std::uint64_t a_nowMs)
+    {
+        std::uint8_t* base = Base();
+        _base.store(nullptr, std::memory_order_release);
+        ::UnmapViewOfFile(base);
+        ::CloseHandle(static_cast<HANDLE>(_mapping));
+        _mapping = nullptr;
+        _retryAtMs = a_nowMs + Handshake::kRemapMs;
+        if (GetState() != State::Mismatch) {
+            _state.store(State::Detached, std::memory_order_release);
+        }
     }
 
     void Link::Detach()
@@ -239,7 +357,7 @@ namespace AhShitRim
         if (!base) {
             return;
         }
-        if (_attached.load(std::memory_order_acquire) || GetState() == State::Disabled) {
+        if (_attached.load(std::memory_order_acquire)) {
             PeerInfo& self = At<LinkHeader>(base, kOffsetHeader)->peers[static_cast<std::uint32_t>(_side)];
             Atomic(self.pid).store(0, std::memory_order_release);
             Atomic(self.version).store(0, std::memory_order_release);
@@ -369,7 +487,7 @@ namespace AhShitRim
 
     std::size_t Link::Receive(const std::function<void(MessageType, const std::uint8_t*, std::uint32_t)>& a_handler)
     {
-        if (!_attached.load(std::memory_order_acquire) || GetState() == State::Disabled) {
+        if (!_attached.load(std::memory_order_acquire) || GetState() == State::Mismatch) {
             return 0;
         }
         RingHeader*         ring = Inbound(Base(), _side);

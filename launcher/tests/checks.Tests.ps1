@@ -274,3 +274,29 @@ Describe 'Test-SamePath' {
         Test-SamePath $null 'C:\Games' | Should -BeFalse
     }
 }
+
+Describe 'Get-LinkVersionProblem' {
+    BeforeAll {
+        $new = "MZ junk`0AhShitRim-link-stamp: protocol 35, release 0.1.0`0more junk"
+        $newer = "MZ`0AhShitRim-link-stamp: protocol 36, release 0.1.1`0"
+        $old = 'MZ an old build without a stamp'
+    }
+    It 'is happy when both speak the same version' {
+        Get-LinkVersionProblem $new $new 'C:\dll' 'C:\asi' | Should -BeNullOrEmpty
+        Get-LinkVersionProblem $new ($new -replace '0\.1\.0', 'dev') 'C:\dll' 'C:\asi' | Should -BeNullOrEmpty
+    }
+    It 'names an old Skyrim plugin to replace' {
+        $problem = Get-LinkVersionProblem $old $new 'C:\Skyrim\Data\SKSE\Plugins\AhShitRim.dll' 'C:\SA\scripts\AhShitRim.asi'
+        $problem | Should -Match 'from before 0\.1\.0'
+        $problem | Should -Match 'AhShitRim 0\.1\.0 \(link version 35\)'
+        $problem | Should -Match 'Replace C:\Skyrim\Data\SKSE\Plugins\AhShitRim\.dll'
+    }
+    It 'names the older ASI to replace' {
+        $problem = Get-LinkVersionProblem $newer $new 'C:\dll' 'C:\SA\scripts\AhShitRim.asi'
+        $problem | Should -Match 'link version 36.*link version 35'
+        $problem | Should -Match 'Replace C:\SA\scripts\AhShitRim\.asi'
+    }
+    It 'asks for both when neither has a stamp' {
+        Get-LinkVersionProblem $old $old 'C:\dll' 'C:\asi' | Should -Match 'Install both'
+    }
+}
