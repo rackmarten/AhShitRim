@@ -161,7 +161,7 @@ Anything that fails here is an SE vs AE difference: note which check failed and 
 
 ## CI
 
-Every pull request and every push to `main` or `production` that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
+Every pull request and every push to `main` or `production` that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It keeps its build folders, so it's much faster than a fresh GitHub runner. A first job, `changes`, on GitHub's free `ubuntu-latest`, looks at a PR's files: on a docs-only PR the two arcade jobs are skipped, which GitHub counts as passed, so the required checks (see "Branches and releases") don't hold it up. Two jobs, one after the other on the one runner:
 
 - `protocol-tests-linux`: `scripts/test.sh` (below) with gcc, as a headless session runs it.
 - `build`: `scripts/wine/build.sh` (below): both plugins with the real MSVC under Wine, then the whole doctest suite under Wine, the link's tests included. The checkout and build folders stay on the runner (`clean: false`), so a typical PR builds in a minute or two; the first build after a fresh runner or a CommonLib bump takes about 25 minutes. If it fails or hangs (`cl.exe` under Wine now and then spins forever on one file), the job stops Wine and runs it once more. It uploads `AhShitRim-<commit>` with `AhShitRim.dll`, `AhShitRim.asi` and `AhShitRim.map`, kept for 7 days.
@@ -229,6 +229,14 @@ From 0.1 on there are two long-lived branches:
 - **Hotfixes** for players branch from `production` (`fix-<slug>`), go through a pull request into `production`, are tagged there, and `production` is then merged back into `main`.
 
 CI builds every push to either branch and every pull request into either. Merge pull requests into `production` with a merge commit, never squash, so `main` and `production` keep a shared history and the merge back stays small.
+
+Repository rulesets (Settings > Rules > Rulesets) hold both branches to this:
+
+- **main and production:** changes go through a pull request (no approval needed), `build` and `protocol-tests-linux` must pass (the branch needn't be up to date with its base), and the branch can't be force-pushed or deleted. While arcade is paused (someone streaming or playing on it), merges wait for it.
+- **production:** merge commits only; squash and rebase are refused.
+- **Release tags (`v*`):** only admins create them, and nobody moves or deletes one.
+
+Repository admins can bypass all three, for an emergency. A PR from a fork shows both checks as skipped (arcade never runs a fork's code, see "CI"), so build it before merging: push its branch to this repo and open the PR from there.
 
 ### Cutting a release
 
