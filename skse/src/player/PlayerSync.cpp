@@ -488,6 +488,7 @@ namespace AhShitRim::PlayerSync
             Activation::Clear();
             AmmuNation::Close();
             Conversation::Clear();
+            Conversation::SetMayTalk(true);
             Shots::Clear();
             Projectiles::Clear();
             VehicleFx::Clear();
@@ -787,6 +788,11 @@ namespace AhShitRim::PlayerSync
             Protocol::PlayerState pose{};
             const bool valid = link.ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 &&
                                pose.handover == state.handover && Pose::Finite(pose);
+            // Nobody starts a dialogue with CJ while he drives or runs (Dialogue::MayTalk).
+            if (valid) {
+                const float speed = std::hypot(pose.velocity[0], pose.velocity[1], pose.velocity[2]) * Pose::kMetersPerUnit;
+                Conversation::SetMayTalk(Dialogue::MayTalk((pose.flags & Protocol::kPlayerInVehicle) != 0, speed));
+            }
             // The angles Skyrim built this frame's camera for, before Place changes them.
             const float fromHeading = a_player->GetAngleZ();
             const float fromPitch = a_player->data.angle.x;

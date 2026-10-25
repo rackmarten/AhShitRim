@@ -17,6 +17,12 @@ namespace AhShitRim::Conversation
 
     bool DialogueOpen();  // Skyrim's dialogue menu is open with someone
 
+    // Whether anyone may start a dialogue with the player now (Dialogue::MayTalk): set every frame while
+    // San Andreas has the player, true otherwise. While it's false Skyrim's start of a dialogue with
+    // the player (activated, walked up to or force-greeted) is refused, and E doesn't talk to anyone.
+    void SetMayTalk(bool a_mayTalk);
+    bool MayTalk();
+
     // Once a frame while San Andreas has the player, before the input goes out: follows the dialogue
     // menu and Skyrim's subtitles. Returns what CJ says now (InputState.lineKind), None for nothing.
     Dialogue::Category Update(float a_delta);
