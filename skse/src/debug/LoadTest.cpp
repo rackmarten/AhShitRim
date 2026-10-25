@@ -69,6 +69,7 @@ namespace AhShitRim::LoadTest
             float                    timer = 0.0f;
             int                      step = 0;
             bool                     travelled = false;
+            std::string              saveAs;  // LoadTestSaveAs: saved once, after the first load has settled
         } state;
 
         std::filesystem::path Folder()
@@ -301,6 +302,7 @@ namespace AhShitRim::LoadTest
                 state.scenarios = picked;
             }
         }
+        state.saveAs = Ini::Value("Debug", "LoadTestSaveAs");
         if (state.saves.empty() || ReadProgress() >= state.cycles) {
             SKSE::log::info("load test: on, but all {} cycles are done", state.cycles);
             return;
@@ -333,6 +335,17 @@ namespace AhShitRim::LoadTest
         state.timer += a_delta;
         switch (state.phase) {
         case Phase::Settling:
+            if (state.timer >= kSettleSeconds && !state.saveAs.empty()) {
+                // After a load the police takes out copies left in the save (3 s settled, then a step a frame): a moment
+                // more, then this game is saved under its own name, without them.
+                if (state.timer >= kSettleSeconds + 4.0f) {
+                    Note("save " + state.saveAs);
+                    RunConsole("save " + state.saveAs);
+                    state.saveAs.clear();
+                    state.timer = 0.0f;
+                }
+                return;
+            }
             if (state.timer >= kSettleSeconds) {
                 if (state.travelled) {
                     Note("ok");
