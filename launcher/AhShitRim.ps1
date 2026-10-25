@@ -122,6 +122,7 @@ function Get-Mo2Instances {
             HasDll       = $withDll.Count -gt 0
             Enabled      = @($withDll | Where-Object { $enabled -contains $_ }).Count -gt 0
             Plugins      = @(foreach ($mod in $enabled) { Get-FileNames (Join-Path $mo2.ModsDir "$mod\SKSE\Plugins") })
+            Dll          = @(@($withDll | Where-Object { $enabled -contains $_ }) + $withDll | ForEach-Object { Join-Path $mo2.ModsDir "$_\SKSE\Plugins\AhShitRim.dll" })[0]
             SkseTitle    = Find-Mo2SkseExecutable $mo2.Executables $skyrim
         }
     }
@@ -151,6 +152,14 @@ if (-not (Test-Path $asi)) { $asi = Join-Path (Split-Path $Root) 'sa\build\Relea
 $asiDest = Join-Path $sa 'scripts\AhShitRim.asi'
 if (-not (Test-Path $asi) -and -not (Test-Path $asiDest)) {
     $problems += "AhShitRim.asi is missing: it should be in 'San Andreas\scripts' next to this launcher. Extract the whole release zip again."
+}
+
+# Both halves must speak the same link version: the Skyrim plugin that will load, and the ASI San Andreas will have.
+$dll = if ($source.Mode -eq 'Mo2') { $mo2.Dll } else { Join-Path $realPlugins 'AhShitRim.dll' }
+$asiUsed = if (Test-Path $asi) { $asi } else { $asiDest }
+if ($dll -and (Test-Path $dll) -and (Test-Path $asiUsed)) {
+    $ascii = { param($path) [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($path)) }
+    $problems += @(Get-LinkVersionProblem (& $ascii $dll) (& $ascii $asiUsed) $dll $asiUsed)
 }
 
 foreach ($warning in @($source.Warnings) + @($saCheck.Warnings)) { Write-Host $warning -ForegroundColor Yellow }

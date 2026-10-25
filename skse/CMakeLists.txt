@@ -25,6 +25,8 @@ add_commonlibsse_plugin(
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 target_include_directories(${PROJECT_NAME} PRIVATE src ../protocol/cpp)
+# The link's version stamp carries the release (the launcher compares it with the ASI's).
+target_compile_definitions(${PROJECT_NAME} PRIVATE AHSHITRIM_VERSION="${PROJECT_VERSION}")
 # The shared link code includes <Windows.h> itself and must not pick up CommonLib's PCH.
 set_source_files_properties(../protocol/cpp/link.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 # So does the overlay, which needs the real d3d11.h.
