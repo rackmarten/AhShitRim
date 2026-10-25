@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Setup in the launcher, for players new to modding. The first time `Start AhShitRim.bat` runs, it finds San Andreas (Steam, the Rockstar Games Launcher or a retail install, or the folder you pick), offers to copy it into a folder you choose so the original stays untouched, downloads the open-source downgrader (gtasa-open-downgrader 0.2.3) and opens it on the copy, checks the copy is 1.0 US, and installs the Ultimate ASI Loader (9.7.4) if it has none, all through dialogs. Both downloads come from their projects' own GitHub releases, pinned to a version and checked by SHA-256 before anything runs. Later launches offer the same steps when Steam undid the downgrade or the ASI loader went missing.
+- Playing without a mod manager: with no Mod Organizer 2 or Vortex (or when you choose so, `ModManager=None` in `launcher.ini`), the launcher installs `AhShitRim-Skyrim-<version>.zip` straight into Skyrim's `Data` folder, keeps it up to date with the zip next to it, and records what it copied in `Data\SKSE\Plugins\AhShitRim.installed.txt`. `Uninstall AhShitRim.bat` removes those files, `AhShitRim.ini` and San Andreas's `AhShitRim.asi` again. When SKSE or the Address Library is missing, the launcher offers to open their download pages.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.
