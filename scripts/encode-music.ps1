@@ -3,7 +3,8 @@
     Builds Sweetroll FM's tracks: reads the table in music/CREDITS.md, downloads each track's source
     into music/sources/ (git-ignored) if it isn't there yet, and encodes it to
     music/sweetrollfm/<File> as 44.1 kHz stereo xWMA at 96 kbps, which Skyrim plays, each track
-    brought to -18 LUFS with its peaks limited to -1.5 dBFS so they all play equally loud.
+    brought to -13 LUFS with its peaks limited to -1.5 dBFS, as loud as San Andreas's own
+    stations' songs (about -12.5 LUFS) and all equally loud.
     Needs xWMAEncode.exe, which the Skyrim Special Edition Creation Kit (free on Steam) installs to
     Skyrim's Tools/Audio (found through SkyrimPath in local.props) and the DirectX SDK (June 2010)
     to its install folder, or on PATH; and ffmpeg on PATH (xWMAEncode only reads WAV).
@@ -49,7 +50,7 @@ function Read-Credits($path) {
 
 # Every track is brought to the same loudness (EBU R128 integrated, LUFS), so none plays louder than
 # the next: a plain gain from the measured loudness, then a limiter for the peaks the gain pushed up.
-$TargetLufs = -18.0
+$TargetLufs = -13.0   # San Andreas's stations play their songs at about -12.5 LUFS
 $PeakLimit = 0.841   # -1.5 dBFS
 
 # A source's integrated loudness, from ffmpeg's loudnorm analysis (printed on stderr).
