@@ -37,7 +37,13 @@ $SkyrimPartRecord = 'SKSE\Plugins\AhShitRim.installed.txt'
 function Format-Size([long] $Bytes) {
     if ($Bytes -ge 1GB) { return '{0:N1} GB' -f ($Bytes / 1GB) }
     if ($Bytes -ge 1MB) { return '{0:N0} MB' -f ($Bytes / 1MB) }
-    return '{0:N0} KB' -f [math]::Max(1, $Bytes / 1KB)
+    return '{0:N0} KB' -f [math]::Max(1.0, $Bytes / 1KB)
+}
+
+# How far a copy of $Total bytes is at $Done, 0 to 100. In 64 bits: a game is more than an Int32 of bytes.
+function Get-CopyPercent([long] $Done, [long] $Total) {
+    if ($Total -le 0) { return 100 }
+    return [int] [math]::Min(100L, [math]::Floor(100.0 * $Done / $Total))
 }
 
 # --- San Andreas ------------------------------------------------------------------------------
@@ -148,20 +154,29 @@ function Get-FreeBytes([string] $Path) {
 }
 
 # Copies a whole game folder, file by file with a progress bar. $Dest must not exist yet or be empty.
+# A copy that fails halfway is taken out again, so the same folder can be picked for another go.
 function Copy-GameFolder([string] $Source, [string] $Dest) {
     $source = (Resolve-Path -LiteralPath $Source).Path.TrimEnd('\')
     $files = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force)
-    $total = [math]::Max(1, ($files | Measure-Object -Sum Length).Sum)
+    $total = [long] ($files | Measure-Object -Sum Length).Sum
     $done = 0L
-    New-Item -ItemType Directory -Force $Dest | Out-Null
-    foreach ($dir in Get-ChildItem -LiteralPath $source -Recurse -Directory -Force) {
-        New-Item -ItemType Directory -Force (Join-Path $Dest $dir.FullName.Substring($source.Length + 1)) | Out-Null
-    }
-    foreach ($file in $files) {
-        $relative = $file.FullName.Substring($source.Length + 1)
-        Write-Progress -Activity "Copying San Andreas to $Dest" -Status "$(Format-Size $done) of $(Format-Size $total)" -CurrentOperation $relative -PercentComplete ([int] (100 * $done / $total))
-        [IO.File]::Copy($file.FullName, (Join-Path $Dest $relative), $false)
-        $done += $file.Length
+    $existed = Test-Path -LiteralPath $Dest
+    try {
+        New-Item -ItemType Directory -Force $Dest | Out-Null
+        foreach ($dir in Get-ChildItem -LiteralPath $source -Recurse -Directory -Force) {
+            New-Item -ItemType Directory -Force (Join-Path $Dest $dir.FullName.Substring($source.Length + 1)) | Out-Null
+        }
+        foreach ($file in $files) {
+            $relative = $file.FullName.Substring($source.Length + 1)
+            Write-Progress -Activity "Copying San Andreas to $Dest" -Status "$(Format-Size $done) of $(Format-Size $total)" -CurrentOperation $relative -PercentComplete (Get-CopyPercent $done $total)
+            [IO.File]::Copy($file.FullName, (Join-Path $Dest $relative), $false)
+            $done += $file.Length
+        }
+    } catch {
+        Write-Progress -Activity "Copying San Andreas to $Dest" -Completed
+        if ($existed) { Get-ChildItem -LiteralPath $Dest -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+        else { Remove-Item -LiteralPath $Dest -Recurse -Force -ErrorAction SilentlyContinue }
+        throw
     }
     Write-Progress -Activity "Copying San Andreas to $Dest" -Completed
 }

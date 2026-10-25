@@ -140,6 +140,27 @@ Describe 'Copy-GameFolder' {
         Get-Content "$TestDrive\dst\gta-sa.exe" | Should -Be 'exe'
         Test-Path "$TestDrive\dst\empty" | Should -BeTrue
     }
+    It 'takes a copy that fails halfway out again' {
+        New-Item -ItemType File -Force "$TestDrive\src2\a.txt" -Value 'a' | Out-Null
+        New-Item -ItemType File -Force "$TestDrive\src2\models\locked.img" -Value 'img' | Out-Null
+        New-Item -ItemType Directory "$TestDrive\picked" | Out-Null
+        $lock = [IO.File]::Open("$TestDrive\src2\models\locked.img", 'Open', 'Read', 'None')
+        try { { Copy-GameFolder "$TestDrive\src2" "$TestDrive\dst2" } | Should -Throw; { Copy-GameFolder "$TestDrive\src2" "$TestDrive\picked" } | Should -Throw }
+        finally { $lock.Dispose() }
+        Test-Path "$TestDrive\dst2" | Should -BeFalse
+        @(Get-ChildItem "$TestDrive\picked" -Force).Count | Should -Be 0
+    }
+}
+
+Describe 'Get-CopyPercent and Format-Size' {
+    It 'handle a game bigger than an Int32 of bytes' {
+        Get-CopyPercent 0 4923455331 | Should -Be 0
+        Get-CopyPercent 2461727665 4923455331 | Should -Be 49
+        Get-CopyPercent 4923455331 4923455331 | Should -Be 100
+        Get-CopyPercent 0 0 | Should -Be 100
+        Format-Size 4923455331 | Should -BeLike '4?6 GB'
+        Format-Size 100 | Should -Be '1 KB'
+    }
 }
 
 Describe 'Save-VerifiedDownload' {
