@@ -37,7 +37,15 @@ Already playing PerkeleRim? Then Skyrim is ready as it is.
    5. It asks how AhShitRim's Skyrim part goes in, if you have **Mod Organizer 2** or **Vortex** for this Skyrim. With neither, the launcher installs it itself (section 3).
 4. Setup keeps the folders and your choice in `launcher.ini` next to the launcher. Delete that file to run setup again.
 
-Downloads only ever come from those two projects' own GitHub releases, pinned to a version and a SHA-256; a file that doesn't match is deleted, never run.
+Downloads only ever come from those two projects' own GitHub releases, pinned to a version and a SHA-256; a file that doesn't match is deleted, never run. VirusTotal's reports on those exact files: [gtasa-open-downgrader 0.2.3](https://www.virustotal.com/gui/file/b9868a87fb93ab5d8ec6ea75d16dabe51010623e4291c627d271bc87cbd89637), [Ultimate ASI Loader 9.7.4](https://www.virustotal.com/gui/file/14b3a1ad018899571ac9aa01482977f3c6d49e6cba99f552d01c5acacd1315e1). The download dialog shows the link too.
+
+### Check your download
+
+Every release zip is built by GitHub Actions from the release's tag, never on someone's PC, and its release notes say how to check it:
+
+- **SHA-256**: `Get-FileHash AhShitRim-<version>.zip` in PowerShell should print the hash in the notes. `SHA256SUMS.txt` next to the zip lists every file in it.
+- **Build provenance**: with the [GitHub CLI](https://cli.github.com), `gh attestation verify AhShitRim-<version>.zip --repo rackmarten/AhShitRim` checks GitHub's signature that the zip came from this repository's release workflow at that tag.
+- **VirusTotal**: the notes link the zip's scan. AhShitRim's plugins hook into both games' code, which a few heuristic engines can mistake for malware; the source of every file is in this repository.
 
 ## 3. The Skyrim part
 

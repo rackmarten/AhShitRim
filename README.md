@@ -41,7 +41,7 @@ You need your own copies of both games: nothing from either is in this repositor
 
 ## Download and install
 
-Download `AhShitRim-0.1.0.zip` from [Releases](https://github.com/rackmarten/AhShitRim/releases/latest), extract it into a folder of its own and double-click `Start AhShitRim.bat`. [docs/INSTALL.md](docs/INSTALL.md) has every step, and the manual way. You need:
+Download `AhShitRim-0.1.0.zip` from [Releases](https://github.com/rackmarten/AhShitRim/releases/latest), extract it into a folder of its own and double-click `Start AhShitRim.bat`. [docs/INSTALL.md](docs/INSTALL.md) has every step, and the manual way. Each release is built by GitHub Actions, and its notes give the zip's SHA-256, its VirusTotal scan and how to verify GitHub's build attestation ([Check your download](docs/INSTALL.md#check-your-download)). You need:
 
 - Windows 10/11 and a PC that can run both games at once (San Andreas is light)
 - [The Elder Scrolls V: Skyrim Special Edition](https://store.steampowered.com/app/489830/), either Anniversary Edition (1.6.317 or later; the latest Steam version, 1.7.104, is the one tested most) or Special Edition 1.5.97, with the [SKSE64](https://skse.silverlock.org) build and the [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) file for that version. The same AhShitRim works on both

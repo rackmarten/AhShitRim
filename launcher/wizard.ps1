@@ -35,7 +35,7 @@ function Get-SaFolderAsiLoader([string] $SaPath) {
 }
 
 function Confirm-Download($Download) {
-    return (Show-Message "Download $($Download.Name) ($(Format-Size $Download.Size)) from $($Download.Source)?`n`nThe launcher checks the file's SHA-256 before it runs anything, and keeps it in the Tools folder next to the launcher." 'YesNo' 'Question') -eq 'Yes'
+    return (Show-Message "Download $($Download.Name) ($(Format-Size $Download.Size)) from $($Download.Source)?`n`nThe launcher checks the file's SHA-256 before it runs anything, and keeps it in the Tools folder next to the launcher.`n`nVirusTotal's report on this exact file:`n$(Get-VirusTotalUrl $Download.Sha256)" 'YesNo' 'Question') -eq 'Yes'
 }
 
 # Picks the San Andreas folder to start from: a found one the player confirms, or one they pick.

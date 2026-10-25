@@ -31,6 +31,9 @@ Describe 'PinnedDownloads' {
             $download.Url | Should -BeLike "*/$($download.File)"
         }
     }
+    It 'links VirusTotal''s report by the lower-case SHA-256' {
+        Get-VirusTotalUrl ('AB' * 32) | Should -Be "https://www.virustotal.com/gui/file/$('ab' * 32)"
+    }
 }
 
 Describe 'Get-FolderFromRegistryValue' {
