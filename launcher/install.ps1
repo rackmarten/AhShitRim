@@ -125,25 +125,25 @@ function Select-SaInstalls([string[]] $Folders) {
     }
 }
 
-# Where a copy of San Andreas goes when the player picks $Picked: the picked folder itself when
-# it's empty (or new), else a "San Andreas (AhShitRim)" folder inside it.
-function Get-SaCopyDestination([string] $Picked) {
-    if ($Picked -match '^[A-Za-z]:\\?$') { return $Picked.Substring(0, 2) + '\San Andreas (AhShitRim)' }
-    if (-not (Test-Path -LiteralPath $Picked) -or -not (Get-ChildItem -LiteralPath $Picked -Force | Select-Object -First 1)) { return $Picked.TrimEnd('\') }
-    return Join-Path $Picked 'San Andreas (AhShitRim)'
-}
-
-# Why San Andreas can't be copied from $Source to $Dest ($null when it can): the same folder or one
-# inside the other, a Program Files destination (Windows makes those read-only for games), a
-# destination that already has files, or too little room on its drive.
+# Why San Andreas can't be copied from $Source to $Dest, the folder the player picked, which is the
+# copy itself ($null when it can): a drive's root, the same folder or one inside the other, a
+# Program Files destination (Windows makes those read-only for games), one inside another San
+# Andreas, a destination that already has files, or too little room on its drive.
 function Get-SaCopyProblem([string] $Source, [string] $Dest, [long] $SourceBytes, [long] $FreeBytes) {
+    if ($Dest -match '^[A-Za-z]:\\?$') { return "The copy needs a folder of its own, not the whole drive. Make one with Make New Folder, for example $($Dest.Substring(0, 2))\Games\San Andreas AhShitRim." }
     $src = ($Source -replace '/', '\').TrimEnd('\') + '\'
     $dst = ($Dest -replace '/', '\').TrimEnd('\') + '\'
     if ($dst.StartsWith($src, 'OrdinalIgnoreCase') -or $src.StartsWith($dst, 'OrdinalIgnoreCase')) { return "The copy can't go inside the original San Andreas folder (or the other way round). Pick another folder." }
     foreach ($programs in ${env:ProgramFiles(x86)}, $env:ProgramFiles) {
         if ($programs -and $dst.StartsWith($programs.TrimEnd('\') + '\', 'OrdinalIgnoreCase')) { return "Windows keeps Program Files read-only for games, so San Andreas can't be downgraded there. Pick a folder such as C:\Games." }
     }
-    if ((Test-Path -LiteralPath $Dest) -and (Get-ChildItem -LiteralPath $Dest -Force | Select-Object -First 1)) { return "$Dest already has files in it. Pick an empty folder." }
+    # Never a copy inside another San Andreas (an earlier setup's copy): two games in one folder tree.
+    $parent = [IO.Path]::GetDirectoryName($dst.TrimEnd('\'))
+    while ($parent) {
+        if (Select-SaInstalls @($parent)) { return "$parent already has San Andreas in it, so the copy can't go inside it. Pick that folder itself to use it, or another folder." }
+        $parent = [IO.Path]::GetDirectoryName($parent)
+    }
+    if ((Test-Path -LiteralPath $Dest) -and (Get-ChildItem -LiteralPath $Dest -Force | Select-Object -First 1)) { return "$Dest already has files in it, and the copy goes straight into the folder you pick. Pick an empty folder, or make one with Make New Folder." }
     if ($FreeBytes -ge 0 -and $FreeBytes -lt $SourceBytes + 200MB) { return "The copy needs $(Format-Size $SourceBytes) and that drive has $(Format-Size $FreeBytes) free. Pick a folder on another drive." }
     return $null
 }
@@ -184,6 +184,19 @@ function Copy-GameFolder([string] $Source, [string] $Dest) {
         throw
     }
     Write-Progress -Activity "Copying San Andreas to $Dest" -Completed
+}
+
+# The downgrader may leave the 1.0 US exe as gta-sa.exe alone (Steam's name), but the launcher and the
+# ASI loader run gta_sa.exe: a supported gta-sa.exe (Get-SaExeVersion, checks.ps1) is copied to a
+# missing gta_sa.exe. $true when it made one.
+function Repair-SaExeName([string] $SaPath) {
+    $steamExe = [IO.Path]::Combine($SaPath, 'gta-sa.exe')
+    $exe = [IO.Path]::Combine($SaPath, 'gta_sa.exe')
+    if ((Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $steamExe)) { return $false }
+    $version = Get-SaExeVersion (Get-FileHash -LiteralPath $steamExe -Algorithm MD5).Hash
+    if (-not ($version -and $version.Supported)) { return $false }
+    Copy-Item -LiteralPath $steamExe $exe
+    return $true
 }
 
 # The 4GB patch the downgrader's tools offer, which AhShitRim is tested with: the Large Address Aware
