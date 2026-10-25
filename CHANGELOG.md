@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Setup in the launcher, for players new to modding. The first time `Start AhShitRim.bat` runs, it finds San Andreas (Steam, the Rockstar Games Launcher or a retail install, or the folder you pick), offers to copy it into a folder you choose so the original stays untouched, downloads the open-source downgrader (gtasa-open-downgrader 0.2.3) and opens it on the copy, checks the copy is 1.0 US, and installs the Ultimate ASI Loader (9.7.4) if it has none, all through dialogs. Both downloads come from their projects' own GitHub releases, pinned to a version and checked by SHA-256 before anything runs. Later launches offer the same steps when Steam undid the downgrade or the ASI loader went missing.
+- Playing without a mod manager: with no Mod Organizer 2 or Vortex (or when you choose so, `ModManager=None` in `launcher.ini`), the launcher installs `AhShitRim-Skyrim-<version>.zip` straight into Skyrim's `Data` folder, keeps it up to date with the zip next to it, and records what it copied in `Data\SKSE\Plugins\AhShitRim.installed.txt`. `Uninstall AhShitRim.bat` removes those files, `AhShitRim.ini` and San Andreas's `AhShitRim.asi` again. When SKSE or the Address Library is missing, the launcher offers to open their download pages.
+
 ### Fixed
 
 - A Skyrim plugin and a San Andreas ASI of different versions no longer strand the player. Before, the first mismatch switched the link off for good, so San Andreas ignored even the right Skyrim plugin started after a leftover old one, and F10 did nothing until San Andreas was restarted too. Now both halves keep watching and link up as soon as the other one restarts with the same version, and a shared memory block left by an older or crashed run is let go of and made again, whichever game starts first. While they differ, Skyrim says so in a message box (when a save is loaded, again every 5 minutes, and when F10 is pressed): "San Andreas has version X, Skyrim has version Y. Install the same version in both", naming the file to update; San Andreas's log says the same once a minute. The launcher checks the Skyrim plugin it will load and San Andreas's ASI carry the same version (a stamp in both files) before starting anything, and says which one to replace.
