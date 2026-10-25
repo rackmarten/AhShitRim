@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.
 
