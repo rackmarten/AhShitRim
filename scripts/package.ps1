@@ -5,7 +5,8 @@
         Vortex): SKSE/Plugins/AhShitRim.dll (+ .pdb when built) and, when they're encoded, Sweetroll FM's
         music/sweetrollfm/*.xwm at Music/AhShitRim/SweetrollFM/ with music/CREDITS.md
       - San Andreas/scripts/AhShitRim.asi, which the launcher copies into San Andreas
-      - the launcher (launcher/: "Start AhShitRim.bat", AhShitRim.ps1, checks.ps1) and INSTALL.md
+      - the launcher (launcher/: "Start AhShitRim.bat", "Uninstall AhShitRim.bat", AhShitRim.ps1, checks.ps1,
+        install.ps1, wizard.ps1) and INSTALL.md
       - radar_map.exe, which the launcher runs to paint the radar's map from the player's own plugins
     Run scripts/build.ps1 first; this builds radar_map itself (the tools preset). The zip's version is the SKSE plugin's (skse/CMakeLists.txt).
 .EXAMPLE
@@ -22,6 +23,10 @@ $out = Join-Path $RepoRoot 'out/release'
 $stage = Join-Path $out "AhShitRim-$Version"
 $skyrimStage = Join-Path $out "AhShitRim-Skyrim-$Version"
 $zip = "$stage.zip"
+# The unzipped release folder is handy to play from, but then it holds the launcher's own files, which
+# the clean-up below would delete with the rest: stop instead of wiping someone's setup.
+$inUse = @('launcher.ini', 'Screenshots', 'Tools' | Where-Object { Test-Path (Join-Path $stage $_) })
+if ($inUse) { throw "$stage is in use as a game folder (it has $($inUse -join ', ')). Copy the release elsewhere to play from, or move those out, then package again." }
 foreach ($path in $stage, $skyrimStage, $zip) { if (Test-Path $path) { Remove-Item -Recurse -Force $path } }
 
 function Add-File($source, $root, $destDir) {
@@ -58,7 +63,7 @@ Remove-Item -Recurse -Force $skyrimStage
 
 # --- The San Andreas part, the launcher and the guide ---
 Add-File (Join-Path $RepoRoot 'sa/build/Release/AhShitRim.asi') $stage 'San Andreas/scripts'
-foreach ($file in 'Start AhShitRim.bat', 'AhShitRim.ps1', 'checks.ps1') { Add-File (Join-Path $RepoRoot "launcher/$file") $stage '.' }
+foreach ($file in 'Start AhShitRim.bat', 'Uninstall AhShitRim.bat', 'AhShitRim.ps1', 'checks.ps1', 'install.ps1', 'wizard.ps1') { Add-File (Join-Path $RepoRoot "launcher/$file") $stage '.' }
 Enter-DevShell
 Push-Location (Join-Path $RepoRoot 'protocol')
 try {

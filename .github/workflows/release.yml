@@ -1,0 +1,105 @@
+name: release
+
+# Builds the player release zip from a release tag on GitHub's windows-latest, so the zip players
+# download is one GitHub can vouch for (docs/DEV_SETUP.md, "Cutting a release"):
+#   - a signed build provenance attestation ties the zip to this workflow and the tag's commit
+#     (gh attestation verify). GitHub offers attestations on public repositories (or with
+#     Enterprise Cloud), so the step skips itself while the repository is private;
+#   - SHA256SUMS.txt lists the zip and every file in it;
+#   - the zip is scanned on VirusTotal (repository secret VT_API_KEY; skipped without it);
+#   - all of that goes into the release notes (scripts/release-notes.ps1) of a draft release,
+#     which the maintainer reviews and publishes. Nothing is published from here.
+# A manual run with dry_run builds any branch or tag the same way and keeps the zip, SHA256SUMS.txt
+# and the notes as the run's artifact, to try the workflow out: no attestation, no VirusTotal upload
+# (it shares what it's sent) and no release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build (vX.Y.Z), whose draft release must not exist yet; with dry run, any branch or tag
+        required: true
+        type: string
+      dry_run:
+        description: Dry run, no release (the zip, SHA256SUMS.txt and the notes stay the run's artifact)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          submodules: recursive
+
+      # Both plugins, the game-free tests (the launcher's Pester tests included) and the zip, as
+      # build.yml's build-windows job makes them, from scratch.
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Unit tests
+        shell: pwsh
+        run: ./scripts/test.ps1
+
+      - name: Release package
+        id: package
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1
+          $zip = (Get-ChildItem out/release/AhShitRim-*.zip | Select-Object -First 1).FullName
+          # A release tag vX.Y.Z must build AhShitRim-X.Y.Z.zip; a dry run takes whatever version the branch has.
+          if ('${{ inputs.dry_run }}' -ne 'true' -and (Split-Path -Leaf $zip) -ne "AhShitRim-$($env:TAG -replace '^v', '').zip") { throw "The zip's version doesn't match tag $env:TAG`: $(Split-Path -Leaf $zip)" }
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      # A dry run's zip is no release: no attestation, and nothing sent to VirusTotal, which shares it.
+      - name: Build provenance attestation
+        if: ${{ !github.event.repository.private && !inputs.dry_run }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.package.outputs.zip }}
+
+      - name: VirusTotal scan
+        if: ${{ !inputs.dry_run }}
+        shell: pwsh
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: ./scripts/virustotal.ps1 -Path '${{ steps.package.outputs.zip }}' -Out out/release/virustotal.json
+
+      - name: SHA-256s and release notes
+        shell: pwsh
+        run: ./scripts/release-notes.ps1 -Zip '${{ steps.package.outputs.zip }}' -VirusTotal out/release/virustotal.json -Attested:$${{ !github.event.repository.private && !inputs.dry_run }}
+
+      - name: Draft release
+        if: ${{ !inputs.dry_run }}
+        shell: pwsh
+        run: |
+          $version = $env:TAG -replace '^v', ''
+          gh release create $env:TAG --draft --verify-tag --title "AhShitRim $version" --notes-file out/release/release-notes.md '${{ steps.package.outputs.zip }}' out/release/SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed (does a release for $env:TAG exist already?)" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AhShitRim-release-${{ inputs.tag || github.ref_name }}
+          path: |
+            out/release/*.zip
+            out/release/SHA256SUMS.txt
+            out/release/release-notes.md
+            out/release/virustotal.json
+          if-no-files-found: warn

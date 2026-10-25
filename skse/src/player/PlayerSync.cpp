@@ -587,6 +587,7 @@ namespace AhShitRim::PlayerSync
         {
             if (!LinkService::Get().IsUp()) {
                 SKSE::log::info("player sync: link is down, can't hand the player to San Andreas");
+                LinkService::ShowMismatch(true);
                 return;
             }
             if (!a_player->GetParentCell()) {
@@ -1096,6 +1097,9 @@ namespace AhShitRim::PlayerSync
                 const bool up = LinkService::Get().IsUp();
                 if (up && !state.linkUp && !state.owned) {
                     Publish();
+                }
+                if (!up) {
+                    LinkService::ShowMismatch();
                 }
                 state.linkUp = up;
                 if (state.owned && a_delta > 0.0f) {

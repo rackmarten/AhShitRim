@@ -10,14 +10,23 @@
     an enabled MO2 mod, which wins over a loose copy in Data, else through skse64_loader.exe.
     The checks themselves are in checks.ps1.
 
+    The first time (no usable SaPath in launcher.ini), setup sets San Andreas up: finds it, copies
+    it, downgrades the copy and adds an ASI loader (wizard.ps1, install.ps1). Without a mod manager
+    (ModManager=None in launcher.ini) the launcher copies the Skyrim part into Skyrim's Data folder
+    itself, and keeps a record of it there so -Uninstall can take it out again.
+
     -NoStart checks and installs, and starts nothing.
+    -Uninstall removes the Skyrim part the launcher installed, AhShitRim.ini and San Andreas's
+    AhShitRim.asi ("Uninstall AhShitRim.bat"). The ASI loader and the San Andreas copy stay.
 #>
-param([switch] $NoStart)
+param([switch] $NoStart, [switch] $Uninstall)
 
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $ConfigPath = Join-Path $Root 'launcher.ini'
 . (Join-Path $Root 'checks.ps1')
+. (Join-Path $Root 'install.ps1')
+. (Join-Path $Root 'wizard.ps1')
 
 function Fail($lines) {
     Write-Host ''
@@ -37,25 +46,15 @@ function Read-Config {
     return $config
 }
 
-function Get-SteamLibraries {
-    $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
-    if (-not $steam) { return @() }
-    $libraries = @($steam)
-    $vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
-    if (Test-Path $vdf) {
-        foreach ($match in [regex]::Matches((Get-Content -Raw $vdf), '"path"\s+"([^"]+)"')) {
-            $libraries += $match.Groups[1].Value -replace '\\\\', '\'
-        }
-    }
-    return $libraries | Select-Object -Unique
-}
-
 function Find-Game($name, $folder, $exe, $configured, $hint) {
-    if ($configured -and (Test-Path (Join-Path $configured $exe))) { return $configured }
+    # A folder on a drive that's gone (a removed Steam library) makes Join-Path throw; Join-Guess (install.ps1) doesn't.
+    $configuredExe = Join-Guess $configured $exe
+    if ($configuredExe -and (Test-Path -LiteralPath $configuredExe)) { return $configured }
     if ($folder) {
         foreach ($library in Get-SteamLibraries) {
-            $path = Join-Path $library "steamapps\common\$folder"
-            if (Test-Path (Join-Path $path $exe)) { return (Resolve-Path $path).Path }
+            $path = Join-Guess $library "steamapps\common\$folder"
+            $pathExe = Join-Guess $path $exe
+            if ($pathExe -and (Test-Path -LiteralPath $pathExe)) { return (Resolve-Path -LiteralPath $path).Path }
         }
     }
     Write-Host "Pick the $name folder (the one with $exe)$hint."
@@ -74,12 +73,41 @@ function Find-Game($name, $folder, $exe, $configured, $hint) {
 
 $config = Read-Config
 $skyrim = Find-Game 'Skyrim Special Edition' 'Skyrim Special Edition' 'SkyrimSE.exe' $config['SkyrimPath'] ''
-# The downgraded copy lives outside Steam (docs/INSTALL.md), so no Steam lookup for it.
-$sa = Find-Game 'San Andreas' $null 'gta_sa.exe' $config['SaPath'] ', downgraded to 1.0 US'
 function Save-Config {
-    $lines = @('; Settings for the AhShitRim launcher. Delete this file to pick the folders again.')
-    foreach ($key in 'SkyrimPath', 'SaPath', 'Mo2Path', 'Mo2Exe') { if ($config[$key]) { $lines += "$key=$($config[$key])" } }
+    $lines = @('; Settings for the AhShitRim launcher. Delete this file to run setup again.')
+    foreach ($key in 'SkyrimPath', 'SaPath', 'ModManager', 'Mo2Path', 'Mo2Exe') { if ($config[$key]) { $lines += "$key=$($config[$key])" } }
     Set-Content -Path $ConfigPath -Encoding utf8 -Value $lines
+}
+
+# Takes out what the launcher put in place: the Skyrim part it copied into Data (from its record),
+# AhShitRim.ini, and AhShitRim.asi in San Andreas. A mod manager's mod stays for the player to remove.
+function Uninstall-AhShitRim {
+    if (Get-Process SkyrimSE, skse64_loader, gta_sa -ErrorAction SilentlyContinue) { Fail 'Close Skyrim and San Andreas first, then run the uninstall again.' }
+    $data = Join-Path $skyrim 'Data'
+    $record = Read-SkyrimPartRecord $data
+    $saAsi = Join-Guess $config['SaPath'] 'scripts\AhShitRim.asi'
+    $what = if ($record) { "AhShitRim's Skyrim part ($($record.Files.Count) files) and AhShitRim.ini from $data" } else { "AhShitRim.ini from $data" }
+    if ($saAsi) { $what += ", and AhShitRim.asi from $(Split-Path $saAsi)" }
+    if ((Show-Message "Remove ${what}?`n`nYour saves, San Andreas itself and the games stay as they are." 'YesNo' 'Question') -ne 'Yes') { return }
+    $removed = @(Uninstall-SkyrimPart $data @('SKSE\Plugins\AhShitRim.ini') | ForEach-Object { Join-Path $data $_ })
+    if ($saAsi -and (Test-Path $saAsi)) { Remove-Item -Force $saAsi; $removed += $saAsi }
+    foreach ($file in $removed) { Write-Host "Removed $file" }
+    # The next launch decides again where the Skyrim part goes.
+    $config.Remove('ModManager')
+    Save-Config
+    $left = if (-not $record) { "`n`nIf you installed the Skyrim part with Mod Organizer 2 or Vortex, remove the AhShitRim mod there." } else { '' }
+    Show-Message "AhShitRim is uninstalled. Start AhShitRim.bat sets it up again.$left" | Out-Null
+}
+if ($Uninstall) { Uninstall-AhShitRim; return }
+
+# San Andreas: the folder in launcher.ini, else the setup wizard finds, copies, downgrades and
+# prepares one (wizard.ps1; downloads go in Tools next to this script). The folder goes into
+# launcher.ini as soon as it's chosen, so a setup stopped after the copy carries on from there
+# next time (the downgrade and ASI loader steps further down).
+$sa = $config['SaPath']
+if (-not $sa -or -not (Select-SaInstalls @($sa))) {
+    $sa = Invoke-SaSetup (Get-SteamLibraries) (Join-Path $Root 'Tools') { param($folder) $config['SkyrimPath'] = $skyrim; $config['SaPath'] = $folder; Save-Config }
+    if (-not $sa) { Fail "Setup stopped before San Andreas was ready. Run the launcher again to carry on, or follow the manual steps: $($Links.Install)" }
 }
 if ($skyrim -ne $config['SkyrimPath'] -or $sa -ne $config['SaPath']) {
     $config['SkyrimPath'] = $skyrim
@@ -122,22 +150,71 @@ function Get-Mo2Instances {
             HasDll       = $withDll.Count -gt 0
             Enabled      = @($withDll | Where-Object { $enabled -contains $_ }).Count -gt 0
             Plugins      = @(foreach ($mod in $enabled) { Get-FileNames (Join-Path $mo2.ModsDir "$mod\SKSE\Plugins") })
+            Dll          = @(@($withDll | Where-Object { $enabled -contains $_ }) + $withDll | ForEach-Object { Join-Path $mo2.ModsDir "$_\SKSE\Plugins\AhShitRim.dll" })[0]
             SkseTitle    = Find-Mo2SkseExecutable $mo2.Executables $skyrim
         }
     }
 }
 
 $realPlugins = Join-Path $skyrim 'Data\SKSE\Plugins'
-$pluginFiles = Get-FileNames $realPlugins
 $instances = @(Get-Mo2Instances)
+
+# How the Skyrim part goes in, decided once while no mod manager has it: with no mod manager the
+# launcher copies it, with one the player picks. ModManager in launcher.ini keeps it. A loose
+# AhShitRim.dll in Data that no record names (a hand install, a developer's deploy, an older
+# release) is no reason to stop: without a mod manager the launcher installs over it, so it can't
+# stay a version that doesn't match San Andreas's ASI.
+$skyrimData = Join-Path $skyrim 'Data'
+$inModManager = @($instances | Where-Object { $_.HasDll }).Count -gt 0
+# A part the launcher installed before (launcher.ini deleted since) stays the launcher's to update.
+if (-not $config['ModManager'] -and (Read-SkyrimPartRecord $skyrimData)) { $config['ModManager'] = 'None'; Save-Config }
+if (-not $config['ModManager'] -and -not $inModManager) {
+    # Vortex keeps a deployment file in Data once it has deployed, and its settings in %APPDATA%\Vortex.
+    $vortex = (Test-Path (Join-Path $skyrimData 'vortex.deployment.json')) -or (Test-Path (Join-Path $skyrimData 'vortex.deployment.msgpack')) -or (Test-Path (Join-Path $env:APPDATA 'Vortex'))
+    $detected = Get-ModManager '' ($instances.Count -gt 0) $vortex
+    $config['ModManager'] = if ($detected -eq 'None') { 'None' } else { Select-ModManager $detected }
+    Save-Config
+}
+if ($config['ModManager'] -and (Get-ModManager $config['ModManager'] $false $false) -eq 'None') {
+    # Kept up to date with the release zip next to this script, so a new release updates it.
+    $partZip = Find-SkyrimPartZip $Root
+    if (-not $partZip) {
+        Write-Host 'No AhShitRim-Skyrim-*.zip next to the launcher, so the Skyrim part in Data stays as it is.' -ForegroundColor Yellow
+    } elseif (-not (Test-SkyrimPartCurrent $partZip $skyrimData)) {
+        if (Get-Process SkyrimSE, skse64_loader -ErrorAction SilentlyContinue) { Fail 'Skyrim is running. Close it so the launcher can install the Skyrim part, then run it again.' }
+        try { $partFiles = @(Install-SkyrimPart $partZip $skyrimData) }
+        catch { Fail "Can't install the Skyrim part into $skyrimData ($($_.Exception.Message))." }
+        Write-Host "Installed AhShitRim's Skyrim part into $skyrimData ($($partFiles.Count) files). Uninstall AhShitRim.bat takes it out again."
+    }
+}
+
+$pluginFiles = Get-FileNames $realPlugins
 $source = Get-SkyrimPluginSource ($pluginFiles -contains 'AhShitRim.dll') @($instances | Where-Object { $_.HasDll })
 $mo2 = if ($source.Mode -eq 'Mo2') { $instances | Where-Object { $_.Name -eq $source.Instance } | Select-Object -First 1 }
 $mo2Plugins = @($instances | ForEach-Object { $_.Plugins })
 
 $skyrimExe = Join-Path $skyrim 'SkyrimSE.exe'
 $problems = @(Get-SkyrimProblems (Get-Item $skyrimExe).VersionInfo.FileVersion (Get-FileNames $skyrim) ($pluginFiles + $mo2Plugins))
+# Mod Organizer 2 picked for the Skyrim part, but none of its mods has it yet: say how to add it,
+# instead of checking a loose copy in Data that MO2 doesn't stand for (install.ps1).
+$mo2Missing = $config['ModManager'] -and (Get-ModManager $config['ModManager'] $false $false) -eq 'MO2' -and -not $inModManager
+if ($mo2Missing) {
+    $problems = @($problems | Where-Object { $_ -notlike "AhShitRim's Skyrim part is not installed*" })
+    $problems += @(Get-Mo2MissingProblems (Find-SkyrimPartZip $Root) ($pluginFiles -contains 'AhShitRim.dll') ([bool] (Read-SkyrimPartRecord $skyrimData)))
+}
 
 # --- San Andreas ----------------------------------------------------------------------------
+
+# Steam undid the downgrade, or the ASI loader went missing: setup's steps offer to fix it (wizard.ps1).
+if (Repair-SaExeName $sa) { Write-Host "Copied the 1.0 US gta-sa.exe to gta_sa.exe in $sa" }
+$saVersion = Get-SaFolderVersion $sa
+if (-not (Test-Path (Join-Path $sa 'gta_sa.exe')) -or ($saVersion -and -not $saVersion.Supported)) { [void] (Invoke-SaDowngrade $sa (Join-Path $Root 'Tools')) }
+if (-not (Get-SaFolderAsiLoader $sa)) { [void] (Invoke-AsiLoaderSetup $sa (Join-Path $Root 'Tools')) }
+# AhShitRim is tested with the downgrader's 4GB patch, so the plain 1.0 US exe gets it (install.ps1).
+if (Test-Path (Join-Path $sa 'gta_sa.exe')) {
+    try { if (Set-LargeAddressAware (Join-Path $sa 'gta_sa.exe')) { Write-Host "Applied the 4GB patch (Large Address Aware) to $(Join-Path $sa 'gta_sa.exe')" } }
+    catch { Write-Host "Couldn't apply the 4GB patch to gta_sa.exe ($($_.Exception.Message)). San Andreas runs without it; close it and run the launcher again." -ForegroundColor Yellow }
+}
 
 $saExe = Join-Path $sa 'gta_sa.exe'
 $md5 = if (Test-Path $saExe) { (Get-FileHash -Algorithm MD5 $saExe).Hash }
@@ -153,8 +230,21 @@ if (-not (Test-Path $asi) -and -not (Test-Path $asiDest)) {
     $problems += "AhShitRim.asi is missing: it should be in 'San Andreas\scripts' next to this launcher. Extract the whole release zip again."
 }
 
+# Both halves must speak the same link version: the Skyrim plugin that will load, and the ASI San Andreas will have.
+$dll = if ($source.Mode -eq 'Mo2') { $mo2.Dll } else { Join-Path $realPlugins 'AhShitRim.dll' }
+$asiUsed = if (Test-Path $asi) { $asi } else { $asiDest }
+if (-not $mo2Missing -and $dll -and (Test-Path $dll) -and (Test-Path $asiUsed)) {
+    $ascii = { param($path) [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($path)) }
+    $problems += @(Get-LinkVersionProblem (& $ascii $dll) (& $ascii $asiUsed) $dll $asiUsed)
+}
+
 foreach ($warning in @($source.Warnings) + @($saCheck.Warnings)) { Write-Host $warning -ForegroundColor Yellow }
 if ($problems) {
+    # SKSE and the Address Library come from their own sites: offer to open the pages.
+    $pages = @($Links.Skse, $Links.AddressLibrary | Where-Object { $page = $_; @($problems | Where-Object { $_ -like "*$page*" }).Count -gt 0 })
+    if ($pages -and (Show-Message ((@('Not ready yet:') + ($problems | ForEach-Object { " - $_" }) + '', 'Open the download pages in your browser?') -join "`n") 'YesNo' 'Warning') -eq 'Yes') {
+        foreach ($page in $pages) { Start-Process $page }
+    }
     Fail (@('Not ready yet:') + ($problems | ForEach-Object { " - $_" }) + '', "Fix those and run the launcher again. Help: $($Links.Install)")
 }
 Write-Host "Checks passed: Skyrim $((Get-SkyrimRuntime (Get-Item $skyrimExe).VersionInfo.FileVersion).Version), San Andreas $(if (Get-SaExeVersion $md5) { (Get-SaExeVersion $md5).Name } else { '(unknown exe)' })."

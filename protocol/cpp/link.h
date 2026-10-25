@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "../ahshitrim_protocol.h"
+#include "handshake.h"
 
 namespace AhShitRim
 {
@@ -23,10 +24,10 @@ namespace AhShitRim
     public:
         enum class State
         {
-            Detached,  // no mapping yet (or mapping failed; retried every tick)
+            Detached,  // no mapping yet (or mapping failed, or the section isn't ours; retried)
             Waiting,   // mapped, waiting for the creator to finish or the peer to show up
             Up,        // both sides attached, same version, peer heartbeat alive
-            Disabled,  // version or layout mismatch; stays disabled until restart
+            Mismatch,  // the other half (or the section) is another version; watched until it restarts with ours
         };
 
         using LogFn = std::function<void(std::string_view)>;
@@ -42,6 +43,8 @@ namespace AhShitRim
 
         State GetState() const { return _state.load(std::memory_order_acquire); }
         bool  IsUp() const { return GetState() == State::Up; }
+        // The other half's protocol version while it differs from ours, else 0.
+        std::uint32_t MismatchVersion() const { return _otherVersion.load(std::memory_order_acquire); }
 
         // Latest-value slots. Writes need our side attached (they're dropped otherwise), reads need
         // the link up; a read returns false when the slot was never written or stayed torn.
@@ -74,9 +77,10 @@ namespace AhShitRim
         std::size_t Receive(const std::function<void(Protocol::MessageType, const std::uint8_t*, std::uint32_t)>& a_handler);
 
     private:
-        void TryMap();
+        void TryMap(std::uint64_t a_nowMs);
+        void Release(std::uint64_t a_nowMs);
         void Detach();
-        void Disable(const std::string& a_reason);
+        void Mismatched(std::uint32_t a_otherVersion, std::uint64_t a_nowMs);
         std::uint8_t* Base() const { return _base.load(std::memory_order_acquire); }
 
         const Protocol::Side _side;
@@ -86,8 +90,14 @@ namespace AhShitRim
         void*                      _mapping = nullptr;
         std::atomic<std::uint8_t*> _base{ nullptr };
         std::atomic<State>         _state{ State::Detached };
-        std::atomic<bool>          _attached{ false };  // our PeerInfo is published
+        std::atomic<bool>          _attached{ false };  // our PeerInfo is published and the section is ours to use
+        std::atomic<std::uint32_t> _otherVersion{ 0 };
         bool                       _mapFailLogged = false;
+        bool                       _foreignLogged = false;
+        bool                       _joined = false;  // the section was there before us
+        std::uint64_t              _mappedMs = 0;
+        std::uint64_t              _retryAtMs = 0;  // when a section we let go of is opened again
+        Handshake::Notice          _notice{ Handshake::kLogRepeatMs };
         bool                       _peerSeeded = false;  // first heartbeat read only seeds, so a dead peer never looks alive
         bool                       _peerSeen = false;
         std::uint64_t              _peerHeartbeat = 0;

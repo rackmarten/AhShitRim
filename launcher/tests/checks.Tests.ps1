@@ -33,6 +33,13 @@ Describe 'Get-SkyrimRuntime' {
         $runtime.IsAnniversary | Should -BeTrue
         $runtime.SkseDll | Should -Be 'skse64_1_6_1170.dll'
         $runtime.AddressLibrary | Should -Be 'versionlib-1-6-1170-0.bin'
+        $runtime.AddressLibraryFile | Should -Be 'All in one (Anniversary Edition)'
+    }
+    It "names Address Library's Special Edition file for 1.5.97" {
+        $runtime = Get-SkyrimRuntime '1.5.97.0'
+        $runtime.SkseDll | Should -Be 'skse64_1_5_97.dll'
+        $runtime.AddressLibrary | Should -Be 'version-1-5-97-0.bin'
+        $runtime.AddressLibraryFile | Should -Be 'All in one (Special Edition)'
     }
     It 'takes comma separated versions' {
         (Get-SkyrimRuntime '1, 6, 640, 0').Version | Should -Be ([version] '1.6.640')
@@ -54,10 +61,23 @@ Describe 'Get-SkyrimProblems' {
     It 'matches file names whatever their case' {
         Get-SkyrimProblems '1.6.1170.0' @('SKSE64_Loader.exe', 'SKSE64_1_6_1170.DLL') @('VersionLib-1-6-1170-0.bin', 'ahshitrim.dll') | Should -BeNullOrEmpty
     }
-    It 'stops the Special Edition runtime' {
-        $problems = @(Get-SkyrimProblems '1.5.97.0' @('skse64_loader.exe', 'skse64_1_5_97.dll') @('versionlib-1-5-97-0.bin', 'AhShitRim.dll'))
+    It 'is happy with a ready Special Edition 1.5.97 install' {
+        Get-SkyrimProblems '1.5.97.0' @('skse64_loader.exe', 'skse64_1_5_97.dll') @('version-1-5-97-0.bin', 'AhShitRim.dll') | Should -BeNullOrEmpty
+    }
+    It "asks for Address Library's Special Edition file on 1.5.97" {
+        $problems = @(Get-SkyrimProblems '1.5.97.0' @('skse64_loader.exe', 'skse64_1_5_97.dll') @('versionlib-1-7-104-0.bin', 'AhShitRim.dll'))
         $problems | Should -HaveCount 1
-        $problems[0] | Should -BeLike '*Special Edition runtime*'
+        $problems[0] | Should -BeLike '*version-1-5-97-0.bin*All in one (Special Edition)*'
+    }
+    It 'names the AE SKSE on a Special Edition runtime' {
+        $problems = @(Get-SkyrimProblems '1.5.97.0' @('skse64_loader.exe', 'skse64_1_7_104.dll') @('version-1-5-97-0.bin', 'AhShitRim.dll'))
+        $problems | Should -HaveCount 1
+        $problems[0] | Should -BeLike '*another Skyrim version (found skse64_1_7_104.dll)*skse64_1_5_97.dll*'
+    }
+    It 'stops a Special Edition runtime older than 1.5.97' {
+        $problems = @(Get-SkyrimProblems '1.5.80.0' @('skse64_loader.exe', 'skse64_1_5_80.dll') @('version-1-5-80-0.bin', 'AhShitRim.dll'))
+        $problems | Should -HaveCount 1
+        $problems[0] | Should -BeLike '*1.5.80 is too old*1.5.97*'
     }
     It 'asks for SKSE without the loader' {
         $problems = @(Get-SkyrimProblems '1.6.1170.0' @('SkyrimSE.exe') $readyPlugins)
@@ -252,5 +272,31 @@ Describe 'Test-SamePath' {
         Test-SamePath 'C:/Games/Skyrim/' 'c:\games\skyrim' | Should -BeTrue
         Test-SamePath 'C:\Games\Skyrim' 'C:\Games\Skyrim2' | Should -BeFalse
         Test-SamePath $null 'C:\Games' | Should -BeFalse
+    }
+}
+
+Describe 'Get-LinkVersionProblem' {
+    BeforeAll {
+        $new = "MZ junk`0AhShitRim-link-stamp: protocol 35, release 0.1.0`0more junk"
+        $newer = "MZ`0AhShitRim-link-stamp: protocol 36, release 0.1.1`0"
+        $old = 'MZ an old build without a stamp'
+    }
+    It 'is happy when both speak the same version' {
+        Get-LinkVersionProblem $new $new 'C:\dll' 'C:\asi' | Should -BeNullOrEmpty
+        Get-LinkVersionProblem $new ($new -replace '0\.1\.0', 'dev') 'C:\dll' 'C:\asi' | Should -BeNullOrEmpty
+    }
+    It 'names an old Skyrim plugin to replace' {
+        $problem = Get-LinkVersionProblem $old $new 'C:\Skyrim\Data\SKSE\Plugins\AhShitRim.dll' 'C:\SA\scripts\AhShitRim.asi'
+        $problem | Should -Match 'from before 0\.1\.0'
+        $problem | Should -Match 'AhShitRim 0\.1\.0 \(link version 35\)'
+        $problem | Should -BeLike '*Replace C:\Skyrim\Data\SKSE\Plugins\AhShitRim.dll *'
+    }
+    It 'names the older ASI to replace' {
+        $problem = Get-LinkVersionProblem $newer $new 'C:\dll' 'C:\SA\scripts\AhShitRim.asi'
+        $problem | Should -Match 'link version 36.*link version 35'
+        $problem | Should -BeLike '*Replace C:\SA\scripts\AhShitRim.asi *'
+    }
+    It 'asks for both when neither has a stamp' {
+        Get-LinkVersionProblem $old $old 'C:\dll' 'C:\asi' | Should -Match 'Install both'
     }
 }

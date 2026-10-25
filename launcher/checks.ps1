@@ -27,8 +27,10 @@ $SaExeVersions = @{
     'd9cb35c898d3298ca904a63e10ee18d9' = @{ Name = 'the current Steam version (German)'; Supported = $false }
 }
 
-# The first Anniversary Edition runtime. Older ones are the Special Edition's.
+# The first Anniversary Edition runtime. Older ones are the Special Edition's, of which AhShitRim
+# runs on the last, 1.5.97.
 $MinSkyrimVersion = [version] '1.6.317'
+$MinSpecialEditionVersion = [version] '1.5.97'
 
 # Which gta_sa.exe an MD5 is ($null when it's none we know).
 function Get-SaExeVersion([string] $Md5) {
@@ -39,14 +41,19 @@ function Get-SaExeVersion([string] $Md5) {
 }
 
 # SkyrimSE.exe's FileVersion ("1.6.1170.0") and the SKSE and Address Library files made for it.
+# Address Library's Special Edition file (1.5.x) has version-*.bin, its Anniversary Edition one
+# versionlib-*.bin.
 function Get-SkyrimRuntime([string] $FileVersion) {
     if ($FileVersion -notmatch '^\s*(\d+)[.,]\s*(\d+)[.,]\s*(\d+)') { return $null }
     $version = [version] "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+    $anniversary = $version -ge $MinSkyrimVersion
+    $prefix = if ($anniversary) { 'versionlib' } else { 'version' }
     [pscustomobject] @{
-        Version        = $version
-        IsAnniversary  = $version -ge $MinSkyrimVersion
-        SkseDll        = "skse64_$($version.Major)_$($version.Minor)_$($version.Build).dll"
-        AddressLibrary = "versionlib-$($version.Major)-$($version.Minor)-$($version.Build)-0.bin"
+        Version            = $version
+        IsAnniversary      = $anniversary
+        SkseDll            = "skse64_$($version.Major)_$($version.Minor)_$($version.Build).dll"
+        AddressLibrary     = "$prefix-$($version.Major)-$($version.Minor)-$($version.Build)-0.bin"
+        AddressLibraryFile = if ($anniversary) { 'All in one (Anniversary Edition)' } else { 'All in one (Special Edition)' }
     }
 }
 
@@ -56,8 +63,8 @@ function Get-SkyrimProblems([string] $FileVersion, [string[]] $GameFiles, [strin
     $runtime = Get-SkyrimRuntime $FileVersion
     if (-not $runtime) { return @("Can't read SkyrimSE.exe's version. Check the Skyrim folder in launcher.ini.") }
     $problems = @()
-    if (-not $runtime.IsAnniversary) {
-        $problems += "Skyrim $($runtime.Version) is a Special Edition runtime. AhShitRim needs Anniversary Edition, $MinSkyrimVersion or later: let Steam update Skyrim, then update SKSE and Address Library to match."
+    if ($runtime.Version -lt $MinSpecialEditionVersion) {
+        $problems += "Skyrim $($runtime.Version) is too old. AhShitRim needs Special Edition $MinSpecialEditionVersion or Anniversary Edition ($MinSkyrimVersion or later): let Steam update Skyrim, then update SKSE and Address Library to match."
     }
     if ($GameFiles -notcontains 'skse64_loader.exe') {
         $problems += "SKSE64 is not installed. Get the build for Skyrim $($runtime.Version) from $($Links.Skse) and copy skse64_loader.exe and its DLLs into the Skyrim folder."
@@ -67,7 +74,7 @@ function Get-SkyrimProblems([string] $FileVersion, [string[]] $GameFiles, [strin
         $problems += "SKSE64 is for another Skyrim version$what, not $($runtime.Version) ($($runtime.SkseDll)). Get the matching build from $($Links.Skse)."
     }
     if ($PluginFiles -notcontains $runtime.AddressLibrary) {
-        $problems += "Address Library for SKSE Plugins is not installed for Skyrim $($runtime.Version) ($($runtime.AddressLibrary)). Install the All in one (Anniversary Edition) file from $($Links.AddressLibrary)."
+        $problems += "Address Library for SKSE Plugins is not installed for Skyrim $($runtime.Version) ($($runtime.AddressLibrary)). Install the $($runtime.AddressLibraryFile) file from $($Links.AddressLibrary)."
     }
     if ($PluginFiles -notcontains 'AhShitRim.dll') {
         $problems += "AhShitRim's Skyrim part is not installed (Data\SKSE\Plugins\AhShitRim.dll). Install AhShitRim-Skyrim-*.zip with your mod manager, see $($Links.Install)."
@@ -213,4 +220,27 @@ function Test-SamePath([string] $A, [string] $B) {
     if (-not $A -or -not $B) { return $false }
     $trim = { param($p) ($p -replace '/', '\').TrimEnd('\') }
     return (& $trim $A) -eq (& $trim $B)
+}
+
+# AhShitRim.dll and AhShitRim.asi each carry "AhShitRim-link-stamp: protocol N, release R" (protocol/cpp/link.cpp),
+# and the two halves only link up when N matches. Gets both files' bytes as ASCII text and their paths; returns
+# what to replace, or nothing when they match.
+function Get-LinkVersionProblem([string] $DllText, [string] $AsiText, [string] $DllPath, [string] $AsiPath) {
+    $read = {
+        param($text)
+        if ($text -match 'AhShitRim-link-stamp: protocol (\d+), release ([0-9A-Za-z.+-]+)') { @{ Protocol = [int] $Matches[1]; Release = $Matches[2] } }
+        else { @{ Protocol = 0; Release = $null } }
+    }
+    $dll = & $read $DllText
+    $asi = & $read $AsiText
+    if ($dll.Protocol -and $dll.Protocol -eq $asi.Protocol) { return }
+    $name = { param($s) if ($s.Protocol) { "AhShitRim $($s.Release) (link version $($s.Protocol))" } else { 'an AhShitRim from before 0.1.0 (no version stamp)' } }
+    $fix = if (-not $dll.Protocol -and -not $asi.Protocol) {
+        'Install both from the newest release zip'
+    } elseif ($dll.Protocol -lt $asi.Protocol) {
+        "Replace $DllPath with SKSE\Plugins\AhShitRim.dll from the same release (AhShitRim-Skyrim-<version>.zip; with Mod Organizer 2, install that zip as the mod again)"
+    } else {
+        "Replace $AsiPath with 'San Andreas\scripts\AhShitRim.asi' from the same release as the Skyrim plugin (extract that release zip and run its launcher)"
+    }
+    "The Skyrim plugin $DllPath is $(& $name $dll), but San Andreas's $AsiPath is $(& $name $asi), so they can't link up. $fix."
 }
