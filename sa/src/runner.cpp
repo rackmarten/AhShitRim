@@ -339,7 +339,7 @@ namespace AhShitRim::Runner
             if (GettingInOrOut(a_ped)) {
                 pose.flags |= Protocol::kPlayerGettingInOut;
             }
-            Audio::Fill(pose, vehicle != nullptr);
+            Audio::Fill(pose, Audio::HasRadio(vehicle));
             GetLink().WritePlayer(pose);
         }
 
@@ -395,7 +395,7 @@ namespace AhShitRim::Runner
             }
             state.spawnCount = a_input.spawnCount;
             state.haveSpawn = true;
-            Audio::OnInput(a_input, Vehicles::Driven(a_ped) != nullptr);
+            Audio::OnInput(a_input, Audio::HasRadio(Vehicles::Driven(a_ped)));
             const bool following = Scenes::OnInput(a_ped, a_input, owned);
             // The wheel switches weapons on foot and tunes the radio in a vehicle; either way its steps are followed.
             const auto presses = CjWeapons::Wheel(a_input, owned && !following && Vehicles::Driven(a_ped) == nullptr);

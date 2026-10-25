@@ -144,6 +144,34 @@ TEST_CASE("San Andreas's radio is off on the stations Skyrim plays and on off")
     CHECK_FALSE(SkyrimPlays(kRadioOff));
 }
 
+TEST_CASE("bicycles have no radio; cars, bikes and emergency vehicles do")
+{
+    using AhShitRim::VehicleKinds::Kind;
+    using AhShitRim::VehicleKinds::KindOf;
+    for (const std::uint16_t bicycle : { 481, 509, 510 }) {  // BMX, Bike, Mountain Bike
+        CHECK_FALSE(HasRadio(KindOf(bicycle), kSaRadioCivilian));
+    }
+    CHECK(HasRadio(KindOf(477), kSaRadioCivilian));   // ZR-350
+    CHECK(HasRadio(KindOf(495), kSaRadioCivilian));   // Sandking
+    CHECK(HasRadio(KindOf(522), kSaRadioCivilian));   // NRG-500
+    CHECK(HasRadio(KindOf(596), kSaRadioEmergency));  // Police LS: Emergency AA, tunable
+    CHECK_FALSE(HasRadio(KindOf(477), -1));           // San Andreas gives it none
+    CHECK_FALSE(HasRadio(KindOf(370), kSaRadioCivilian));  // the jetpack is no vehicle
+    CHECK_FALSE(HasRadio(KindOf(371), kSaRadioCivilian));  // nor the parachute
+}
+
+TEST_CASE("the last station carries over into every vehicle, off and Skyrim's stations included")
+{
+    CHECK(StartStation(-1, 6) == 6);                    // nothing listened to yet (kRadioNone): the vehicle's own
+    CHECK(StartStation(kEmergency, 6) == 6);            // Emergency AA (a police car's own) never carries over
+    CHECK(StartStation(2, 6) == 2);                     // K-Rose in the last car, K-Rose in this one
+    CHECK(StartStation(kSovngarde, 6) == kSovngarde);   // San Andreas's radio starts off, Skyrim plays it
+    CHECK(SaStation(StartStation(kSovngarde, 6)) == kSaRadioOff);
+    CHECK(StartStation(kSweetroll, 0) == kSweetroll);   // in a police car too
+    CHECK(StartStation(kRadioOff, 6) == kRadioOff);     // turned off stays off
+    CHECK(SaStation(StartStation(kRadioOff, 6)) == kSaRadioOff);
+}
+
 TEST_CASE("station names and which ones silence Skyrim's music")
 {
     CHECK(StationName(6) == "Radio Los Santos");

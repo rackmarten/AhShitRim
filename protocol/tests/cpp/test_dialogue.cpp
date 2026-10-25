@@ -99,16 +99,39 @@ TEST_CASE("every category has lines of CJ's, none for nothing")
     CHECK(std::string(NameOf(Category::Threaten)) == "threaten");
 }
 
-TEST_CASE("nobody talks to CJ in a vehicle or faster than a walk")
+TEST_CASE("nobody talks to CJ in a vehicle; on foot anyone may, at any speed")
 {
-    CHECK(MayTalk(false, 0.0f));
-    CHECK(MayTalk(false, 1.5f));  // walking
-    CHECK(MayTalk(false, kTalkSpeedMax));
-    CHECK_FALSE(MayTalk(false, 4.0f));   // jogging
-    CHECK_FALSE(MayTalk(false, 30.0f));  // falling, or thrown
-    CHECK_FALSE(MayTalk(true, 0.0f));    // parked: still in the vehicle
-    CHECK_FALSE(MayTalk(true, 25.0f));
-    CHECK_FALSE(MayTalk(false, std::nanf("")));
+    CHECK(MayTalk(false));       // standing, walking, or sprinting up to the Jarl: a force-greet catches him
+    CHECK_FALSE(MayTalk(true));  // parked or driving: still in the vehicle
+}
+
+TEST_CASE("a subtitle is its line alone, without Skyrim's speaker name and markup")
+{
+    CHECK(SubtitleText("<font color='#888888'>Whiterun Guard</font>: A fight!") == "A fight!");
+    CHECK(SubtitleText("<font color='#888888'>Giant</font>: Ayarg garag gar!") == "Ayarg garag gar!");
+    CHECK(SubtitleText("Hey, you. You're finally awake.") == "Hey, you. You're finally awake.");  // no name: as it is
+    CHECK(SubtitleText("Bread &amp; cheese, &quot;fresh&quot; &lt;today&gt;") == "Bread & cheese, \"fresh\" <today>");
+    CHECK(SubtitleText("<i>Dovahkiin</i>, at last") == "Dovahkiin, at last");
+    CHECK(SubtitleText("A sentence with a stray &") == "A sentence with a stray &");
+    CHECK(SubtitleText("<font color='#888888'>Lydia</font>") == "");  // a name and no line: nothing to show
+    CHECK(SubtitleText("").empty());
+}
+
+TEST_CASE("Skyrim's subtitles are on while CJ has the player, the player's own settings back in the journal and after")
+{
+    SubtitleForcing f;
+    const SubtitlePrefs off{}, on{ true, true }, chatterOnly{ true, false };
+    CHECK(f.Update(false, false, off) == off);  // Skyrim has the player: as they are
+    CHECK_FALSE(f.Forced());
+    CHECK(f.Update(true, false, off) == on);  // CJ takes over
+    CHECK(f.Forced());
+    CHECK(f.Update(true, false, on) == on);    // and keeps them on
+    CHECK(f.Update(true, true, on) == off);    // the journal: the player's own, as its settings page shows them
+    CHECK_FALSE(f.Forced());
+    CHECK(f.Update(true, true, chatterOnly) == chatterOnly);  // changed there
+    CHECK(f.Update(true, false, chatterOnly) == on);          // closed: on again
+    CHECK(f.Update(false, false, on) == chatterOnly);         // CJ lets go: the changed ones are back
+    CHECK(f.Update(false, true, chatterOnly) == chatterOnly);
 }
 
 TEST_CASE("a new selection is a pick, what was there on opening isn't")

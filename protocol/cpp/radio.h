@@ -23,6 +23,8 @@
 #include <utility>
 #include <vector>
 
+#include "vehicle_kinds.h"
+
 namespace AhShitRim::Radio
 {
     // San Andreas's volumes from Skyrim's sliders (each 0..1): effects for CJ, his vehicles and
@@ -106,6 +108,31 @@ namespace AhShitRim::Radio
         int at = a_station >= 1 && a_station <= kRadioOff ? a_station - 1 : (a_steps > 0 ? -1 : 0);
         at = ((at + a_steps) % kRadioOff + kRadioOff) % kRadioOff;
         return static_cast<std::int8_t>(at + 1);
+    }
+
+    // ---- Which vehicles have one, and on what ----
+
+    // San Andreas's radio types (tVehicleAudioSettings::m_nRadioType, eRadioType): a civilian radio, and the
+    // emergency services' (it starts on Emergency AA, the dial tunes it like any other). Anything else (-1) has none.
+    inline constexpr int kSaRadioCivilian = 0;
+    inline constexpr int kSaRadioEmergency = 3;
+
+    // Whether CJ's vehicle has a radio: one San Andreas gives a civilian or an emergency radio, and never a bicycle
+    // (the BMX, the Bike, the Mountain Bike). On foot there is none, the jetpack and the parachute included. Without
+    // one no station plays or shows, and the wheel tunes nothing.
+    constexpr bool HasRadio(VehicleKinds::Kind a_kind, int a_saRadioType)
+    {
+        return a_kind != VehicleKinds::Kind::Unknown && a_kind != VehicleKinds::Kind::Bicycle &&
+               (a_saRadioType == kSaRadioCivilian || a_saRadioType == kSaRadioEmergency);
+    }
+
+    // The dial station a vehicle's radio starts on as CJ gets in: the last one he listened to (a_last; off, Radio
+    // Sovngarde and Sweetroll FM included) in every vehicle with a radio, a deliberate change from San Andreas's
+    // station per vehicle. The vehicle's own (a_vehicles) until he has listened to one. San Andreas tunes to its
+    // SaStation.
+    constexpr std::int8_t StartStation(std::int8_t a_last, std::int8_t a_vehicles)
+    {
+        return a_last >= 1 && a_last <= kRadioOff ? a_last : a_vehicles;
     }
 
     // ---- Radio Sovngarde ----

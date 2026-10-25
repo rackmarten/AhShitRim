@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The radio station you last listened to comes along into every vehicle you get into, the radio off, Radio Sovngarde and Sweetroll FM included, instead of each vehicle starting on its own station as in San Andreas.
+- People may start a conversation with CJ while he walks or runs; only a vehicle stops them now. Force-greets fire again: Irileth stops CJ on his first visit to Dragonsreach, and the Jarl greets him after he ran up.
+
+### Fixed
+
+- Bicycles (the BMX, the Bike, the Mountain Bike) have no radio any more: no station plays or shows on them, and the mouse wheel tunes nothing there.
+- Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name and Skyrim's markup no longer come with the line.
+- Skyrim's skill increase and level up messages no longer show while CJ has the player; the skills and levels still go up.
+- A second cheat typed right after the first beeps again, as in San Andreas: the help box starts over with its sound whenever a message is shown, the one already up included.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

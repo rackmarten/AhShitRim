@@ -822,11 +822,9 @@ namespace AhShitRim::SaHud
 
     void ShowHelp(std::string a_text, float a_seconds)
     {
-        if (HudSounds::HelpBeeps(state.help.hold > 0.0f, state.help.text, a_text)) {
+        // The one already up starts over too, with its beep (HudSounds::HelpBeeps): every caller shows it once per event.
+        if (HudSounds::HelpBeeps(a_text)) {
             PlayHudSound(HudSounds::Sound::DisplayInfo);
-        } else if (state.help.hold > 0.0f && state.help.text == a_text) {
-            state.help.hold = (std::max)(state.help.hold, state.help.age - state.help.fadeIn + a_seconds);  // already up: stays longer, without starting over
-            return;
         }
         state.help.Show(std::move(a_text), a_seconds);
     }

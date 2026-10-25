@@ -929,10 +929,9 @@ namespace AhShitRim::PlayerSync
             Protocol::PlayerState pose{};
             const bool valid = link.ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 &&
                                pose.handover == state.handover && Pose::Finite(pose);
-            // Nobody starts a dialogue with CJ while he drives or runs (Dialogue::MayTalk).
+            // Nobody starts a dialogue with CJ while he is in a vehicle (Dialogue::MayTalk).
             if (valid) {
-                const float speed = std::hypot(pose.velocity[0], pose.velocity[1], pose.velocity[2]) * Pose::kMetersPerUnit;
-                Conversation::SetMayTalk(Dialogue::MayTalk((pose.flags & Protocol::kPlayerInVehicle) != 0, speed));
+                Conversation::SetMayTalk(Dialogue::MayTalk((pose.flags & Protocol::kPlayerInVehicle) != 0));
             }
             // The angles Skyrim built this frame's camera for, before Place changes them.
             const float fromHeading = a_player->GetAngleZ();
@@ -1447,6 +1446,7 @@ namespace AhShitRim::PlayerSync
     {
         static InputSink inputSink;
         static MenuSink  menuSink;
+        Conversation::OnDataLoaded();
         const auto layout = Ini::Value("Input", "KeyLayout");
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,

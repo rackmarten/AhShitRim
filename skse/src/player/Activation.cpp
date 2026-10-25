@@ -307,7 +307,7 @@ namespace AhShitRim::Activation
             return true;
         }
         if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead() && !Conversation::MayTalk()) {
-            SKSE::log::info("activation: {:08X} not talked to, CJ is moving too fast", ref->GetFormID());
+            SKSE::log::info("activation: {:08X} not talked to, CJ is in a vehicle", ref->GetFormID());
             return true;
         }
         SKSE::log::info("activation: {:08X} activated by the player ({})", ref->GetFormID(), state.prompt);
