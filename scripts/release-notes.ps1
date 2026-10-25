@@ -43,6 +43,8 @@ try {
 $changelog = Get-Content -Raw (Join-Path $RepoRoot 'CHANGELOG.md')
 $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\][^\n]*\n(.*?)(?=^## \[|\z)'
 $section = if ($changelog -match $pattern) { $Matches[1].Trim() } else { "See [CHANGELOG.md](https://github.com/$repo/blob/v$version/CHANGELOG.md)." }
+# The changelog's links are relative to the repository's root, which a release page doesn't resolve (they 404): point them at the tag.
+$section = $section -replace '\]\((?!https?://|#|mailto:)([^)\s]+)\)', "](https://github.com/$repo/blob/v$version/`$1)"
 
 $lines = @($section, '', '## Check your download', '')
 $lines += "- **SHA-256** of ``$zipName``: ``$zipHash``. In PowerShell: ``Get-FileHash $zipName``. Every file in it is listed in ``SHA256SUMS.txt``."
