@@ -10,7 +10,7 @@
 // bounty is wiped at once. Guards fight CJ only while stars show (every hold's), and are called off at none. Out of
 // every pursuer's sight the stars start to flash, then go one at a time; all go with Busted (a guard catching CJ on
 // foot or at his car's door), Wasted or AEZAKMI. Nobody remembers: people who fought CJ forget it once he has been out
-// of their sight for kForgetAfter (Grudges).
+// of their sight for kForgetAfter (Grudges). Running over an animal is no crime at all (Pardon).
 //
 // The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 3 is the heat (f32), the
 // hold the force comes from (its crime faction, u32), the seconds CJ has been unseen (f32) and the fine so far (u32,
@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
@@ -323,6 +324,81 @@ namespace AhShitRim::Wanted
 
     // Whether one of the pursuit (a_pursues: a guard or one of ours) fighting CJ is called off: whenever no stars show.
     constexpr bool CallsOff(int a_stars, bool a_pursues, bool a_fightsCj) { return a_stars <= 0 && a_pursues && a_fightsCj; }
+
+    // ---- Running over animals ----
+
+    // Running over an animal or a creature (RunOver::CrimeToHit: a chicken, a cow, someone's horse) is no crime, whoever
+    // owns it (0.1.1); hurting a person still is. Skyrim reports the crime itself as the hit lands (or a moment after, as
+    // its witnesses raise the alarm), and never says whose it was, so each bounty that goes up is put down to the victim
+    // of CJ's latest hit within kPardonSeconds that the faction could be raising it for: one of that crime faction
+    // (Riverwood's chickens and people are Whiterun's), or of none (someone's dog, owned through its owner). When that
+    // victim is an animal his vehicle hit, the bounty is wiped as no crime: no heat, no fine. It's a crime for a person,
+    // an animal he shot, or no hit at all.
+    // A person hit a moment before the chicken (Skyrim forgives a first bump on a person) doesn't make the chicken's
+    // bounty a crime; a person hit after it does.
+    inline constexpr double kPardonSeconds = 5.0;
+
+    class Pardon
+    {
+    public:
+        // CJ hurt someone at a_now (seconds): a_person, someone of a person's race; a_byVehicle, with his vehicle;
+        // a_faction, its crime faction (0 for none).
+        void Hurt(bool a_person, bool a_byVehicle, std::uint32_t a_faction, double a_now)
+        {
+            auto& slot = _hits[_next];
+            _next = (_next + 1) % _hits.size();
+            slot = { a_now, a_faction, !a_person && a_byVehicle, true };
+        }
+
+        // Whether a bounty a_faction put on CJ at a_now is undone: its latest victim was an animal run over.
+        bool Forgives(std::uint32_t a_faction, double a_now) const
+        {
+            const Hit* latest = nullptr;
+            for (const auto& hit : _hits) {
+                if (!hit.used || a_now < hit.at || a_now - hit.at > kPardonSeconds || (hit.faction != 0 && hit.faction != a_faction)) {
+                    continue;
+                }
+                // The latest; at the same moment a crime (a person) wins over an animal.
+                if (!latest || hit.at > latest->at || (hit.at == latest->at && !hit.pardoned)) {
+                    latest = &hit;
+                }
+            }
+            return latest && latest->pardoned;
+        }
+
+        void Reset() { *this = {}; }
+
+    private:
+        struct Hit
+        {
+            double        at = 0.0;
+            std::uint32_t faction = 0;
+            bool          pardoned = false;  // an animal his vehicle hit
+            bool          used = false;
+        };
+        std::array<Hit, 16> _hits{};  // the latest hits, oldest overwritten
+        std::size_t         _next = 0;
+    };
+
+    // What a bounty that appeared on the player this frame is (Police's WatchCrimes wipes every one of them).
+    enum class BountyKind : std::uint8_t
+    {
+        Before,    // there as CJ took the player: the Dragonborn's own
+        Cheat,     // AEZAKMI is on
+        Pardoned,  // an animal run over (Pardon)
+        Crime,     // CJ's crime: its heat and price go to the pursuit
+    };
+
+    constexpr BountyKind KindOfBounty(bool a_seeded, bool a_neverWanted, bool a_pardoned)
+    {
+        return !a_seeded ? BountyKind::Before : a_neverWanted ? BountyKind::Cheat : a_pardoned ? BountyKind::Pardoned : BountyKind::Crime;
+    }
+
+    // A bounty of a_gold of a_kind on a_pursuit: only a crime adds heat and the fine. Returns the stars.
+    inline int TakeBounty(Pursuit& a_pursuit, int a_gold, BountyKind a_kind)
+    {
+        return a_kind == BountyKind::Crime ? a_pursuit.Crime(a_gold, false) : a_pursuit.Stars();
+    }
 
     // ---- Bystanders ----
 

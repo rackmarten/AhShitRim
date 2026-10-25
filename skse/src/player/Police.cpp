@@ -95,6 +95,7 @@ namespace AhShitRim::Police
             bool                     seeded = false;  // a bounty from now on is a crime of CJ's (one there before is the Dragonborn's)
             bool                     seen = false;
             Wanted::Grudges          grudges;         // people fighting CJ, forgotten unseen
+            Wanted::Pardon           pardon;          // no crime for running over an animal
             Wanted::Gaps             gaps;            // bystanders and guards turned in a crowd
             float                    lookTimer = 0.0f;
             float                    joinTimer = 0.0f;
@@ -476,18 +477,26 @@ namespace AhShitRim::Police
                     return;
                 }
                 const auto* hold = Wanted::HoldOf(a_faction->GetFormID());
-                if (!state.seeded) {
+                // Running over an animal is no crime: no heat, no fine (Wanted::Pardon).
+                const auto kind = Wanted::KindOfBounty(state.seeded, never, state.pardon.Forgives(a_faction->GetFormID(), NowSeconds()));
+                const int  stars = Wanted::TakeBounty(state.pursuit, gold, kind);
+                switch (kind) {
+                case Wanted::BountyKind::Before:
                     SKSE::log::info("police: a bounty of {} gold with {} from before CJ had the player is wiped", gold, a_faction->GetName());
-                } else if (never) {
+                    break;
+                case Wanted::BountyKind::Cheat:
+                case Wanted::BountyKind::Pardoned:
                     undone = true;
-                    SKSE::log::info("police: AEZAKMI: a crime against {} ({} gold) undone", a_faction->GetName(), gold);
-                } else {
+                    SKSE::log::info("police: {}: a crime against {} ({} gold) undone", kind == Wanted::BountyKind::Cheat ? "AEZAKMI" : "an animal run over",
+                        a_faction->GetName(), gold);
+                    break;
+                case Wanted::BountyKind::Crime:
                     if (hold) {
                         state.hold = hold;
                     }
-                    const int stars = state.pursuit.Crime(gold, false);
                     SKSE::log::info("police: a crime against {}{}: {} gold, wiped, the fine {} so far, heat {:.0f}, {} star(s)", a_faction->GetName(),
                         hold ? std::format(" ({})", hold->name) : std::string(), gold, state.pursuit.Fine(), state.pursuit.Heat(), stars);
+                    break;
                 }
                 a_player->ClearAllCrimeGold(a_faction);
             });
@@ -1599,6 +1608,8 @@ namespace AhShitRim::Police
         state.spared = state.spared || a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
     }
 
+    void NoteHurt(bool a_person, bool a_byVehicle, std::uint32_t a_faction) { state.pardon.Hurt(a_person, a_byVehicle, a_faction, NowSeconds()); }
+
     void CheatStars(int a_how) { g_cheat.store(a_how); }
 
     bool LastBlow(float a_seconds, RE::NiPoint3& a_from)
@@ -1704,6 +1715,7 @@ namespace AhShitRim::Police
         state.clearOut = false;
         state.seeded = false;
         state.grudges.Reset();
+        state.pardon.Reset();
         state.gaps.Reset();
         state.neverWanted = false;
         state.sequence.Cancel();
@@ -1751,6 +1763,7 @@ namespace AhShitRim::Police
         state.loggedStars = 0;
         state.seeded = false;
         state.grudges.Reset();
+        state.pardon.Reset();
         state.spawned.clear();
     }
 }
