@@ -30,7 +30,9 @@ concurrency:
 
 jobs:
   # The game-free doctest cases with gcc (scripts/test.sh), as a headless Linux session runs them.
+  # The repo is public, so anyone can open a PR from a fork: its code never runs on arcade.
   protocol-tests-linux:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, msvc-wine]
     steps:
       # clean: false keeps the build folders, which the build job below shares with this one.
@@ -44,6 +46,7 @@ jobs:
   # Both plugins and the whole doctest suite (the link's tests too) with MSVC under Wine
   # (scripts/wine/build.sh). The build folders stay on the runner, so most runs are incremental.
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, msvc-wine]
     timeout-minutes: 90
     steps:
