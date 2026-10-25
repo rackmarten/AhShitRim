@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Parked vehicles around Skyrim, as San Andreas leaves them on its streets (protocol v36). A Sanchez waits at each of the five stables (Whiterun, Solitude, Windhelm, Riften, Markarth), a BMX in every village and small town, and a dozen themed ones at fitting spots: a Rhino at Fort Greymoor, a Hunter on Bleak Falls Barrow, a Seasparrow at the Solitude Lighthouse, a monster truck at the giants' camp in Bleakwind Basin, a quad at Hunter's Rest and more (docs/DESIGN.md lists them). One turns up once CJ is within 100 m of its spot and goes again when he goes through a door or when he's 160 m off without having used it. Take one or wreck it and another is there a minute later, once CJ has been away, as San Andreas's parked car generators do; what was taken is remembered until the game restarts
+- Twice the pickups: 93 spots instead of 45, with armour three or four times in every hold, hearts in ten villages and 33 weapons, mostly pistols and sub-machine guns, a few shotguns and rifles, and the heavy ones (a flamethrower and a heat-seeking rocket launcher join the rocket launcher and the minigun) rare and tucked away. The road from Helgen to Riverwood has armour and guns at Helgen, the Guardian Stones and Embershard Mine
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

@@ -60,6 +60,7 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **Ammu-Nation** at the blacksmiths of the hold capitals (Warmaiden's in Whiterun first), and guns as rewards from the main quest and a few bosses.
 - **Looting without menus**: walk over a body, or press E on a chest, and its gold and quest items are yours.
 - **Pickups** spinning around Skyrim: hearts, armour, parachutes, weapons and money, with a heart turning up when you're low.
+- **Parked vehicles** waiting around the world: a Sanchez at every stable, a BMX in every village, a Rhino at a fort, a Hunter on a mountain and more.
 - **Wanted stars** on top of Skyrim's bounty, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
@@ -122,6 +123,8 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 **Looting.** Walking over a dead body takes its gold and quest items, as does E on a body or an unlocked chest; the gold counts up in the money display with San Andreas's money sound, and quest items show in the help box. Everything else stays where it is: Skyrim's inventory, barter and container menus don't open while CJ has the player, so press F10 for them.
 
 **Pickups.** Hearts, body armour, parachutes, weapons and wads of gold float and spin at spots across Skyrim. Walk into one to take it; a weapon pickup of a kind CJ already carries swaps his gun only when you press E, as in San Andreas. When CJ is down to a quarter of his health a heart turns up in front of him.
+
+**Parked vehicles.** A Sanchez waits at each of the five stables, a BMX in every village and town, and themed vehicles at fitting spots: a Rhino at Fort Greymoor, a Hunter on Bleak Falls Barrow, a monster truck at the giants' camp in Bleakwind Basin and more ([docs/DESIGN.md](docs/DESIGN.md#vehicles) lists them). One appears once CJ is within 100 m of its spot (never on top of him) and goes again when he goes through a door or when he's 160 m away without having used it. Take one or wreck it and another is there a minute later, once CJ has been away. They count towards the four vehicles that exist at once, but never push one of yours out.
 
 **Nobody important stays dead.** Every named NPC CJ kills (the blacksmiths, the Jarl, Farengar, Delphine, the Greybeards, anyone unique) gets up again an in-game hour later, back where they belong, once their body and their spot are out of CJ's sight. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
 

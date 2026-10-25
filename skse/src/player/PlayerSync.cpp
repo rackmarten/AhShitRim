@@ -17,6 +17,7 @@
 #include "hud/SaHud.h"
 #include "input.h"
 #include "knock.h"
+#include "pickups.h"
 #include "settle.h"
 #include "wanted.h"
 #include "link/LinkService.h"
@@ -202,6 +203,12 @@ namespace AhShitRim::PlayerSync
             input.anchor[0] = state.anchor.x;
             input.anchor[1] = state.anchor.y;
             input.anchor[2] = state.anchor.z;
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                // v36: the world the player is in now, for the parked vehicles' spots (an interior's coordinates are no place in Tamriel).
+                const auto* cell = player->GetParentCell();
+                const auto* worldspace = player->GetWorldspace();
+                input.world = Pickups::WorldByteOf(worldspace ? worldspace->GetFormID() : 0, !cell || cell->IsInteriorCell());
+            }
             input.shoutCount = state.shoutCount;
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
                 const auto feet = player->GetPosition();

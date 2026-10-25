@@ -6,6 +6,7 @@
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
+#include "parked.h"
 #include "rw_texture.h"
 #include "skin_build.h"
 #include "skin_model.h"
@@ -75,6 +76,9 @@ namespace AhShitRim::Vehicles
             std::vector<VehicleKinds::Spinner> spinners;  // a rotor's or a propeller's standing or spinning version
             std::vector<VehicleKinds::ExtraWheel> extras;  // the Rhino's road wheels between its front and back ones
             std::string           name;
+            int                   parked = -1;       // a parked spot's id while its vehicle stands there untouched (protocol/cpp/parked.h)
+            bool                  dropFar = false;  // a parked one, or its wreck: goes once CJ is far and nobody uses it
+            int                   from = -1;        // with dropFar, the spot it was parked at: no other is put out there while it stands
         };
 
         struct State
@@ -83,6 +87,7 @@ namespace AhShitRim::Vehicles
             std::uint64_t spawns = 0;
             std::uint64_t drivenLogMs = 0;
             int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
+            Parked::Board parked;          // the parked vehicles' spots, this session
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -171,20 +176,20 @@ namespace AhShitRim::Vehicles
             return CWorld::GetIsLineOfSightClear(a_from, a_to, true, true, false, true, false, false, false);
         }
 
-        // The first spot in front of CJ that will do, and the ground's height there.
-        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
+        // The first of a_spots that will do, and the ground's height there: its ground within reach of a_feet's height
+        // (CJ's feet, or a parked spot's ground), and nothing between a_from and it.
+        bool FirstSpot(const std::vector<Vehicle::Spot>& a_spots, const CVector& a_feet, const CVector& a_from, const Vehicle::Footprint& a_size,
+            float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
         {
-            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
-            const CVector chest = feet + CVector(0.0f, 0.0f, 1.0f);
             a_tried = 0;
-            for (const auto& spot : Vehicle::Candidates(Vec(feet), Vec(a_ped->GetForward()), a_size)) {
+            for (const auto& spot : a_spots) {
                 a_tried++;
                 const auto      points = Vehicle::SamplePoints(spot, a_size);
                 Vehicle::Ground ground;
                 for (int i = 0; i < Vehicle::kSamples; i++) {
-                    ground.hit[i] = GroundAt(points[i], feet.z, ground.z[i]);
+                    ground.hit[i] = GroundAt(points[i], a_feet.z, ground.z[i]);
                 }
-                const auto z = Vehicle::GroundHeight(ground, feet.z, a_maxUneven);
+                const auto z = Vehicle::GroundHeight(ground, a_feet.z, a_maxUneven);
                 if (!z) {
                     continue;
                 }
@@ -192,14 +197,14 @@ namespace AhShitRim::Vehicles
                 std::array<bool, Vehicle::kEdgeSamples>  edgeHit{};
                 std::array<float, Vehicle::kEdgeSamples> edgeZ{};
                 for (int i = 0; i < Vehicle::kEdgeSamples; i++) {
-                    edgeHit[i] = GroundAt(edges[i], feet.z, edgeZ[i]);
+                    edgeHit[i] = GroundAt(edges[i], a_feet.z, edgeZ[i]);
                 }
                 if (!Vehicle::EdgesHold(edgeHit, edgeZ, *z, a_maxUneven)) {
                     continue;  // a drop-off just past it: it would roll off and hang
                 }
                 const float h = *z + kClearHeight;
                 const auto  at = [&](int i) { return CVector(points[i].x, points[i].y, h); };
-                if (!Clear(chest, CVector(spot.center.x, spot.center.y, h)) || !Clear(at(0), at(3)) || !Clear(at(1), at(2))) {
+                if (!Clear(a_from, CVector(spot.center.x, spot.center.y, h)) || !Clear(at(0), at(3)) || !Clear(at(1), at(2))) {
                     continue;
                 }
                 a_spot = spot;
@@ -207,6 +212,14 @@ namespace AhShitRim::Vehicles
                 return true;
             }
             return false;
+        }
+
+        // The first spot in front of CJ that will do, and the ground's height there.
+        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
+        {
+            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
+            const CVector chest = feet + CVector(0.0f, 0.0f, 1.0f);
+            return FirstSpot(Vehicle::Candidates(Vec(feet), Vec(a_ped->GetForward()), a_size), feet, chest, a_size, a_maxUneven, a_spot, a_groundZ, a_tried);
         }
 
         VehicleKinds::Kind KindOf(CVehicleModelInfo* a_info, int a_model)
@@ -233,6 +246,22 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // A new vehicle into the world on a spot, its ground at a_groundZ: dropped onto its wheels, a bike on its side stand.
+        void Park(CVehicle* a_vehicle, CVehicleModelInfo* a_info, const Vehicle::Spot& a_spot, float a_groundZ)
+        {
+            a_vehicle->SetPosn(CVector(a_spot.center.x, a_spot.center.y, a_groundZ - a_info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
+            a_vehicle->SetHeading(a_spot.heading);
+            a_vehicle->m_nStatus = STATUS_ABANDONED;
+            a_vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
+            CWorld::Add(a_vehicle);
+            if (a_vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                static_cast<CBike*>(a_vehicle)->bOnSideStand = true;  // parked leaning on it, as San Andreas parks bikes, rather than falling over
+                static_cast<CBike*>(a_vehicle)->PlaceOnRoadProperly();
+            } else {
+                static_cast<CAutomobile*>(a_vehicle)->PlaceOnRoadProperly();
+            }
+        }
+
         int FreeSlot()
         {
             for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
@@ -240,14 +269,15 @@ namespace AhShitRim::Vehicles
                     return i;
                 }
             }
-            // All taken: the oldest one CJ isn't in goes.
-            auto* ped = FindPlayerPed(0);
-            int   oldest = -1;
+            // All taken: the oldest one CJ isn't in goes, a parked one (or its wreck) before any of his.
+            auto*      ped = FindPlayerPed(0);
+            int        oldest = -1;
+            const auto before = [](const Slot& a, const Slot& b) { return a.dropFar != b.dropFar ? a.dropFar : a.spawned < b.spawned; };
             for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
                 if (ped && (Live(i) == Driven(ped) || Live(i) == ped->m_pVehicle)) {
                     continue;  // in it, or getting in or out of it
                 }
-                if (oldest < 0 || state.slots[i].spawned < state.slots[oldest].spawned) {
+                if (oldest < 0 || before(state.slots[i], state.slots[oldest])) {
                     oldest = i;
                 }
             }
@@ -858,17 +888,7 @@ namespace AhShitRim::Vehicles
             Log(std::format("vehicle: no way to make the {} (type {}), nothing spawned", name, static_cast<int>(info->m_nVehicleType)));
             return;
         }
-        vehicle->SetPosn(CVector(spot.center.x, spot.center.y, groundZ - info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
-        vehicle->SetHeading(spot.heading);
-        vehicle->m_nStatus = STATUS_ABANDONED;
-        vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
-        CWorld::Add(vehicle);
-        if (vehicle->m_nVehicleClass == VEHICLE_BIKE) {
-            static_cast<CBike*>(vehicle)->bOnSideStand = true;  // parked leaning on it, as San Andreas parks bikes, rather than falling over
-            static_cast<CBike*>(vehicle)->PlaceOnRoadProperly();
-        } else {
-            static_cast<CAutomobile*>(vehicle)->PlaceOnRoadProperly();
-        }
+        Park(vehicle, info, spot, groundZ);
         Slot& slot = state.slots[index];
         slot = Slot{};
         slot.ref = CPools::GetVehicleRef(vehicle);
@@ -1038,6 +1058,7 @@ namespace AhShitRim::Vehicles
     void Clear(CPlayerPed* a_ped)
     {
         GetOut(a_ped);
+        state.parked.Handover();  // the untouched parked ones go with the rest, and wait for CJ again
         int removed = 0;
         for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
             if (Live(i) && Live(i) != Driven(a_ped)) {
@@ -1127,6 +1148,165 @@ namespace AhShitRim::Vehicles
                 Log(std::format("vehicle: driving at {:.1f} m/s, {} wheels on the ground, gas {:.2f}, brake {:.2f}{}, gear {}, engine {}, status {}",
                     std::hypot(speed.x, speed.y) * 50.0f, wheels, driven->m_fGasPedal, driven->m_fBreakPedal, driven->bIsHandbrakeOn ? ", handbrake" : "",
                     driven->m_nCurrentGear, driven->bEngineOn ? "on" : "off", static_cast<int>(driven->m_nStatus)));
+            }
+        }
+    }
+
+    // ---- Parked vehicles (v36) ----
+
+    namespace
+    {
+        // Why a spot's vehicle isn't out yet, logged when it changes.
+        void ParkedWhy(const Parked::Spot& a_spot, const std::string& a_why)
+        {
+            static std::map<std::uint16_t, std::string> last;
+            if (last[a_spot.id] != a_why) {
+                last[a_spot.id] = a_why;
+                if (!a_why.empty()) {
+                    Log(std::format("vehicle: parked spot {} ({}): {}", a_spot.id, a_spot.name, a_why));
+                }
+            }
+        }
+
+        // Puts a spot's vehicle out: in a free slot (a parked one never pushes another out), once its model is in and
+        // the ground under the spot is, on the first place round it that will do (the spawn rule's checks).
+        bool PutOut(const Parked::Spot& a_spot, const Pose::Vec3& a_anchor, const CVector& a_spawnFeet, const CVector& a_feet)
+        {
+            auto* info = InfoOf(a_spot.model);
+            if (!info) {
+                ParkedWhy(a_spot, std::format("{} is not a vehicle model", a_spot.model));
+                return false;
+            }
+            int index = -1;
+            for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && index < 0; i++) {
+                index = Live(i) ? -1 : i;
+            }
+            if (index < 0) {
+                ParkedWhy(a_spot, "every vehicle slot is taken");
+                return false;
+            }
+            if (CStreaming::ms_aInfoForModel[a_spot.model].m_nLoadState != 1 || !info->m_pColModel) {  // LOADSTATE_LOADED
+                CStreaming::RequestModel(a_spot.model, 0x2 | 0x8);  // game required, keep in memory: streamed in, no hitch
+                return false;
+            }
+            const auto at = Parked::ToSanAndreas(a_spot.at, a_anchor, Vec(a_spawnFeet));
+            CColPoint  point;
+            CEntity*   entity = nullptr;
+            if (!CWorld::ProcessVerticalLine(CVector(at.x, at.y, at.z + Parked::kGroundAbove), at.z - Parked::kGroundBelow, point, entity, true, false, false, true,
+                    false, false, nullptr)) {
+                ParkedWhy(a_spot, "no ground there yet");
+                return false;
+            }
+            const CVector ground(at.x, at.y, point.m_vecPoint.z);
+            const auto    name = NameOf(info, a_spot.model);
+            const auto    traits = VehicleKinds::TraitsOf(KindOf(info, a_spot.model));
+            const auto    size = FootprintOf(info);
+            auto          places = Parked::Candidates(Vec(ground), Pose::SanAndreasHeading(a_spot.heading));
+            std::erase_if(places, [&](const Vehicle::Spot& a_place) { return !Parked::ClearOfCj(a_place, size, Vec(a_feet)); });  // never on top of him
+            Vehicle::Spot spot;
+            float         groundZ = 0.0f;
+            int           tried = 0;
+            if (places.empty() || !FirstSpot(places, ground, ground + CVector(0.0f, 0.0f, 1.0f), size, traits.maxUneven, spot, groundZ, tried)) {
+                ParkedWhy(a_spot, std::format("no flat, clear place for the {} ({} tried)", name, tried));
+                return false;
+            }
+            CVehicle* vehicle = Create(info, a_spot.model);
+            if (!vehicle) {
+                ParkedWhy(a_spot, std::format("no way to make the {}", name));
+                return false;
+            }
+            Park(vehicle, info, spot, groundZ);
+            Slot& slot = state.slots[index];
+            slot = Slot{};
+            slot.ref = CPools::GetVehicleRef(vehicle);
+            slot.spawned = ++state.spawns;
+            slot.name = name;
+            slot.parked = a_spot.id;
+            slot.dropFar = true;
+            slot.from = a_spot.id;
+            ParkedWhy(a_spot, "");
+            const CVector& now = vehicle->GetPosition();
+            Log(std::format("vehicle: {} parked at spot {} ({}) in slot {} at ({:.1f},{:.1f},{:.1f}), place {} of {}", name, a_spot.id, a_spot.name, index, now.x,
+                now.y, now.z, tried, places.size()));
+            return true;
+        }
+    }
+
+    void UpdateParked(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, const float (&a_anchor)[3], std::uint8_t a_world, bool a_active)
+    {
+        if (!a_active || CTimer::m_UserPause || CTimer::m_CodePause) {
+            return;
+        }
+        const double     now = CTimer::m_snTimeInMilliseconds / 1000.0;  // game time: a pause doesn't count
+        const float      base = a_ped->GetDistanceFromCentreOfMassToBaseOfModel();
+        const CVector    spawnFeet = a_spawn - CVector(0.0f, 0.0f, base + a_lift);
+        const CVector    feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, base);
+        const Pose::Vec3 anchor{ a_anchor[0], a_anchor[1], a_anchor[2] };
+        const auto       cj = Parked::ToSkyrim(Vec(feet), anchor, Vec(spawnFeet));
+
+        // The ones out: CJ getting in takes one, a wreck stays a wreck, and one nobody uses goes once he is far.
+        for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
+            Slot& slot = state.slots[i];
+            auto* vehicle = slot.dropFar ? Live(i) : nullptr;
+            if (!vehicle) {
+                continue;
+            }
+            if (vehicle == Driven(a_ped) || vehicle == a_ped->m_pVehicle) {  // in it, or getting in
+                if (slot.parked >= 0) {
+                    state.parked.Taken(static_cast<std::uint16_t>(slot.parked), now);
+                    Log(std::format("vehicle: CJ took the {} parked at spot {}; back {:.0f} s on, once he has been {:.0f} m away", slot.name, slot.parked,
+                        Parked::kBackSeconds, Parked::kFarRadius));
+                }
+                slot.parked = -1;
+                slot.dropFar = false;  // his now
+                continue;
+            }
+            if (slot.parked >= 0 && Wrecked(vehicle)) {
+                state.parked.Taken(static_cast<std::uint16_t>(slot.parked), now);
+                Log(std::format("vehicle: the {} parked at spot {} was wrecked", slot.name, slot.parked));
+                slot.parked = -1;  // the wreck stays until CJ is far
+            }
+            const CVector& at = vehicle->GetPosition();
+            if (const float across = std::hypot(at.x - feet.x, at.y - feet.y); Parked::Drops(across, false)) {
+                Log(std::format("vehicle: the {} {} dropped, CJ {:.0f} m off", slot.parked >= 0 ? "parked" : "wrecked", slot.name, across));
+                if (slot.parked >= 0) {
+                    state.parked.Dropped(static_cast<std::uint16_t>(slot.parked));
+                }
+                Remove(i);
+            }
+        }
+
+        // A spot that is out but has no vehicle any more lost it some other way (another vehicle took its slot, a broken
+        // position): taken. Then the spots near CJ, one tried a frame.
+        bool tried = false;
+        for (const auto& spot : Parked::kSpots) {
+            if (state.parked.StatusOf(spot.id) == Parked::Status::Out) {
+                bool there = false;
+                for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && !there; i++) {
+                    there = state.slots[i].parked == spot.id && Live(i);
+                }
+                if (!there) {
+                    state.parked.Taken(spot.id, now);
+                    Log(std::format("vehicle: the vehicle parked at spot {} ({}) is gone", spot.id, spot.name));
+                }
+                continue;
+            }
+            if (!state.parked.Tick(spot, now, Parked::DistanceTo(spot, a_world, cj)) || tried) {
+                continue;
+            }
+            bool wreck = false;  // the last one's wreck still stands there
+            for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && !wreck; i++) {
+                wreck = state.slots[i].dropFar && state.slots[i].from == spot.id && Live(i);
+            }
+            if (wreck) {
+                state.parked.Tried(spot.id, now);
+                continue;
+            }
+            tried = true;
+            if (PutOut(spot, anchor, spawnFeet, feet)) {
+                state.parked.Out(spot.id);
+            } else {
+                state.parked.Tried(spot.id, now);
             }
         }
     }
