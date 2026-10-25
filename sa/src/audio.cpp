@@ -68,6 +68,7 @@ namespace AhShitRim::Audio
             bool          dialed = false;               // a retune we asked for is still going on
             std::uint64_t dialedMs = 0;
             std::int8_t   actual = Protocol::kRadioNone - 1;  // San Andreas's own station id, last logged
+            bool          on = false;                         // and whether its radio ran
             std::int8_t   reported = Protocol::kRadioNone - 1;
 
             // v24: the sound cue playing (Protocol::kCue*), 0 for none.
@@ -302,10 +303,12 @@ namespace AhShitRim::Audio
         bool        retuning = false;
         if (a_radio) {
             const auto actual = static_cast<std::int8_t>(AudioEngine.GetCurrentRadioStationID());
+            const bool on = AudioEngine.IsRadioOn();
             const bool off = actual < Radio::kEmergency || actual >= Radio::kSaUserTracks;
-            if (actual != state.actual) {
-                Log(std::format("audio: San Andreas's radio at {} (on {}, retuning {})", actual, AudioEngine.IsRadioOn(), Retuning()));
+            if (actual != state.actual || on != state.on) {
+                Log(std::format("audio: San Andreas's radio at {} (on {}, retuning {})", actual, on, Retuning()));
                 state.actual = actual;
+                state.on = on;
             }
             if (state.dialed) {
                 // A retune the wheel asked for: shown as where it goes until San Andreas gets there.
@@ -321,15 +324,15 @@ namespace AhShitRim::Audio
             if (state.dialed) {
                 station = state.dial;
                 retuning = true;
-            } else if (off) {
-                if (!Radio::SkyrimPlays(state.dial)) {
-                    state.dial = Radio::kRadioOff;  // the wheel goes on from off
-                }
-                station = state.dial;
             } else {
-                station = actual;
-                state.dial = actual;  // San Andreas chose it (a vehicle's own station on getting in)
+                // Not running yet, its station id is stale: the dial goes on (Radio::Follow).
+                const auto followed = Radio::Follow(state.dial, actual, on);
+                station = followed.station;
+                state.dial = followed.dial;
             }
+        }
+        if (!a_radio) {
+            state.dialed = false;  // out before the retune got there: the dial has it for the next vehicle
         }
         a_pose.radioStation = station;
         if (retuning) {

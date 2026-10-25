@@ -172,6 +172,26 @@ TEST_CASE("the last station carries over into every vehicle, off and Skyrim's st
     CHECK(SaStation(StartStation(kRadioOff, 6)) == kSaRadioOff);
 }
 
+TEST_CASE("getting in, San Andreas's stale station id never replaces the dial")
+{
+    // 0.1.0's carry-over: Radio X's 7 read before the radio ran became the dial, in every vehicle
+    CHECK(Follow(kSovngarde, 7, false).station == kSovngarde);
+    CHECK(Follow(kSovngarde, 7, false).dial == kSovngarde);
+    CHECK(Follow(2, 7, false).dial == 2);
+    CHECK(Follow(kRadioOff, 7, false).station == kRadioOff);
+    CHECK(Follow(-1, 7, false).station == -1);  // nothing listened to yet: no name until San Andreas's own comes on
+    CHECK(Follow(-1, 7, false).dial == -1);
+    // running
+    CHECK(Follow(-1, 3, true).station == 3);  // the first vehicle's own station
+    CHECK(Follow(-1, 3, true).dial == 3);
+    CHECK(Follow(2, 2, true).station == 2);
+    CHECK(Follow(kSovngarde, kSaRadioOff, true).station == kSovngarde);  // San Andreas off, Skyrim plays it
+    CHECK(Follow(kSweetroll, kSaRadioOff, true).dial == kSweetroll);
+    CHECK(Follow(2, kSaRadioOff, true).station == kRadioOff);  // turned off
+    CHECK(Follow(-1, kSaRadioOff, true).dial == kRadioOff);
+    CHECK(Follow(kRadioOff, kEmergency, true).station == kEmergency);  // San Andreas's own choice still shows
+}
+
 TEST_CASE("station names and which ones silence Skyrim's music")
 {
     CHECK(StationName(6) == "Radio Los Santos");

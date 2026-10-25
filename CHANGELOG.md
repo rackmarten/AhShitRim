@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Bicycles (the BMX, the Bike, the Mountain Bike) have no radio any more: no station plays or shows on them, and the mouse wheel tunes nothing there.
-- Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name and Skyrim's markup no longer come with the line.
+- Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name comes first in San Andreas's cream, the line after it in white, in a smaller font than San Andreas's own so a line takes one or two rows, and Skyrim's own subtitle no longer shows over it.
 - Skyrim's skill increase and level up messages no longer show while CJ has the player; the skills and levels still go up.
 - A second cheat typed right after the first beeps again, as in San Andreas: the help box starts over with its sound whenever a message is shown, the one already up included.
 

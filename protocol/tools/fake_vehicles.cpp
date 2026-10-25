@@ -13,7 +13,9 @@
 //
 // Then the cheats' vehicles (v22): with BSXSGGC on, a parked car rammed floats up, and AIR + a plane's name puts CJ in
 // it high up at flying speed, still flying after holding W, while AIR + a motorbike spawns it on the ground.
-// AHSHITRIM_ONLY=cheats, =cliff or =pickups runs only those.
+// The radio (#907): no station on the BMX, and the station dialed in one vehicle comes on in the next, Radio Sovngarde
+// included, with San Andreas's own radio getting to a station dialed after (its retune ends before the 3 s it may take).
+// AHSHITRIM_ONLY=cheats, =cliff, =pickups or =radio runs only those.
 
 #include <algorithm>
 #include <chrono>
@@ -34,6 +36,7 @@
 #include "../cpp/input.h"
 #include "../cpp/link.h"
 #include "../cpp/pose.h"
+#include "../cpp/radio.h"
 #include "../cpp/skin_model.h"
 #include "../cpp/vehicle_kinds.h"
 
@@ -469,19 +472,76 @@ int main()
         return dropped && drop.pickup == static_cast<std::uint8_t>(Protocol::PickupKind::Jetpack) && drop.handover == handoverId ? 0 : 1;
     };
 
+    // The radio: dialed to Radio Sovngarde in a ZR-350, it's Radio Sovngarde in a Sandking; Playback FM dialed there
+    // is reached (the retune ends early), and comes on in the next ZR-350.
+    const auto radio = [&] {
+        int        bad = 0;
+        const auto station = [&] { return player().radioStation; };
+        const auto retuning = [&] { return (player().flags & Protocol::kPlayerRadioRetuning) != 0; };
+        const auto ride = [&](std::uint16_t a_model, const char* a_name) {
+            fresh();
+            Protocol::BodyState car{};
+            const bool in = spawn(a_model, a_name, car) >= 0 && board(a_name);
+            wait(1.0);
+            return in;
+        };
+        const auto dialTo = [&](std::int8_t a_target) {
+            for (int i = 0; i < 15 && station() != a_target; i++) {
+                input.AddWheel(true);
+                wait(0.4);
+            }
+            const auto at = ms();
+            run(4.0, [&] { return !retuning(); });
+            return ms() - at;
+        };
+        if (!ride(477, "ZR350")) {
+            return 1;
+        }
+        std::printf("radio: the ZR-350 comes on on %s (%d)\n", std::string(Radio::StationName(station())).c_str(), station());
+        dialTo(Radio::kSovngarde);
+        std::printf("radio: dialed to %s\n", std::string(Radio::StationName(station())).c_str());
+        bad += station() != Radio::kSovngarde;
+        if (!ride(495, "SANDKIN")) {
+            return bad + 1;
+        }
+        std::printf("radio: the Sandking comes on on %s%s\n", std::string(Radio::StationName(station())).c_str(),
+            station() == Radio::kSovngarde ? "" : " (NOT CARRIED OVER)");
+        bad += station() != Radio::kSovngarde;
+        const auto took = dialTo(1);
+        std::printf("radio: Playback FM dialed, %s after %llu ms\n", station() == 1 && took < 2900 ? "San Andreas got there" : "SAN ANDREAS NEVER GOT THERE",
+            static_cast<unsigned long long>(took));
+        bad += !(station() == 1 && took < 2900);
+        if (!ride(477, "ZR350")) {
+            return bad + 1;
+        }
+        std::printf("radio: the next ZR-350 comes on on %s%s\n", std::string(Radio::StationName(station())).c_str(), station() == 1 ? "" : " (NOT CARRIED OVER)");
+        bad += station() != 1;
+        if (!ride(481, "BMX")) {
+            return bad + 1;
+        }
+        input.AddWheel(true);
+        wait(1.5);
+        std::printf("radio: the BMX %s\n", station() == Protocol::kRadioNone ? "has none" : "HAS A STATION");
+        bad += station() != Protocol::kRadioNone;
+        fresh();
+        return bad;
+    };
+
     int failed = 0;
     publish(true);
     run(5.0, [&] { return player().handover == handoverId && (player().flags & Protocol::kPlayerGrounded); });
     wait(1.5);
     if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && std::string(only) == "cheats") {
         failed += cheats();
-    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups")) {
-        failed += std::string(only) == "cliff" ? cliff() : pickupModels() + jetpackDrop();
+    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio")) {
+        failed += std::string(only) == "cliff" ? cliff() : std::string(only) == "radio" ? radio() : pickupModels() + jetpackDrop();
         publish(false);
         link.Tick(ms());
         std::printf("%s\n", failed ? "SOME CHECKS FAILED" : "all checks passed");
         return failed ? 2 : 0;
     }
+
+    failed += radio();
 
     // Land: the NRG-500 and the BMX ride.
     for (const auto& [model, name, metres] : { std::tuple{ std::uint16_t{ 522 }, "NRG500", 10.0f }, std::tuple{ std::uint16_t{ 481 }, "BMX", 3.0f } }) {

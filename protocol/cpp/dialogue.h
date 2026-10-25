@@ -199,24 +199,12 @@ namespace AhShitRim::Dialogue
 
     // ---- Subtitle text ----
 
-    // The line of a subtitle Skyrim's HUD gets, as San Andreas prints it: Skyrim's text is HTML for its own HUD, the
-    // speaker's name in a grey font tag first ("<font color='#888888'>Whiterun Guard</font>: A fight!"). San
-    // Andreas's subtitles are the line alone, so the name goes, the remaining tags go, and the entities Flash
-    // would show as characters are those characters.
-    inline std::string SubtitleText(std::string_view a_text)
+    // Skyrim's HTML as plain text: its tags go, the entities Flash would show as characters are those characters, and
+    // a '~' (a San Andreas colour code) becomes a '-'.
+    inline std::string PlainText(std::string_view a_text)
     {
-        if (a_text.starts_with("<font")) {
-            if (const auto end = a_text.find("</font>"); end != std::string_view::npos) {
-                auto rest = a_text.substr(end + 7);
-                if (rest.empty() || rest.starts_with(":")) {
-                    rest.remove_prefix(rest.empty() ? 0 : 1);
-                    while (rest.starts_with(" ")) {
-                        rest.remove_prefix(1);
-                    }
-                    a_text = rest;
-                }
-            }
-        }
+        static constexpr std::pair<std::string_view, char> kEntities[] = { { "&amp;", '&' }, { "&lt;", '<' }, { "&gt;", '>' }, { "&quot;", '"' },
+            { "&apos;", '\'' }, { "&#39;", '\'' } };
         std::string out;
         out.reserve(a_text.size());
         for (std::size_t i = 0; i < a_text.size();) {
@@ -229,8 +217,6 @@ namespace AhShitRim::Dialogue
                 continue;
             }
             if (a_text[i] == '&') {
-                static constexpr std::pair<std::string_view, char> kEntities[] = { { "&amp;", '&' }, { "&lt;", '<' }, { "&gt;", '>' }, { "&quot;", '"' },
-                    { "&apos;", '\'' }, { "&#39;", '\'' } };
                 bool decoded = false;
                 for (const auto& [entity, character] : kEntities) {
                     if (a_text.substr(i).starts_with(entity)) {
@@ -244,9 +230,36 @@ namespace AhShitRim::Dialogue
                     continue;
                 }
             }
-            out += a_text[i++];
+            out += a_text[i] == '~' ? '-' : a_text[i];
+            i++;
         }
         return out;
+    }
+
+    // A subtitle Skyrim's HUD gets, as San Andreas prints it. Skyrim's text is HTML for its own HUD, the speaker's
+    // name in a grey font tag first ("<font color='#888888'>Whiterun Guard</font>: A fight!"); San Andreas's
+    // subtitles have no names, but without one it's hard to tell who talks, so the name stays in front in San
+    // Andreas's cream (~y~) and the line follows in the subtitles' own white (~w~). A name with no line shows nothing.
+    inline std::string SubtitleText(std::string_view a_text)
+    {
+        if (a_text.starts_with("<font")) {
+            if (const auto end = a_text.find("</font>"); end != std::string_view::npos) {
+                auto rest = a_text.substr(end + 7);
+                if (rest.empty() || rest.starts_with(":")) {
+                    rest.remove_prefix(rest.empty() ? 0 : 1);
+                    while (rest.starts_with(" ")) {
+                        rest.remove_prefix(1);
+                    }
+                    const auto name = PlainText(a_text.substr(0, end));
+                    const auto line = PlainText(rest);
+                    if (line.empty()) {
+                        return {};
+                    }
+                    return name.empty() ? line : "~y~" + name + ":~w~ " + line;
+                }
+            }
+        }
+        return PlainText(a_text);
     }
 
     // ---- Skyrim's subtitle settings ----

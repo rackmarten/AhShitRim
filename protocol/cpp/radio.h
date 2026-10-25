@@ -135,6 +135,31 @@ namespace AhShitRim::Radio
         return a_last >= 1 && a_last <= kRadioOff ? a_last : a_vehicles;
     }
 
+    // What CJ's radio shows, and the dial after, from San Andreas's radio (a_actual, its current eRadioID; a_on, whether
+    // it runs: CAERadioTrackManager::IsRadioOn) and the dial (a_dial, kRadioNone until CJ listened to anything). While
+    // San Andreas's radio doesn't run yet (CJ getting in, before StartRadio) its station id is a stale one, never a
+    // station San Andreas chose: in 0.1.0's carry-over it was Radio X's 7 on every entry, which then replaced the dial.
+    // So the dial goes on and shows. Running but off (off, or Skyrim's two) the dial stays on one of Skyrim's stations
+    // and is off otherwise; on a station of its own San Andreas chose it (a vehicle's own, before any carry-over).
+    struct Followed
+    {
+        std::int8_t station;
+        std::int8_t dial;
+    };
+
+    constexpr Followed Follow(std::int8_t a_dial, std::int8_t a_actual, bool a_on)
+    {
+        const bool dialed = a_dial >= 1 && a_dial <= kRadioOff;
+        if (!a_on) {
+            return { dialed ? a_dial : std::int8_t{ -1 }, a_dial };
+        }
+        if (a_actual < kEmergency || a_actual >= kSaUserTracks) {
+            const std::int8_t dial = SkyrimPlays(a_dial) ? a_dial : kRadioOff;
+            return { dial, dial };
+        }
+        return { a_actual, a_actual };
+    }
+
     // ---- Radio Sovngarde ----
 
     enum class Kind : std::uint8_t

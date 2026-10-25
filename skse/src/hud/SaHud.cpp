@@ -272,8 +272,8 @@ namespace AhShitRim::SaHud
                         quads.push_back({ texture, g.x0 + sx, g.y0 + sy, g.x1 + sx, g.y1 + sy, g.u0, g.v0, g.u1, g.v1, drop });
                     }
                 }
-                const std::uint32_t colour = Packed(a_colour);
                 for (const auto& g : glyphs) {
+                    const std::uint32_t colour = Packed(TokenColour(g.token, a_colour));  // a ~y~ name in cream
                     quads.push_back({ texture, g.x0, g.y0, g.x1, g.y1, g.u0, g.v0, g.u1, g.v1, colour });
                 }
             }

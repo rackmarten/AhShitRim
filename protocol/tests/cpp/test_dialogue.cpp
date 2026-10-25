@@ -105,15 +105,17 @@ TEST_CASE("nobody talks to CJ in a vehicle; on foot anyone may, at any speed")
     CHECK_FALSE(MayTalk(true));  // parked or driving: still in the vehicle
 }
 
-TEST_CASE("a subtitle is its line alone, without Skyrim's speaker name and markup")
+TEST_CASE("a subtitle has the speaker's name in cream in front, without Skyrim's markup")
 {
-    CHECK(SubtitleText("<font color='#888888'>Whiterun Guard</font>: A fight!") == "A fight!");
-    CHECK(SubtitleText("<font color='#888888'>Giant</font>: Ayarg garag gar!") == "Ayarg garag gar!");
+    CHECK(SubtitleText("<font color='#888888'>Whiterun Guard</font>: A fight!") == "~y~Whiterun Guard:~w~ A fight!");
+    CHECK(SubtitleText("<font color='#888888'>Lillith Maiden-Loom</font>: Come to chat?") == "~y~Lillith Maiden-Loom:~w~ Come to chat?");
     CHECK(SubtitleText("Hey, you. You're finally awake.") == "Hey, you. You're finally awake.");  // no name: as it is
     CHECK(SubtitleText("Bread &amp; cheese, &quot;fresh&quot; &lt;today&gt;") == "Bread & cheese, \"fresh\" <today>");
     CHECK(SubtitleText("<i>Dovahkiin</i>, at last") == "Dovahkiin, at last");
     CHECK(SubtitleText("A sentence with a stray &") == "A sentence with a stray &");
     CHECK(SubtitleText("<font color='#888888'>Lydia</font>") == "");  // a name and no line: nothing to show
+    CHECK(SubtitleText("<font color='#888888'></font>: Psst.") == "Psst.");
+    CHECK(SubtitleText("Wait~n~what") == "Wait-n-what");  // never a San Andreas code from Skyrim's text
     CHECK(SubtitleText("").empty());
 }
 

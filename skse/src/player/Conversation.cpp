@@ -202,11 +202,16 @@ namespace AhShitRim::Conversation
                         if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
                             std::scoped_lock guard(hudSubtitle.lock);
                             if (hudSubtitle.count == 0) {
-                                SKSE::log::info("conversation: Skyrim's HUD shows its first subtitle");
+                                SKSE::log::info("conversation: Skyrim's HUD gets its first subtitle message ({})", type == RE::HUD_MESSAGE_TYPE::kShowSubtitle ? "show" : "hide");
                             }
                             hudSubtitle.shown = type == RE::HUD_MESSAGE_TYPE::kShowSubtitle;
                             hudSubtitle.text = hudSubtitle.shown && data->text.c_str() ? data->text.c_str() : "";
                             hudSubtitle.count++;
+                            if (cjHasPlayer) {
+                                // Skyrim's HUD never gets it: its subtitle clip came back with every line once its
+                                // subtitle settings were on (SubtitleForcing), over San Andreas's.
+                                return RE::UI_MESSAGE_RESULTS::kHandled;
+                            }
                         }
                     }
                 }
