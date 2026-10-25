@@ -5,6 +5,7 @@
 #include "player/CheatCodes.h"
 #include "player/Vitals.h"
 #include "knock.h"
+#include "health.h"
 #include "wasted.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
@@ -1188,9 +1189,10 @@ namespace AhShitRim::Police
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // A hit of Skyrim's people on the player while CJ has it (Skyrim's difficulty already on it): [Balance] DamageTaken of
-        // it (Balance), for a guard (any hold's) or one of ours times the stars' share (Wanted::GuardDamage), and CJ's armour
-        // takes it first (Vitals::TakeHit). The rest is given back, or the more taken, as it lands.
+        // A hit on the player while CJ has it (Skyrim's difficulty already on it), from Skyrim's people or a trap with nobody
+        // behind it: [Balance] DamageTaken of it (Balance), for a guard (any hold's) or one of ours times the stars' share
+        // (ShareFor), and CJ's armour takes it first (Vitals::TakeHit) unless it's drowning. The rest is given back, or the
+        // more taken, as it lands. Magic's damage is Vitals' own (its ModifyActorValue hook), and so is San Andreas's.
         struct HealthDamageHook
         {
             static void thunk(RE::PlayerCharacter* a_player, RE::Actor* a_attacker, float a_damage)
@@ -1201,24 +1203,26 @@ namespace AhShitRim::Police
                     state.blowAt = std::chrono::steady_clock::now();
                 }
                 static bool inside = false;
-                if (!state.owned || inside || !a_attacker || a_attacker->IsPlayerRef() || state.sequence.Running() || Vitals::IsInvincible()) {
+                if (!state.owned || inside || (a_attacker && a_attacker->IsPlayerRef()) || state.sequence.Running() || Vitals::IsInvincible() ||
+                    Vitals::OwnDamage()) {
                     return;
                 }
-                // The stars' share only for guards (any hold's) and ours: bandits, creatures and the rest never get it.
-                const bool  guard = a_attacker->IsGuard() || IsSpawned(a_attacker);
-                const float factor = Balance::TakenFactor(guard ? Wanted::GuardDamage(state.pursuit.Stars()) : 1.0f);
+                const bool  guard = a_attacker && (a_attacker->IsGuard() || IsSpawned(a_attacker));
+                const float factor = Balance::TakenFactor(ShareFor(a_attacker));
+                const auto  kind = Health::OfHit(a_attacker != nullptr, a_player->GetActorRuntimeData().boolFlags.all(RE::Actor::BOOL_FLAGS::kUnderwater));
                 const float armor = Vitals::Armor();
                 inside = true;
-                const float back = Vitals::TakeHit(a_player, a_damage, factor);
+                const float back = Vitals::TakeHit(a_player, a_damage, factor, kind);
                 inside = false;
                 if (back > 0.0f) {
-                    state.spared = state.spared || a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
+                    NoteSpared(a_player);
                 }
                 static int logged = 0;
                 if (logged < 12) {
                     logged++;
-                    SKSE::log::info("police: {:08X} ({}{}) hit CJ for {:.1f} health, x{:.2f}: armour {:.0f} -> {:.0f}, health {:+.1f} of it given back", a_attacker->GetFormID(),
-                        a_attacker->GetName(), guard ? ", a guard" : "", a_damage, factor, armor, Vitals::Armor(), back);
+                    SKSE::log::info("police: {:08X} ({}{}) hit CJ for {:.1f} health{}, x{:.2f}: armour {:.0f} -> {:.0f}, health {:+.1f} of it given back",
+                        a_attacker ? a_attacker->GetFormID() : 0, a_attacker ? a_attacker->GetName() : "a trap or nobody", guard ? ", a guard" : "", a_damage,
+                        kind == Health::Kind::Drowning ? " (drowning)" : "", factor, armor, Vitals::Armor(), back);
                 }
             }
             static inline REL::Relocation<decltype(thunk)> original;
@@ -1494,6 +1498,17 @@ namespace AhShitRim::Police
     std::uint8_t TakeLine() { return std::exchange(state.line, std::uint8_t{ 0 }); }
 
     bool TakeSpared() { return std::exchange(state.spared, false); }
+
+    float ShareFor(RE::Actor* a_attacker)
+    {
+        // The stars' share only for guards (any hold's) and ours: bandits, creatures, traps and the rest never get it.
+        return a_attacker && (a_attacker->IsGuard() || IsSpawned(a_attacker)) ? Wanted::GuardDamage(state.pursuit.Stars()) : 1.0f;
+    }
+
+    void NoteSpared(RE::PlayerCharacter* a_player)
+    {
+        state.spared = state.spared || a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f;
+    }
 
     void CheatStars(int a_how) { g_cheat.store(a_how); }
 

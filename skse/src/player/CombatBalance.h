@@ -3,8 +3,8 @@
 #include "balance.h"
 
 // How hard CJ hits and is hit (the rules in protocol/cpp/balance.h): AhShitRim.ini's [Balance] CJDamage,
-// DamageTaken and FollowDifficulty, read once when the game's data is loaded, and Skyrim's multiplier for the player's
-// damage (fDiffMultHPByPC*) at the player's difficulty, read each time. Main thread only.
+// DamageTaken and FollowDifficulty, read once when the game's data is loaded, and the player's difficulty, read each
+// time. Main thread only.
 namespace AhShitRim::Balance
 {
     void OnDataLoaded();

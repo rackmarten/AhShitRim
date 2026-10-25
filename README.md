@@ -200,9 +200,10 @@ DamageTaken=1.0      ; what Skyrim's people and creatures do to CJ, times this
 FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn't
 ```
 
-- With `FollowDifficulty=1` CJ's guns and explosives get Skyrim's own multiplier for the player's damage at the difficulty you play (`fDiffMultHPByPC*`): twice at Novice, as before at Adept, half at Master, a quarter at Legendary. Fists and melee weapons stay as they are. Skyrim already puts its difficulty on what its people do to the player, CJ included.
-- So at Master a Colt 45 needs about twice the shots it did: 9 body shots for a level 6 bandit instead of 5. `CJDamage=0.5` with `FollowDifficulty=0` gives that at any difficulty.
-- CJ's body armour (the blue bar) now takes Skyrim's hits first, as San Andreas's armour takes bullets and blows: a hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health.
+- With `FollowDifficulty=1` CJ's guns and explosives deal what Skyrim's player would at the next harder difficulty (Skyrim's own `fDiffMultHPByPC*` a step down): 1.5 at Novice, 1 at Apprentice, 0.75 at Adept, 0.5 at Expert, 0.25 at Master and at Legendary. Fists and melee weapons stay as they are. Skyrim already puts its difficulty on what its people do to the player, CJ included.
+- So a level 6 bandit takes 6 Colt 45 body shots at Adept and 18 at Master (5 at Master before). `CJDamage=0.25` with `FollowDifficulty=0` gives Master's at any difficulty.
+- CJ's body armour (the blue bar) takes the damage first, as San Andreas's does: weapons, arrows, creatures' bites, claws and clubs, traps (blades, spikes, rocks), blasts, and fire, frost and shock from spells, enchantments, traps and burning oil. A hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health. Poison, disease, drowning and falls go straight to his health.
+- Skyrim's fire (a fire spell, a fire trap, burning oil, a dragon's breath) sets CJ alight in San Andreas, with his scream and the burn, as San Andreas's own fire does.
 - `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
 - BAGUVIX still blocks everything.
 

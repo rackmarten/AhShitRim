@@ -178,6 +178,8 @@ namespace AhShitRim::Projectiles
             std::uint32_t handover = 0;
             RE::NiPoint3  anchor;
             const void*   place = nullptr;
+            bool          cjBurning = false;  // San Andreas has CJ on fire
+            std::chrono::steady_clock::time_point burnAsked;  // the last BurnCj for Skyrim's fire
         } frame;
 
         // Where the player is: its interior cell, or the worldspace outside. A projectile left behind in another is dropped.
@@ -1158,6 +1160,7 @@ namespace AhShitRim::Projectiles
         frame.handover = a_handover;
         frame.anchor = a_anchor;
         frame.place = PlaceOf(a_player);
+        frame.cjBurning = a_cjBurning != nullptr;
         state.cjWeapon = a_cjWeapon;
         state.vehicleModel = a_vehicleModel;
         auto queue = std::move(state.queue);
@@ -1189,6 +1192,17 @@ namespace AhShitRim::Projectiles
     }
 
     // Never from inside Update: it empties what Update iterates.
+    void BurnCj(RE::PlayerCharacter* a_player)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (!a_player || frame.cjBurning || now - frame.burnAsked < std::chrono::seconds(1)) {
+            return;
+        }
+        frame.burnAsked = now;
+        Tell(Protocol::EffectKind::BurnCj, frame.handover, frame.anchor, a_player->GetPosition(), 0);
+        Log("Skyrim's fire set CJ alight");
+    }
+
     void Clear()
     {
         state.queue.clear();

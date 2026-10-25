@@ -53,6 +53,10 @@ namespace AhShitRim::Projectiles
     // Skyrim's people as a rocket does, further out, and CJ when a_hurtCj. San Andreas plays its sound.
     void VehicleBlast(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, bool a_hurtCj);
 
+    // Skyrim's fire hit CJ (a spell, a trap, burning oil): San Andreas sets him alight as its own fire does, unless he
+    // burns already or was set alight under a second ago.
+    void BurnCj(RE::PlayerCharacter* a_player);
+
     // Back to Skyrim's own player: projectiles in flight and satchels are dropped and gas clouds cleared.
     void Clear();
 }

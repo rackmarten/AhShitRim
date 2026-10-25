@@ -87,3 +87,44 @@ TEST_CASE("Skyrim's hits through the armour are kept sane")
     CHECK(AbsorbSkyrim(50.0f, 30.0f, 0.0f).health == doctest::Approx(30.0f));  // no maximum to share: health takes it
     CHECK(AbsorbSkyrim(50.0f, 30.0f, 0.0f).armor == doctest::Approx(50.0f));
 }
+
+TEST_CASE("what CJ's armour takes, as San Andreas's does")
+{
+    CHECK(ArmourTakes(Kind::Blow));
+    CHECK(ArmourTakes(Kind::Fire));
+    CHECK(ArmourTakes(Kind::Frost));
+    CHECK(ArmourTakes(Kind::Shock));
+    CHECK(ArmourTakes(Kind::Magic));
+    CHECK_FALSE(ArmourTakes(Kind::Poison));
+    CHECK_FALSE(ArmourTakes(Kind::Disease));
+    CHECK_FALSE(ArmourTakes(Kind::Fall));
+    CHECK_FALSE(ArmourTakes(Kind::Drowning));
+}
+
+TEST_CASE("only fire sets CJ alight")
+{
+    CHECK(SetsAlight(Kind::Fire));
+    CHECK_FALSE(SetsAlight(Kind::Frost));
+    CHECK_FALSE(SetsAlight(Kind::Shock));
+    CHECK_FALSE(SetsAlight(Kind::Blow));
+    CHECK_FALSE(SetsAlight(Kind::Poison));
+}
+
+TEST_CASE("a magic effect's kind is what resists it")
+{
+    CHECK(OfEffect(Resist::Fire) == Kind::Fire);
+    CHECK(OfEffect(Resist::Frost) == Kind::Frost);
+    CHECK(OfEffect(Resist::Shock) == Kind::Shock);
+    CHECK(OfEffect(Resist::Poison) == Kind::Poison);
+    CHECK(OfEffect(Resist::Disease) == Kind::Disease);
+    CHECK(OfEffect(Resist::Magic) == Kind::Magic);
+    CHECK(OfEffect(Resist::None) == Kind::Magic);
+}
+
+TEST_CASE("a hit with no magic behind it is a blow, trap or not, unless it's drowning")
+{
+    CHECK(OfHit(true, false) == Kind::Blow);   // a bandit's sword, a spider's bite
+    CHECK(OfHit(false, false) == Kind::Blow);  // a blade trap, falling rocks
+    CHECK(OfHit(true, true) == Kind::Blow);    // a slaughterfish under water
+    CHECK(OfHit(false, true) == Kind::Drowning);
+}
