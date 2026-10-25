@@ -219,19 +219,18 @@ namespace AhShitRim::Radio
     // ---- Sweetroll FM ----
 
     // The tracks, by path under Skyrim's Data folder, as named in music/CREDITS.md.
-    inline constexpr std::array<std::string_view, 12> kSweetrollTracks = {
-        "music\\ahshitrim\\sweetrollfm\\01-november-snow.xwm",
-        "music\\ahshitrim\\sweetrollfm\\02-another-august.xwm",
-        "music\\ahshitrim\\sweetrollfm\\03-battle-theme-a.xwm",
-        "music\\ahshitrim\\sweetrollfm\\04-megasong.xwm",
-        "music\\ahshitrim\\sweetrollfm\\05-chill-lofi.xwm",
-        "music\\ahshitrim\\sweetrollfm\\06-the-bards-tale.xwm",
-        "music\\ahshitrim\\sweetrollfm\\07-night-prowler.xwm",
-        "music\\ahshitrim\\sweetrollfm\\08-meadow-thoughts.xwm",
-        "music\\ahshitrim\\sweetrollfm\\09-the-rush.xwm",
-        "music\\ahshitrim\\sweetrollfm\\10-winning-the-race.xwm",
-        "music\\ahshitrim\\sweetrollfm\\11-kings-feast.xwm",
-        "music\\ahshitrim\\sweetrollfm\\12-cyberpunk-moonlight-sonata.xwm",
+    inline constexpr std::array<std::string_view, 11> kSweetrollTracks = {
+        "music\\ahshitrim\\sweetrollfm\\01-the-bards-tale.xwm",
+        "music\\ahshitrim\\sweetrollfm\\02-kings-feast.xwm",
+        "music\\ahshitrim\\sweetrollfm\\03-the-old-tower-inn.xwm",
+        "music\\ahshitrim\\sweetrollfm\\04-minstrel-dance.xwm",
+        "music\\ahshitrim\\sweetrollfm\\05-harvest-season.xwm",
+        "music\\ahshitrim\\sweetrollfm\\06-exploration.xwm",
+        "music\\ahshitrim\\sweetrollfm\\07-grasslands-theme.xwm",
+        "music\\ahshitrim\\sweetrollfm\\08-morleys-pavan.xwm",
+        "music\\ahshitrim\\sweetrollfm\\09-interweave.xwm",
+        "music\\ahshitrim\\sweetrollfm\\10-the-highland-road.xwm",
+        "music\\ahshitrim\\sweetrollfm\\11-sunset-plains.xwm",
     };
 
     // A playlist shuffled like a deck: every track once, then a new order, whose first track is never
