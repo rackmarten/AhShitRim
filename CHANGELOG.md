@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - A wanted level turning into a free-for-all: a pursuer's stray blow on a bystander (the stable's people, the carriage's invincible horse at Whiterun) started a brawl that kept the guards and the reinforcements off CJ. Bystanders now stop fighting the pursuit, and guards go back to CJ.
+- Nobody fighting CJ after a giant knocked him down: the hidden player's skeleton could stay in its ragdoll where it fell, and Skyrim's AI looks for the player by its bones. It's now put back on the player when that happens.
 - Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
 
 ## [0.1.0] - 2026-10-25

@@ -201,4 +201,46 @@ namespace AhShitRim::Knock
         float _left = 0.0f;
         float _timer = 0.0f;
     };
+
+    // ---- A skeleton left behind ----
+
+    // After a giant's blow the player can be back at CJ, its knock state normal, while its skeleton still lies in its
+    // ragdoll where it fell. Skyrim's AI looks for the player by its bones (the head, the torso), so the pursuers lose
+    // sight of CJ and forget him (0.1.0's recording: after a giant's hit nobody would fight CJ any more). So the head
+    // bone's flat distance from where the player stands is watched: further than kStaleUnits for kStaleFor, the ragdoll
+    // is reset and the 3D put where the player is, again every kStaleRetry while it stays behind, kStaleTries at most.
+    inline constexpr float kStaleUnits = 150.0f;  // about 2 m: a head that far off the player's feet isn't on its body
+    inline constexpr float kStaleFor = 0.5f;
+    inline constexpr float kStaleRetry = 2.0f;
+    inline constexpr int   kStaleTries = 3;
+
+    class Skeleton
+    {
+    public:
+        // A frame of a_delta seconds; a_offset the head bone's flat distance from the player's position in units, negative
+        // when unknown (no 3D). Returns whether to reset the skeleton now.
+        bool Tick(float a_delta, float a_offset)
+        {
+            if (!(a_offset > kStaleUnits)) {  // a NaN is no offset either
+                _stale = 0.0f;
+                _tries = 0;
+                return false;
+            }
+            _stale += a_delta;
+            _retry -= a_delta;
+            if (_stale < kStaleFor || _tries >= kStaleTries || (_tries > 0 && _retry > 0.0f)) {
+                return false;
+            }
+            _tries++;
+            _retry = kStaleRetry;
+            return true;
+        }
+
+        int Tries() const { return _tries; }
+
+    private:
+        float _stale = 0.0f;
+        float _retry = 0.0f;
+        int   _tries = 0;
+    };
 }

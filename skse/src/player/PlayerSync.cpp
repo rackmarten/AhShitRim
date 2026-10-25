@@ -100,6 +100,7 @@ namespace AhShitRim::PlayerSync
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
             bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
             Knock::Down    down;                  // the player knocked down (ragdolled) in Skyrim, and for how long
+            Knock::Skeleton skeleton;             // its skeleton left behind in its ragdoll after it's up again
             bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
 
             // Per-second stats while owned.
@@ -864,6 +865,42 @@ namespace AhShitRim::PlayerSync
                 state.down.Seconds(), before, ragdoll ? ", ragdolled" : "", a_try, KnockStateName(a_player), a_player->IsInRagdollState() ? ", still ragdolled" : "");
         }
 
+        // The head bone's flat distance from where the player stands, in units (the third-person skeleton's, which Skyrim's
+        // AI looks for; the first-person one is drawn while CJ has the player and never ragdolls). -1 with no 3D.
+        float HeadOffset(RE::PlayerCharacter* a_player)
+        {
+            static const RE::BSFixedString kHead{ "NPC Head [Head]" };
+            auto* root = a_player->Get3D(false);
+            auto* head = root ? root->GetObjectByName(kHead) : nullptr;
+            if (!head) {
+                return -1.0f;
+            }
+            const auto at = a_player->GetPosition();
+            const auto bone = head->world.translate;
+            return std::hypot(bone.x - at.x, bone.y - at.y);
+        }
+
+        // Its skeleton left behind in the ragdoll (Knock::Skeleton): the ragdoll reset in every animation graph, Skyrim's own
+        // ragdoll fix, and the 3D put back where the player is. The log says whether it took.
+        void Unstick(RE::PlayerCharacter* a_player, int a_try)
+        {
+            const float before = HeadOffset(a_player);
+            int         graphs = 0;
+            RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
+            if (a_player->GetAnimationGraphManager(manager) && manager) {
+                for (auto& graph : manager->graphs) {
+                    if (graph) {
+                        graph->ResetRagdoll();
+                        graphs++;
+                    }
+                }
+            }
+            a_player->PotentiallyFixRagdollState();
+            a_player->Update3DPosition(true);
+            SKSE::log::info("player sync: the player's skeleton was left {:.0f} units off it (knock state {}{}): ragdoll reset in {} graph(s) (try {}), now {:.0f}",
+                before, KnockStateName(a_player), a_player->IsInRagdollState() ? ", ragdolled" : "", graphs, a_try, HeadOffset(a_player));
+        }
+
         // San Andreas throws CJ away from the blow (Knock), as its explosions throw peds.
         void ThrowCj(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose)
         {
@@ -960,6 +997,11 @@ namespace AhShitRim::PlayerSync
             const bool unpinned = state.down.Unpinned();
             if (unpinned) {
                 state.lastPlaced = a_player->GetPosition();  // its fall isn't the game moving it
+            }
+            // Up again with its skeleton still lying where it fell: the pursuers can't see CJ (Knock::Skeleton).
+            if (state.skeleton.Tick(a_delta, state.down.IsDown() || scene ? -1.0f : HeadOffset(a_player))) {
+                Unstick(a_player, state.skeleton.Tries());
+                Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
             if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
