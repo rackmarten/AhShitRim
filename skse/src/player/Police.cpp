@@ -852,10 +852,10 @@ namespace AhShitRim::Police
                     NoteSpared(a_player);
                 }
                 static int logged = 0;
-                if (logged < 12) {
-                    logged++;
+                static int trapsLogged = 0;
+                if (a_attacker ? logged++ < 24 : trapsLogged++ < 24) {
                     SKSE::log::info("police: {:08X} ({}{}) hit CJ for {:.1f} health{}, x{:.2f}: armour {:.0f} -> {:.0f}, health {:+.1f} of it given back",
-                        a_attacker ? a_attacker->GetFormID() : 0, a_attacker ? a_attacker->GetName() : "a trap or nobody", guard ? ", a guard" : "", a_damage,
+                        a_attacker ? a_attacker->GetFormID() : 0, a_attacker ? a_attacker->GetName() : "a trap or nobody", guard ? ", a guard" : "", Health::DamageOf(a_damage),
                         kind == Health::Kind::Drowning ? " (drowning)" : "", factor, armor, Vitals::Armor(), back);
                 }
             }
