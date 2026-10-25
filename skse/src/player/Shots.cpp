@@ -489,6 +489,7 @@ namespace AhShitRim::Shots
             state.blows++;
             const RE::NiPoint3 point = a_anchor + RE::NiPoint3(a_shot.origin[0], a_shot.origin[1], a_shot.origin[2]);
             const RE::NiPoint3 facing(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
+            const float        ground = a_player->GetPosition().z;  // the player is placed at CJ's feet
             const bool         saw = a_shot.weaponType == Weapons::Chainsaw;
             const double       now = NowSeconds();
             if (saw) {
@@ -508,7 +509,7 @@ namespace AhShitRim::Shots
                 }
                 const auto feet = actor->GetPosition();
                 float      height = 0.0f;
-                if (!Damage::Reaches({ point.x, point.y, point.z }, a_shot.range, { feet.x, feet.y, feet.z }, actor->GetHeight(), CapsuleRadius(actor), &height)) {
+                if (!Damage::BlowReaches({ point.x, point.y, point.z }, a_shot.range, ground, { feet.x, feet.y, feet.z }, actor->GetHeight(), CapsuleRadius(actor), &height)) {
                     continue;
                 }
                 const float landed = state.landed.Lands(actor->GetFormID(), a_shot.strike, now, saw);
