@@ -243,16 +243,20 @@ namespace AhShitRim::Damage
         float x = 0.0f, y = 0.0f, z = 0.0f;
     };
 
-    // Whether a blow centred at a_point with a_radius reaches an actor standing at a_feet as a capsule of
-    // a_height and a_radius (Skyrim units). Returns the height of the contact above the feet in a_atHeight.
-    inline bool Reaches(const Vec3& a_point, float a_strikeRadius, const Vec3& a_feet, float a_height, float a_radius, float* a_atHeight = nullptr)
+    // Whether a blow at a_point with a_strikeRadius, swept straight down to a_ground (the z CJ stands on),
+    // reaches an actor standing at a_feet as a capsule of a_height and a_radius (Skyrim units). San Andreas
+    // strikes at a person's chest; swept down, the same blow also lands on a skeever, a mudcrab or a fox at
+    // CJ's feet, which it would pass over. The reach out from CJ stays the blow's. Returns the height of the
+    // contact above the feet in a_atHeight.
+    inline bool BlowReaches(const Vec3& a_point, float a_strikeRadius, float a_ground, const Vec3& a_feet, float a_height, float a_radius,
+        float* a_atHeight = nullptr)
     {
-        const float top = (std::max)(a_height - a_radius, 0.0f);
-        const float bottom = (std::min)(a_radius, top);
-        const float z = std::clamp(a_point.z - a_feet.z, bottom, top);
+        const float top = a_feet.z + (std::max)(a_height - a_radius, 0.0f);
+        const float bottom = a_feet.z + (std::min)(a_radius, top - a_feet.z);
+        const float low = std::isfinite(a_ground) ? (std::min)(a_ground, a_point.z) : a_point.z;
         const float dx = a_point.x - a_feet.x;
         const float dy = a_point.y - a_feet.y;
-        const float dz = a_point.z - (a_feet.z + z);
+        const float dz = (std::max)({ low - top, bottom - a_point.z, 0.0f });  // the gap between the blow's span and the capsule's axis
         if (a_atHeight) {
             *a_atHeight = std::clamp(a_point.z - a_feet.z, 0.0f, a_height);
         }

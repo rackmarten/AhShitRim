@@ -145,13 +145,40 @@ TEST_CASE("a blow reaches an actor's capsule")
 {
     const Vec3 feet{ 100.0f, 200.0f, 0.0f };
     float      at = -1.0f;
-    // At chest height, the blow's radius plus the actor's from its axis.
-    CHECK(Reaches({ 100.0f + 50.0f, 200.0f, 90.0f }, 30.0f, feet, 128.0f, 25.0f, &at));
+    // At chest height, swept down to the ground they share: the blow's radius plus the actor's from its axis.
+    CHECK(BlowReaches({ 100.0f + 50.0f, 200.0f, 90.0f }, 30.0f, 0.0f, feet, 128.0f, 25.0f, &at));
     CHECK(at == doctest::Approx(90.0f));
-    CHECK_FALSE(Reaches({ 100.0f + 60.0f, 200.0f, 90.0f }, 30.0f, feet, 128.0f, 25.0f));
-    // Above the head, off by the capsule's round top.
-    CHECK(Reaches({ 100.0f, 200.0f, 128.0f + 20.0f }, 30.0f, feet, 128.0f, 25.0f));
-    CHECK_FALSE(Reaches({ 100.0f, 200.0f, 128.0f + 60.0f }, 30.0f, feet, 128.0f, 25.0f));
+    CHECK_FALSE(BlowReaches({ 100.0f + 60.0f, 200.0f, 90.0f }, 30.0f, 0.0f, feet, 128.0f, 25.0f));
+    // Above the head (CJ standing that high), off by the capsule's round top.
+    CHECK(BlowReaches({ 100.0f, 200.0f, 128.0f + 20.0f }, 30.0f, 128.0f + 20.0f, feet, 128.0f, 25.0f));
+    CHECK_FALSE(BlowReaches({ 100.0f, 200.0f, 128.0f + 60.0f }, 30.0f, 128.0f + 60.0f, feet, 128.0f, 25.0f));
+}
+
+TEST_CASE("a blow swept down lands on small creatures at CJ's feet")
+{
+    // CJ stands at z 0 and strikes at a person's chest, 90 up; a punch reaches 28, a bat 35 (melee.dat's
+    // 0.4 and 0.5 m). Small races get the 20 unit capsule radius at least.
+    const float punch = 0.4f * 70.0f, bat = 0.5f * 70.0f, chest = 90.0f, ground = 0.0f;
+    const float skeever = 35.0f, mudcrab = 30.0f, fox = 50.0f;
+    float       at = -1.0f;
+
+    // The bug: at chest height alone the blow passes over a skeever 40 ahead.
+    CHECK_FALSE(BlowReaches({ 40.0f, 0.0f, chest }, punch, chest, {}, skeever, 20.0f));
+    // Swept down, the punch lands on its back, and the bat a little farther out.
+    CHECK(BlowReaches({ 40.0f, 0.0f, chest }, punch, ground, {}, skeever, 20.0f, &at));
+    CHECK(at == doctest::Approx(skeever));
+    CHECK(BlowReaches({ 50.0f, 0.0f, chest }, bat, ground, {}, skeever, 20.0f));
+    CHECK(BlowReaches({ 45.0f, 0.0f, chest }, punch, ground, {}, mudcrab, 25.0f));
+    CHECK(BlowReaches({ 0.0f, 45.0f, chest }, bat, ground, {}, fox, 20.0f));
+
+    // Nothing past the reach out from CJ: punch 28 + 20, bat 35 + 20.
+    CHECK_FALSE(BlowReaches({ 50.0f, 0.0f, chest }, punch, ground, {}, skeever, 20.0f));
+    CHECK_FALSE(BlowReaches({ 60.0f, 0.0f, chest }, bat, ground, {}, skeever, 20.0f));
+
+    // Nor down past the ground CJ stands on: a skeever two metres under his ledge.
+    CHECK_FALSE(BlowReaches({ 30.0f, 0.0f, 140.0f + chest }, bat, 140.0f, {}, skeever, 20.0f));
+    // A little below his feet (a slope) still is.
+    CHECK(BlowReaches({ 30.0f, 0.0f, 20.0f + chest }, punch, 20.0f, {}, skeever, 20.0f));
 }
 
 TEST_CASE("a blow lands on each actor once, the chainsaw keeps cutting")
