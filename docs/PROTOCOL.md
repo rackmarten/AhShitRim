@@ -8,6 +8,7 @@ The SKSE plugin (Skyrim side, 64-bit) and the ASI plugin (San Andreas side, 32-b
 |---|---|
 | [`protocol/ahshitrim_protocol.h`](../protocol/ahshitrim_protocol.h) | Source of truth: every struct, offset and constant, with `static_assert`s |
 | [`protocol/cpp/link.h`](../protocol/cpp/link.h), `link.cpp` | The link, compiled into both plugins and the tests |
+| [`protocol/cpp/handshake.h`](../protocol/cpp/handshake.h) | The handshake's rules: which sections are ours, when a mismatch is said again, the player's message |
 | [`protocol/cpp/input.h`](../protocol/cpp/input.h) | Skyrim's keys to CJ's actions and spawn requests (`Input::Builder`), and those to San Andreas's pad on foot or in a vehicle (`Input::ToPad`) |
 | [`protocol/cpp/pose.h`](../protocol/cpp/pose.h) | CJ's San Andreas pose to the `PlayerState` Skyrim reads |
 | [`protocol/cpp/collision.h`](../protocol/cpp/collision.h) | Skyrim side of collision chunks: the chunk grid, the heightfield, building a payload (from PerkeleRim) |
@@ -497,12 +498,14 @@ Log lines: `collision: chunk (x,y) gen N try T: terrain hits/1089 (...), statics
 
 ## Handshake and liveness
 
-Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Disabled`), ticked on their own thread at 20 Hz, so it also runs in menus and while loading.
+Both sides run the same state machine (`Detached` → `Waiting` → `Up`, or `Mismatch`), ticked on their own thread at 20 Hz, so it also runs in menus and while loading. The rules are in `protocol/cpp/handshake.h` (tested on every platform), the shared memory side in `link.cpp`. Nothing switches the link off for good: whatever the other half or a leftover section is, a side keeps trying, so the right version started later always links up without restarting the other game.
 
-1. Create or open the section. A fresh section gets its header filled in and the magic written last; a joining side waits while the magic is still 0.
-2. Unknown magic or header size: the link is disabled (`not an AhShitRim link`).
-3. Each side publishes its `PeerInfo` (version, pid), even when the versions differ, so both sides can report a mismatch. If the creator's version, or the peer's, differs from ours, the side logs `protocol mismatch: ... speaks vN, this ... speaks vM` and stays disabled until restarted.
-4. Each tick bumps our heartbeat. The link is **up** while the peer's heartbeat keeps moving. The first read only seeds the value, so a crashed peer never looks alive. It goes **down** after 2 s without a heartbeat change, or at once when the peer detaches cleanly (pid set to 0 on exit).
+1. Create or open the section. A fresh section gets its header filled in and the magic written last; a joining side waits while the magic is still 0. If it stays 0 for 2 s, its creator quit halfway: the side lets go of it (`never set up`) and opens it again a second later.
+2. Unknown magic or header size: the side lets go of it (`not an AhShitRim link`, logged once) and tries again every second.
+3. A section created by another version (or size), say a leftover from an older plugin: the side publishes its `PeerInfo` there (so the other half can report it too), logs the mismatch and lets go of it. A section lives only while some process has it open, so once the old plugin quits it's gone, and the side's next try (every second) creates one of ours. Neither half ever holds on to another version's section.
+4. In a section of ours, each side publishes its `PeerInfo` (version, pid). While the other half's `PeerInfo` carries another version and its process is running, the state is `Mismatch`: nothing is sent or read. A `PeerInfo` whose process is gone (a crash left it behind) doesn't count. When the other half detaches, or one of our version takes its place, the side goes back to `Waiting` and the heartbeat decides.
+5. A mismatch is logged at once (`protocol mismatch: the <peer> speaks vN, this <side> speaks vM; waiting for it to restart with vM.` plus the player's message below) and again every minute while it lasts. `Link::MismatchVersion()` gives the other version; Skyrim shows the player a message box with it: `AhShitRim: San Andreas has version N, Skyrim has version M. Install the same version in both.`, naming the older half's file to update. It shows once a save is loaded, every 5 minutes while the mismatch lasts, and when F10 finds the link down.
+6. Each tick bumps our heartbeat. The link is **up** while the peer's heartbeat keeps moving. The first read only seeds the value, so a crashed peer never looks alive. It goes **down** after 2 s without a heartbeat change, or at once when the peer detaches cleanly (pid set to 0 on exit).
 
 Log lines on both sides, prefixed `link:`:
 
@@ -510,6 +513,10 @@ Log lines on both sides, prefixed `link:`:
 - `created shared memory, waiting for peer` / `joined shared memory, waiting for peer`
 - `link up: <peer> pid N, protocol v12`
 - `link down: the <peer> detached` / `link down: no heartbeat from the <peer> for 2000 ms`
-- `link disabled: ...`
+- `protocol mismatch: the <peer> speaks vN, this <side> speaks vM; ...` / `the <peer> now speaks vM too, waiting for its heartbeat` / `the <peer> of another version is gone, waiting for peer`
+- `link down: the <peer> now speaks vN`
+- `the shared memory was never set up ...` / `the shared memory is not an AhShitRim link ...`
+
+Both plugins carry a version stamp, the text `AhShitRim-link-stamp: protocol N, release R` (exported as `AhShitRimLinkStamp` from `link.cpp`). The launcher reads it from the Skyrim plugin it will load and the ASI it installs, and refuses to start two of different protocol versions (`Get-LinkVersionProblem` in `launcher/checks.ps1`). A build from before the stamp has none, and counts as older.
 
 The Skyrim side logs to `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, the San Andreas side to `<SaPath>\scripts\AhShitRim.log`. `scripts/logs.ps1` shows both.

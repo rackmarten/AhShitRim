@@ -214,3 +214,26 @@ function Test-SamePath([string] $A, [string] $B) {
     $trim = { param($p) ($p -replace '/', '\').TrimEnd('\') }
     return (& $trim $A) -eq (& $trim $B)
 }
+
+# AhShitRim.dll and AhShitRim.asi each carry "AhShitRim-link-stamp: protocol N, release R" (protocol/cpp/link.cpp),
+# and the two halves only link up when N matches. Gets both files' bytes as ASCII text and their paths; returns
+# what to replace, or nothing when they match.
+function Get-LinkVersionProblem([string] $DllText, [string] $AsiText, [string] $DllPath, [string] $AsiPath) {
+    $read = {
+        param($text)
+        if ($text -match 'AhShitRim-link-stamp: protocol (\d+), release ([0-9A-Za-z.+-]+)') { @{ Protocol = [int] $Matches[1]; Release = $Matches[2] } }
+        else { @{ Protocol = 0; Release = $null } }
+    }
+    $dll = & $read $DllText
+    $asi = & $read $AsiText
+    if ($dll.Protocol -and $dll.Protocol -eq $asi.Protocol) { return }
+    $name = { param($s) if ($s.Protocol) { "AhShitRim $($s.Release) (link version $($s.Protocol))" } else { 'an AhShitRim from before 0.1.0 (no version stamp)' } }
+    $fix = if (-not $dll.Protocol -and -not $asi.Protocol) {
+        'Install both from the newest release zip'
+    } elseif ($dll.Protocol -lt $asi.Protocol) {
+        "Replace $DllPath with SKSE\Plugins\AhShitRim.dll from the same release (AhShitRim-Skyrim-<version>.zip; with Mod Organizer 2, install that zip as the mod again)"
+    } else {
+        "Replace $AsiPath with 'San Andreas\scripts\AhShitRim.asi' from the same release as the Skyrim plugin (extract that release zip and run its launcher)"
+    }
+    "The Skyrim plugin $DllPath is $(& $name $dll), but San Andreas's $AsiPath is $(& $name $asi), so they can't link up. $fix."
+}

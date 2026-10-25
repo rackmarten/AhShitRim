@@ -28,6 +28,7 @@ endif()
 add_executable(protocol_tests
     tests/cpp/main.cpp
     tests/cpp/test_layout.cpp
+    tests/cpp/test_handshake.cpp
     tests/cpp/test_vehicle_kinds.cpp
     tests/cpp/test_parachute.cpp
     tests/cpp/test_input.cpp
