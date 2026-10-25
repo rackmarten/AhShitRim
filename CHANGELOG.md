@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
+- Nobody remembers. Losing the stars, Busted, Wasted, paying the fine or ASNAEB clear every bounty in Skyrim. A bounty that never raised a star goes after a minute unseen by the guards, and people CJ fought forget it after a minute out of their sight (bandits and wild animals don't).
+- Busted takes every bounty as the fine and lets CJ go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
+
+### Fixed
+
+- A wanted level turning into a free-for-all: a pursuer's stray blow on a bystander (the stable's people, the carriage's invincible horse at Whiterun) started a brawl that kept the guards and the reinforcements off CJ. Bystanders now stop fighting the pursuit, and guards go back to CJ.
+- Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

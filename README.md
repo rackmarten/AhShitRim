@@ -60,7 +60,7 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **Ammu-Nation** at the blacksmiths of the hold capitals (Warmaiden's in Whiterun first), and guns as rewards from the main quest and a few bosses.
 - **Looting without menus**: walk over a body, or press E on a chest, and its gold and quest items are yours.
 - **Pickups** spinning around Skyrim: hearts, armour, parachutes, weapons and money, with a heart turning up when you're low.
-- **Wanted stars** on top of Skyrim's bounty, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
+- **Wanted stars**, one level for all of Skyrim, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
@@ -143,15 +143,16 @@ The map is a San Andreas-style map of Skyrim the launcher paints from your own p
 
 ## Wanted level and Busted
 
-Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guards still arrest, fine and fight the player. On top of it San Andreas's wanted stars show while CJ has the player:
+Skyrim's guards still arrest, fine and fight the player, but while CJ has the player crime works like San Andreas's: one wanted level for all of Skyrim, and nobody remembers once it's over.
 
-- Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
+- Each crime heats things up, wherever it happens (three stars in Whiterun are still three in Falkreath): shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars.
+- Losing the stars clears every bounty in Skyrim. A small bounty that never raised a star goes after a minute out of the guards' sight, and people CJ fought forget it once he's been out of their sight for a minute. Bandits and wild animals don't forgive.
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
 - As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
 - Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
 - In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
-- Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard ends the stars too.
+- Busted takes the bounty out of CJ's gold (all of it if that's short), clears every bounty, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard, or Wasted, ends the stars and the bounty too.
 
 ## Cheat codes
 

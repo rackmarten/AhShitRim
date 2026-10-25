@@ -4,14 +4,16 @@
 // vehicle, the Busted sequence, the fine and where CJ wakes, and the stars' record in the co-save. Header-only
 // and free of game types, so the protocol tests cover it; the SKSE plugin feeds it (skse/src/player/Police.cpp).
 //
-// The bounty stays Skyrim's (the guards' dialogue, the fine, who knows CJ): the stars are only the pursuit. Each
-// crime (the bounty one of the nine holds puts on the player went up) adds heat; out of every pursuer's sight
-// the stars start to flash, then go one at a time (the bounty stays, and a guard who fights him later brings a
-// star or two back), and all go with Busted, Wasted or the fine paid. AEZAKMI keeps them at 0 and the bounty
-// where it was.
+// One wanted level for all of Skyrim, as San Andreas's follows CJ from Los Santos to San Fierro (0.1.1): each crime
+// (the bounty any crime faction puts on the player went up, the nine holds', the Legion's, the Stormcloaks') adds
+// heat to the one pursuit, and every hold's guards chase it. Out of every pursuer's sight the stars start to flash,
+// then go one at a time; all go with Busted, Wasted, the fine paid or AEZAKMI. Nobody remembers: when the stars go,
+// every bounty goes with them, a bounty that never raised a star goes once no guard has seen CJ for kForgetAfter, and
+// people who fought CJ forget it once he has been out of their sight that long (Grudges).
 //
 // The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 2 is the heat (f32), the
-// hold's crime faction (u32) and the seconds CJ has been unseen (f32); version 1 had the stars (u8) for the heat.
+// hold the force comes from (its crime faction, u32) and the seconds CJ has been unseen (f32); version 1 had the stars
+// (u8) for the heat.
 
 #pragma once
 
@@ -115,7 +117,7 @@ namespace AhShitRim::Wanted
 
     // The stars come from heat, as San Andreas's from its chaos points (CWanted::UpdateWantedLevel's thresholds, but the
     // sixth star as far past the fifth as the fifth is past the fourth, 3600 rather than 4600): crimes add to it, and it
-    // falls a star at a time while CJ is out of sight. The bounty is only Skyrim's.
+    // falls a star at a time while CJ is out of sight.
     inline constexpr std::array<float, kMaxStars> kHeatStars = { 50.0f, 180.0f, 550.0f, 1200.0f, 2400.0f, 3600.0f };
 
     constexpr int StarsForHeat(float a_heat)
@@ -164,7 +166,8 @@ namespace AhShitRim::Wanted
         float Heat() const { return _heat; }
         float Unseen() const { return _unseen; }
 
-        // A crime that added a_added to a hold's bounty. Returns the stars.
+        // A crime that added a_added to any faction's bounty, wherever it was: one pursuit for all of Skyrim, so a crime
+        // in another hold only ever adds. Returns the stars.
         int Crime(int a_added, bool a_neverWanted)
         {
             if (a_neverWanted) {
@@ -200,7 +203,7 @@ namespace AhShitRim::Wanted
 
         // A frame of a_delta seconds: a_seen while a pursuer sees CJ. The bounty doesn't matter: Skyrim drops it when the
         // witnesses die, and San Andreas's stars don't go because CJ shot the cops who saw him. Paying the fine, Busted
-        // and Wasted clear them (Clear).
+        // and Wasted clear them (Clear). The caller clears every bounty when the last star goes.
         Look Tick(float a_delta, bool a_seen, bool a_neverWanted)
         {
             _changed += a_delta;
@@ -260,6 +263,150 @@ namespace AhShitRim::Wanted
         float _unseen = 0.0f;
         float _losing = 0.0f;  // seconds towards losing the top star, once flashing
         float _changed = kChangeFlash;
+    };
+
+    // ---- Nobody remembers ----
+
+    // San Andreas's citizens don't remember CJ, so Skyrim's don't either: unseen this long, a bounty that raised no star
+    // goes (Amnesty), and so does the grudge of anyone who fought him (Grudges).
+    inline constexpr float kForgetAfter = 60.0f;
+
+    // A bounty with no stars: cleared once no guard has seen CJ for kForgetAfter.
+    class Amnesty
+    {
+    public:
+        // A frame of a_delta seconds: a_stars showing, a_owed while there's any bounty, a_seen while a guard (or one of
+        // ours) sees CJ. Returns whether to clear every bounty now.
+        bool Tick(float a_delta, int a_stars, bool a_owed, bool a_seen)
+        {
+            if (a_stars > 0 || !a_owed || a_seen) {
+                _quiet = 0.0f;
+                return false;
+            }
+            _quiet += a_delta;
+            if (_quiet >= kForgetAfter) {
+                _quiet = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        float Quiet() const { return _quiet; }
+        void  Reset() { _quiet = 0.0f; }
+
+    private:
+        float _quiet = 0.0f;
+    };
+
+    // Who forgives CJ: the people who weren't against him from the start. Guards, townsfolk (in a crime faction) and
+    // anyone unaggressive by their base (farmers, merchants, chickens, horses); never bandits, necromancers, draugr or
+    // wild predators, whose base attacks on sight, and never ours (they leave with the stars).
+    constexpr bool Forgives(bool a_guard, bool a_ours, bool a_townsfolk, bool a_unaggressive) { return !a_ours && (a_guard || a_townsfolk || a_unaggressive); }
+
+    // Everyone fighting CJ who forgives him (Forgives; guards only while no stars show, the stars are theirs), by how long
+    // he has been out of their sight. Each one unseen for kForgetAfter is called off, once.
+    class Grudges
+    {
+    public:
+        struct Holder
+        {
+            std::uint32_t id = 0;
+            bool          sees = false;  // has CJ in sight now
+        };
+
+        // a_delta seconds since the last call, a_holders everyone holding a grudge now. Returns those to call off.
+        std::vector<std::uint32_t> Tick(float a_delta, const std::vector<Holder>& a_holders)
+        {
+            std::vector<std::uint32_t> forgive;
+            std::vector<Entry>         next;
+            next.reserve(a_holders.size());
+            for (const auto& holder : a_holders) {
+                float unseen = 0.0f;
+                for (const auto& e : _entries) {
+                    if (e.id == holder.id) {
+                        unseen = e.unseen;
+                        break;
+                    }
+                }
+                unseen = holder.sees ? 0.0f : unseen + a_delta;
+                if (unseen >= kForgetAfter) {
+                    forgive.push_back(holder.id);
+                } else {
+                    next.push_back({ holder.id, unseen });
+                }
+            }
+            _entries = std::move(next);  // anyone no longer fighting him is forgotten too
+            return forgive;
+        }
+
+        void Reset() { _entries.clear(); }
+
+    private:
+        struct Entry
+        {
+            std::uint32_t id;
+            float         unseen;
+        };
+        std::vector<Entry> _entries;
+    };
+
+    // ---- Bystanders ----
+
+    // A pursuit in a crowd: a wolf's bite, a giant's swing or a dragon's breath meant for CJ lands on someone beside him,
+    // who fights back, and the guards and ours turn on them (at the Whiterun stables in 0.1.0, the carriage's invincible
+    // horse among them, while nobody went for CJ). So while stars show, someone who forgives (Forgives) fighting a guard
+    // or one of ours is called off, and a guard fighting someone who forgives is set on CJ, each at most once every
+    // kBystanderGap seconds (stopping and starting fights every frame broke Skyrim's path search, see the Leash).
+    inline constexpr float kBystanderGap = 5.0f;
+
+    // Whether to call a_fighter off its fight with a_target, or set it on CJ instead.
+    enum class Turn : std::uint8_t
+    {
+        None,
+        CallOff,  // a bystander fighting the pursuit: stops
+        OnCj,     // a guard fighting a bystander: back on CJ
+    };
+
+    // a_fighterPursues: a guard (any hold's) or one of ours; a_fighterForgives and a_targetForgives by Forgives; a_targetIsCj.
+    constexpr Turn TurnOf(bool a_fighterPursues, bool a_fighterForgives, bool a_targetPursues, bool a_targetForgives, bool a_targetIsCj)
+    {
+        if (a_targetIsCj) {
+            return Turn::None;
+        }
+        if (!a_fighterPursues && a_fighterForgives && a_targetPursues) {
+            return Turn::CallOff;
+        }
+        if (a_fighterPursues && !a_targetPursues && a_targetForgives) {
+            return Turn::OnCj;
+        }
+        return Turn::None;
+    }
+
+    // When each actor was last turned, so none is turned more often than every kBystanderGap.
+    class Gaps
+    {
+    public:
+        // Whether a_id may be turned at a_now (seconds); if so it counts as turned.
+        bool Take(std::uint32_t a_id, double a_now)
+        {
+            std::erase_if(_last, [&](const auto& e) { return a_now - e.second >= kBystanderGap * 4.0; });
+            for (auto& e : _last) {
+                if (e.first == a_id) {
+                    if (a_now - e.second < kBystanderGap) {
+                        return false;
+                    }
+                    e.second = a_now;
+                    return true;
+                }
+            }
+            _last.emplace_back(a_id, a_now);
+            return true;
+        }
+
+        void Reset() { _last.clear(); }
+
+    private:
+        std::vector<std::pair<std::uint32_t, double>> _last;
     };
 
     // ---- The response ----
@@ -872,7 +1019,8 @@ namespace AhShitRim::Wanted
         float  _time = 0.0f;
     };
 
-    // The fine Busted takes: the whole bounty, or all the gold if that's short. The bounty is cleared either way.
+    // The fine Busted takes: the whole bounty, every faction's (since no bounty outlasts a pursuit, that is what this one
+    // raised), or all the gold if that's short. Every bounty is cleared either way.
     constexpr int FineFor(int a_bounty, int a_gold) { return (std::max)(0, (std::min)(a_bounty, a_gold)); }
 
     // ---- The co-save ----

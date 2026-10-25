@@ -757,3 +757,124 @@ TEST_CASE("a version 1 record's stars read as the least heat they need")
     v1[0] = 9;
     CHECK_FALSE(Read(1, v1.data(), v1.size(), back));
 }
+
+TEST_CASE("one pursuit for all of Skyrim: a crime in another hold only ever adds")
+{
+    Pursuit p;
+    p.Restore(HeatFor(6), 0.0f);  // six stars from Whiterun
+    REQUIRE(p.Stars() == 6);
+    CHECK(p.Crime(40, false) == 6);  // a Falkreath guard hit on the way out
+    CHECK(p.Crime(5, false) == 6);   // or a Legion camp trespassed
+    CHECK(p.Heat() >= HeatFor(6));
+    Pursuit q;
+    q.Restore(HeatFor(3), 0.0f);
+    CHECK(q.Crime(1000, false) == 3);
+    CHECK(q.Heat() == HeatFor(3) + 100.0f);
+}
+
+TEST_CASE("amnesty: a bounty with no stars goes once no guard has seen CJ for a minute")
+{
+    Amnesty a;
+    float t = 0.0f;
+    bool  cleared = false;
+    for (; t < kForgetAfter - 1.0f; t += 0.5f) {
+        cleared = cleared || a.Tick(0.5f, 0, true, false);
+    }
+    CHECK_FALSE(cleared);
+    for (; t < kForgetAfter + 1.0f && !cleared; t += 0.5f) {
+        cleared = a.Tick(0.5f, 0, true, false);
+    }
+    CHECK(cleared);
+    CHECK(a.Quiet() == 0.0f);  // once, then it starts over
+}
+
+TEST_CASE("amnesty: being seen, the stars or no bounty start the minute over")
+{
+    Amnesty a;
+    for (int i = 0; i < 100; i++) {
+        a.Tick(0.5f, 0, true, false);
+    }
+    REQUIRE(a.Quiet() == doctest::Approx(50.0f));
+    CHECK_FALSE(a.Tick(0.5f, 0, true, true));  // a guard sees him
+    CHECK(a.Quiet() == 0.0f);
+    for (int i = 0; i < 100; i++) {
+        a.Tick(0.5f, 0, true, false);
+    }
+    CHECK_FALSE(a.Tick(0.5f, 2, true, false));  // stars: the stars are the pursuit's to lose
+    CHECK(a.Quiet() == 0.0f);
+    for (int i = 0; i < 200; i++) {
+        CHECK_FALSE(a.Tick(0.5f, 0, false, false));  // nothing owed: nothing to forget
+    }
+}
+
+TEST_CASE("who forgives: guards, townsfolk and the unaggressive; never bandits or ours")
+{
+    CHECK(Forgives(true, false, true, false));    // a guard
+    CHECK(Forgives(false, false, true, false));   // a Whiterun citizen
+    CHECK(Forgives(false, false, false, true));   // a farmer outside town, a chicken, a horse
+    CHECK_FALSE(Forgives(false, false, false, false));  // a bandit, a draugr, a wolf
+    CHECK_FALSE(Forgives(true, true, true, false));     // one of ours, though a guard copy
+}
+
+TEST_CASE("grudges: someone fighting CJ forgets once he has been out of their sight for a minute")
+{
+    Grudges g;
+    const std::uint32_t citizen = 0x1A69E;
+    const std::uint32_t horse = 0x9B7A9;
+    std::vector<std::uint32_t> forgiven;
+    for (float t = 0.0f; t < kForgetAfter + 1.0f; t += 0.25f) {
+        const bool seesNow = t < 10.0f;  // the citizen saw him for 10 s
+        for (auto id : g.Tick(0.25f, { { citizen, seesNow }, { horse, true } })) {
+            forgiven.push_back(id);
+        }
+    }
+    CHECK(forgiven.empty());  // the citizen lost sight of him only 51 s ago; the horse still sees him
+    for (float t = 0.0f; t < 10.0f; t += 0.25f) {
+        for (auto id : g.Tick(0.25f, { { citizen, false }, { horse, true } })) {
+            forgiven.push_back(id);
+        }
+    }
+    REQUIRE(forgiven.size() == 1);
+    CHECK(forgiven[0] == citizen);
+}
+
+TEST_CASE("grudges: someone who stopped fighting starts from nothing next time")
+{
+    Grudges g;
+    for (int i = 0; i < 200; i++) {
+        g.Tick(0.25f, { { 7, false } });  // 50 s unseen
+    }
+    g.Tick(0.25f, {});  // stopped fighting
+    std::size_t forgiven = 0;
+    for (int i = 0; i < 200; i++) {
+        forgiven += g.Tick(0.25f, { { 7, false } }).size();  // fights again: 50 s more is not a minute
+    }
+    CHECK(forgiven == 0);
+}
+
+TEST_CASE("in a crowd: a bystander fighting the pursuit stops, a guard fighting a bystander goes for CJ")
+{
+    // The carriage's horse (forgives, not a pursuer) fighting a guard: called off.
+    CHECK(TurnOf(false, true, true, true, false) == Turn::CallOff);
+    // A guard fighting the horse: back on CJ.
+    CHECK(TurnOf(true, true, false, true, false) == Turn::OnCj);
+    // Anyone fighting CJ is left alone.
+    CHECK(TurnOf(true, true, false, false, true) == Turn::None);
+    CHECK(TurnOf(false, true, false, false, true) == Turn::None);
+    // A guard fighting a bandit, a bandit fighting a guard: Skyrim's business.
+    CHECK(TurnOf(true, true, false, false, false) == Turn::None);
+    CHECK(TurnOf(false, false, true, true, false) == Turn::None);
+    // Guards scuffling with each other: none of ours to sort out.
+    CHECK(TurnOf(true, true, true, true, false) == Turn::None);
+}
+
+TEST_CASE("in a crowd: nobody is turned more often than every few seconds")
+{
+    Gaps g;
+    CHECK(g.Take(1, 100.0));
+    CHECK_FALSE(g.Take(1, 101.0));
+    CHECK(g.Take(2, 101.0));  // someone else
+    CHECK_FALSE(g.Take(1, 100.0 + kBystanderGap - 0.1));
+    CHECK(g.Take(1, 100.0 + kBystanderGap));
+    CHECK(g.Take(1, 1000.0));  // long forgotten
+}
