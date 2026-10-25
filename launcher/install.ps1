@@ -186,6 +186,25 @@ function Copy-GameFolder([string] $Source, [string] $Dest) {
     Write-Progress -Activity "Copying San Andreas to $Dest" -Completed
 }
 
+# The 4GB patch the downgrader's tools offer, which AhShitRim is tested with: the Large Address Aware
+# bit in gta_sa.exe's PE header, as the downgrader sets it. Only on the plain 1.0 US exe ($FromMd5),
+# and only kept when the result is the known 1.0 US exe with the flag ($ToMd5); any other exe stays
+# as it is. Returns $true when it patched.
+function Set-LargeAddressAware([string] $Exe, [string] $FromMd5 = '170b3a9108687b26da2d8901c6948a18', [string] $ToMd5 = '2b5066bd4097ac2944ce6a9cf8fe5677') {
+    if ((Get-FileHash -LiteralPath $Exe -Algorithm MD5).Hash -ne $FromMd5.ToUpperInvariant()) { return $false }
+    $bytes = [IO.File]::ReadAllBytes($Exe)
+    $pe = [BitConverter]::ToInt32($bytes, 60)
+    if ($pe -lt 0 -or $pe + 24 -gt $bytes.Length -or [Text.Encoding]::ASCII.GetString($bytes, $pe, 4) -ne "PE`0`0") { return $false }
+    # IMAGE_FILE_HEADER.Characteristics, 18 bytes into the file header after the "PE\0\0" signature.
+    $bytes[$pe + 4 + 18] = $bytes[$pe + 4 + 18] -bor 0x20
+    $md5 = [Security.Cryptography.MD5]::Create()
+    try { $patched = -join ($md5.ComputeHash($bytes) | ForEach-Object { $_.ToString('X2') }) } finally { $md5.Dispose() }
+    if ($patched -ne $ToMd5.ToUpperInvariant()) { return $false }
+    [IO.File]::WriteAllBytes("$Exe.laa", $bytes)
+    Move-Item -LiteralPath "$Exe.laa" $Exe -Force
+    return $true
+}
+
 # --- Downloads ----------------------------------------------------------------------------------
 
 function Test-Sha256([string] $Path, [string] $Expected) {
