@@ -46,25 +46,15 @@ function Read-Config {
     return $config
 }
 
-function Get-SteamLibraries {
-    $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
-    if (-not $steam) { return @() }
-    $libraries = @($steam)
-    $vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
-    if (Test-Path $vdf) {
-        foreach ($match in [regex]::Matches((Get-Content -Raw $vdf), '"path"\s+"([^"]+)"')) {
-            $libraries += $match.Groups[1].Value -replace '\\\\', '\'
-        }
-    }
-    return $libraries | Select-Object -Unique
-}
-
 function Find-Game($name, $folder, $exe, $configured, $hint) {
-    if ($configured -and (Test-Path (Join-Path $configured $exe))) { return $configured }
+    # A folder on a drive that's gone (a removed Steam library) makes Join-Path throw; Join-Guess (install.ps1) doesn't.
+    $configuredExe = Join-Guess $configured $exe
+    if ($configuredExe -and (Test-Path -LiteralPath $configuredExe)) { return $configured }
     if ($folder) {
         foreach ($library in Get-SteamLibraries) {
-            $path = Join-Path $library "steamapps\common\$folder"
-            if (Test-Path (Join-Path $path $exe)) { return (Resolve-Path $path).Path }
+            $path = Join-Guess $library "steamapps\common\$folder"
+            $pathExe = Join-Guess $path $exe
+            if ($pathExe -and (Test-Path -LiteralPath $pathExe)) { return (Resolve-Path -LiteralPath $path).Path }
         }
     }
     Write-Host "Pick the $name folder (the one with $exe)$hint."
@@ -95,7 +85,7 @@ function Uninstall-AhShitRim {
     if (Get-Process SkyrimSE, skse64_loader, gta_sa -ErrorAction SilentlyContinue) { Fail 'Close Skyrim and San Andreas first, then run the uninstall again.' }
     $data = Join-Path $skyrim 'Data'
     $record = Read-SkyrimPartRecord $data
-    $saAsi = if ($config['SaPath']) { Join-Path $config['SaPath'] 'scripts\AhShitRim.asi' }
+    $saAsi = Join-Guess $config['SaPath'] 'scripts\AhShitRim.asi'
     $what = if ($record) { "AhShitRim's Skyrim part ($($record.Files.Count) files) and AhShitRim.ini from $data" } else { "AhShitRim.ini from $data" }
     if ($saAsi) { $what += ", and AhShitRim.asi from $(Split-Path $saAsi)" }
     if ((Show-Message "Remove ${what}?`n`nYour saves, San Andreas itself and the games stay as they are." 'YesNo' 'Question') -ne 'Yes') { return }
