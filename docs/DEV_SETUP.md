@@ -257,11 +257,15 @@ CI builds every push to either branch and every pull request into either. Merge 
    git push origin vX.Y.Z
    ```
 
-4. Build the zip from the tag on the desktop (`scripts/build.ps1`, then `scripts/package.ps1`; run `scripts/encode-music.ps1` first if Sweetroll FM's tracks ship) and publish it as the tag's release:
+4. The tag starts the `release` workflow (`.github/workflows/release.yml`) on GitHub's windows-latest. It builds both plugins from the tag, runs `scripts/test.ps1` and `scripts/package.ps1`, and then:
+   - attests the zip's build provenance, so `gh attestation verify AhShitRim-X.Y.Z.zip --repo rackmarten/AhShitRim` proves it came from this workflow at the tag's commit (GitHub offers attestations on public repositories only, so the step skips itself while the repository is private);
+   - writes `SHA256SUMS.txt` with the zip and every file in it;
+   - uploads the zip to VirusTotal and waits for the scan (`scripts/virustotal.ps1`; skipped with a warning without the `VT_API_KEY` secret);
+   - creates a **draft** release with the zip, `SHA256SUMS.txt` and notes from `scripts/release-notes.ps1`: the version's `CHANGELOG.md` section, then "Check your download" with the SHA-256, the attestation, the VirusTotal result and the VirusTotal reports of the two files setup downloads.
 
-   ```bash
-   gh release create vX.Y.Z out/release/AhShitRim-X.Y.Z.zip --title "AhShitRim X.Y.Z" --notes-file <release notes>
-   ```
+   It takes about an hour (everything builds from scratch). Read the draft on the Releases page, check the VirusTotal line (a few heuristic hits on game-hooking DLLs happen; the notes say so), and publish it. Players get exactly the zip CI built, so don't replace it with a local build.
+
+   Once, before the first release: add the repository secret `VT_API_KEY` (Settings > Secrets and variables > Actions) with the API key of a free VirusTotal account (virustotal.com, your profile > API key). The free key allows 4 requests a minute and 500 a day, which a release needs a dozen of. To try the workflow without releasing anything, run it by hand with **dry run** on any branch (Actions > release > Run workflow): it builds the zip, `SHA256SUMS.txt` and the notes as the run's artifact, without attestation, VirusTotal upload or release.
 
 ### A hotfix
 

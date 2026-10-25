@@ -34,6 +34,11 @@ $PinnedDownloads = @{
 # The record of a Skyrim part installed straight into Data, next to the plugin.
 $SkyrimPartRecord = 'SKSE\Plugins\AhShitRim.installed.txt'
 
+# VirusTotal's report for a file, by its SHA-256 (for the pinned downloads and the release zip).
+function Get-VirusTotalUrl([string] $Sha256) {
+    return "https://www.virustotal.com/gui/file/$($Sha256.ToLowerInvariant())"
+}
+
 function Format-Size([long] $Bytes) {
     if ($Bytes -ge 1GB) { return '{0:N1} GB' -f ($Bytes / 1GB) }
     if ($Bytes -ge 1MB) { return '{0:N0} MB' -f ($Bytes / 1MB) }
