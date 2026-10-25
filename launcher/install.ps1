@@ -398,3 +398,20 @@ function Get-ModManager([string] $Configured, [bool] $HasMo2Instance, [bool] $Ha
     if ($HasVortexDeployment) { return 'Vortex' }
     return 'None'
 }
+
+# What to tell a player who picked Mod Organizer 2 for the Skyrim part when no MO2 mod has it yet:
+# how to add the release's zip ($Zip, $null in a repo checkout), or how to let the launcher do it,
+# and to take out a loose AhShitRim.dll in Data ($LooseDll), which loads outside MO2 and is usually
+# an older one. $LooseRecorded: the launcher put it there itself, earlier.
+function Get-Mo2MissingProblems([string] $Zip, [bool] $LooseDll, [bool] $LooseRecorded) {
+    $what = if ($Zip) { $Zip } else { 'AhShitRim-Skyrim-<version>.zip from the release' }
+    $problems = @("AhShitRim's Skyrim part isn't in Mod Organizer 2 yet. In MO2: Install a new mod from an archive (the CD icon), pick $what, name it AhShitRim, tick it in the left pane, and run the launcher again. Or let the launcher install it without MO2: set ModManager=None in launcher.ini.")
+    if ($LooseDll) {
+        $problems += if ($LooseRecorded) {
+            "The launcher installed AhShitRim into Skyrim's own Data folder earlier. With MO2, that copy loads whenever Skyrim starts outside MO2: run Uninstall AhShitRim.bat, then the launcher again."
+        } else {
+            "An AhShitRim.dll sits loose in Skyrim's own Data\SKSE\Plugins (an older or hand-made copy, not MO2's). It loads whenever Skyrim starts outside MO2: delete AhShitRim.dll and AhShitRim.pdb there, and keep AhShitRim.ini."
+        }
+    }
+    return $problems
+}

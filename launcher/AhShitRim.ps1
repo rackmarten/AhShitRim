@@ -195,6 +195,13 @@ $mo2Plugins = @($instances | ForEach-Object { $_.Plugins })
 
 $skyrimExe = Join-Path $skyrim 'SkyrimSE.exe'
 $problems = @(Get-SkyrimProblems (Get-Item $skyrimExe).VersionInfo.FileVersion (Get-FileNames $skyrim) ($pluginFiles + $mo2Plugins))
+# Mod Organizer 2 picked for the Skyrim part, but none of its mods has it yet: say how to add it,
+# instead of checking a loose copy in Data that MO2 doesn't stand for (install.ps1).
+$mo2Missing = $config['ModManager'] -and (Get-ModManager $config['ModManager'] $false $false) -eq 'MO2' -and -not $inModManager
+if ($mo2Missing) {
+    $problems = @($problems | Where-Object { $_ -notlike "AhShitRim's Skyrim part is not installed*" })
+    $problems += @(Get-Mo2MissingProblems (Find-SkyrimPartZip $Root) ($pluginFiles -contains 'AhShitRim.dll') ([bool] (Read-SkyrimPartRecord $skyrimData)))
+}
 
 # --- San Andreas ----------------------------------------------------------------------------
 
@@ -226,7 +233,7 @@ if (-not (Test-Path $asi) -and -not (Test-Path $asiDest)) {
 # Both halves must speak the same link version: the Skyrim plugin that will load, and the ASI San Andreas will have.
 $dll = if ($source.Mode -eq 'Mo2') { $mo2.Dll } else { Join-Path $realPlugins 'AhShitRim.dll' }
 $asiUsed = if (Test-Path $asi) { $asi } else { $asiDest }
-if ($dll -and (Test-Path $dll) -and (Test-Path $asiUsed)) {
+if (-not $mo2Missing -and $dll -and (Test-Path $dll) -and (Test-Path $asiUsed)) {
     $ascii = { param($path) [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($path)) }
     $problems += @(Get-LinkVersionProblem (& $ascii $dll) (& $ascii $asiUsed) $dll $asiUsed)
 }
