@@ -66,7 +66,7 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
 - **San Andreas's HUD** with its **radar**, fonts and text styles, its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
 
-Skyrim's player stays the real player underneath, so quests, dialogue, bounties, kill credit and saves keep working. CJ's weapons, armour, skills, car and wanted level go in the SKSE co-save next to your Skyrim save.
+Skyrim's player stays the real player underneath, so quests, dialogue, bounties, kill credit and saves keep working. CJ's weapons, armour, skills, car and wanted level go in the SKSE co-save next to your Skyrim save. Load a save made while CJ had the player and he takes over again a couple of seconds after the loading screen, once the world is in.
 
 ## Keys
 
