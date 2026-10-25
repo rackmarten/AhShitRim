@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- A Skyrim plugin and a San Andreas ASI of different versions no longer strand the player. Before, the first mismatch switched the link off for good, so San Andreas ignored even the right Skyrim plugin started after a leftover old one, and F10 did nothing until San Andreas was restarted too. Now both halves keep watching and link up as soon as the other one restarts with the same version, and a shared memory block left by an older or crashed run is let go of and made again, whichever game starts first. While they differ, Skyrim says so in a message box (when a save is loaded, again every 5 minutes, and when F10 is pressed): "San Andreas has version X, Skyrim has version Y. Install the same version in both", naming the file to update; San Andreas's log says the same once a minute. The launcher checks the Skyrim plugin it will load and San Andreas's ASI carry the same version (a stamp in both files) before starting anything, and says which one to replace.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

@@ -182,44 +182,178 @@ TEST_CASE("a restarted peer comes back up")
     CHECK(p.sa->IsUp());
 }
 
-TEST_CASE("a peer speaking another protocol version disables the link")
+namespace
+{
+    constexpr std::uint32_t kOldVersion = 8;
+    constexpr std::uint32_t kDeadPid = 0xFFFFFFF0;  // no process has it
+
+    std::size_t Count(const Logged& a_log, std::string_view a_needle)
+    {
+        std::size_t n = 0;
+        for (const auto& line : a_log.lines) {
+            n += line.find(a_needle) != std::string::npos;
+        }
+        return n;
+    }
+
+    Side OtherSide(Side a_side)
+    {
+        return a_side == Side::Skyrim ? Side::SanAndreas : Side::Skyrim;
+    }
+
+    // An old plugin of the other half, as it sits in a section: its PeerInfo, and nothing it ever ticks.
+    void PublishOld(RawSection& a_raw, Side a_side, std::uint32_t a_pid = ::GetCurrentProcessId())
+    {
+        PeerInfo& old = a_raw.Header()->peers[static_cast<int>(a_side)];
+        old.pid = a_pid;
+        old.version = kOldVersion;
+    }
+
+    // A section an old plugin created: its header, its size and its version.
+    void CreateOld(RawSection& a_raw)
+    {
+        a_raw.Header()->headerSize = sizeof(LinkHeader);
+        a_raw.Header()->mappingSize = kMappingSize;
+        a_raw.Header()->creatorVersion = kOldVersion;
+        a_raw.Header()->magic = kMagic;
+    }
+}
+
+TEST_CASE("an old peer is reported, and the link comes up when ours replaces it, whichever half started first")
+{
+    for (const Side first : { Side::Skyrim, Side::SanAndreas }) {
+        CAPTURE(static_cast<int>(first));
+        const Side         second = OtherSide(first);
+        const std::wstring name = UniqueName();
+        Logged             log, peerLog;
+        Link               link(first, log.Fn(), name);
+        std::uint64_t      now = 1000;
+        link.Tick(now);
+        REQUIRE(log.Has("created shared memory"));
+
+        // The old plugin of the other half joins; it never ticks, so this half watches it.
+        auto old = std::make_unique<RawSection>(name);
+        PublishOld(*old, second);
+        for (int i = 0; i < 100; ++i) {  // 5 s
+            link.Tick(now += 50);
+        }
+        CHECK(link.GetState() == Link::State::Mismatch);
+        CHECK(link.MismatchVersion() == kOldVersion);
+        CHECK(log.Has(std::string("protocol mismatch: the ") + (second == Side::Skyrim ? "Skyrim plugin" : "San Andreas plugin") +
+                      " speaks v8, this " + (first == Side::Skyrim ? "Skyrim plugin" : "San Andreas plugin") +
+                      " speaks v" + std::to_string(kProtocolVersion)));
+        CHECK(log.Has("Install the same version in both"));
+        CHECK(Count(log, "protocol mismatch") == 1);  // rate-limited
+
+        // A minute on it's said again.
+        for (int i = 0; i < 1200; ++i) {
+            link.Tick(now += 50);
+        }
+        CHECK(Count(log, "protocol mismatch") == 2);
+
+        // The old one quits cleanly; ours then starts.
+        old->Header()->peers[static_cast<int>(second)] = PeerInfo{};
+        link.Tick(now += 50);
+        CHECK(link.GetState() == Link::State::Waiting);
+        CHECK(link.MismatchVersion() == 0);
+        CHECK(log.Has("of another version is gone"));
+        old.reset();
+
+        Link peer(second, peerLog.Fn(), name);
+        for (int i = 0; i < 3; ++i) {
+            now += 50;
+            link.Tick(now);
+            peer.Tick(now);
+        }
+        CHECK(link.IsUp());
+        CHECK(peer.IsUp());
+        CHECK(link.MismatchVersion() == 0);
+        CHECK(peerLog.Has("joined shared memory"));
+    }
+}
+
+TEST_CASE("an old peer that crashed without detaching isn't reported")
+{
+    const std::wstring name = UniqueName();
+    Logged             log;
+    Link               sa(Side::SanAndreas, log.Fn(), name);
+    std::uint64_t      now = 1000;
+    sa.Tick(now);
+    RawSection raw(name);
+    PublishOld(raw, Side::Skyrim, kDeadPid);
+    for (int i = 0; i < 20; ++i) {
+        sa.Tick(now += 50);
+    }
+    CHECK(sa.GetState() == Link::State::Waiting);
+    CHECK(sa.MismatchVersion() == 0);
+    CHECK_FALSE(log.Has("protocol mismatch"));
+}
+
+TEST_CASE("an up link that meets another version goes down, and comes back with ours")
 {
     Pair p;
     p.Tick(3);
     REQUIRE(p.skyrim->IsUp());
 
-    // Pretend the San Andreas side was replaced by one speaking v99.
+    // San Andreas is replaced by an old one that took over its PeerInfo.
     p.sa.reset();
-    RawSection raw(p.name);
-    PeerInfo&  sa = raw.Header()->peers[static_cast<int>(Side::SanAndreas)];
-    sa.pid = 1234;
-    sa.version = 99;
-    p.Tick(1);
-    CHECK(p.skyrim->GetState() == Link::State::Disabled);
-    CHECK(p.skyrimLog.Has("protocol mismatch: the San Andreas plugin speaks v99, this Skyrim plugin speaks v" + std::to_string(kProtocolVersion)));
+    {
+        RawSection raw(p.name);
+        PublishOld(raw, Side::SanAndreas);
+        p.Tick(1);
+        CHECK(p.skyrim->GetState() == Link::State::Mismatch);
+        CHECK(p.skyrimLog.Has("protocol mismatch: the San Andreas plugin speaks v8, this Skyrim plugin speaks v" + std::to_string(kProtocolVersion)));
+        CHECK_FALSE(p.skyrim->Send(MessageType::ModelChunk, "x", 1));
 
-    // Disabled stays disabled, even if the peer goes away.
-    sa.version = 0;
-    p.Tick(5);
-    CHECK(p.skyrim->GetState() == Link::State::Disabled);
+        // Ours replaces it without a clean detach of the old one.
+        p.sa = std::make_unique<Link>(Side::SanAndreas, p.saLog.Fn(), p.name);
+    }
+    p.Tick(4);
+    CHECK(p.skyrim->IsUp());
+    CHECK(p.sa->IsUp());
+    CHECK(p.skyrimLog.Has("the San Andreas plugin now speaks v" + std::to_string(kProtocolVersion) + " too"));
 }
 
-TEST_CASE("a section created by another protocol version disables the joining side")
+TEST_CASE("a section an old plugin created is let go of, and ours is created once it's gone, whichever half joins")
 {
-    const std::wstring name = UniqueName();
-    RawSection         raw(name, kMappingSize);
-    raw.Header()->headerSize = sizeof(LinkHeader);
-    raw.Header()->mappingSize = kMappingSize;
-    raw.Header()->creatorVersion = 99;
-    raw.Header()->magic = kMagic;
+    for (const Side side : { Side::Skyrim, Side::SanAndreas }) {
+        CAPTURE(static_cast<int>(side));
+        const std::wstring name = UniqueName();
+        auto               old = std::make_unique<RawSection>(name);
+        CreateOld(*old);
+        PublishOld(*old, OtherSide(side));
 
-    Logged log;
-    Link   sa(Side::SanAndreas, log.Fn(), name);
-    sa.Tick(1000);
-    CHECK(sa.GetState() == Link::State::Disabled);
-    CHECK(log.Has("protocol mismatch: the shared memory was created with protocol v99, this San Andreas plugin speaks v" + std::to_string(kProtocolVersion)));
-    // Its version is published anyway, so the creator side can report the mismatch as well.
-    CHECK(raw.Header()->peers[static_cast<int>(Side::SanAndreas)].version == kProtocolVersion);
+        Logged        log, peerLog;
+        Link          link(side, log.Fn(), name);
+        std::uint64_t now = 1000;
+        for (int i = 0; i < 100; ++i) {  // 5 s: let go of and opened again every second
+            link.Tick(now += 50);
+        }
+        CHECK(link.GetState() == Link::State::Mismatch);
+        CHECK(link.MismatchVersion() == kOldVersion);
+        CHECK(Count(log, "protocol mismatch") == 1);
+        CHECK_FALSE(log.Has("joined shared memory"));
+        // Our version is published, so the old one can say so too.
+        CHECK(old->Header()->peers[static_cast<int>(side)].version == kProtocolVersion);
+
+        // The old plugin quits; we hold nothing, so its section goes with it.
+        old.reset();
+        for (int i = 0; i < 21; ++i) {
+            link.Tick(now += 50);
+        }
+        CHECK(log.Has("created shared memory"));
+        CHECK(link.GetState() == Link::State::Waiting);
+        CHECK(link.MismatchVersion() == 0);
+
+        Link peer(OtherSide(side), peerLog.Fn(), name);
+        for (int i = 0; i < 3; ++i) {
+            now += 50;
+            link.Tick(now);
+            peer.Tick(now);
+        }
+        CHECK(link.IsUp());
+        CHECK(peer.IsUp());
+    }
 }
 
 TEST_CASE("a section still being initialized is waited for")
@@ -234,17 +368,48 @@ TEST_CASE("a section still being initialized is waited for")
     CHECK(raw.Header()->peers[static_cast<int>(Side::Skyrim)].pid == 0);  // nothing published yet
 }
 
-TEST_CASE("a foreign section is rejected")
+TEST_CASE("a section whose creator quit halfway is let go of and made again")
 {
     const std::wstring name = UniqueName();
-    RawSection         raw(name);
-    raw.Header()->magic = 0xDEADBEEF;
+    auto               raw = std::make_unique<RawSection>(name);  // magic stays 0
 
-    Logged log;
-    Link   skyrim(Side::Skyrim, log.Fn(), name);
-    skyrim.Tick(1000);
-    CHECK(skyrim.GetState() == Link::State::Disabled);
-    CHECK(log.Has("not an AhShitRim link"));
+    Logged        log;
+    Link          skyrim(Side::Skyrim, log.Fn(), name);
+    std::uint64_t now = 1000;
+    skyrim.Tick(now);
+    raw.reset();  // the creator is gone; only we hold it now
+    for (int i = 0; i < 40; ++i) {
+        skyrim.Tick(now += 50);
+    }
+    CHECK(log.Has("never set up"));
+    for (int i = 0; i < 21; ++i) {
+        skyrim.Tick(now += 50);
+    }
+    CHECK(log.Has("created shared memory"));
+    CHECK(skyrim.GetState() == Link::State::Waiting);
+}
+
+TEST_CASE("a foreign section is let go of, and ours is made once it's gone")
+{
+    const std::wstring name = UniqueName();
+    auto               raw = std::make_unique<RawSection>(name);
+    raw->Header()->magic = 0xDEADBEEF;
+
+    Logged        log;
+    Link          skyrim(Side::Skyrim, log.Fn(), name);
+    std::uint64_t now = 1000;
+    for (int i = 0; i < 40; ++i) {
+        skyrim.Tick(now += 50);
+    }
+    CHECK(skyrim.GetState() == Link::State::Detached);
+    CHECK(Count(log, "not an AhShitRim link") == 1);
+
+    raw.reset();
+    for (int i = 0; i < 21; ++i) {
+        skyrim.Tick(now += 50);
+    }
+    CHECK(log.Has("created shared memory"));
+    CHECK(skyrim.GetState() == Link::State::Waiting);
 }
 
 TEST_CASE("slots are empty until written, and reads need the link up")
