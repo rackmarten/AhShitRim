@@ -1,6 +1,7 @@
 // Scenes while CJ has the player (v9), the game-free half: who drives the player this frame (CJ, or
 // Skyrim in a scripted scene or a seat), what CJ's body does while he follows Skyrim's player, how
-// he turns to the one he talks to, and when the player let out a shout. Header-only and free of game
+// he turns to the one he talks to, when the player let out a shout, and when a shout dashes it
+// (Whirlwind Sprint). Header-only and free of game
 // types, so the protocol tests cover it; the SKSE plugin (skse/src/player/PlayerSync.cpp) and the
 // San Andreas ASI (sa/src/scene.cpp) feed it.
 //
@@ -29,6 +30,7 @@ namespace AhShitRim::Scene
         Cj,        // CJ moves and Skyrim's player follows him
         Scripted,  // Skyrim moves the player (a scene, controls taken away, a bed): CJ follows it
         Seated,    // the player sits (a chair, a bench, a carriage): CJ follows it, sitting
+        Dashing,   // a shout carries the player (Whirlwind Sprint): CJ follows it, as in a scene, until it slows down
     };
 
     struct PlayerFrame
@@ -54,6 +56,7 @@ namespace AhShitRim::Scene
         switch (a_control) {
         case Control::Scripted: return "scripted";
         case Control::Seated: return "seated";
+        case Control::Dashing: return "dashing";
         default: return "CJ";
         }
     }
@@ -88,6 +91,56 @@ namespace AhShitRim::Scene
     {
         return a_recoveryBefore <= 0.0f && a_recoveryNow > 0.0f;
     }
+
+    // A shout that carries the player (Whirlwind Sprint): the shout's animation moves Skyrim's player
+    // itself, and CJ's placement would put it back every frame, so CJ never went anywhere. The player
+    // moving fast on its own while it shouts, or just after, is a dash; while it lasts CJ follows the
+    // player as in a scene, and it ends once the player slows down. Nothing else moves the player that
+    // fast while CJ has it (its own movement keys are CJ's; a knock-down is handled apart).
+    inline constexpr float kDashWindowSeconds = 0.75f;  // after the shout, how long a dash may still start
+    inline constexpr float kDashStartSpeed = 560.0f;     // units per second (8 m/s)
+    inline constexpr float kDashEndSpeed = 140.0f;       // 2 m/s: this slow ...
+    inline constexpr float kDashEndSeconds = 0.2f;       // ... for this long ends it
+    inline constexpr float kDashMaxSeconds = 3.0f;       // whatever happens
+
+    class Dash
+    {
+    public:
+        // Every frame: how far Skyrim moved the player on its own since CJ put it there (horizontal
+        // units), the frame's seconds, whether CJ is on foot, and whether the player shouts (charging
+        // or letting it out). Returns whether a dash carries the player now.
+        bool Update(float a_moved, float a_delta, bool a_onFoot, bool a_shouting)
+        {
+            if (a_delta <= 0.0f) {
+                return _active;
+            }
+            _sinceShout = a_shouting ? 0.0f : _sinceShout + a_delta;
+            const float speed = a_moved / a_delta;
+            if (!_active) {
+                if (a_onFoot && _sinceShout <= kDashWindowSeconds && speed >= kDashStartSpeed) {
+                    _active = true;
+                    _seconds = 0.0f;
+                    _slow = 0.0f;
+                }
+                return _active;
+            }
+            _seconds += a_delta;
+            _slow = speed < kDashEndSpeed ? _slow + a_delta : 0.0f;
+            if (!a_onFoot || _slow >= kDashEndSeconds || _seconds >= kDashMaxSeconds) {
+                _active = false;
+                _sinceShout = kDashWindowSeconds + 1.0f;  // one dash per shout
+            }
+            return _active;
+        }
+
+        bool Active() const { return _active; }
+
+    private:
+        float _sinceShout = kDashWindowSeconds + 1.0f;
+        float _seconds = 0.0f;
+        float _slow = 0.0f;
+        bool  _active = false;
+    };
 
     // Where a furniture marker is in the world: its offset in the furniture's model space on the
     // furniture's 3D (world = rotate * (scale * offset) + translate, rotate as NiMatrix3's

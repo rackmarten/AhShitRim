@@ -6,8 +6,11 @@
 //
 // While San Andreas has the player: the HUD top right as San Andreas lays it out (clock on Skyrim's
 // game time, weapon icon, armour bar hidden at 0, health bar on the Skyrim player's health, money
-// on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), and Skyrim's compass, attribute bars
-// and crosshair hidden. The text styles below show whenever something asks for them.
+// on their gold, counting up and down to it as San Andreas's does, wanted stars once there is a wanted level), San Andreas's radar
+// bottom left (#900: protocol/cpp/radar.h, RadarScene), and Skyrim's compass, attribute bars and crosshair hidden (the compass stays
+// with [Hud] Compass=1). The text styles below show whenever something asks for them.
+#include "hud_sounds.h"
+
 namespace AhShitRim::Protocol
 {
     struct PlayerState;
@@ -19,13 +22,15 @@ namespace AhShitRim::SaHud
     {
         Wasted,         // "wasted", grey Gothic in the middle
         Busted,         // "busted"
-        MissionPassed,  // "mission passed!", gold Pricedown in the middle
+        MissionPassed,  // "mission passed!", gold Pricedown in the middle, and "respect +" in white under it
+        OddJobPassed,   // "mission passed!" alone (an odd job's, M_PASSD)
     };
 
     void Load();  // reads the San Andreas files and hooks the overlay; call on kDataLoaded
 
     // The weapon in CJ's hands (protocol v12), once a frame: its icon and ammo in the HUD, and the crosshair or scope
-    // San Andreas's camera puts up. nullptr when San Andreas has no pose for the player.
+    // San Andreas's camera puts up; and CJ's speed, heading and camera for the radar. nullptr when San Andreas has no
+    // pose for the player.
     void SetWeapon(const Protocol::PlayerState* a_pose);
 
     // Every frame from PlayerCharacter::Update: a_owned while San Andreas has the player, a_menu
@@ -34,10 +39,12 @@ namespace AhShitRim::SaHud
 
     // The text styles; a_seconds is how long each stays before it fades.
     void MarkTarget(const RE::NiPoint3& a_at, bool a_locked);  // the heat seeker's marker on what it locks on to (world point), as long as it's called every frame
+    void MarkHead(const RE::NiPoint3& a_headTop, std::uint32_t a_colour);  // the lock-on's triangle over a head (RGBA, red in the low byte), as long as it's called every frame
+    bool AimCrosshair(float& a_x, float& a_y, float& a_aspect);           // where the gun's crosshair was last drawn (fractions of the screen, its width over height); false when it wasn't
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();
-    void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left
+    void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left, with San Andreas's beep when it starts showing
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
     void HoldSubtitle(std::string a_text);  // the subtitles, as long as it's called every frame with the line (Skyrim's subtitles, a scene's lines)
@@ -48,6 +55,7 @@ namespace AhShitRim::SaHud
     void SetWantedFlashing(bool a_flashing);      // v22: the stars flash (just changed, or CJ is out of the guards' sight)
     void SetArmor(float a_fraction);              // 0..1 of the armour bar; 0 hides it
     void ShowRadioStation(std::string a_name, bool a_retuning);  // top centre, gold, dark grey while retuning
+    void PlayHudSound(HudSounds::Sound a_sound);  // v30: one of San Andreas's HUD sounds, played by the hidden San Andreas
 
     // San Andreas's standard menu top left (Ammu-Nation, #830), as long as it's called every frame: a title and
     // rows of a name and a price.

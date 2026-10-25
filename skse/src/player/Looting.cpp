@@ -2,6 +2,10 @@
 
 #include "hud/SaHud.h"
 #include "loot.h"
+#include "menus.h"
+
+#include <atomic>
+#include <thread>
 
 namespace AhShitRim::Looting
 {
@@ -14,6 +18,92 @@ namespace AhShitRim::Looting
         {
             float scan = 0.0f;
         } state;
+
+        // ---- Skyrim's menus (UI tasks, on Skyrim's UI processing) ----
+
+        // A UI task must never queue another from inside itself: SKSE runs the UI task queue until it is empty,
+        // so a task that queues itself spins there for good and Skyrim hangs (it did, closing a barter). A pacer
+        // thread queues one tick at a time instead, every kTickEvery, while there is something to watch.
+        constexpr auto kTickEvery = std::chrono::milliseconds(50);
+
+        constexpr std::string_view kClosed[] = { RE::InventoryMenu::MENU_NAME, RE::ContainerMenu::MENU_NAME, RE::BarterMenu::MENU_NAME };
+        constexpr std::size_t      kBarter = 2;
+
+        std::atomic<bool> handedOver = false;
+
+        struct MenuState
+        {
+            Menus::Closer                         closers[std::size(kClosed)];
+            Menus::DialogueWatch                  watch;
+            std::chrono::steady_clock::time_point last;
+        } menus;  // UI tasks only
+
+        std::atomic<bool> ticking = false;  // the pacer thread runs
+        std::atomic<bool> posted = false;   // a tick is queued and hasn't run yet
+
+        bool Talking()
+        {
+            auto* topics = RE::MenuTopicManager::GetSingleton();
+            return topics && topics->menuOpen && topics->speaker.get();
+        }
+
+        void Send(std::string_view a_menu, RE::UI_MESSAGE_TYPE a_type)
+        {
+            if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                queue->AddMessage(a_menu, a_type, nullptr);
+            }
+        }
+
+        // Once a UI frame while one of the menus is open or a dialogue is watched: closes the menus once they
+        // have settled, and shows a dialogue's menu again if it was left without it.
+        void Tick()
+        {
+            posted = false;
+            auto*      ui = RE::UI::GetSingleton();
+            const auto now = std::chrono::steady_clock::now();
+            const float seconds = (std::min)(std::chrono::duration<float>(now - menus.last).count(), 0.25f);
+            menus.last = now;
+            if (!ui) {
+                ticking = false;
+                return;
+            }
+            const bool dialogueMenu = ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
+            bool       anyOpen = false;
+            for (std::size_t i = 0; i < std::size(kClosed); i++) {
+                const bool open = handedOver && ui->IsMenuOpen(kClosed[i]);
+                anyOpen = anyOpen || open;
+                if (menus.closers[i].Step(open, i == kBarter && dialogueMenu, seconds)) {
+                    Send(kClosed[i], RE::UI_MESSAGE_TYPE::kHide);
+                    SKSE::log::info("looting: Skyrim's {} closed while San Andreas has the player", kClosed[i]);
+                    if (i == kBarter) {
+                        menus.watch.Arm();
+                    }
+                }
+            }
+            const bool barter = ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
+            if (menus.watch.Step(Talking(), dialogueMenu, barter, seconds)) {
+                Send(RE::DialogueMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow);
+                SKSE::log::warn("looting: the dialogue was left without its menu after a barter, shown again");
+            }
+            if (!anyOpen && !menus.watch.Armed()) {
+                ticking = false;  // nothing left to watch: the pacer stops
+            }
+        }
+
+        void StartTicking()
+        {
+            if (ticking.exchange(true)) {
+                return;
+            }
+            std::thread([] {
+                while (ticking) {
+                    std::this_thread::sleep_for(kTickEvery);
+                    if (ticking && !posted.exchange(true)) {
+                        SKSE::GetTaskInterface()->AddUITask(Tick);
+                    }
+                }
+            }).detach();
+        }
 
         // Takes a_ref's gold and quest items into the player's inventory. a_steal: from an owned container, as
         // Skyrim's container menu would. Returns whether anything was taken.
@@ -62,6 +152,9 @@ namespace AhShitRim::Looting
                 if (auto* gold = RE::TESForm::LookupByID(Loot::kGold)) {
                     a_player->StealAlarm(a_ref, gold, haul.gold, haul.gold, a_ref->GetOwner(), true);
                 }
+            }
+            if (haul.gold > 0) {
+                SaHud::PlayHudSound(HudSounds::Sound::PickupMoney);  // San Andreas's money pickup
             }
             if (const auto text = Loot::QuestItemsText(haul.questItems); !text.empty()) {
                 SaHud::ShowHelp(text, 4.0f);
@@ -129,10 +222,25 @@ namespace AhShitRim::Looting
         if (a_menu != RE::InventoryMenu::MENU_NAME && a_menu != RE::ContainerMenu::MENU_NAME && a_menu != RE::BarterMenu::MENU_NAME) {
             return;
         }
-        if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
-            queue->AddMessage(a_menu, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-        }
+        // Not from here: closing a barter from its own opening event raced Skyrim taking the dialogue menu
+        // down for it, and now and then the dialogue never got its menu back.
+        StartTicking();
         SaHud::ShowHelp("F10 hands the player back to Skyrim for its menus.", 3.0f);
-        SKSE::log::info("looting: Skyrim's {} closed while San Andreas has the player", a_menu);
+    }
+
+    void SetHandedOver(bool a_handedOver)
+    {
+        handedOver = a_handedOver;
+        if (a_handedOver) {
+            return;
+        }
+        // F10 always gets the player out: a dialogue stuck without its menu gets it back.
+        SKSE::GetTaskInterface()->AddUITask([] {
+            auto* ui = RE::UI::GetSingleton();
+            if (ui && Menus::Orphaned(Talking(), ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME), ui->IsMenuOpen(RE::BarterMenu::MENU_NAME))) {
+                Send(RE::DialogueMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow);
+                SKSE::log::warn("looting: the handover ended in a dialogue without its menu, shown again");
+            }
+        });
     }
 }

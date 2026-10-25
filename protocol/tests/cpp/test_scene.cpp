@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 using namespace AhShitRim;
 
@@ -53,6 +54,51 @@ TEST_CASE("a shout is let out when Skyrim's voice cooldown starts")
     CHECK_FALSE(Scene::ShoutReleased(4.9f, 5.0f));  // cooling down
     CHECK_FALSE(Scene::ShoutReleased(0.1f, 0.0f));  // cooled down
     CHECK_FALSE(Scene::ShoutReleased(0.0f, 0.0f));
+}
+
+TEST_CASE("a shout that carries the player is a dash until it slows down, and only right after a shout")
+{
+    constexpr float dt = 1.0f / 60.0f;
+    const float     fast = 20.0f / Pose::kMetersPerUnit * dt;  // 20 m/s, Whirlwind Sprint's pace
+    const float     slow = 0.5f / Pose::kMetersPerUnit * dt;
+
+    Scene::Dash idle;
+    CHECK_FALSE(idle.Update(fast, dt, true, false));  // fast with no shout about: not a dash
+
+    Scene::Dash dash;
+    CHECK_FALSE(dash.Update(0.0f, dt, true, true));  // charging, not moving
+    CHECK(dash.Update(fast, dt, true, false));       // the shout's animation carries the player
+    for (int i = 0; i < 30; ++i) {
+        CHECK(dash.Update(fast, dt, true, false));
+    }
+    CHECK(dash.Update(slow, dt, true, false));  // a slow frame or two doesn't end it
+    int frames = 1;
+    while (dash.Update(slow, dt, true, false)) {
+        ++frames;
+    }
+    CHECK(frames * dt >= Scene::kDashEndSeconds - dt);
+    CHECK(frames * dt <= Scene::kDashEndSeconds + dt);
+    CHECK_FALSE(dash.Update(fast, dt, true, false));  // one dash per shout
+
+    Scene::Dash late;
+    late.Update(0.0f, dt, true, true);
+    for (float t = 0.0f; t < Scene::kDashWindowSeconds + 0.1f; t += dt) {
+        late.Update(0.0f, dt, true, false);
+    }
+    CHECK_FALSE(late.Update(fast, dt, true, false));  // too long after the shout
+
+    Scene::Dash driving;
+    driving.Update(0.0f, dt, false, true);
+    CHECK_FALSE(driving.Update(fast, dt, false, false));  // in a vehicle San Andreas moves CJ
+
+    Scene::Dash capped;
+    capped.Update(fast, dt, true, true);
+    float t = 0.0f;
+    while (capped.Update(fast, dt, true, false) && t < 10.0f) {
+        t += dt;
+    }
+    CHECK(t <= Scene::kDashMaxSeconds + dt);
+    CHECK(std::strcmp(Scene::NameOf(Scene::Control::Dashing), "dashing") == 0);
 }
 
 TEST_CASE("CJ turns to whoever talks the short way round, a step at a time")

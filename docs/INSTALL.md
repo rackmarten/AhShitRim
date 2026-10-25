@@ -49,6 +49,7 @@ Either way, AhShitRim has no `.esp`: there's nothing to add to the load order.
 3. The first time, it finds Skyrim through Steam and asks for the San Andreas folder: pick the downgraded copy from step 2. Both are kept in `launcher.ini` next to it (delete that file to pick them again).
 4. It checks Skyrim's version, SKSE, Address Library and AhShitRim's Skyrim part, then that `gta_sa.exe` is 1.0 US and the ASI loader is there. Anything missing is listed in red with where to get it; fix it and run it again.
 5. It copies `AhShitRim.asi` into San Andreas's `scripts` folder and tells AhShitRim where San Andreas is (`Data\SKSE\Plugins\AhShitRim.ini` in Skyrim's folder, which it writes).
+   It also paints the radar's San Andreas-style map of Skyrim from your own plugins into `Documents\My Games\AhShitRim` (a few seconds the first time, then again only when your plugins change).
 6. It starts San Andreas, which stays minimized, and waits until it's ready (up to two minutes).
 7. Then it starts Skyrim through SKSE. With **Mod Organizer 2**, it starts Skyrim through MO2, so Skyrim sees MO2's mods: it asks MO2 to run the instance's SKSE executable (the one pointing at this Skyrim's `skse64_loader.exe`), whether MO2 is open already or not. The first time, it may ask where `ModOrganizer.exe` is. If the instance has no SKSE executable, it says so and leaves it to you: start **SKSE** from MO2's executables list.
 
@@ -88,6 +89,7 @@ The full list is in the [README](../README.md#keys).
 - **San Andreas closes or crashes at start**: another ASI mod is the usual suspect. Only SilentPatch and the ASI loader are tested; move other `.asi` files out of the San Andreas folder and its `scripts` folder.
 - **F10 does nothing**: San Andreas isn't running or AhShitRim isn't loaded in Skyrim. Check `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` for `link up`, and that the launcher got San Andreas ready.
 - **No San Andreas HUD in Skyrim**: `Data\SKSE\Plugins\AhShitRim.ini` doesn't point at San Andreas. Run the launcher again, it rewrites it.
+- **Both games go silent and stay silent**: if your sound comes from the monitor's speakers (HDMI or DisplayPort audio), the display turning off takes that audio device with it, and neither game reconnects when it comes back; restart both games to get sound again. While San Andreas has the player, AhShitRim keeps the display on, but with Skyrim in control (or the screen locked) Windows's display timeout still applies. Headphones or speakers on the PC's own audio jack don't go away, or set "Turn off my screen" in Windows's power settings to Never while you play.
 - **Skyrim crashes at start, or SKSE says the plugin is incompatible**: the game updated. Update SKSE and Address Library to match.
 
-The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log`, San Andreas's in its `scripts\AhShitRim.log`.
+The logs: Skyrim's in `Documents\My Games\Skyrim Special Edition\SKSE\AhShitRim.log` (the last two runs' beside it as `AhShitRim.1.log` and `AhShitRim.2.log`, so a crash's log survives starting the game again), San Andreas's in its `scripts\AhShitRim.log`.

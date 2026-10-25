@@ -4,8 +4,12 @@
 #include "hud/SaHud.h"
 #include "explosives.h"
 #include "link/LinkService.h"
+#include "player/Particles.h"
+#include "player/Hitboxes.h"
 #include "player/People.h"
+#include "player/ObjectHits.h"
 #include "player/Puffs.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Vitals.h"
 
@@ -121,6 +125,7 @@ namespace AhShitRim::Projectiles
             float                                  losTick = 0.0f;
             bool                                   inSight = false;
             std::uint8_t                           cjWeapon = 0;
+            std::uint16_t                          vehicleModel = 0;  // the vehicle CJ is in, 0 on foot (v23: the Hydra seeks heat)
             std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> copies;  // (model, nth shown) to its copy's id
             std::uint32_t                          copyCount = 0;
         } state;
@@ -173,6 +178,8 @@ namespace AhShitRim::Projectiles
             std::uint32_t handover = 0;
             RE::NiPoint3  anchor;
             const void*   place = nullptr;
+            bool          cjBurning = false;  // San Andreas has CJ on fire
+            std::chrono::steady_clock::time_point burnAsked;  // the last BurnCj for Skyrim's fire
         } frame;
 
         // Where the player is: its interior cell, or the worldspace outside. A projectile left behind in another is dropped.
@@ -377,7 +384,13 @@ namespace AhShitRim::Projectiles
             const double now = NowSeconds();
             int          caught = 0;
             People::Blast(a_at);  // heard far and wide
+            // In a vehicle (v35) the blast doesn't reach CJ or his passengers, as San Andreas's explosions skip a ped in one: the
+            // vehicle takes it (San Andreas's own when it blows up), or nothing in the Rhino.
+            const bool inside = Hitboxes::Shields();
             ForActorsNear(a_player, a_at, [&](RE::Actor* a_actor) {
+                if (inside && Riders::Rides(a_actor->GetFormID())) {
+                    return;
+                }
                 RE::NiPoint3 closest;
                 const float  distance = DistanceTo(a_actor, a_at, &closest);
                 const float  damage = BlastDamage(a_kind, distance);
@@ -401,11 +414,14 @@ namespace AhShitRim::Projectiles
                 }
             });
             // CJ in his own blast.
-            const float self = a_hurtCj ? BlastDamage(a_kind, DistanceTo(a_player, a_at)) : 0.0f;
+            const float self = a_hurtCj && !inside ? BlastDamage(a_kind, DistanceTo(a_player, a_at)) : 0.0f;
             if (self > 0.0f) {
                 Vitals::Hurt(a_player, self);
             }
             Log(std::format("{} went off, {} caught, CJ took {:.0f}", a_weapon, caught, self));
+            // The webs, lamps and oil round it: a Molotov's burst as fire, the others as a blast.
+            ObjectHits::Around(a_player, a_at, BlastOf(a_kind).radius, a_kind == Kind::Molotov ? Traps::Hit::Fire : Traps::Hit::Blast,
+                Traps::SkyrimDamage(BlastOf(a_kind).damage, a_weapon));
             return self;
         }
 
@@ -818,15 +834,24 @@ namespace AhShitRim::Projectiles
             p.kind = KindOf(p.type);
             p.weapon = WeaponOf(p.type);
             p.place = frame.place;
-            if (p.kind == Kind::Rocket && state.cjWeapon == Weapons::RocketLauncherHs) {
-                // San Andreas fires a plain rocket from the heat seeker without a lock of its own (it locks on to
-                // vehicles only): Skyrim's lock steers it.
-                p.weapon = Weapons::RocketLauncherHs;
+            if (p.kind == Kind::Rocket && SeeksHeat(state.cjWeapon, state.vehicleModel)) {
+                // San Andreas fires a plain rocket from the heat seeker (and the Hydra; the Hunter, ours only) without a lock of
+                // its own (it locks on to vehicles only): Skyrim's lock steers it.
+                if (!state.vehicleModel) {
+                    p.weapon = Weapons::RocketLauncherHs;
+                }
                 p.target = state.lock.Locked() ? state.lock.target : 0;
             }
             const RE::NiPoint3 at = a_anchor + RE::NiPoint3(a_event.origin[0], a_event.origin[1], a_event.origin[2]);
             if (p.kind == Kind::None || !std::isfinite(at.x + at.y + at.z)) {
                 return;
+            }
+            if (a_event.flags & Protocol::kProjectileCannon) {
+                // v26: the Rhino's cannon fires with San Andreas's tank_fire, its smoke and flash, at the muzzle.
+                RE::NiPoint3 dir(a_event.velocity[0], a_event.velocity[1], a_event.velocity[2]);
+                if (dir.Unitize() > 0.0f) {
+                    Particles::TankFire(at, dir);
+                }
             }
             if (a_event.flags & Protocol::kProjectileBurst) {
                 GoOff(a_player, p, at);
@@ -888,6 +913,7 @@ namespace AhShitRim::Projectiles
                 Shots::Hurt(a_player, a_actor, Weapons::Molotov, kFirePerSecond * kGasTick, a_actor->GetPosition(), RE::NiPoint3(0.0f, 0.0f, 1.0f), false);
                 SetBurning(a_player, a_actor, now);
             });
+            ObjectHits::Around(a_player, a_fire.at, kFirePatchRadius, Traps::Hit::Fire);  // the oil it spreads over catches
             return true;
         }
 
@@ -1125,15 +1151,18 @@ namespace AhShitRim::Projectiles
             }
             SetBurning(a_player, a_actor, now);
         });
+        ObjectHits::FireCone(a_player, origin, dir, range);
     }
 
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, float a_delta, const RE::NiPoint3* a_cjBurning,
-        std::uint8_t a_cjWeapon, bool a_aiming)
+        std::uint8_t a_cjWeapon, bool a_aiming, std::uint16_t a_vehicleModel)
     {
         frame.handover = a_handover;
         frame.anchor = a_anchor;
         frame.place = PlaceOf(a_player);
+        frame.cjBurning = a_cjBurning != nullptr;
         state.cjWeapon = a_cjWeapon;
+        state.vehicleModel = a_vehicleModel;
         auto queue = std::move(state.queue);
         state.queue.clear();
         for (const auto& event : queue) {
@@ -1144,7 +1173,7 @@ namespace AhShitRim::Projectiles
             Launch(a_player, event, a_anchor);
         }
         const float dt = std::clamp(a_delta, 0.0f, 0.25f);
-        LockOn(a_player, a_aiming && a_cjWeapon == Weapons::RocketLauncherHs, dt);
+        LockOn(a_player, a_aiming && SeeksHeat(a_cjWeapon, a_vehicleModel), dt);
         for (auto it = state.flights.begin(); it != state.flights.end();) {
             it = Fly(a_player, *it, dt) ? it + 1 : state.flights.erase(it);
         }
@@ -1163,6 +1192,17 @@ namespace AhShitRim::Projectiles
     }
 
     // Never from inside Update: it empties what Update iterates.
+    void BurnCj(RE::PlayerCharacter* a_player)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (!a_player || frame.cjBurning || now - frame.burnAsked < std::chrono::seconds(1)) {
+            return;
+        }
+        frame.burnAsked = now;
+        Tell(Protocol::EffectKind::BurnCj, frame.handover, frame.anchor, a_player->GetPosition(), 0);
+        Log("Skyrim's fire set CJ alight");
+    }
+
     void Clear()
     {
         state.queue.clear();
@@ -1184,5 +1224,6 @@ namespace AhShitRim::Projectiles
         state.coughs.clear();
         state.doused.clear();
         Puffs::Clear();
+        ObjectHits::Clear();
     }
 }

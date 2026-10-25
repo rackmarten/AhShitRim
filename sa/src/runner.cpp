@@ -1,11 +1,14 @@
 #include "runner.h"
 
 #include "audio.h"
+#include "car_hits.h"
 #include "chunk_world.h"
 #include "cj_body.h"
 #include "cj_busted.h"
 #include "cj_cheats.h"
 #include "cj_gear.h"
+#include "cj_pickups.h"
+#include "cj_melee.h"
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
@@ -28,6 +31,7 @@
 #include <CClothes.h>
 #include <CMenuManager.h>
 #include <CPad.h>
+#include <CPedIntelligence.h>
 #include <CPedClothesDesc.h>
 #include <CPlayerData.h>
 #include <CPlayerPed.h>
@@ -285,6 +289,17 @@ namespace AhShitRim::Runner
 
         // ---- Input and pose ----
 
+        // CJ getting into or out of a vehicle (v35): San Andreas's cops never bust him in the middle of it, nor does Skyrim.
+        bool GettingInOrOut(CPlayerPed* a_ped)
+        {
+            if (!a_ped->m_pIntelligence) {
+                return false;
+            }
+            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
+            return tasks.FindActiveTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) || tasks.FindActiveTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) ||
+                   tasks.FindActiveTaskByType(TASK_COMPLEX_LEAVE_CAR);
+        }
+
         void PublishPose(CPlayerPed* a_ped)
         {
             Pose::SanAndreasPose sa;
@@ -320,6 +335,9 @@ namespace AhShitRim::Runner
             auto pose = Pose::ToPlayerState(sa, ++state.frame, state.handover);
             if (vehicle) {
                 pose.flags |= Protocol::kPlayerInVehicle;
+            }
+            if (GettingInOrOut(a_ped)) {
+                pose.flags |= Protocol::kPlayerGettingInOut;
             }
             Audio::Fill(pose, vehicle != nullptr);
             GetLink().WritePlayer(pose);
@@ -372,7 +390,7 @@ namespace AhShitRim::Runner
                 if (VehicleKinds::IsGear(a_input.spawnModel)) {
                     CjGear::Give(a_ped, a_input.spawnModel);  // v19: the jetpack or the parachute
                 } else {
-                    Vehicles::Spawn(a_ped, a_input.spawnModel);
+                    Vehicles::Spawn(a_ped, a_input.spawnModel, (a_input.spawnFlags & Protocol::kSpawnAirborne) != 0);
                 }
             }
             state.spawnCount = a_input.spawnCount;
@@ -405,7 +423,8 @@ namespace AhShitRim::Runner
                 s.LeftShoulder2 = presses.prev || pad.leftShoulder2 ? 255 : 0;    // the previous one; look left
                 s.RightStickX = pad.rightStickX;  // v19, in a vehicle: the turret keys
                 s.RightStickY = pad.rightStickY;
-                s.ShockButtonR = pad.shockButtonR;  // v20, in a vehicle: the hydraulics' jump
+                s.ShockButtonR = pad.shockButtonR;  // v20, in a vehicle: the hydraulics' jump; a plane's landing gear
+                s.Select = pad.select;              // v23, in a vehicle: the next camera distance
             }
 
             // Skyrim sends totals; San Andreas wants this frame's movement.
@@ -481,6 +500,10 @@ namespace AhShitRim::Runner
                 state.carPending = false;
                 Vehicles::Restore(ped, state.spawn, state.car);
             }
+            // Skyrim's actors push back on CJ's vehicle before it is posed and published, so a car a mammoth stopped is
+            // drawn where it stopped.
+            CarHits::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());
+            CjMelee::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());  // on foot: bumping into them, the lock-on
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
@@ -488,6 +511,7 @@ namespace AhShitRim::Runner
             CjGear::Update(ped, state.owned && !state.wasted && !Scenes::Following(), state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjProjectiles::Update(ped, state.owned);
+            CjPickups::Update(ped, state.owned);
             ModelSender::Pump();
 
             // Stats every 5 s while Skyrim has handed the player over, and once 5 s after the start.
@@ -565,6 +589,7 @@ namespace AhShitRim::Runner
             g_updatePads = RedirectCall(kCallUpdatePads, &UpdatePadsHook);
             CjShots::Install();
             CjProjectiles::Install();
+            CjMelee::Install();
             Vitals::Install();
             Scenes::Install();
             if (!g_idle || !g_frontendIdle || !g_updatePads) {

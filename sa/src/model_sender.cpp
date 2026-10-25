@@ -1,6 +1,7 @@
 #include "model_sender.h"
 
 #include "log.h"
+#include "skin_model.h"
 
 #include <Windows.h>
 
@@ -84,5 +85,11 @@ namespace AhShitRim::ModelSender
             state.sending = -1;
             Log(std::format("{} {:08X} sent to Skyrim in {} chunks ({} ms)", entry.label, entry.id, entry.chunks.size(), ::GetTickCount64() - state.startMs));
         }
+    }
+
+    std::uint32_t NewId()
+    {
+        static SkinModel::ModelIds ids;
+        return ids.Next(::GetTickCount64());
     }
 }

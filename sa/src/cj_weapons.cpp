@@ -7,6 +7,7 @@
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
+#include "scenes.h"
 #include "skin_build.h"
 #include "skin_model.h"
 #include "texture_decode.h"
@@ -100,7 +101,6 @@ namespace AhShitRim::CjWeapons
             bool                              shown = false;
             std::uint32_t                     ids[Protocol::kWeaponHandMax] = {};
             bool                              sentTwin = false;
-            std::uint32_t                     builds = 0;
             // For the pose.
             std::uint8_t                      lastType = 0;
             std::uint8_t                      lastSlot = 0;
@@ -197,8 +197,12 @@ namespace AhShitRim::CjWeapons
         // Skyrim's hits raise CJ's skill with the weapon as San Andreas's own hits would.
         void Hits(CPlayerPed* a_ped, std::uint32_t a_type, std::uint32_t a_count)
         {
-            if (a_type > 0xFF || !Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
+            if (a_type > 0xFF) {
                 return;
+            }
+            Scenes::OnHit(a_ped, static_cast<std::uint8_t>(a_type));  // v29: a fight or shoot line now and then, fists too
+            if (!Weapons::Carried(static_cast<std::uint8_t>(a_type))) {
+                return;  // fists: no skill to raise
             }
             const auto type = static_cast<eWeaponType>(a_type);
             const auto before = a_ped->GetWeaponSkill(type);
@@ -238,7 +242,8 @@ namespace AhShitRim::CjWeapons
             case Protocol::WeaponCommandKind::GiveWeapon: {
                 const auto type = static_cast<std::uint8_t>(command.argument);
                 if (command.argument <= 0xFF && Weapons::Carried(type)) {
-                    GiveOne(a_ped, static_cast<eWeaponType>(type), command.entries[0].ammo ? command.entries[0].ammo : 1);
+                    // At least a round, unless entries[0] names the weapon (v23: a swapped pickup whose rounds went into his gun).
+                    GiveOne(a_ped, static_cast<eWeaponType>(type), command.entries[0].ammo || command.entries[0].type == type ? command.entries[0].ammo : 1);
                     EnsureLoadout(a_ped);
                     Log(std::format("weapons: weapon {} given", command.argument));
                 } else {
@@ -397,7 +402,7 @@ namespace AhShitRim::CjWeapons
         void SendHand(int a_hand, Cache& a_cache, eWeaponType a_type)
         {
             if (!a_cache.ids[a_hand]) {
-                a_cache.ids[a_hand] = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;
+                a_cache.ids[a_hand] = ModelSender::NewId();
             }
             state.ids[a_hand] = a_cache.ids[a_hand];
             auto chunks = SkinModel::Chunks(state.ids[a_hand], a_cache.blob);

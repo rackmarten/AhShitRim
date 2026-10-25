@@ -12,7 +12,7 @@ namespace AhShitRim::CollisionSampler
         using Clock = std::chrono::steady_clock;
         using Layer = RE::COL_LAYER;
 
-        constexpr std::uint32_t kCells = 32;          // 64 units (about 0.9 m) between samples
+        constexpr std::uint32_t kCells = Protocol::kCollisionChunkCells;  // 64 units (about 0.9 m) between samples
         constexpr std::uint32_t kSamples = (kCells + 1) * (kCells + 1);
         constexpr int           kRadius = Ground::kSampleRadius;  // chunks around the player's chunk: 5 x 5, about 70 m each way
         constexpr int           kForgetRadius = Ground::kForgetRadius;  // from both centers; San Andreas keeps chunks within Ground::kKeepRadius of CJ, so a chunk it dropped was forgotten here and is resent
@@ -251,7 +251,7 @@ namespace AhShitRim::CollisionSampler
                         }
                     }
                 }
-                SKSE::log::info("collision: a door at ({:.0f},{:.0f},{:.0f}) moved, reading its chunks again", p.x, p.y, p.z);
+                SKSE::log::info("collision: a door or an object at ({:.0f},{:.0f},{:.0f}) changed, reading its chunks again", p.x, p.y, p.z);
                 return true;
             });
         }
@@ -306,6 +306,13 @@ namespace AhShitRim::CollisionSampler
         static DoorSink doorSink;
         if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
             events->AddEventSink<RE::TESOpenCloseEvent>(&doorSink);
+        }
+    }
+
+    void Reread(const RE::NiPoint3& a_at, float a_afterSeconds)
+    {
+        if (state.active) {
+            state.doors.emplace_back(a_at, Clock::now() + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<float>(a_afterSeconds)));
         }
     }
 

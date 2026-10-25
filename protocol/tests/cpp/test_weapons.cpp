@@ -237,3 +237,13 @@ TEST_CASE("the aim looks where the camera does: level is 0 and looking up is neg
     CHECK(AimLookPitch(2.0f) == doctest::Approx(-Pose::kPi / 2));  // a front that isn't a unit vector is clamped
     CHECK(AimLookPitch(std::nanf("")) == 0.0f);
 }
+
+TEST_CASE("v23: the Hydra's and the Hunter's first-person camera shows the rocket sight, the frame the lock shows in")
+{
+    CHECK(ScopeOf(kCamFirstPerson, 520) == Scope::Rocket);
+    CHECK(ScopeOf(kCamFirstPerson, 425) == Scope::Rocket);
+    CHECK(ScopeOf(kCamFirstPerson, 0) == ScopeOf(kCamFirstPerson));     // on foot as before
+    CHECK(ScopeOf(kCamFirstPerson, 432) == ScopeOf(kCamFirstPerson));   // not the Rhino
+    CHECK(ScopeOf(kCamSniper, 520) == Scope::Sniper);                   // other modes as before
+    CHECK(ScopeOf(kCamAimWeapon, 0) == Scope::Aim);
+}

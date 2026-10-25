@@ -16,6 +16,7 @@ namespace AhShitRim::ModelSender
     inline constexpr int kWeaponKey = 5;   // + the hand (after the vehicles' four keys)
     inline constexpr int kProjectileKey = 7;  // v15: + the projectile type less 16 (grenade to heat seeker: 7 to 11, the satchel 30)
     inline constexpr int kGearKey = 31;       // v19: the jetpack, + 1 the parachute's canopy
+    inline constexpr int kPickupKey = 40;     // v27: + one for each pickup model Skyrim asked for, in the order it asked
 
     // a_chunks: the model's ModelChunk payloads (SkinModel::Chunks). Replaces what a_key had; one
     // half sent is dropped (its successor starts at offset 0, which drops it in Skyrim too).
@@ -25,4 +26,7 @@ namespace AhShitRim::ModelSender
 
     // Once a frame: sends what the ring has room for.
     void Pump();
+
+    // A new model's id, never one sent before (SkinModel::ModelIds, one counter for every sender).
+    std::uint32_t NewId();
 }

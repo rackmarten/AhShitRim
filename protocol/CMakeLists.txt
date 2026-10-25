@@ -52,6 +52,7 @@ add_executable(protocol_tests
     tests/cpp/test_wasted.cpp
     tests/cpp/test_cosave.cpp
     tests/cpp/test_weapons.cpp
+    tests/cpp/test_aim.cpp
     tests/cpp/test_img.cpp
     tests/cpp/test_flash.cpp
     tests/cpp/test_damage.cpp
@@ -59,16 +60,36 @@ add_executable(protocol_tests
     tests/cpp/test_vehicle_damage.cpp
     tests/cpp/test_smoke_model.cpp
     tests/cpp/test_puff_model.cpp
+    tests/cpp/test_fx_model.cpp
+    tests/cpp/test_traps.cpp
     tests/cpp/test_reactions.cpp
     tests/cpp/test_cheats.cpp
     tests/cpp/test_mercy.cpp
     tests/cpp/test_revive.cpp
     tests/cpp/test_shop.cpp
+    tests/cpp/test_menus.cpp
     tests/cpp/test_loot.cpp
     tests/cpp/test_rewards.cpp
     tests/cpp/test_dialogue.cpp
+    tests/cpp/test_thuum.cpp
+    tests/cpp/test_situations.cpp
+    tests/cpp/test_hud_sounds.cpp
     tests/cpp/test_wanted.cpp
+    tests/cpp/test_lock_marker.cpp
     tests/cpp/test_knock.cpp
+    tests/cpp/test_mega_punch.cpp
+    tests/cpp/test_air_spawn.cpp
+    tests/cpp/test_missions.cpp
+    tests/cpp/test_pickups.cpp
+    tests/cpp/test_run_over.cpp
+    tests/cpp/test_passengers.cpp
+    tests/cpp/test_vehicle_hits.cpp
+    tests/cpp/test_melee.cpp
+    tests/cpp/test_standing.cpp
+    tests/cpp/test_radar_map.cpp
+    tests/cpp/test_radar.cpp
+    tests/cpp/test_settle.cpp
+    tests/cpp/test_balance.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)
@@ -104,5 +125,13 @@ if(WIN32)
     add_executable(fake_vehicles cpp/link.cpp tools/fake_vehicles.cpp)
     if(MSVC)
         target_compile_options(fake_vehicles PRIVATE /W4 /permissive- /utf-8)
+    endif()
+endif()
+
+# Paints the radar's map of Skyrim from the player's own plugins (scripts/radar-map.ps1). Not a test.
+if(WIN32)
+    add_executable(radar_map tools/radar_map.cpp)
+    if(MSVC)
+        target_compile_options(radar_map PRIVATE /W4 /permissive- /utf-8)
     endif()
 endif()

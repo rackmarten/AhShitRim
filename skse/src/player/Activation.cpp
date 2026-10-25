@@ -2,8 +2,12 @@
 
 #include "activate.h"
 #include "hud/SaHud.h"
+#include "link/LinkService.h"
 #include "player/AmmuNation.h"
+#include "player/Conversation.h"
 #include "player/Looting.h"
+#include "reactions.h"
+#include "weapons.h"
 
 namespace AhShitRim::Activation
 {
@@ -140,6 +144,71 @@ namespace AhShitRim::Activation
             return true;
         }
 
+        // The first thing the camera's ray through the crosshair meets, passing through the player's own body:
+        // which candidate it is (if any) and how far along. Statics and activators stop the sight layer;
+        // clutter and people don't, and Activate::Aimed tests their boxes up to the hit.
+        Activate::CrosshairHit CrosshairHitOf(RE::PlayerCharacter* a_player, const std::vector<RE::TESObjectREFR*>& a_refs, const Vec3& a_camera,
+            const Vec3& a_dir, float a_length)
+        {
+            Activate::CrosshairHit result;
+            auto*                  cell = a_player->GetParentCell();
+            auto*                  bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto*                  world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return result;
+            }
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               from = 0.0f;
+            for (int i = 0; i < kMaxSightHits; i++) {
+                const Vec3 start = Activate::Add(a_camera, Activate::Scale(a_dir, from));
+                const Vec3 end = Activate::Add(a_camera, Activate::Scale(a_dir, a_length));
+                input.from = RE::hkVector4(start.x * scale, start.y * scale, start.z * scale, 0.0f);
+                input.to = RE::hkVector4(end.x * scale, end.y * scale, end.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return result;
+                }
+                const float at = from + (a_length - from) * output.hitFraction;
+                auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
+                if (hit != a_player) {
+                    result.distance = at;
+                    if (const auto found = std::ranges::find(a_refs, hit); hit && found != a_refs.end()) {
+                        result.candidate = static_cast<std::size_t>(found - a_refs.begin());
+                    }
+                    return result;
+                }
+                from = at + 1.0f;
+            }
+            return result;
+        }
+
+        // What the crosshair is on (Activate::Aimed): from the camera San Andreas sees through, its ray through
+        // San Andreas's crosshair while CJ aims a gun and through the middle of the picture otherwise.
+        std::optional<std::size_t> Aimed(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState& a_pose,
+            const Vec3& a_chest, float a_reach, const std::vector<Activate::Candidate>& a_candidates, const std::vector<RE::TESObjectREFR*>& a_refs)
+        {
+            Protocol::BodyState body{};
+            if (!LinkService::Get().ReadBody(body) || (body.flags & Protocol::kBodyValid) == 0 || body.handover != a_pose.handover) {
+                return std::nullopt;
+            }
+            const bool free = Weapons::ScopeOf(a_pose.cameraMode) == Weapons::Scope::Aim;
+            const auto ray = Reactions::AimRay({ body.cameraForward[0], body.cameraForward[1], body.cameraForward[2] },
+                { body.cameraUp[0], body.cameraUp[1], body.cameraUp[2] }, body.cameraFov, free ? a_pose.crosshair[0] : 0.5f, free ? a_pose.crosshair[1] : 0.5f);
+            const Vec3 camera{ a_anchor.x + body.cameraPosition[0], a_anchor.y + body.cameraPosition[1], a_anchor.z + body.cameraPosition[2] };
+            const Vec3 dir{ ray.x, ray.y, ray.z };
+            if (!std::isfinite(camera.x + camera.y + camera.z) || !(Activate::Dot(dir, dir) > 0.5f)) {
+                return std::nullopt;
+            }
+            // As far as the camera is from CJ's chest, and his reach beyond.
+            const Vec3  back = Activate::Sub(a_chest, camera);
+            const float length = std::sqrt(Activate::Dot(back, back)) + a_reach + kSearchSlack;
+            return Activate::Aimed(camera, dir, a_chest, a_reach, a_candidates, CrosshairHitOf(a_player, a_refs, camera, dir, length));
+        }
+
         std::string PromptOf(RE::TESObjectREFR* a_ref)
         {
             RE::BSString text;
@@ -152,7 +221,7 @@ namespace AhShitRim::Activation
         }
     }
 
-    void Update(RE::PlayerCharacter* a_player, const Protocol::PlayerState* a_pose, bool a_menu)
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, bool a_menu)
     {
         state.target = {};
         state.prompt.clear();
@@ -188,20 +257,30 @@ namespace AhShitRim::Activation
             return RE::BSContainer::ForEachResult::kContinue;
         });
 
-        // Nearest first: the first one CJ sees and Skyrim has words for is it.
-        while (!candidates.empty()) {
+        // A reference Skyrim has words for (or that keeps a shop) is it.
+        const auto take = [&](RE::TESObjectREFR* a_ref) {
+            auto shop = AmmuNation::PromptFor(a_ref);
+            if (auto prompt = shop.empty() ? PromptOf(a_ref) : std::move(shop); !prompt.empty()) {
+                state.target = a_ref->GetHandle();
+                state.prompt = std::move(prompt);
+                return true;
+            }
+            return false;
+        };
+
+        // What the crosshair is on first; else nearest first along his facing, the first one CJ sees.
+        bool aimed = false;
+        if (const auto index = Aimed(a_player, a_anchor, *a_pose, origin, reach, candidates, refs)) {
+            aimed = take(refs[*index]);
+        }
+        while (!aimed && !candidates.empty()) {
             const auto picked = Activate::Pick(origin, dir, reach, candidates);
             if (!picked) {
                 break;
             }
             auto* ref = refs[picked->index];
-            if (InSight(a_player, ref, origin, dir, picked->distance)) {
-                auto shop = AmmuNation::PromptFor(ref);
-                if (auto prompt = shop.empty() ? PromptOf(ref) : std::move(shop); !prompt.empty()) {
-                    state.target = ref->GetHandle();
-                    state.prompt = std::move(prompt);
-                    break;
-                }
+            if (InSight(a_player, ref, origin, dir, picked->distance) && take(ref)) {
+                break;
             }
             candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(picked->index));
             refs.erase(refs.begin() + static_cast<std::ptrdiff_t>(picked->index));
@@ -211,7 +290,7 @@ namespace AhShitRim::Activation
         if (id != state.logged) {
             state.logged = id;
             if (id) {
-                SKSE::log::info("activation: CJ faces {:08X} ({})", id, state.prompt);
+                SKSE::log::info("activation: CJ {} {:08X} ({})", aimed ? "aims at" : "faces", id, state.prompt);
             }
         }
         SaHud::ShowPrompt(state.prompt);
@@ -225,6 +304,10 @@ namespace AhShitRim::Activation
         }
         state.target = {};
         if (AmmuNation::Open(ref.get(), a_layout) || Looting::Activate(a_player, ref.get())) {
+            return true;
+        }
+        if (auto* actor = ref->As<RE::Actor>(); actor && !actor->IsDead() && !Conversation::MayTalk()) {
+            SKSE::log::info("activation: {:08X} not talked to, CJ is moving too fast", ref->GetFormID());
             return true;
         }
         SKSE::log::info("activation: {:08X} activated by the player ({})", ref->GetFormID(), state.prompt);

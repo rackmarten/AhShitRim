@@ -336,6 +336,18 @@ namespace AhShitRim
         return IsUp() && SeqRead(At<BodySlot>(Base(), kOffsetGearSlot), a_out);
     }
 
+    void Link::WriteProxies(const ProxyState& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<ProxySlot>(base, kOffsetProxySlot), a_value);
+        }
+    }
+
+    bool Link::ReadProxies(ProxyState& a_out) const
+    {
+        return IsUp() && SeqRead(At<ProxySlot>(Base(), kOffsetProxySlot), a_out);
+    }
+
     bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
     {
         if (!IsUp()) {

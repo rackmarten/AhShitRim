@@ -404,3 +404,43 @@ TEST_CASE("a steered rocket's model turns with it")
     CheckNear(Rotate(FromTo(a, b), { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });
     CheckNear(Rotate(FromTo(a, a), { 0.0f, 1.0f, 0.0f }), { 0.0f, 1.0f, 0.0f });
 }
+
+TEST_CASE("v23: the Hydra's and the Hunter's rockets seek heat, nothing else in a vehicle")
+{
+    CHECK(SeeksHeat(Weapons::RocketLauncherHs, 0));
+    CHECK_FALSE(SeeksHeat(Weapons::RocketLauncher, 0));
+    CHECK(SeeksHeat(Weapons::RocketLauncher, kModelHydra));
+    CHECK(SeeksHeat(0, 520));
+    CHECK(SeeksHeat(0, kModelHunter));  // not as San Andreas has it: ours locks on like the Hydra
+    CHECK(SeeksHeat(Weapons::RocketLauncher, 425));
+    CHECK_FALSE(SeeksHeat(0, 432));                          // the Rhino's shell
+    CHECK_FALSE(SeeksHeat(Weapons::RocketLauncherHs, 447));  // the heat seeker in his hands doesn't make the Seasparrow seek
+    CHECK_FALSE(SeeksHeat(0, 487));                          // a Maverick
+}
+
+TEST_CASE("the Rhino fires from its barrel's tip along its turret's turn and lift")
+{
+    // Straight ahead and level: along the tank's +y, from the tip in front of the turret's pivot.
+    const Vec3 ahead = TankShotDirection(0.0f, 0.0f);
+    CHECK(ahead.x == doctest::Approx(0.0f));
+    CHECK(ahead.y == doctest::Approx(1.0f));
+    CHECK(ahead.z == doctest::Approx(0.0f));
+    const Vec3 tip = TankShotMuzzle(0.0f);
+    CHECK(tip.y == doctest::Approx(2.95f));
+    CHECK(tip.z == doctest::Approx(1.97f));  // TankControl's own drop of a metre
+
+    // Turned a quarter left (counter-clockwise): along -x, the tip out to the left of the pivot.
+    const Vec3 left = TankShotDirection(1.5707963f, 0.0f);
+    CHECK(left.x == doctest::Approx(-1.0f));
+    CHECK(left.y == doctest::Approx(0.0f).epsilon(0.001));
+    const Vec3 leftTip = TankShotMuzzle(1.5707963f);
+    CHECK(leftTip.x == doctest::Approx(-(2.95f + 1.394f)));
+    CHECK(leftTip.y == doctest::Approx(-1.394f));
+
+    // Lifted 20 degrees up a hill: it climbs, a unit vector still.
+    const Vec3 up = TankShotDirection(0.0f, 0.349f);
+    CHECK(up.z > 0.3f);
+    CHECK(Length(up) == doctest::Approx(1.0f));
+
+    CHECK(kTankCannonNode == 22);
+}

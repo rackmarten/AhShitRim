@@ -3,6 +3,7 @@
 #include "body.h"
 #include "cj_body.h"
 #include "cj_weapons.h"
+#include "fx_model.h"
 #include "log.h"
 #include "model_sender.h"
 #include "parachute.h"
@@ -63,6 +64,8 @@ namespace AhShitRim::CjGear
         struct State
         {
             Parachute::State chute;
+            Parachute::FallWatch fallWatch;   // his feet through a fall with the parachute
+            bool             fallLogged = false;  // a fall with it that started no skydive, logged once
             std::string      playing;          // CJ's parachute.ifp animation now, empty for none (HoldCjAnim)
             bool             loop = false;
             CAnimBlendHierarchy* hierarchy = nullptr;  // its hierarchy, once found
@@ -73,11 +76,8 @@ namespace AhShitRim::CjGear
             bool             blockLoaded = false;
             Model            jetpack;
             Model            chuteModel;
-            std::uint32_t    builds = 0;
             bool             shown = false;    // the gear slot holds something
         } state;
-
-        std::uint32_t NewId() { return (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1; }
 
         Body::RwRows ToFrame(const RwMatrix& a_m)
         {
@@ -204,6 +204,34 @@ namespace AhShitRim::CjGear
             }
             RwFrameUpdateObjects(root);
             a_task->m_fOldHeading = a_ped->m_fHeadingCurrent;
+            // DoJetPackEffect's level, which only RenderJetPack steps (v26): its flames grow while he thrusts.
+            a_task->m_fxKeyTime = FxModel::JetpackLevel(a_task->m_fxKeyTime, a_task->m_nThrustFwd != 0 || a_task->m_fThrustStrafe != 0.0f);
+        }
+
+        // Where the jetpack's flames come out (v26): each jet ball's frame 15 cm down its own axis (JETBALL_OFFSET,
+        // where DoJetPackEffect puts its jetpack fx), down that axis, relative to a_feet.
+        void JetFx(CTaskSimpleJetPack* a_task, const CVector& a_feet, Protocol::BodyFx& a_fx)
+        {
+            int jet = 0;
+            for (const char* name : { "jetball1", "jetball2" }) {
+                RwFrame* ball = CClumpModelInfo::GetFrameFromName(a_task->m_pJetPackClump, name);
+                if (!ball) {
+                    continue;
+                }
+                const RwMatrix* m = RwFrameGetLTM(ball);
+                const CVector   axis(m->at.x, m->at.y, m->at.z);
+                const CVector   pos(m->pos.x, m->pos.y, m->pos.z);
+                const CVector   at = (pos + axis * FxModel::kJetballOffset.z - a_feet) * Pose::kUnitsPerMeter;
+                const auto      down = Body::Normalize({ -axis.x, -axis.y, -axis.z }, { 0.0f, 0.0f, -1.0f });
+                a_fx.at[jet][0] = at.x;
+                a_fx.at[jet][1] = at.y;
+                a_fx.at[jet][2] = at.z;
+                a_fx.along[jet][0] = down.x;
+                a_fx.along[jet][1] = down.y;
+                a_fx.along[jet][2] = down.z;
+                ++jet;
+            }
+            a_fx.level = FxModel::ToByte(a_task->m_fxKeyTime);
         }
 
         bool BuildJetpack(RpClump* a_clump)
@@ -219,7 +247,7 @@ namespace AhShitRim::CjGear
                 model.failed = true;
                 return false;
             }
-            model.id = NewId();
+            model.id = ModelSender::NewId();
             model.boneCount = static_cast<std::uint32_t>((std::min)(model.parts.size(), static_cast<std::size_t>(Protocol::kBodyBoneMax)));
             ModelSender::Set(ModelSender::kGearKey, model.id, SkinModel::Chunks(model.id, blob), "gear: the jetpack's model");
             return true;
@@ -229,9 +257,12 @@ namespace AhShitRim::CjGear
         {
             auto* task = Jetpack(a_ped);
             if (!task || !task->m_pJetPackClump || state.jetpack.failed) {
+                state.jetpack.clump = nullptr;
                 return false;
             }
-            if (task->m_pJetPackClump != state.jetpack.clump && !BuildJetpack(task->m_pJetPackClump)) {
+            // Its parts are read again every frame: the jetpack put on again after it was dropped is a new clump, often
+            // at the old one's address, and the old one's parts are gone (posed, it showed nothing but the flames).
+            if (!BuildJetpack(task->m_pJetPackClump)) {
                 return false;
             }
             PlaceJetpack(a_ped, task);
@@ -239,6 +270,7 @@ namespace AhShitRim::CjGear
             for (std::uint32_t i = 0; i < s.boneCount; i++) {
                 s.bones[i] = Body::ToBone(ToFrame(*RwFrameGetLTM(RpAtomicGetFrame(state.jetpack.parts[i]))), Vec(a_feet));
             }
+            JetFx(task, a_feet, s.fx);
             Write(s);
             return true;
         }
@@ -367,17 +399,32 @@ namespace AhShitRim::CjGear
             keys.open = pad.ButtonCircle && !old.ButtonCircle;
             Parachute::Around around;
             around.holdsChute = CarriesChute(a_ped);
-            around.standing = a_ped->bIsStanding;
             // In a vehicle is bInVehicle alone: m_pVehicle stays on the last one he got out of.
             around.free = a_free && !a_ped->bInVehicle && !Jetpack(a_ped);
-            around.fall = -a_ped->m_vecMoveSpeed.z * 50.0f;
-            // The line down is only tested when it can matter: he could start a skydive, or he is in one.
-            const bool mayStart = around.holdsChute && !around.standing && around.fall >= Parachute::kStartFall;
-            around.height = state.chute.phase != Parachute::Phase::Off || mayStart ? HeightAboveGround(a_feet) : 0.0f;
-            const auto before = state.chute.phase;
             const float dt = CTimer::m_UserPause ? 0.0f : CTimer::ms_fTimeStep / 50.0f;
+            // The line down is only tested when it can matter: he carries the parachute, or he is in a skydive.
+            const bool watched = around.free && (around.holdsChute || state.chute.phase != Parachute::Phase::Off);
+            around.height = watched ? HeightAboveGround(a_feet) : 0.0f;
+            around.standing = watched ? Parachute::Grounded(a_ped->bIsStanding, around.height) : a_ped->bIsStanding;
+            if (watched && dt > 0.0f) {
+                state.fallWatch.Update(a_feet.z, around.standing, dt);
+            } else if (!watched) {
+                state.fallWatch.Reset();
+            }
+            // San Andreas's speed, or his feet's when they show more (it can lag behind a walk off an edge).
+            around.fall = (std::max)(-a_ped->m_vecMoveSpeed.z * 50.0f, watched ? state.fallWatch.Rate() : 0.0f);
+            around.dropped = watched ? state.fallWatch.Dropped() : 0.0f;
+            const auto before = state.chute.phase;
             state.chute = Parachute::Step(state.chute, around, keys, dt);
             const auto phase = state.chute.phase;
+            if (watched && phase == Parachute::Phase::Off && around.dropped >= 2.0f * Parachute::kStartDrop && !state.fallLogged) {
+                state.fallLogged = true;
+                Log(std::format("gear: CJ fell {:.1f} m with the parachute and no skydive: standing {} (San Andreas {}), falling {:.1f} m/s (speed {:.1f}, feet {:.1f}), "
+                                "{:.0f} m up",
+                    around.dropped, around.standing, static_cast<bool>(a_ped->bIsStanding), around.fall, -a_ped->m_vecMoveSpeed.z * 50.0f, state.fallWatch.Rate(), around.height));
+            } else if (around.standing) {
+                state.fallLogged = false;
+            }
             if (before == Parachute::Phase::Off && phase == Parachute::Phase::Freefall && !HoldsChute(a_ped)) {
                 a_ped->SetCurrentWeapon(WEAPONTYPE_PARACHUTE);  // into his hands for the skydive, as the script does
             }
@@ -420,7 +467,7 @@ namespace AhShitRim::CjGear
                     state.chuteModel.failed = true;
                     return false;
                 }
-                state.chuteModel.id = NewId();
+                state.chuteModel.id = ModelSender::NewId();
                 ModelSender::Set(ModelSender::kGearKey + 1, state.chuteModel.id, SkinModel::Chunks(state.chuteModel.id, blob), "gear: the parachute's model");
             }
             auto s = Slot(Protocol::kBodyParachute, state.chuteModel, a_feet, a_spawnFeet, a_handover, a_frame);
@@ -557,6 +604,7 @@ namespace AhShitRim::CjGear
             Log("gear: the skydive ends for the new handover");
         }
         state.chute = {};
+        state.fallWatch.Reset();
         PlayOnCj(a_ped, {}, false);
         DropCanopy();
     }

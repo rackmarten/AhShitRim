@@ -52,8 +52,8 @@ namespace AhShitRim::Wanted
         std::uint32_t    barracks;  // the barracks' (or keep's) inside door out: where its teleport leads is where CJ wakes after Busted
     };
 
-    // The nine holds. A guard's crime faction says which hold he is from; the guards sent copy one of those about
-    // (the hold's guards as the war has left them), else the guard here. CJ wakes after Busted outside the hold's
+    // The nine holds. A guard's crime faction says which hold he is from; the guards sent are made from the guard
+    // here (Spawnable: the game's own record, never a guard about's runtime base). CJ wakes after Busted outside the hold's
     // barracks, or the keep where it has none: where walking out of its door puts the player (the door's own
     // teleport, read at runtime). Reinforcements also come out of there in its city. Whiterun's crime faction's
     // exterior jail marker put the player under the ground, so the markers are only the fallback.
@@ -98,7 +98,8 @@ namespace AhShitRim::Wanted
     }
 
     // Skyrim.esm's other forms the response spawns.
-    inline constexpr std::uint32_t kHorse = 0x00023AB2;             // EncHorseSaddledBrown, a saddled horse
+    inline constexpr std::uint32_t kWolf = 0x00023ABE;              // EncWolf
+    inline constexpr std::uint32_t kIceWolf = 0x00023ABF;           // EncWolfIce, a tougher one
     inline constexpr std::uint32_t kSoldiersImperial = 0x0001FC5B;  // LCharSoldierImperial, a levelled legionnaire
     inline constexpr std::uint32_t kSoldiersSons = 0x0001FC5C;      // LCharSoldierSons, a levelled Stormcloak
     inline constexpr std::uint32_t kCaptainImperial = 0x000AA8D4;   // EncGuardImperialM01MaleNordCommander
@@ -276,13 +277,13 @@ namespace AhShitRim::Wanted
         }
     }
 
-    // What the director sends: copies of the hold's guards, on foot or on a horse, their captain, a guard wizard (the
-    // hold's battlemage), the hold's soldiers, from 5 stars a dragon (San Andreas's helicopter: CJ's guns are made for
-    // it), and at 6 giants and a mammoth (its tanks: they run him down on foot).
+    // What the director sends: copies of the hold's guards, the hold's tamed wolves (fast enough to run CJ down, on
+    // foot or in a car), their captain, a guard wizard (the hold's battlemage), the hold's soldiers, from 5 stars a
+    // dragon (San Andreas's helicopter: CJ's guns are made for it), and at 6 giants and a mammoth (its tanks).
     enum class Unit : std::uint8_t
     {
         Guard,
-        Rider,
+        Wolf,
         Captain,
         Wizard,
         Soldier,
@@ -299,7 +300,7 @@ namespace AhShitRim::Wanted
     {
         switch (a_unit) {
         case Unit::Guard: return "guard";
-        case Unit::Rider: return "rider";
+        case Unit::Wolf: return "wolf";
         case Unit::Captain: return "captain";
         case Unit::Wizard: return "wizard";
         case Unit::Soldier: return "soldier";
@@ -311,11 +312,13 @@ namespace AhShitRim::Wanted
     }
 
     // The force each star level keeps up: how many pursuers of ours at once, the seconds between one spawning and the
-    // next, and how many of them are of each kind besides plain guards. 1 star is Skyrim's own guards only.
+    // next, the breather after they're all dead (from the last one down to the next spawning), and how many of them are
+    // of each kind besides plain guards. 1 star is Skyrim's own guards only.
     struct Force
     {
         int   total = 0;
         float cooldown = 0.0f;
+        float breather = 0.0f;
         std::array<int, kUnitCount> most{};  // by Unit; Guard's is unused (the rest of total)
     };
 
@@ -323,27 +326,29 @@ namespace AhShitRim::Wanted
 
     constexpr Force ForceFor(int a_stars)
     {
-        //                               guard rider captain wizard soldier dragon giant mammoth
+        // The breather is short enough that the next ones are there before CJ, unseen, loses a star (kArriveSeconds).
+        //                                          guard wolf captain wizard soldier dragon giant mammoth
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 2: return { 5, 8.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
-        case 3: return { 7, 6.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
-        case 4: return { 9, 5.0f, { 0, 2, 1, 1, 0, 0, 0, 0 } };
-        case 5: return { 11, 4.0f, { 0, 3, 1, 2, 3, 1, 0, 0 } };
-        case 6: return { kForceCap, 3.0f, { 0, 2, 1, 2, 2, 1, 2, 1 } };
+        case 2: return { 5, 6.0f, 10.0f, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+        case 3: return { 7, 5.0f, 9.0f, { 0, 2, 0, 0, 0, 0, 0, 0 } };
+        case 4: return { 9, 4.0f, 8.0f, { 0, 3, 1, 1, 0, 0, 0, 0 } };
+        case 5: return { 11, 3.0f, 7.0f, { 0, 4, 1, 2, 2, 1, 0, 0 } };
+        case 6: return { kForceCap, 2.5f, 6.0f, { 0, 4, 1, 1, 1, 1, 2, 1 } };
         default: return {};
         }
     }
 
     // The share of their damage guards and ours deal CJ, by the stars: Skyrim's guards hit far harder and more often than
-    // San Andreas's cops, who miss most of their shots, so a fight in town starts gentle and gets deadly: a quarter at 1
-    // star (and when they fight him with none, resisting arrest), half at 3, all of it from 4.
+    // San Andreas's cops, who miss most of their shots, so a fight in town starts gentler and gets deadly: a quarter when
+    // they fight him with no stars (resisting arrest), 0.4 at 1 star, up by 0.15 a star to all of it from 5.
     constexpr float GuardDamage(int a_stars)
     {
         switch (std::clamp(a_stars, 0, kMaxStars)) {
-        case 0:
-        case 1: return 0.25f;
-        case 2: return 0.375f;
-        case 3: return 0.5f;
+        case 0: return 0.25f;
+        case 1: return 0.4f;
+        case 2: return 0.55f;
+        case 3: return 0.7f;
+        case 4: return 0.85f;
         default: return 1.0f;
         }
     }
@@ -369,12 +374,12 @@ namespace AhShitRim::Wanted
         return total;
     }
 
-    // The kind the next spawn is: the dragon first, then giants and the mammoth, riders, the captain, wizards and soldiers
+    // The kind the next spawn is: the dragon first, then giants and the mammoth, wolves, the captain, wizards and soldiers
     // up to their counts, plain guards for the rest. Out of the open world (a city), no dragon, giants or mammoth. Guard
     // too when the force is full (the caller doesn't spawn then).
     constexpr Unit NextUnit(const Force& a_force, const Counts& a_counts, bool a_openWorld = true)
     {
-        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Giant, Unit::Mammoth, Unit::Rider, Unit::Captain, Unit::Wizard, Unit::Soldier };
+        constexpr Unit kOrder[] = { Unit::Dragon, Unit::Giant, Unit::Mammoth, Unit::Wolf, Unit::Captain, Unit::Wizard, Unit::Soldier };
         for (const Unit unit : kOrder) {
             const auto i = static_cast<std::size_t>(unit);
             if ((a_openWorld || !OpenWorldOnly(unit)) && a_counts[i] < a_force.most[i]) {
@@ -384,8 +389,42 @@ namespace AhShitRim::Wanted
         return Unit::Guard;
     }
 
-    // When the next of ours spawns: one per cooldown while fewer than the force are alive. Killing them all buys a
-    // breather of another cooldown on top, so CJ can get away (onto a bike) before the next wave.
+    // Wolves are the hold's fast chasers, a pack from 3 stars that grows with them (ice wolves from 5). Skyrim's
+    // runners by their movement types' run forward, in units a second: a wolf 556, a sabre cat 563 (but one is a match
+    // for CJ alone, where wolves swarm), a horse 450 (600 sprinting, and our guards never got on theirs), a bear 638,
+    // a deer 833 (prey), a guard 370 (500 sprinting). CJ sprints at about the wolf's run.
+    constexpr std::uint32_t WolfFor(int a_stars) { return a_stars >= 5 ? kIceWolf : kWolf; }
+
+    // Whether one of a_unit at the driver's door busts CJ: not a wolf or the dragon.
+    constexpr bool Arrests(Unit a_unit) { return a_unit != Unit::Wolf && a_unit != Unit::Dragon; }
+
+    inline constexpr float kWolfRun = 556.0f;     // Wolf_Default_MT's run forward, units a second
+    inline constexpr float kChaseNear = 800.0f;   // this close a wolf goes as fast as CJ does
+    inline constexpr float kChaseFar = 3000.0f;   // this far behind, half as fast again
+    inline constexpr float kChaseMost = 600.0f;   // SpeedMult at most: about 48 m/s, a fast car's
+    inline constexpr float kChaseStep = 10.0f;    // the SpeedMult goes in steps of this, so it isn't set every frame
+
+    // The SpeedMult (100 is Skyrim's own) of a wolf a_distance units from CJ, who moves at a_cjSpeed units a second:
+    // never slower than CJ (on foot that's the wolf's own run; on a bike or in a car it's the vehicle's), half as fast
+    // again by kChaseFar behind so a pack left behind catches up, and kChaseMost at most.
+    inline float ChaseSpeedMult(float a_distance, float a_cjSpeed)
+    {
+        if (!std::isfinite(a_distance) || !std::isfinite(a_cjSpeed)) {
+            return 100.0f;
+        }
+        const float keepUp = (std::max)(kWolfRun, a_cjSpeed) / kWolfRun;
+        const float behind = std::clamp((a_distance - kChaseNear) / (kChaseFar - kChaseNear), 0.0f, 1.0f);
+        const float mult = 100.0f * keepUp * (1.0f + 0.5f * behind);
+        return std::clamp(std::round(mult / kChaseStep) * kChaseStep, 100.0f, kChaseMost);
+    }
+
+    inline constexpr float kFirstSpawn = 1.5f;     // seconds from the stars calling for a force to its first one spawning
+    inline constexpr float kRetrySeconds = 1.0f;   // a spawn with no spot is tried again this soon
+    inline constexpr float kArriveSeconds = 4.0f;  // about how long one spawned takes to come into sight of CJ
+
+    // When the next of ours spawns: the first soon after the stars call for them, then one per cooldown while fewer
+    // than the force are alive. Killing them all buys the force's breather, so CJ can get away (onto a bike) before
+    // the next wave; but the next wave is there before he loses a star just for nobody being left to see him.
     class Director
     {
     public:
@@ -394,14 +433,18 @@ namespace AhShitRim::Wanted
         {
             const Force force = ForceFor(a_stars);
             if (force.total == 0) {
-                _timer = 0.0f;
-                _had = false;
+                Reset();
                 return false;
             }
+            if (!_active) {
+                _active = true;
+                _timer = force.cooldown - kFirstSpawn;
+            }
             if (_had && a_alive == 0) {
-                _timer = -force.cooldown;  // wiped out: a breather
+                _timer = force.cooldown - force.breather;  // wiped out: a breather
             }
             _had = a_alive > 0;
+            _cooldown = force.cooldown;
             _timer += a_delta;
             if (a_alive < (std::min)(force.total, kForceCap) && _timer >= force.cooldown) {
                 _timer = 0.0f;
@@ -411,20 +454,23 @@ namespace AhShitRim::Wanted
         }
 
         // A spawn that didn't come off (no spot): try again soon.
-        void Retry() { _timer = (std::max)(_timer, ForceFor(kMaxStars).cooldown * 0.75f); }
+        void Retry() { _timer = (std::max)(_timer, _cooldown - kRetrySeconds); }
 
         void Reset()
         {
             _timer = 0.0f;
             _had = false;
+            _active = false;
         }
 
     private:
         float _timer = 0.0f;
+        float _cooldown = 0.0f;
         bool  _had = false;
+        bool  _active = false;  // the stars called for a force last frame
     };
 
-    // Where ours spawn: on the ground 1200 to 2800 units from CJ, never in view. The camera stands about kCameraBack
+    // Where ours spawn: on the ground 1200 to 2800 units (15 to 40 m) from CJ, never in view. The camera stands about kCameraBack
     // behind CJ along its heading (San Andreas's, which the player's follows) and sees a cone of kViewHalfAngle either
     // side of it (a wide screen's, and some), and anything within kViewNear of it.
     inline constexpr float kSpawnNear = 1200.0f;
@@ -452,14 +498,161 @@ namespace AhShitRim::Wanted
     }
 
     // The a_try-th spot to try round CJ at a_cj, looking along a_heading: behind him first, then further round to
-    // either side, near and far in turn. Out of view whichever (the turns stop short of the cone).
+    // either side, near, middling and far in turn (eight turns and three distances: 24 spots before one comes again,
+    // so a city's walls and terraces don't turn every try down). Out of view whichever (the turns stop short of the cone).
     inline Point SpawnSpot(Point a_cj, float a_heading, int a_try, float a_distance = 0.0f)
     {
-        constexpr float kTurns[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, 1.7f, -1.7f, 0.3f };
-        const float     turn = kTurns[static_cast<std::size_t>(a_try) % std::size(kTurns)];
-        const float     distance = a_distance > 0.0f ? a_distance : (a_try % 2 == 0 ? kSpawnNear + 400.0f : kSpawnFar - 400.0f);
+        constexpr float kTurns[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, 1.6f, -1.6f, 0.3f };
+        constexpr float kDistances[] = { kSpawnNear + 100.0f, (kSpawnNear + kSpawnFar) * 0.5f, kSpawnFar - 300.0f };
+        const auto      index = static_cast<std::size_t>(a_try < 0 ? 0 : a_try);
+        const float     turn = kTurns[index % std::size(kTurns)];
+        const float     distance = a_distance > 0.0f ? a_distance : kDistances[index % std::size(kDistances)];
         const float     away = a_heading + 3.14159265f + turn;  // behind
         return { a_cj.x + std::sin(away) * distance, a_cj.y + std::cos(away) * distance };
+    }
+
+    // ---- Copies left in a save ----
+
+    // Earlier builds made some of ours as copies of a guard about, from the base Skyrim had built for him at runtime (form
+    // ID FFxxxxxx). A save made while one was out holds that copy, mid-fight, and the runtime base; loading that save
+    // crashes Skyrim now and then as it restores the copy's fight (SkyrimSE.exe+01DCDE4, +01DCB69, +1B75B78, +06C4F5A, in
+    // its combat code, inside the load, before any of ours runs). Nothing can make loading such a save safe, but once it
+    // has loaded the copy is found and taken out, so the next save is clean. Skyrim never makes an actor from a runtime
+    // base, so a runtime actor whose base it was made from is runtime is one of those: taken out once a loaded game has
+    // settled. a_madeFrom is the base it was made from (a levelled one's original base, else its own).
+    constexpr bool LeftoverCopy(std::uint32_t a_actorID, std::uint32_t a_madeFrom) { return a_actorID >= 0xFF000000 && a_madeFrom >= 0xFF000000; }
+
+    inline constexpr float kLeftoverSettle = 3.0f;  // seconds of a settled game after a load before they're looked for
+
+    // ---- Quick save and quickload ----
+
+    // As in San Andreas, no saving while wanted: no quick save or quickload while stars show or any of ours are still
+    // out (fighting, or leaving), nor for kQuickAfterGone after the last of them was taken out, so Skyrim has let go of
+    // them. Skyrim's load clears the world with ours mid-fight in it, and its combat code crashed on them
+    // (SkyrimSE.exe+01DCDE4, a quickload at 6 stars). a_ours spawned and alive, a_leaving still to be taken out,
+    // a_sinceGone seconds since the last one went.
+    inline constexpr float kQuickAfterGone = 2.0f;
+    inline constexpr float kQuickNagEvery = 4.0f;  // "Lose the heat first" at most this often, and only for a key pressed
+
+    // Whether a refused F5 or F9 shows "Lose the heat first": only as the key goes down (not while it's held, nor for
+    // anything the player didn't press), and not again within kQuickNagEvery.
+    constexpr bool QuickNag(bool a_pressed, float a_sinceLast) { return a_pressed && a_sinceLast >= kQuickNagEvery; }
+
+    constexpr bool QuickAllowed(int a_stars, int a_ours, int a_leaving, float a_sinceGone)
+    {
+        return a_stars <= 0 && a_ours <= 0 && a_leaving <= 0 && a_sinceGone >= kQuickAfterGone;
+    }
+
+    // ---- One side ----
+
+    // Every one of ours (the guards, captain, wizards and soldiers, the giants, the mammoth, the dragon) is enlisted in the
+    // hold's guards' factions, its crime faction among them, and taken out of its own (the giants', the dragons', the
+    // predators'): friends with each other and with the hold's guards, with the criminal player their only enemy. Left as
+    // they were, the giants and the dragon fought the guards and each other, and nobody fought CJ.
+    inline constexpr float kOursAggression = 1.0f;  // aggressive: attacks enemies (the player) on sight, not everyone (a dragon's)
+
+    struct Enlistment
+    {
+        std::vector<std::uint32_t> join;   // the factions it joins (rank 0)
+        std::vector<std::uint32_t> leave;  // and those it leaves
+    };
+
+    // One of ours in factions a_own, the hold's guard in a_guards, the hold's crime faction a_crime (0 for none).
+    inline Enlistment Enlist(const std::vector<std::uint32_t>& a_own, const std::vector<std::uint32_t>& a_guards, std::uint32_t a_crime)
+    {
+        Enlistment out;
+        const auto add = [](std::vector<std::uint32_t>& a_to, std::uint32_t a_id) {
+            if (a_id != 0 && std::find(a_to.begin(), a_to.end(), a_id) == a_to.end()) {
+                a_to.push_back(a_id);
+            }
+        };
+        for (const auto id : a_guards) {
+            add(out.join, id);
+        }
+        add(out.join, a_crime);
+        for (const auto id : a_own) {
+            if (std::find(out.join.begin(), out.join.end(), id) == out.join.end()) {
+                add(out.leave, id);
+            }
+        }
+        return out;
+    }
+
+    // Ours are after CJ, but gently: one fighting someone else (a giant at its camp, the dragon) is set on CJ again only
+    // after kStrayFor seconds of it, one out of any fight after kLostFor, and none more often than every kLeashGap. Their
+    // fights are never stopped for it: stopping and starting everyone's every second, in a camp brawl, threw away the path
+    // each one was having built, and Skyrim's path search crashed (a navmesh search on a tasklet thread).
+    inline constexpr float kStrayFor = 6.0f;
+    inline constexpr float kLostFor = 2.0f;
+    inline constexpr float kLeashGap = 5.0f;
+
+    enum class Target : std::uint8_t
+    {
+        Cj,     // fighting CJ (the player)
+        Other,  // fighting someone else
+        None,   // in no fight
+    };
+
+    class Leash
+    {
+    public:
+        // A frame of a_delta seconds with one of ours fighting a_target. Returns whether to set it on CJ now.
+        bool Tick(float a_delta, Target a_target)
+        {
+            _since += a_delta;
+            if (a_target == Target::Cj) {
+                _away = 0.0f;
+                return false;
+            }
+            _away += a_delta;
+            if (_away >= (a_target == Target::None ? kLostFor : kStrayFor) && _since >= kLeashGap) {
+                _away = 0.0f;
+                _since = 0.0f;
+                return true;
+            }
+            return false;
+        }
+
+        // It was just set on CJ some other way (a knock-down's rejoin): the gap starts again.
+        void Pulled() { _since = 0.0f; }
+
+    private:
+        float _away = 0.0f;         // seconds not on CJ
+        float _since = kLeashGap;   // seconds since it was last set on him
+    };
+
+    // What ours are made from: a base record of the game's own (Skyrim.esm and the like), never a form Skyrim made at
+    // runtime (form ID FFxxxxxx). A guard about who is levelled or built from a template has such a base of his own,
+    // made for him and freed with him or with a load: copies of a guard about ran on it, and a quickload crashed in
+    // their combat code on it (a runtime "Imperial Soldier" TESNPC on the stack). So ours are made from the hold's
+    // guard record (Hold::guard) and the tables' records, never by copying someone about, which also keeps out a unique
+    // or named one (four of Commander Caius came at 4 stars that way). a_unique the base's flag.
+    constexpr bool Spawnable(std::uint32_t a_formID, bool a_unique) { return a_formID != 0 && (a_formID >> 24) != 0xFF && !a_unique; }
+
+    // The soldiers' bases are levelled lists (LCharSoldier*, LVLN), and a reference made straight from one is no actor:
+    // one of its entries is picked instead, as Skyrim levels a list (anyone up to the player's level; with nobody that
+    // low, the lowest). a_levels are the entries' levels, a_roll any number (which of those it is). -1 for an empty list.
+    inline int PickLeveled(const std::uint16_t* a_levels, int a_count, int a_playerLevel, unsigned a_roll)
+    {
+        if (!a_levels || a_count <= 0) {
+            return -1;
+        }
+        int fits = 0;
+        int lowest = 0;
+        for (int i = 0; i < a_count; i++) {
+            fits += a_levels[i] <= a_playerLevel ? 1 : 0;
+            lowest = a_levels[i] < a_levels[lowest] ? i : lowest;
+        }
+        if (fits == 0) {
+            return lowest;
+        }
+        int pick = static_cast<int>(a_roll % static_cast<unsigned>(fits));
+        for (int i = 0; i < a_count; i++) {
+            if (a_levels[i] <= a_playerLevel && pick-- == 0) {
+                return i;
+            }
+        }
+        return lowest;
     }
 
     // ---- Busted in a vehicle ----

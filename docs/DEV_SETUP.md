@@ -85,9 +85,11 @@ scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/fake-weapons.ps1           # with San Andreas running and Skyrim closed: give the weapon sets, switch through every weapon on the mouse wheel, aim and fire each, and check the weapon is in CJ's hand with its model, the shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent
-scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX, see a boat refused, fly a Hunter and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute
+scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX (and bunny hop it on Left Ctrl), see a boat refused, fly a Hunter (its weapons on the mouse and on Left Alt and Left Ctrl) and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute, then ram a parked car with BSXSGGC on and spawn four planes flying with AIR (AHSHITRIM_ONLY=cheats runs only those)
+scripts/hit-test.ps1               # both games, nobody at the keys: loads the most recent save, CJ in a Sandking at Riverwood, a giant and two guards on him (-Scenario hits) or two stars (bust); prints the logs, closes both, never saves
 scripts/restart-games.ps1          # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim (-NoBuild skips the build)
 scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
+scripts/radar-map.ps1              # paint the radar's map of Skyrim from your plugins into Documents\My Games\AhShitRim (-Force to paint it again, -NoMods for the base game only)
 scripts/fake-skyrim.ps1            # with San Andreas running and Skyrim closed: hand over, send flat ground, hold W, check CJ walks on it, and that his model arrives and skins to a man's height with moving bones; then spawn a Sandking, drive it, ride a Sanchez, spawn a ZR-350, check a new handover takes CJ out and removes them, and drive 1.3 km through a floating origin move
 ```
 
@@ -97,6 +99,10 @@ The first SKSE build takes a while (often 15 to 25 minutes): vcpkg builds the de
 
 - `skse/build/release/AhShitRim.dll` (+ `.pdb`), deployed to `<SkyrimPath>\Data\SKSE\Plugins\`, next to an `AhShitRim.ini` the deploy writes with `[SanAndreas] Path=<SaPath>`: the plugin reads San Andreas's fonts and HUD sprites from there at startup
 - `sa/build/Release/AhShitRim.asi` (+ `.pdb`), deployed to `<SaPath>\scripts\`
+
+### The radar map
+
+`scripts/radar-map.ps1` builds `protocol/tools/radar_map.exe` (the `tools` preset: Release, in `protocol/build/tools`) and runs it on `SkyrimPath` from `local.props`. It reads your load order (`%LOCALAPPDATA%\Skyrim Special Edition\plugins.txt`), paints Tamriel and writes `radar-map.png` and `radar-map.json` to `Documents\My Games\AhShitRim` (`-Out <folder>` elsewhere). It needs neither game running and takes about 5 to 8 seconds; it skips the painting while the plugins haven't changed since the last map (`-Force` paints it anyway). The exe takes the same as arguments (`--skyrim <folder> --out <folder> --force --no-mods`) and finds Skyrim through the registry without `--skyrim`. How it reads and paints is in [DESIGN.md](DESIGN.md#the-radars-map). Never commit the image: it's made from Bethesda's data.
 
 ### Handshake check
 
@@ -117,11 +123,26 @@ On any San Andreas exe other than 1.0 US, its log says which version it found an
 3. Press F10: Skyrim switches to first person and streams its collision around you to San Andreas; CJ waits at your spot until the ground under him is in (a fraction of a second), then WASD, the mouse, Shift (sprint), Space (jump), C (crouch) and Alt (walk) drive CJ on Skyrim's terrain and statics, and his movement moves you. F10 again gives the player back.
 4. `scripts/logs.ps1` shows `player sync:` once a second and `collision:` per chunk on the Skyrim side, and `ground:` and `runner:` every 5 s on the San Andreas side (chunks built, frames, inputs, CJ's position).
 
+### Picking CJ's lines
+
+CJ's lines for his keys, conversations and shouts are picked by ear on a local page: `node scripts/voice-picker/extract.mjs` builds it from your San Andreas install, `uv run scripts/voice-picker/transcribe.py` (optional; [uv](https://docs.astral.sh/uv/) and an NVIDIA GPU) transcribes every line with Whisper so the page can search what he says, and `node scripts/voice-picker/apply.mjs` writes the downloaded picks into `protocol/cpp/voice_lines.h`. Everything extracted or transcribed stays in the gitignored `extracted/`. See [`scripts/voice-picker/README.md`](../scripts/voice-picker/README.md).
+
 Milestone 1's ground check: from the stables outside Whiterun, walk up the road to the gate, over the rough tundra beside it, and (F10 again inside the city) up the steps to Dragonsreach. CJ should never fall through or hover, and San Andreas's log should show no `below the ground` line on normal ground.
+
+### Load test
+
+`scripts/load-test.ps1` runs hundreds of loads unattended and counts the crashes: copy any two saves to `StressA` and
+`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it (it closes and starts both games
+itself, so nobody else may be using them). The SKSE plugin's load test (`[Debug] LoadTest` in `AhShitRim.ini`, which the
+script sets) alternates loads between the two saves and runs one scenario per cycle (idle, people scared, a 6-star chase
+loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before each load.
+A crash, a hang or Skyrim gone is recorded with its cycle, the games are started again and the test goes on. Results:
+`Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
 
 ## CI
 
-Every pull request that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
+Every pull request and every push to `main` or `production` that touches more than `docs/` and Markdown files, and every manual run (Actions > build > Run workflow), builds on **arcade**, a self-hosted runner (a Debian VM in the homelab, runner name `arcade`, label `msvc-wine`). It costs no Actions minutes, which matters on a private repo: GitHub's Windows runners bill double. Two jobs, one after the other on the one runner:
 
 - `protocol-tests-linux`: `scripts/test.sh` (below) with gcc, as a headless session runs it.
 - `build`: `scripts/wine/build.sh` (below): both plugins with the real MSVC under Wine, then the whole doctest suite under Wine, the link's tests included. The checkout and build folders stay on the runner (`clean: false`), so a typical PR builds in a minute or two; the first build after a fresh runner or a CommonLib bump takes about 25 minutes. If it fails or hangs (`cl.exe` under Wine now and then spins forever on one file), the job stops Wine and runs it once more. It uploads `AhShitRim-<commit>` with `AhShitRim.dll`, `AhShitRim.asi` and `AhShitRim.map`, kept for 7 days.
@@ -186,6 +207,73 @@ Known gaps:
 - Compiling with every core (`-j 10`) on 16 GB once crashed `c2.dll` (an `int3`) partway through CommonLibSSE, most likely out of memory, so `build.sh` defaults to half the cores (`JOBS` overrides). If a compile crashes, run it again; ninja carries on where it stopped.
 - Fixed along the way: CommonLibSSE's `lib.exe` call never started, because CMake on a Linux host puts all ~520 objects on one command line, over Windows' 32767 characters, and msvc-wine's wrapper then waits on its pipes forever (`long-args.sh` now). Forcing Ninja response files instead broke every compile (msvc-wine never rewrites the `/home/...` paths inside them). Then `lib.exe` couldn't open its 300th object (`LNK1104`): Wine holds a few file descriptors per mapped object, past the soft limit of 1024, so `build.sh` raises it.
 - The launcher's Pester tests (`scripts/test.ps1`) and `scripts/package.ps1` don't run here; they need PowerShell on Windows.
+
+## Branches and releases
+
+From 0.1 on there are two long-lived branches:
+
+- **`main`** is the development version. Features and fixes for the next release go there through pull requests, as before.
+- **`production`** is what players get. A release is `main` merged into `production`, and release tags (`v0.1.0`, `v0.1.1`, ...) exist only on `production`, each on the commit its release zip is built from.
+- **Hotfixes** for players branch from `production` (`fix-<slug>`), go through a pull request into `production`, are tagged there, and `production` is then merged back into `main`.
+
+CI builds every push to either branch and every pull request into either. Merge pull requests into `production` with a merge commit, never squash, so `main` and `production` keep a shared history and the merge back stays small.
+
+### Cutting a release
+
+1. On `main`, through an ordinary pull request: set the version (`VERSION` in `skse/CMakeLists.txt` and `sa/CMakeLists.txt`, `version-semver` in `skse/vcpkg.json` and `protocol/vcpkg.json`), and in `CHANGELOG.md` rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` with a new empty `## [Unreleased]` above it. Merge it.
+2. Open the release pull request from `main` into `production`, wait for CI, and merge it with a merge commit:
+
+   ```bash
+   gh pr create --base production --head main --title "Release X.Y.Z" --body "Release notes: CHANGELOG.md, X.Y.Z"
+   gh pr merge --merge <number>
+   ```
+
+3. Tag the merge on `production` and push the tag:
+
+   ```bash
+   git fetch origin
+   git switch production
+   git merge --ff-only origin/production
+   git tag -a vX.Y.Z -m "AhShitRim X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+4. Build the zip from the tag on the desktop (`scripts/build.ps1`, then `scripts/package.ps1`; run `scripts/encode-music.ps1` first if Sweetroll FM's tracks ship) and publish it as the tag's release:
+
+   ```bash
+   gh release create vX.Y.Z out/release/AhShitRim-X.Y.Z.zip --title "AhShitRim X.Y.Z" --notes-file <release notes>
+   ```
+
+### A hotfix
+
+1. Branch from `production`, fix it, and set the patch version and its `CHANGELOG.md` section (`## [X.Y.Z+1] - YYYY-MM-DD`) on the same branch:
+
+   ```bash
+   git fetch origin
+   git switch -c fix-<slug> origin/production
+   ```
+
+2. Push it and open the pull request into `production`; once CI is green, merge it with a merge commit:
+
+   ```bash
+   git push -u origin fix-<slug>
+   gh pr create --base production --title "Fix: <what>"
+   gh pr merge --merge <number>
+   ```
+
+3. Tag it on `production` and publish it, as steps 3 and 4 of a release.
+4. Merge `production` back into `main`, through a pull request so CI checks the result:
+
+   ```bash
+   git switch -c merge-production-vX.Y.Z origin/main
+   git merge --no-ff origin/production -m "Merge production (vX.Y.Z) into main"
+   git push -u origin merge-production-vX.Y.Z
+   gh pr create --base main --title "Merge production (vX.Y.Z) into main"
+   ```
+
+   Keep `main`'s own version and `## [Unreleased]` section in the conflict, with the hotfix's changelog section below it. A hotfix should avoid changing the shared memory's layout; if it has to, it takes a `kProtocolVersion` above `main`'s, and `main` renumbers on the merge back.
+
+Agents open feature pull requests against `main` and hotfix pull requests against `production`, and never create tags or releases: those are the maintainer's.
 
 ## How the builds work
 

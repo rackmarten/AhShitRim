@@ -3,6 +3,12 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "mega_punch.h"
+#include "player/CheatCodes.h"
+#include "player/Particles.h"
+#include "player/Chatter.h"
+#include "player/ObjectHits.h"
+#include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -17,6 +23,7 @@ namespace AhShitRim::Shots
         constexpr int         kPassMax = 8;           // things a bullet goes through (the player, the dead) before it gives up
         constexpr float       kMeleeSearch = 600.0f;  // actors this close to the blow are looked at
         constexpr float       kActorRadiusMin = 20.0f;
+        constexpr float       kBlowObjectReach = 45.0f;  // units each way along CJ's facing a blow finds an object in
         constexpr float       kImpactScale = 2.5f;    // the arrows' impacts, bigger for a bullet
         constexpr int         kLoggedHits = 12;       // the first hits are logged in full, then a summary
         constexpr int         kLoggedBlocks = 20;     // and the first things that stop a bullet
@@ -153,15 +160,18 @@ namespace AhShitRim::Shots
             return Damage::ClassOf(id ? id : "", race->HasKeywordString("ActorTypeDragon"));
         }
 
+        // a_skyrimDamage, when over 0, is the damage itself (a mega punch's), not worked out from San Andreas's.
         void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
-            bool a_blood = true)
+            bool a_blood = true, float a_skyrimDamage = 0.0f)
         {
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
+            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * Balance::DealtFactor(a_player, a_shot.weaponType);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
+            // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
+            const bool unseen = a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead();
 
             if (state.processHit) {
                 auto* hit = RE::HitData::Create(a_player, actor, nullptr, false);
@@ -196,7 +206,10 @@ namespace AhShitRim::Shots
             }
 
             state.actorHits++;
-            if (melee && !actor->IsDead() && Roll() < Damage::StaggerChance(a_shot.weaponType)) {
+            if (unseen && (actor->IsDead() || actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) {
+                Chatter::StealthKill();
+            }
+            if (melee && a_skyrimDamage <= 0.0f && !actor->IsDead() && Roll() < Damage::StaggerChance(a_shot.weaponType)) {
                 Stagger(actor, a_player);
             }
             if (state.logged < kLoggedHits) {
@@ -314,8 +327,8 @@ namespace AhShitRim::Shots
                     auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
                     auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
                     const auto  layer = output.rootCollidable->GetCollisionLayer();
-                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer))) {
-                        from = distance + 1.0f;  // through the player's own body, the dead and the clutter
+                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
+                        from = distance + 1.0f;  // through the player's own body, the dead and the clutter (not a lamp or a web)
                         continue;
                     }
                     at = origin + dir * distance;
@@ -353,6 +366,10 @@ namespace AhShitRim::Shots
                     material = RE::BGSMaterialType::GetMaterialType(RE::MATERIAL_ID::kStone);  // a shape without one
                 }
                 PlayImpact(cell, ImpactFor(state.bulletSet, material), at, normal, nullptr);
+                if (blocker) {
+                    ObjectHits::Struck(a_player, blocker, Traps::Hit::Bullet, a_shot.weaponType,
+                        a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType, a_shot.skill));
+                }
             } else {
                 state.misses++;
             }
@@ -365,6 +382,9 @@ namespace AhShitRim::Shots
             RE::NiPoint3       dir(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
             if (!(dir.Unitize() >= 1e-4f) || !(a_shot.range > 0.0f) || !std::isfinite(origin.x + origin.y + origin.z)) {
                 return;
+            }
+            if (a_shot.flags & Protocol::kShotVehicleGun) {
+                Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas
             }
             bool      hit = false;
             const int pellets = (a_shot.flags & Protocol::kShotSpread) ? Damage::Pellets(a_shot.weaponType) : 1;
@@ -387,11 +407,89 @@ namespace AhShitRim::Shots
             return (std::max)(kActorRadiusMin, std::isfinite(half) ? half : 0.0f);
         }
 
+        // IAVENJQ's blow (protocol/cpp/mega_punch.h): the victim's whole health, and thrown far from CJ unless it's a giant,
+        // a mammoth or a dragon. An essential actor kneels instead of dying, as from any blow.
+        void MegaBlow(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_facing, float a_saDamage)
+        {
+            auto*       actor = a_victim.actor;
+            const float health = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            Hurt(a_player, a_victim, a_shot, a_facing, a_saDamage, true, MegaPunch::DamageFor(health));
+            const auto  cls = ClassOfRace(actor);
+            const float knock = MegaPunch::KnockFor(cls);
+            auto*       process = actor->GetActorRuntimeData().currentProcess;
+            if (knock > 0.0f && process) {
+                const auto from = MegaPunch::KnockFrom({ a_victim.at.x, a_victim.at.y, a_victim.at.z }, { a_facing.x, a_facing.y, a_facing.z });
+                process->KnockExplosion(actor, RE::NiPoint3(from.x, from.y, from.z), knock);
+            }
+            SKSE::log::info("shots: mega punch ({}) on {} ({:08X}): {:.0f} health, {}", a_shot.weaponType, actor->GetName(), actor->GetFormID(), health,
+                knock > 0.0f ? std::format("thrown with {:.0f}", knock) : std::string("too big to throw"));
+        }
+
+        // The first object a blow's line from a_from to a_to meets: what stops a bullet, or anything destructible
+        // (a web). Actors and the player are passed through; nullptr for none, or for the land.
+        RE::TESObjectREFR* ObjectOn(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_from, const RE::NiPoint3& a_to)
+        {
+            auto* cell = a_player->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            const float length = a_from.GetDistance(a_to);
+            if (!world || !(length > 1.0f)) {
+                return nullptr;
+            }
+            const RE::NiPoint3 dir = (a_to - a_from) / length;
+            const float        scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(state.layer);
+            input.to = RE::hkVector4(a_to.x * scale, a_to.y * scale, a_to.z * scale, 0.0f);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               from = 0.0f;
+            for (int pass = 0; pass < kPassMax; ++pass) {
+                const RE::NiPoint3 start = a_from + dir * from;
+                input.from = RE::hkVector4(start.x * scale, start.y * scale, start.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return nullptr;
+                }
+                const float distance = from + (length - from) * output.hitFraction;
+                auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
+                if (ref && ref != a_player && !ref->As<RE::Actor>() && (Blocks(output.rootCollidable->GetCollisionLayer()) || ObjectHits::Destructible(ref))) {
+                    return ref;
+                }
+                if (!ref && Blocks(output.rootCollidable->GetCollisionLayer())) {
+                    return nullptr;  // the land
+                }
+                from = distance + 1.0f;
+            }
+            return nullptr;
+        }
+
+        // A blow lands on the object in front of it too (a web), once per strike, the chainsaw's as its cuts.
+        void BlowOnObject(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_point, const RE::NiPoint3& a_facing, double a_now)
+        {
+            RE::NiPoint3 facing = a_facing;
+            if (!(facing.Unitize() > 1e-4f)) {
+                return;
+            }
+            const float reach = (std::max)(a_shot.range, kBlowObjectReach);
+            auto*       ref = ObjectOn(a_player, a_point - facing * reach, a_point + facing * reach);
+            if (!ref) {
+                return;
+            }
+            const bool  saw = a_shot.weaponType == Weapons::Chainsaw;
+            const float landed = state.landed.Lands(ref->GetFormID(), a_shot.strike, a_now, saw);
+            if (landed > 0.0f) {
+                ObjectHits::Struck(a_player, ref, Traps::Hit::Blow, a_shot.weaponType,
+                    Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed));
+            }
+        }
+
         void Blow(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             state.blows++;
             const RE::NiPoint3 point = a_anchor + RE::NiPoint3(a_shot.origin[0], a_shot.origin[1], a_shot.origin[2]);
             const RE::NiPoint3 facing(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
+            const float        ground = a_player->GetPosition().z;  // the player is placed at CJ's feet
             const bool         saw = a_shot.weaponType == Weapons::Chainsaw;
             const double       now = NowSeconds();
             if (saw) {
@@ -401,7 +499,8 @@ namespace AhShitRim::Shots
             if (!lists) {
                 return;
             }
-            bool landedAny = false;
+            bool       landedAny = false;
+            const bool mega = CheatCodes::On(Cheats::SaCheat::MegaPunch) && MegaPunch::Punches(a_shot.weaponType);
             for (auto& handle : lists->highActorHandles) {
                 auto  ptr = handle.get();
                 auto* actor = ptr.get();
@@ -410,7 +509,7 @@ namespace AhShitRim::Shots
                 }
                 const auto feet = actor->GetPosition();
                 float      height = 0.0f;
-                if (!Damage::Reaches({ point.x, point.y, point.z }, a_shot.range, { feet.x, feet.y, feet.z }, actor->GetHeight(), CapsuleRadius(actor), &height)) {
+                if (!Damage::BlowReaches({ point.x, point.y, point.z }, a_shot.range, ground, { feet.x, feet.y, feet.z }, actor->GetHeight(), CapsuleRadius(actor), &height)) {
                     continue;
                 }
                 const float landed = state.landed.Lands(actor->GetFormID(), a_shot.strike, now, saw);
@@ -422,11 +521,17 @@ namespace AhShitRim::Shots
                 victim.at = RE::NiPoint3(point.x, point.y, feet.z + height);
                 victim.normal = -facing;
                 const float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
-                Hurt(a_player, victim, a_shot, facing, sa);
+                if (mega) {
+                    MegaBlow(a_player, victim, a_shot, facing, sa);
+                } else {
+                    Hurt(a_player, victim, a_shot, facing, sa);
+                }
                 landedAny = true;
             }
             if (landedAny) {
                 state.hits.Add(a_shot.weaponType);
+            } else {
+                BlowOnObject(a_player, a_shot, point, facing, now);
             }
         }
 

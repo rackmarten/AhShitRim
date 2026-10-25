@@ -8,28 +8,45 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
+#include "debug/MissionTest.h"
+#include "debug/HitTest.h"
+#include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
 #include "cosave.h"
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
 #include "input.h"
 #include "knock.h"
+#include "settle.h"
+#include "wanted.h"
 #include "link/LinkService.h"
 #include "player/Activation.h"
 #include "player/AmmuNation.h"
 #include "player/Arms.h"
+#include "player/Chatter.h"
 #include "player/CheatCodes.h"
+#include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/GunRewards.h"
 #include "player/Respawns.h"
+#include "player/LockOn.h"
 #include "player/Looting.h"
+#include "player/Missions.h"
 #include "player/Conversation.h"
+#include "player/Particles.h"
+#include "player/CarHits.h"
+#include "player/Hitboxes.h"
 #include "player/Projectiles.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
+#include "player/Shouting.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
+#include "player/WorldPickups.h"
+#include "standing.h"
 #include "pose.h"
+#include "power/KeepAwake.h"
 #include "scene.h"
 #include "vehicle_kinds.h"
 #include "weapons.h"
@@ -42,6 +59,7 @@ namespace AhShitRim::PlayerSync
         struct State
         {
             bool           owned = false;
+            bool           linkUp = false;  // the link was up last frame
             std::uint32_t  handover = 0;
             float          heading = 0.0f;   // the player's heading when the handover started, or the last re-anchor
             RE::NiPoint3   anchor;           // the player's position then
@@ -51,12 +69,14 @@ namespace AhShitRim::PlayerSync
             RE::NiPoint3   lastPlaced;
             RE::TESObjectCELL* cell = nullptr;
             Scene::Control control = Scene::Control::Cj;  // who moves the player this frame
+            Scene::Dash    dash;  // a shout carrying the player (Whirlwind Sprint)
             float          voiceRecovery = 0.0f;  // the player's shout cooldown last frame
             RE::FormID     seatLogged = 0;        // the furniture whose seat was last logged
             std::uint16_t  shoutCount = 0;
             bool           wasThirdPerson = false;
             Cosave::Record resume;               // what a loaded save held
             bool           resumePending = false;  // it had San Andreas on the player: take it again once the game is up
+            Settle::Gate   settle;                 // and has been normal for a moment (Settle::kSeconds)
             Cosave::Car    carRequest;           // the saved car, sent along with the handover that resumes
             bool           carForNext = false;
             std::uint32_t  carHandover = 0;      // the handover the car request belongs to
@@ -79,7 +99,8 @@ namespace AhShitRim::PlayerSync
             bool           cameraAxes = false;      // the offset is only Skyrim's own axes (Camera::AxesOf)
             bool           cjLogged = false;      // logged the first frame CJ was drawn this handover
             bool           shopActivate = false;  // E pressed while Ammu-Nation is open, for its next frame
-            bool           knocked = false;       // the player is knocked down (ragdolled) in Skyrim
+            Knock::Down    down;                  // the player knocked down (ragdolled) in Skyrim, and for how long
+            bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -431,7 +452,10 @@ namespace AhShitRim::PlayerSync
         // smoke and fire (VehicleFx). A slot whose vehicle is gone reads with no flags and draws nothing.
         void DrawVehicles(RE::PlayerCharacter* a_player, float a_delta)
         {
-            const double now = NowMs();
+            const double        now = NowMs();
+            Protocol::BodyState driven{};
+            RE::NiPoint3        drivenFeet;
+            bool                anyDriven = false;
             for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
                 // A read that stayed torn keeps drawing from what came before.
                 Protocol::BodyState vehicle{};
@@ -439,6 +463,7 @@ namespace AhShitRim::PlayerSync
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
+                        Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -450,18 +475,29 @@ namespace AhShitRim::PlayerSync
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
+                    Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    if ((pose.flags & Protocol::kBodyDriven) != 0) {
+                        driven = pose;
+                        drivenFeet = feet;
+                        anyDriven = true;
+                    }
                 }
             }
+            // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
-        // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed.
-        void DrawGear()
+        // CJ's gear (v19): the jetpack on his back or the open parachute over him, posed like his weapons, smoothed,
+        // with (v26) the jetpack's flames.
+        void DrawGear(float a_delta)
         {
             const double        now = NowMs();
             Protocol::BodyState gear{};
             if (LinkService::Get().ReadGear(gear)) {
                 if ((gear.flags & Protocol::kBodyValid) == 0 || gear.handover != state.handover) {
                     state.gear.Reset();
+                    Particles::ShowGear(nullptr, {}, a_delta);
                     return;
                 }
                 if (gear.boneCount <= Protocol::kBodyBoneMax && Body::Finite(gear)) {
@@ -470,11 +506,17 @@ namespace AhShitRim::PlayerSync
             }
             Protocol::BodyState pose{};
             if (state.gear.Sample(now, pose)) {
-                ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]));
+                const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                ModelView::Show(pose, feet);
+                Particles::ShowGear(&pose, feet, a_delta);
+            } else {
+                Particles::ShowGear(nullptr, {}, a_delta);
             }
         }
 
-        void Release(const char* a_reason)
+        // a_loading: a load or a new game, whose world Skyrim is about to tear down: nobody's AI is touched (no flee let
+        // go, no AI reset, no animation event), only our own state is dropped.
+        void Release(const char* a_reason, bool a_loading = false)
         {
             if (!state.owned) {
                 return;
@@ -483,23 +525,32 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             state.control = Scene::Control::Cj;
             Vitals::OnRelease(RE::PlayerCharacter::GetSingleton());
+            Looting::SetHandedOver(false);
             Police::OnRelease();
             CollisionSampler::Stop();
             Activation::Clear();
             AmmuNation::Close();
             Conversation::Clear();
+            Conversation::SetMayTalk(true);
             Shots::Clear();
             Projectiles::Clear();
+            WorldPickups::Clear();
             VehicleFx::Clear();
-            People::Clear();
+            Particles::Clear();
+            People::Clear(!a_loading);
+            CarHits::Clear();
+            LockOn::Clear();
+            Riders::Clear();
+            Hitboxes::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
             state.input.ReleaseAll();
-            if (auto* player = RE::PlayerCharacter::GetSingleton(); player && (state.sneak || player->IsSneaking())) {
+            if (auto* player = RE::PlayerCharacter::GetSingleton(); player && !a_loading && (state.sneak || player->IsSneaking())) {
                 player->AsActorState()->actorState1.sneaking = false;
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
             state.sneak = false;
+            KeepAwake::Display(false);
             if (state.wasThirdPerson) {
                 if (auto* camera = RE::PlayerCamera::GetSingleton()) {
                     camera->ForceThirdPerson();
@@ -525,6 +576,8 @@ namespace AhShitRim::PlayerSync
             state.frames = state.placed = state.newPoses = state.drawn = 0;
             state.body.Reset();
             state.cjLogged = false;
+            Chatter::Seed();
+            state.input.SetHostileNear(false);
             Publish();  // before the chunks: San Andreas takes this anchor's chunks once it has read it
             auto* worldspace = a_player->GetWorldspace();
             CollisionSampler::Reset(state.handover, worldspace ? worldspace->GetFormID() : 0);
@@ -546,10 +599,16 @@ namespace AhShitRim::PlayerSync
             }
             state.owned = true;
             state.control = Scene::Control::Cj;
+            state.down.Reset();
             Vitals::OnTakeOver(a_player);
+            Looting::SetHandedOver(true);
             state.haveCameraOffset = false;
             state.voiceRecovery = a_player->GetVoiceRecoveryTime();  // a cooldown already running isn't a shout
             AnchorAt(a_player);
+            // An idle CJ would let the display sleep, and monitor speakers take both games' sound with them.
+            if (!KeepAwake::Display(true)) {
+                SKSE::log::warn("player sync: Windows refused to keep the display on");
+            }
             SKSE::log::info("player sync: San Andreas owns the player (handover {} at ({:.0f},{:.0f},{:.0f}) heading {:.3f})",
                 state.handover, state.anchor.x, state.anchor.y, state.anchor.z, state.heading);
         }
@@ -568,7 +627,12 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            Particles::Clear();
             People::Clear();
+            CarHits::Clear();
+            LockOn::Clear();
+            Riders::Clear();
+            Hitboxes::Clear();
             Activation::Clear();
             AmmuNation::Close();
             state.reanchoring = true;
@@ -600,6 +664,37 @@ namespace AhShitRim::PlayerSync
             return move;
         }
 
+        const char* StateName(RE::hkpCharacterStateType a_state)
+        {
+            switch (a_state) {
+            case RE::hkpCharacterStateType::kOnGround: return "on the ground";
+            case RE::hkpCharacterStateType::kJumping: return "jumping";
+            case RE::hkpCharacterStateType::kInAir: return "in the air";
+            case RE::hkpCharacterStateType::kClimbing: return "climbing";
+            case RE::hkpCharacterStateType::kFlying: return "flying";
+            case RE::hkpCharacterStateType::kSwimming: return "swimming";
+            default: return "?";
+            }
+        }
+
+        // The player's character controller on the ground, not jumping, not falling: what Skyrim asks before it fast
+        // travels. Returns the state it was in.
+        RE::hkpCharacterStateType Stand(RE::PlayerCharacter* a_player)
+        {
+            auto* controller = a_player->GetCharController();
+            if (!controller) {
+                return RE::hkpCharacterStateType::kOnGround;
+            }
+            const auto was = controller->context.currentState;
+            if (was != RE::hkpCharacterStateType::kSwimming) {
+                controller->context.currentState = RE::hkpCharacterStateType::kOnGround;
+            }
+            controller->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+            controller->fallStartHeight = a_player->GetPosition().z;
+            controller->fallTime = 0.0f;
+            return was;
+        }
+
         void Place(RE::PlayerCharacter* a_player, const Protocol::PlayerState& a_pose)
         {
             state.lastPlaced = state.anchor + RE::NiPoint3(a_pose.offset[0], a_pose.offset[1], a_pose.offset[2]);
@@ -614,6 +709,18 @@ namespace AhShitRim::PlayerSync
                 // Skyrim's own fall damage on landing (a jetpack, a parachute, a jump off a bike) would come on top.
                 controller->fallStartHeight = state.lastPlaced.z;
                 controller->fallTime = 0.0f;
+            }
+            // Its controller rarely finds the ground under CJ's feet (or his seat) and calls it falling, which stops
+            // fast travel: it stands whenever he does.
+            Standing::Frame frame;
+            frame.valid = true;
+            frame.grounded = (a_pose.flags & Protocol::kPlayerGrounded) != 0;
+            frame.inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
+            frame.vehicle = frame.inVehicle ? VehicleKinds::KindOf(a_pose.vehicleModel) : VehicleKinds::Kind::Unknown;
+            frame.rise = a_pose.velocity[2];
+            state.standing = Standing::Stands(frame);
+            if (state.standing) {
+                Stand(a_player);
             }
 
             // CJ crouching: Skyrim sneaks. As in PerkeleRim, the actor state and the animation graph
@@ -667,8 +774,9 @@ namespace AhShitRim::PlayerSync
             return LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover && (pose.flags & Protocol::kPlayerInVehicle) != 0;
         }
 
-        // A cheat's vehicle, jetpack or parachute (CheatCodes), asked for as a spawn key asks. Returns why not, or nothing.
-        std::string CheatSpawn(std::uint16_t a_model)
+        // A cheat's vehicle, jetpack or parachute (CheatCodes), asked for as a spawn key asks, or (a_airborne, AIR + a
+        // plane's name) a plane flying with CJ in it. Returns why not, or nothing.
+        std::string CheatSpawn(std::uint16_t a_model, bool a_airborne)
         {
             if (!VehicleKinds::Spawnable(a_model)) {
                 return std::string(VehicleKinds::TraitsOf(VehicleKinds::KindOf(a_model)).refusal);
@@ -676,7 +784,7 @@ namespace AhShitRim::PlayerSync
             if (!VehicleKinds::IsGear(a_model) && InVehicle()) {
                 return "Get out of the vehicle first";  // San Andreas spawns vehicles for CJ on foot
             }
-            state.input.RequestSpawn(a_model);
+            state.input.RequestSpawn(a_model, a_airborne ? Protocol::kSpawnAirborne : 0);
             Publish();
             return {};
         }
@@ -711,14 +819,16 @@ namespace AhShitRim::PlayerSync
         }
 
         // Skyrim's own Shout key fires the shout from the player, which stands where CJ does and
-        // looks where San Andreas's camera looks; San Andreas plays CJ's gesture when it goes off.
+        // looks where San Andreas's camera looks; San Andreas plays CJ's gesture and says his line for
+        // the shout and its words when it goes off (Shouting).
         void WatchShout(RE::PlayerCharacter* a_player)
         {
             const float recovery = a_player->GetVoiceRecoveryTime();
             if (Scene::ShoutReleased(state.voiceRecovery, recovery)) {
                 state.shoutCount++;
+                state.input.AddLine(Shouting::Released(a_player, recovery));  // CJ's line for it
                 const auto* power = a_player->GetActorRuntimeData().selectedPower;
-                SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures", power ? power->GetName() : "?", recovery);
+                SKSE::log::info("player sync: the player shouted ({}, {:.0f} s cooldown), CJ gestures and shouts", power ? power->GetName() : "?", recovery);
             }
             state.voiceRecovery = recovery;
         }
@@ -728,6 +838,29 @@ namespace AhShitRim::PlayerSync
         {
             const auto* actorState = a_player->AsActorState();
             return (actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) || a_player->IsInRagdollState();
+        }
+
+        const char* KnockStateName(RE::PlayerCharacter* a_player)
+        {
+            static constexpr const char* kNames[] = { "normal", "explode", "explode lead-in", "out", "out lead-in", "queued", "get-up", "down", "waiting" };
+            const auto* actorState = a_player->AsActorState();
+            const auto  knock = actorState ? static_cast<std::size_t>(actorState->GetKnockState()) : 0;
+            return knock < std::size(kNames) ? kNames[knock] : "?";
+        }
+
+        // Down too long (Knock::kDownMost): Skyrim's own fix for an actor stuck in its ragdoll, and its knock state put back to
+        // normal (in game the player was stuck queued and ragdolled, and only the reset got it up). The log says which state
+        // it was stuck in and whether it took.
+        void GetUp(RE::PlayerCharacter* a_player, int a_try)
+        {
+            const char* before = KnockStateName(a_player);
+            const bool  ragdoll = a_player->IsInRagdollState();
+            a_player->PotentiallyFixRagdollState();
+            if (auto* actorState = a_player->AsActorState(); actorState && actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
+                actorState->actorState1.knockState = RE::KNOCK_STATE_ENUM::kNormal;
+            }
+            SKSE::log::info("player sync: the player is still down after {:.1f} s (knock state {}{}), made to get up (try {}): now {}{}, back where CJ is",
+                state.down.Seconds(), before, ragdoll ? ", ragdolled" : "", a_try, KnockStateName(a_player), a_player->IsInRagdollState() ? ", still ragdolled" : "");
         }
 
         // San Andreas throws CJ away from the blow (Knock), as its explosions throw peds.
@@ -766,8 +899,15 @@ namespace AhShitRim::PlayerSync
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
+            // A shout carrying the player (Whirlwind Sprint) moves it from where CJ put it last frame: CJ follows it.
+            const auto moved = a_player->GetPosition() - state.lastPlaced;
+            const bool dashing = state.dash.Update(std::sqrt(moved.x * moved.x + moved.y * moved.y), a_delta, !InVehicle(), Shouting::InProgress(a_player));
+            if (dashing != (state.control == Scene::Control::Dashing)) {
+                SKSE::log::info("player sync: {}", dashing ? "a shout carries the player (a dash), CJ follows it" : "the dash is over, CJ moves the player again");
+            }
             // Dying or arrested, the player is nobody's to move: CJ stands where he is.
-            if (const auto control = Vitals::IsWasted() || Police::IsBusted() ? Scene::Control::Cj : ControlOf(a_player); control != state.control) {
+            if (const auto control = Vitals::IsWasted() || Police::IsBusted() ? Scene::Control::Cj : dashing ? Scene::Control::Dashing : ControlOf(a_player);
+                control != state.control) {
                 state.control = control;
                 state.seatLogged = 0;
                 Activation::Clear();
@@ -782,27 +922,46 @@ namespace AhShitRim::PlayerSync
                 state.input.AddLine(static_cast<std::uint8_t>(line));
             }
             ReleaseStuckKeys();
+            Chatter::Update(a_player, state.input, a_delta);  // v29: what may have CJ talk on his own
             Publish();
 
             Protocol::PlayerState pose{};
             const bool valid = link.ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 &&
                                pose.handover == state.handover && Pose::Finite(pose);
+            // Nobody starts a dialogue with CJ while he drives or runs (Dialogue::MayTalk).
+            if (valid) {
+                const float speed = std::hypot(pose.velocity[0], pose.velocity[1], pose.velocity[2]) * Pose::kMetersPerUnit;
+                Conversation::SetMayTalk(Dialogue::MayTalk((pose.flags & Protocol::kPlayerInVehicle) != 0, speed));
+            }
             // The angles Skyrim built this frame's camera for, before Place changes them.
             const float fromHeading = a_player->GetAngleZ();
             const float fromPitch = a_player->data.angle.x;
             // Knocked down, Skyrim's player falls and gets up out of sight, unpinned (pinned to CJ every frame its ragdoll never
-            // settled and its camera stuck), while San Andreas throws CJ; then it goes back to where he is.
+            // settled and its camera stuck), while San Andreas throws CJ; then it goes back to where he is. It may stay down
+            // no longer than CJ does (Knock::Down): then it's made to get up and goes back to him anyway, so the pursuers
+            // don't keep swinging at where it lies.
             const bool knocked = KnockedDown(a_player);
-            if (knocked && !state.knocked) {
+            switch (state.down.Tick(a_delta, knocked)) {
+            case Knock::Step::Fell:
                 ThrowCj(a_player, valid ? &pose : nullptr);
-            } else if (!knocked && state.knocked) {
+                Police::OnKnockedDown(a_player);
+                break;
+            case Knock::Step::Force:
+                GetUp(a_player, state.down.Tries());
+                Police::Retarget(a_player);
+                break;
+            case Knock::Step::Up:
                 SKSE::log::info("player sync: the player is up again, back where CJ is");
+                Police::Retarget(a_player);
+                break;
+            default: break;
             }
-            state.knocked = knocked;
-            if (knocked) {
+            const bool unpinned = state.down.Unpinned();
+            if (unpinned) {
                 state.lastPlaced = a_player->GetPosition();  // its fall isn't the game moving it
             }
-            if (valid && !scene && !knocked) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            state.standing = false;  // Place says whether CJ stands
+            if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -832,21 +991,40 @@ namespace AhShitRim::PlayerSync
                 const auto actions = state.input.Build(0, true, true);
                 AmmuNation::Update(a_player, { actions.moveY, actions.buttons, std::exchange(state.shopActivate, false) }, a_delta, valid ? &pose : nullptr);
             }
-            Activation::Update(a_player, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
+            Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles(a_player, a_delta);
-            DrawGear();
+            DrawGear(a_delta);
+            Particles::Update(a_delta);
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
+            // On foot CJ bumps into Skyrim's actors, and with fists or a melee weapon the right mouse button or a swing
+            // turns him to one; aiming a gun marks the enemy nearest the crosshair.
+            const bool onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held;
+            LockOn::Aim aim;
+            if (onFoot && !MenuHasInput()) {
+                aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
+                aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
+                aim.aim = state.input.Aiming();
+                aim.fire = state.input.Firing();
+                aim.heading = pose.heading;
+            }
+            const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
+            // The heat seeker aims while CJ aims it, and in the Hydra or the Hunter (v23) while the lock-on, the handbrake key, is held.
+            const std::uint16_t vehicleModel = valid && (pose.flags & Protocol::kPlayerInVehicle) ? pose.vehicleModel : 0;
+            const bool          seekerAimed = vehicleModel ? state.input.HandbrakeHeld() && !MenuHasInput() : valid && (pose.weaponFlags & Protocol::kWeaponAiming);
             Projectiles::Update(a_player, state.anchor, state.handover, a_delta, valid && (pose.flags & Protocol::kPlayerOnFire) ? &cjFeet : nullptr,
-                valid ? pose.weaponType : 0, valid && (pose.weaponFlags & Protocol::kWeaponAiming));
+                valid ? pose.weaponType : 0, seekerAimed, vehicleModel);
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
+            WorldPickups::Update(a_player, state.anchor, state.handover, a_delta, valid ? &pose : nullptr, Vitals::IsWasted() || state.reanchoring);
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -865,12 +1043,25 @@ namespace AhShitRim::PlayerSync
 
         // A save that had San Andreas on the player: once the game is up and the link too, the handover
         // resumes, and the car it was in goes back under CJ.
-        void TryResume(RE::PlayerCharacter* a_player)
+        // A loaded save had San Andreas on the player: it's taken again only once the game has settled (Settle::Gate: a
+        // couple of seconds of normal frames after the loading screen), not while Skyrim is still finishing the load.
+        void TryResume(RE::PlayerCharacter* a_player, float a_delta)
         {
-            auto* ui = RE::UI::GetSingleton();
-            if (!LinkService::Get().IsUp() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell() ||
-                StreamTest::Running()) {
-                return;  // the stream test moves the player first; CJ comes back after it
+            auto*         ui = RE::UI::GetSingleton();
+            auto*         cell = a_player->GetParentCell();
+            Settle::Frame frame;
+            frame.linkUp = LinkService::Get().IsUp();
+            frame.loadingMenu = ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+            frame.paused = GamePaused();
+            frame.player3D = a_player->Is3DLoaded();
+            frame.cellAttached = cell && cell->IsAttached();
+            frame.busy = StreamTest::Running();  // the stream test moves the player first; CJ comes back after it
+            frame.delta = a_delta;
+            if (!state.settle.Armed()) {
+                state.settle.Start();
+            }
+            if (!state.settle.Tick(frame)) {
+                return;
             }
             state.resumePending = false;
             state.carRequest = state.resume.car;
@@ -894,21 +1085,43 @@ namespace AhShitRim::PlayerSync
                         Shots::Queue(a_data, a_size);
                     } else if (a_type == Protocol::MessageType::Projectile && state.owned) {
                         Projectiles::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::PickupEvent) {
+                        WorldPickups::Queue(a_data, a_size);
+                    } else if (a_type == Protocol::MessageType::Impact && state.owned) {
+                        CarHits::Queue(a_data, a_size);
                     }
                 });
+                // The link coming up while Skyrim has the player: San Andreas's first read of the input only seeds its
+                // counts, so it reads them as they stand before a sound cue needs one.
+                const bool up = LinkService::Get().IsUp();
+                if (up && !state.linkUp && !state.owned) {
+                    Publish();
+                }
+                state.linkUp = up;
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
-                    TryResume(a_player);
+                    TryResume(a_player, a_delta);
                 }
                 if (!state.owned) {
                     StreamTest::Update(a_player, a_delta);
                 }
+                HitTest::Update(a_player, a_delta);
+                LoadTest::Update(a_player, a_delta);
                 Arms::Update();
                 CheatCodes::Update();
-                Police::Sweep();
+                Police::Sweep(a_delta);
                 GunRewards::Update();
+                MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
+                if (a_delta > 0.0f) {
+                    // A quest's title or its mission passed, CJ's intro line: San Andreas plays the sound, whoever has the player.
+                    if (const auto cue = Missions::Update(a_delta)) {
+                        state.input.AddCue(cue);
+                        Publish();
+                    }
+                }
+                Shouting::Update(a_player, state.owned);
                 Protocol::PlayerState pose{};
                 const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
                 SaHud::SetWeapon(posed ? &pose : nullptr);
@@ -916,7 +1129,7 @@ namespace AhShitRim::PlayerSync
                     SaHud::ShowHelp("Screenshot saved", 3.0f);
                 }
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
-                Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr);
+                Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr, Missions::CuePlaying());
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
@@ -970,6 +1183,35 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
+        // F5 and F9: as in San Andreas, no saving (or loading) while wanted. Skyrim's load clearing the world with the
+        // pursuit mid-fight in it crashed in its combat code; quicksaves and quickloads wait until the heat is gone.
+        struct QuickSaveLoadHook
+        {
+            // Skyrim asks this of every input event (every key, the mouse): only F5's and F9's own (their user events) are
+            // looked at, and the message comes once per press, at most every few seconds (Wanted::QuickNag).
+            static bool thunk(RE::QuickSaveLoadHandler* a_handler, RE::InputEvent* a_event)
+            {
+                auto* button = state.owned && a_event ? a_event->AsButtonEvent() : nullptr;
+                auto* events = RE::UserEvents::GetSingleton();
+                if (!button || !events || (button->QUserEvent() != events->quicksave && button->QUserEvent() != events->quickload)) {
+                    return original(a_handler, a_event);
+                }
+                const bool pressed = button->IsDown();
+                if (Police::QuickAllowed(pressed)) {
+                    return original(a_handler, a_event);
+                }
+                static auto shown = std::chrono::steady_clock::time_point{};
+                const auto  now = std::chrono::steady_clock::now();
+                const float since = shown == std::chrono::steady_clock::time_point{} ? 1e9f : std::chrono::duration<float>(now - shown).count();
+                if (Wanted::QuickNag(pressed, since)) {
+                    shown = now;
+                    SaHud::ShowHelp("Lose the heat first. You can't quick save or quickload while the law is after you.", 4.0f);
+                }
+                return false;
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
         class InputSink : public RE::BSTEventSink<RE::InputEvent*>
         {
         public:
@@ -999,10 +1241,12 @@ namespace AhShitRim::PlayerSync
                             state.input.SetAim(button->IsPressed() && forCj);
                             changed = true;
                         } else if (id == RE::BSWin32MouseDevice::Key::kMiddleButton) {
-                            // The swear key: CJ swears to himself, San Andreas plays it.
-                            if (button->IsDown() && forCj && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
+                            // In a vehicle San Andreas's look behind, held (v23). On foot the swear key: CJ swears to
+                            // himself, San Andreas plays it.
+                            state.input.SetLookBehind(button->IsPressed() && forCj);
+                            changed = true;
+                            if (button->IsDown() && forCj && state.control == Scene::Control::Cj && !Vitals::IsDown() && !InVehicle()) {
                                 state.input.AddSwear();
-                                changed = true;
                             }
                         } else if (button->IsDown() && forCj &&
                                    (id == RE::BSWin32MouseDevice::Key::kWheelUp || id == RE::BSWin32MouseDevice::Key::kWheelDown)) {
@@ -1044,6 +1288,8 @@ namespace AhShitRim::PlayerSync
                         if (button->IsDown() && !MenuHasInput() && !Police::IsBusted()) {
                             if (AmmuNation::IsOpen()) {
                                 state.shopActivate = true;  // buys, in the shop
+                            } else if (WorldPickups::Activate()) {
+                                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
                             } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                                 Activation::Activate(player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
                             }
@@ -1078,6 +1324,10 @@ namespace AhShitRim::PlayerSync
                             SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
                         }
                         continue;
+                    }
+                    // San Andreas's radio keys (v23), in a vehicle: a station on each press, as the wheel's steps.
+                    if (const int step = Input::RadioStepFromScanCode(code); step && button->IsDown() && state.owned && !MenuHasInput() && InVehicle()) {
+                        state.input.AddWheel(step > 0);
                     }
                     // A spawn key typed into the console or a menu (or the shop) spawns nothing.
                     state.input.SetKey(code, button->IsPressed(), !MenuHasInput() && !AmmuNation::IsOpen());
@@ -1136,6 +1386,15 @@ namespace AhShitRim::PlayerSync
                 if (state.owned && a_event) {
                     if (a_event->opening) {
                         Looting::OnMenuOpening(a_event->menuName.c_str());  // no inventory, barter or container menu as CJ
+                        // The map pauses the game: nothing moves the player until it fast travels, so it stands as CJ does.
+                        if (a_event->menuName == RE::MapMenu::MENU_NAME && state.standing && !state.down.Unpinned()) {
+                            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                                const auto was = Stand(player);
+                                SKSE::log::info("player sync: the map opens with CJ standing: the player stands too (it was {})", StateName(was));
+                            }
+                        } else if (a_event->menuName == RE::MapMenu::MENU_NAME) {
+                            SKSE::log::info("player sync: the map opens with CJ not standing{}: fast travel is Skyrim's call", state.down.Unpinned() ? " (knocked down)" : "");
+                        }
                         auto* ui = RE::UI::GetSingleton();
                         auto  menu = ui ? ui->GetMenu(a_event->menuName) : nullptr;
                         pauses = menu && menu->PausesGame();
@@ -1158,6 +1417,8 @@ namespace AhShitRim::PlayerSync
         FavoritesHook::original = favorites.write_vfunc(0x1, FavoritesHook::thunk);
         REL::Relocation<std::uintptr_t> menuOpen{ RE::VTABLE_MenuOpenHandler[0] };
         MenuOpenHook::original = menuOpen.write_vfunc(0x1, MenuOpenHook::thunk);
+        REL::Relocation<std::uintptr_t> quick{ RE::VTABLE_QuickSaveLoadHandler[0] };
+        QuickSaveLoadHook::original = quick.write_vfunc(0x1, QuickSaveLoadHook::thunk);
         BlockHook<kMovementHook>::Install(RE::VTABLE_MovementHandler[0]);
         BlockHook<1>::Install(RE::VTABLE_LookHandler[0]);
         BlockHook<2>::Install(RE::VTABLE_SprintHandler[0]);
@@ -1174,6 +1435,7 @@ namespace AhShitRim::PlayerSync
         BlockHook<14>::Install(RE::VTABLE_ThirdPersonState[1]);
         Conversation::Install();
         Police::Install();
+        Vitals::Install();
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 
@@ -1193,6 +1455,7 @@ namespace AhShitRim::PlayerSync
         SKSE::log::info("player sync: the dev vehicle keys (; picks, ' spawns) are {} ([Debug] VehicleKeys={}), {} picks{} ([Debug] Vehicles={}), the first {}",
             state.devKeys ? "on" : "off", devKeys.empty() ? "unset" : devKeys, state.devPicker.Count(), devList.empty() ? " built in" : "",
             devList.empty() ? "unset" : devList, VehicleKinds::Label(state.devPicker.Current()));
+        Balance::OnDataLoaded();
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();
@@ -1200,6 +1463,11 @@ namespace AhShitRim::PlayerSync
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
+        Missions::OnDataLoaded();
+        MissionTest::OnDataLoaded();
+        Shouting::OnDataLoaded();
+        Riders::OnDataLoaded();
+        Hitboxes::OnDataLoaded();
         if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
             input->AddEventSink(&inputSink);
         }
@@ -1218,9 +1486,34 @@ namespace AhShitRim::PlayerSync
         state.resumePending = false;
         GunRewards::OnGameLoad();
         Respawns::OnGameLoad();
-        Release("game loading");
+        Missions::OnGameLoad();
+        Release("game loading", true);
         CheatCodes::OnGameLoad();
         Police::OnGameLoad();
+    }
+
+    bool DebugOwned() { return state.owned; }
+
+    void DebugToggle()
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (state.owned) {
+            Release("the load test");
+        } else if (player) {
+            TakeOver(player);
+        }
+    }
+
+    void DebugType(const char* a_code)
+    {
+        for (const char* c = a_code; c && *c; ++c) {
+            for (std::uint32_t dik = 0; dik < 0x100; dik++) {
+                if (Cheats::LetterOf(dik) == *c) {
+                    TypeCheat(dik);
+                    break;
+                }
+            }
+        }
     }
 
     void Snapshot(Cosave::Record& a_out)
@@ -1229,6 +1522,7 @@ namespace AhShitRim::PlayerSync
         a_out.handover = state.owned;
         a_out.armor = Vitals::Armor();
         Arms::Snapshot(a_out.weapons);
+        a_out.pickupsTaken = WorldPickups::Taken();
         Protocol::PlayerState pose{};
         if (state.owned && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid) != 0 && pose.handover == state.handover &&
             (pose.flags & Protocol::kPlayerInVehicle) != 0 && pose.vehicleModel && Pose::Finite(pose)) {
@@ -1243,8 +1537,27 @@ namespace AhShitRim::PlayerSync
     {
         state.resume = a_record;
         state.resumePending = a_record.handover;
+        state.settle.Reset();  // armed again by the first frame after the load
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
+        WorldPickups::Restore(a_record.pickupsTaken);
+    }
+
+    void TakeOverInVehicle(std::uint16_t a_model)
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return;
+        }
+        if (state.owned) {
+            Release("the hit test hands it over again, in a vehicle");
+        }
+        state.carRequest = {};
+        state.carRequest.model = a_model;
+        state.carRequest.heading = player->GetAngleZ();
+        state.carForNext = true;
+        TakeOver(player);
+        state.carForNext = false;
     }
 
     void Revert()
@@ -1253,5 +1566,6 @@ namespace AhShitRim::PlayerSync
         state.resumePending = false;
         Vitals::SetArmor(0.0f);
         Arms::Revert();
+        WorldPickups::Revert();
     }
 }

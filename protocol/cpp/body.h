@@ -211,6 +211,18 @@ namespace AhShitRim::Body
         }
     }
 
+    inline Protocol::BodyBone BlendBone(const Protocol::BodyBone& a, const Protocol::BodyBone& b, float t)
+    {
+        const Quat q = Nlerp({ a.rotation[0], a.rotation[1], a.rotation[2], a.rotation[3] }, { b.rotation[0], b.rotation[1], b.rotation[2], b.rotation[3] }, t);
+        Protocol::BodyBone out{};
+        out.rotation[0] = q.x;
+        out.rotation[1] = q.y;
+        out.rotation[2] = q.z;
+        out.rotation[3] = q.w;
+        Lerp3(a.translation, b.translation, t, out.translation);
+        return out;
+    }
+
     // a at t = 0, b at t = 1; everything else (frame, handover, model) is b's.
     inline Protocol::BodyState Blend(const Protocol::BodyState& a, const Protocol::BodyState& b, float t)
     {
@@ -230,18 +242,22 @@ namespace AhShitRim::Body
         out.cameraUp[1] = u.y;
         out.cameraUp[2] = u.z;
         out.cameraFov = a.cameraFov + (b.cameraFov - a.cameraFov) * t;
+        for (int i = 0; i < 2; i++) {
+            // The jets on CJ's back move with him (v26); their way and the levels are b's.
+            if (a.fx.along[i][0] != 0.0f || a.fx.along[i][1] != 0.0f || a.fx.along[i][2] != 0.0f) {
+                Lerp3(a.fx.at[i], b.fx.at[i], t, out.fx.at[i]);
+            }
+        }
         const std::uint32_t count = (std::min)(b.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
-            const auto& ba = a.bones[i];
-            const auto& bb = b.bones[i];
-            const Quat  q = Nlerp({ ba.rotation[0], ba.rotation[1], ba.rotation[2], ba.rotation[3] },
-                 { bb.rotation[0], bb.rotation[1], bb.rotation[2], bb.rotation[3] }, t);
-            out.bones[i].rotation[0] = q.x;
-            out.bones[i].rotation[1] = q.y;
-            out.bones[i].rotation[2] = q.z;
-            out.bones[i].rotation[3] = q.w;
-            Lerp3(ba.translation, bb.translation, t, out.bones[i].translation);
+            out.bones[i] = BlendBone(a.bones[i], b.bones[i], t);
         }
+        // A vehicle's passenger seats (v28) go with it.
+        const std::uint32_t seats = (std::min)((std::min)(a.seatCount, b.seatCount), Protocol::kSeatMax);
+        for (std::uint32_t i = 0; i < seats; i++) {
+            out.seats[i] = BlendBone(a.seats[i], b.seats[i], t);
+        }
+        out.vehicleFrame = BlendBone(a.vehicleFrame, b.vehicleFrame, t);  // v31: how a vehicle is turned, for its box
         return out;
     }
 
@@ -258,13 +274,22 @@ namespace AhShitRim::Body
         if (!finite(a_body.feet, 3) || !finite(a_body.cameraPosition, 3) || !finite(a_body.cameraForward, 3) || !finite(a_body.cameraUp, 3) || !std::isfinite(a_body.cameraFov)) {
             return false;
         }
+        if (!finite(&a_body.fx.at[0][0], 6) || !finite(&a_body.fx.along[0][0], 6) || !std::isfinite(a_body.fx.ground)) {
+            return false;
+        }
         const std::uint32_t count = (std::min)(a_body.boneCount, Protocol::kBodyBoneMax);
         for (std::uint32_t i = 0; i < count; i++) {
             if (!finite(a_body.bones[i].rotation, 4) || !finite(a_body.bones[i].translation, 3)) {
                 return false;
             }
         }
-        return true;
+        const std::uint32_t seats = (std::min)(a_body.seatCount, Protocol::kSeatMax);
+        for (std::uint32_t i = 0; i < seats; i++) {
+            if (!finite(a_body.seats[i].rotation, 4) || !finite(a_body.seats[i].translation, 3)) {
+                return false;
+            }
+        }
+        return finite(a_body.vehicleFrame.rotation, 4) && finite(a_body.vehicleFrame.translation, 3) && finite(a_body.boxMin, 3) && finite(a_body.boxMax, 3);
     }
 
     // Plays San Andreas's 30 frames a second back smoothly at Skyrim's rate, kDelayMs behind.

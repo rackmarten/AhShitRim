@@ -5,7 +5,9 @@
 // and that his bones move while he walks. A third handover spawns a Sandking, gets in with F,
 // drives it with W and gets out again, then spawns a Sanchez, rides it a little and spawns a ZR-350,
 // and checks the vehicles' models arrive and stand on the ground, and that the Sandking moved with
-// CJ in it and turned its wheels. A re-anchor in the ZR-350 (fast travel, far off and far below)
+// CJ in it and turned its wheels, that it has a passenger seat and (v28) hits a person 20 m ahead and stops against a
+// mammoth further on (actor proxies, impacts back), and (v31) has its collision box in its slot and loses health to
+// HitVehicle effects. A re-anchor in the ZR-350 (fast travel, far off and far below)
 // takes CJ out and removes the vehicles, holds him until ground comes there, and he walks on it.
 // Scenes (v9) there: CJ turns to a speaker, gestures at a shout and a swear (v16), follows a walking Skyrim player,
 // sits where it sits and walks on when it lets go. Built with the protocol tests; run it through scripts/fake-skyrim.ps1 while San Andreas runs
@@ -18,6 +20,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <format>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -26,6 +30,8 @@
 #include "../cpp/collision.h"
 #include "../cpp/input.h"
 #include "../cpp/radio.h"
+#include "../cpp/run_over.h"
+#include "../cpp/vehicle_hits.h"
 #include "../cpp/link.h"
 #include "../cpp/pose.h"
 #include "../cpp/skin_model.h"
@@ -42,6 +48,7 @@ constexpr float kAnchor[3] = { 10000.0f, -20000.0f, 3000.0f };
 // Every model San Andreas sent, by id (CJ's and the vehicles').
 struct Received
 {
+    std::vector<Protocol::ImpactEvent>                  impacts;  // v28: CJ's vehicle hit a proxy
     SkinModel::Assembler                                assembler;
     std::map<std::uint32_t, std::vector<std::uint8_t>> blobs;
 
@@ -55,6 +62,14 @@ struct Received
 void Drain(Link& a_link, Received& a_received)
 {
     a_link.Receive([&](Protocol::MessageType a_type, const std::uint8_t* a_data, std::uint32_t a_size) {
+        if (a_type == Protocol::MessageType::Impact && a_size == sizeof(Protocol::ImpactEvent)) {
+            Protocol::ImpactEvent impact{};
+            std::memcpy(&impact, a_data, sizeof(impact));
+            a_received.impacts.push_back(impact);
+            std::printf("impact: hit %08X at %.1f m/s, damage %.0f, push %.1f m/s%s\n", impact.id, impact.speed, impact.damage,
+                std::hypot(impact.push[0], impact.push[1], impact.push[2]) * Pose::kMetersPerUnit, (impact.flags & Protocol::kImpactHeavy) ? ", heavy" : "");
+            return;
+        }
         if (a_type != Protocol::MessageType::ModelChunk || a_received.assembler.Add(a_data, a_size) != SkinModel::Assembler::Result::Complete) {
             return;
         }
@@ -316,11 +331,53 @@ int main(int argc, char** argv)
         failed += dialed != Radio::kRadioOff;
     }
 
+    // HUD sounds (v30): each one San Andreas may play, then one it drops (34, the radio retune's loop). Its log
+    // shows them ("audio: HUD sound", "audio: no HUD sound 34").
+    {
+        int sent = 0;
+        for (const auto event : { 6, 7, 8, 10, 11, 32, 40, 34 }) {
+            Protocol::FrontendSoundCommand command{};
+            command.event = static_cast<std::uint8_t>(event);
+            sent += link.Send(Protocol::MessageType::FrontendSound, &command, sizeof(command));
+            run(0.5, [] { return false; });
+        }
+        std::printf("hud sounds: %d of 8 sent\n", sent);
+        failed += sent != 8;
+    }
+
     Protocol::BodyState before{}, driving{};
     vehicleIn(0, before);
+    // Passenger seats (v28): a Sandking takes one passenger, on the right of CJ.
+    std::printf("seats: the Sandking has %u passenger seat(s)%s\n", before.seatCount,
+        before.seatCount ? std::format(", the first {:.2f} m from its middle, {:.2f} m up", std::hypot(before.seats[0].translation[0], before.seats[0].translation[1]) * Pose::kMetersPerUnit,
+                               before.seats[0].translation[2] * Pose::kMetersPerUnit).c_str() : "");
+    failed += !(before.seatCount >= 1 && before.seatCount <= Protocol::kSeatMax);
+
+    // Running people over (v28): a person stands 20 m ahead of the Sandking on the flat ground.
+    Protocol::PlayerState heading{};
+    link.ReadPlayer(heading);
+    const float fx = std::sin(heading.vehicleHeading), fy = std::cos(heading.vehicleHeading);
+    const auto  proxyAhead = [&](std::uint32_t a_id, RunOver::Build a_build, float a_metres, const Protocol::BodyState& a_from) {
+        const RunOver::Shape shape = RunOver::ShapeOf(a_build, 1.0f, 0.0f);
+        const Pose::Vec3     feet{ a_from.feet[0] + fx * a_metres * Pose::kUnitsPerMeter, a_from.feet[1] + fy * a_metres * Pose::kUnitsPerMeter, 0.0f };
+        const auto           c = RunOver::Place(shape, feet, heading.vehicleHeading + Pose::kPi / 2.0f);  // across the road
+        Protocol::ProxyState proxies{};
+        proxies.handover = handoverId;
+        proxies.count = 1;
+        auto& proxy = proxies.proxies[0];
+        proxy.id = a_id;
+        proxy.flags = static_cast<std::uint8_t>(shape.heavy ? Protocol::kProxyHeavy : Protocol::kProxyPerson);
+        proxy.a[0] = c.a.x, proxy.a[1] = c.a.y, proxy.a[2] = c.a.z;
+        proxy.b[0] = c.b.x, proxy.b[1] = c.b.y, proxy.b[2] = c.b.z;
+        proxy.radius = c.radius;
+        proxy.mass = shape.mass;
+        return proxies;
+    };
+    const auto person = proxyAhead(0x0001B1B1, RunOver::Build::Person, 20.0f, before);
     float wheelTurn = 0.0f;  // the most any part turned while driving, quaternion distance
     input.SetKey(Input::kDikW, true);
     run(3.0, [&] {  // the flat ground ends about 85 m out; a Sandking does 30 m/s after 4 s
+        link.WriteProxies(person);
         if (vehicleIn(0, driving) && driving.boneCount == before.boneCount) {
             for (std::uint32_t i = 0; i < driving.boneCount; i++) {
                 float dot = 0.0f;
@@ -341,10 +398,70 @@ int main(int argc, char** argv)
         (driving.flags & Protocol::kBodyDriven) ? "driven" : "not driven", wheelTurn, cjToCar,
         std::hypot(cj.velocity[0], cj.velocity[1]) * Pose::kMetersPerUnit);
     failed += !(driven > 10.0f && (driving.flags & Protocol::kBodyDriven) && wheelTurn > 0.1f && cjToCar < 2.0f);
+    const auto hitPerson = std::find_if(received.impacts.begin(), received.impacts.end(), [](const auto& a_i) { return a_i.id == 0x0001B1B1; });
+    std::printf("run over: the person 20 m ahead was %s\n", hitPerson != received.impacts.end() ?
+        std::format("hit at {:.1f} m/s for {:.0f}, thrown at {:.1f} m/s", hitPerson->speed, hitPerson->damage, std::hypot(hitPerson->push[0], hitPerson->push[1]) * Pose::kMetersPerUnit).c_str() : "NOT HIT");
+    failed += !(hitPerson != received.impacts.end() && hitPerson->speed > RunOver::kMinImpact && hitPerson->damage > 0.0f && !(hitPerson->flags & Protocol::kImpactHeavy));
+
+    // A mammoth 12 m ahead: the Sandking stops against it.
+    Protocol::BodyState atMammoth{};
+    vehicleIn(0, atMammoth);
+    const auto mammoth = proxyAhead(0x0002B2B2, RunOver::Build::Mammoth, 12.0f, atMammoth);
+    float      slowest = 1e9f, fastest = 0.0f;
+    input.SetKey(Input::kDikW, true);
+    run(3.0, [&] {
+        link.WriteProxies(mammoth);
+        Protocol::PlayerState p{};
+        if (link.ReadPlayer(p)) {
+            const float v = std::hypot(p.velocity[0], p.velocity[1]) * Pose::kMetersPerUnit;
+            fastest = (std::max)(fastest, v);
+            if (std::any_of(received.impacts.begin(), received.impacts.end(), [](const auto& a_i) { return a_i.id == 0x0002B2B2; })) {
+                slowest = (std::min)(slowest, v);
+            }
+        }
+        return false;
+    });
+    input.SetKey(Input::kDikW, false);
+    link.WriteProxies(Protocol::ProxyState{});
+    Protocol::BodyState pastMammoth{};
+    vehicleIn(0, pastMammoth);
+    const float beyond = ((pastMammoth.feet[0] - atMammoth.feet[0]) * fx + (pastMammoth.feet[1] - atMammoth.feet[1]) * fy) * Pose::kMetersPerUnit;
+    const bool  hitMammoth = slowest < 1e8f;
+    std::printf("run over: the mammoth 12 m ahead was %s; up to %.1f m/s before, %.1f m/s at the slowest after, the car %.1f m on\n",
+        hitMammoth ? "hit" : "NOT HIT", fastest, hitMammoth ? slowest : 0.0f, beyond);
+    failed += !(hitMammoth && slowest < 3.0f && beyond < 12.0f);
 
     input.SetKey(Input::kDikSpace, true);  // handbrake
     run(3.0, [] { return false; });
     input.SetKey(Input::kDikSpace, false);
+
+    // Skyrim's hits on the vehicle (v31): its slot has its collision box and frame, and two of a giant's blows take
+    // their damage off its health (three would set it on fire, and the run goes on in it).
+    Protocol::BodyState hitFrom{};
+    vehicleIn(0, hitFrom);
+    const auto  carFrame = VehicleHits::FrameOf(hitFrom.vehicleFrame, { 0.0f, 0.0f, 0.0f });
+    const float boxWide = (hitFrom.boxMax[0] - hitFrom.boxMin[0]) * Pose::kMetersPerUnit, boxLong = (hitFrom.boxMax[1] - hitFrom.boxMin[1]) * Pose::kMetersPerUnit;
+    const float carFacing = carFrame.forward.x * fx + carFrame.forward.y * fy;  // its forward against the heading it reported
+    std::printf("hitboxes: the Sandking's box is %.2f m wide, %.2f m long, %.2f m high; its frame's forward is %.2f along its heading\n", boxWide, boxLong,
+        (hitFrom.boxMax[2] - hitFrom.boxMin[2]) * Pose::kMetersPerUnit, carFacing);
+    failed += !(VehicleHits::HasBox({ { hitFrom.boxMin[0], hitFrom.boxMin[1], hitFrom.boxMin[2] }, { hitFrom.boxMax[0], hitFrom.boxMax[1], hitFrom.boxMax[2] } }) &&
+                boxWide > 1.5f && boxWide < 3.5f && boxLong > 3.5f && boxLong < 7.0f && carFacing > 0.9f);
+    const float blow = VehicleHits::DamageOf({ VehicleHits::Attack::Claws, RunOver::Build::Giant });
+    for (int i = 0; i < 2; i++) {
+        Protocol::EffectEvent hit{};
+        hit.handover = handoverId;
+        hit.kind = static_cast<std::uint8_t>(Protocol::EffectKind::HitVehicle);
+        hit.weaponType = static_cast<std::uint8_t>(VehicleHits::Attack::Claws);
+        std::copy(std::begin(hitFrom.feet), std::end(hitFrom.feet), hit.at);
+        hit.seconds = blow;
+        link.Send(Protocol::MessageType::Effect, &hit, sizeof(hit));
+    }
+    Protocol::BodyState hitAfter{};
+    run(1.0, [&] { return vehicleIn(0, hitAfter) && hitAfter.health < hitFrom.health - 1.5f * blow; });
+    std::printf("hitboxes: two of a giant's blows took the Sandking from %.0f to %.0f health%s\n", hitFrom.health, hitAfter.health,
+        (hitAfter.flags & Protocol::kBodyBurning) ? ", and it burns" : "");
+    failed += !(hitAfter.health <= (std::max)(0.0f, hitFrom.health - 2.0f * blow) + 1.0f);
+
     press(Input::kDikF);
     const bool gotOut = run(6.0, [&] { return !inVehicle(); });
     std::printf("vehicles: CJ %s the Sandking\n", gotOut ? "got out of" : "did not get out of");

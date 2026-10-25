@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace AhShitRim::Health
 {
@@ -71,6 +72,106 @@ namespace AhShitRim::Health
         const float absorbed = (std::min)(a_armor, a_damage);
         s.armor = a_armor - absorbed;
         s.health = (a_damage - absorbed) / kSaFullHealth * (std::max)(a_skyrimMax, 0.0f);
+        return s;
+    }
+
+    // ---- What hurt CJ ----
+
+    // What took Skyrim's health off the player while CJ has it, as far as Skyrim tells.
+    enum class Kind : std::uint8_t
+    {
+        Blow,      // a weapon, an arrow, a creature's bite, claw or club, a trap's blade, spikes or rocks, a blast
+        Fire,      // a fire spell, a fire trap, burning oil
+        Frost,
+        Shock,
+        Magic,     // any other harmful magic (an absorb, a drain)
+        Poison,
+        Disease,
+        Fall,
+        Drowning,
+    };
+
+    // The actor value that resists a magic effect (EffectSetting's resist variable), as far as it matters here.
+    enum class Resist : std::uint8_t
+    {
+        None,
+        Fire,
+        Frost,
+        Shock,
+        Magic,
+        Poison,
+        Disease,
+    };
+
+    // San Andreas's armour takes every kind of damage but drowning and falls (CPedDamageResponseCalculator::
+    // AccountForPedArmour); Skyrim's poison and disease have nothing like them there and go to health too.
+    constexpr bool ArmourTakes(Kind a_kind)
+    {
+        return a_kind != Kind::Poison && a_kind != Kind::Disease && a_kind != Kind::Fall && a_kind != Kind::Drowning;
+    }
+
+    // Fire sets CJ alight, as San Andreas's does.
+    constexpr bool SetsAlight(Kind a_kind) { return a_kind == Kind::Fire; }
+
+    // A harmful magic effect's kind, by what resists it.
+    constexpr Kind OfEffect(Resist a_resist)
+    {
+        switch (a_resist) {
+        case Resist::Fire: return Kind::Fire;
+        case Resist::Frost: return Kind::Frost;
+        case Resist::Shock: return Kind::Shock;
+        case Resist::Poison: return Kind::Poison;
+        case Resist::Disease: return Kind::Disease;
+        default: return Kind::Magic;
+        }
+    }
+
+    // A hit with no magic effect behind it: a blow, whoever (or whatever trap) dealt it, but drowning when nobody did
+    // and the player is under water. Skyrim's own falls never land while CJ has the player (PlayerSync zeroes them).
+    constexpr Kind OfHit(bool a_attacker, bool a_underwater) { return !a_attacker && a_underwater ? Kind::Drowning : Kind::Blow; }
+
+    // Skyrim reports damage to the player's health either as the change (negative: HandleHealthDamage's, a damaging
+    // effect's) or as an amount: the damage, either way, and 0 when it isn't a number.
+    inline float DamageOf(float a_reported) { return std::isfinite(a_reported) ? std::abs(a_reported) : 0.0f; }
+
+    struct Settled
+    {
+        float armor = 0.0f;   // CJ's armour after it, San Andreas points
+        float health = 0.0f;  // the health it should take, Skyrim's
+        float back = 0.0f;    // the health to give back of what Skyrim took (negative: to take on top)
+    };
+
+    // A hit Skyrim reported as a_reported (either sign) and has taken off the player's health: it becomes a_factor of it
+    // ([Balance] DamageTaken, the stars' share), through CJ's armour first when San Andreas's would take a_kind and
+    // a_armourOn (not while Busted).
+    inline Settled Settle(float a_armor, float a_reported, float a_factor, float a_skyrimMax, Kind a_kind, bool a_armourOn = true);
+
+    // A hit Skyrim's people landed (a_damage of Skyrim's health) through CJ's armour first, as San Andreas's
+    // AccountForPedArmour takes a bullet or a blow: its share of a full bar is that many San Andreas points, the
+    // armour takes them point for point and the rest is the health to take.
+    inline Split AbsorbSkyrim(float a_armor, float a_damage, float a_skyrimMax)
+    {
+        if (!(a_skyrimMax > 0.0f) || !std::isfinite(a_skyrimMax)) {
+            return { std::clamp(std::isfinite(a_armor) ? a_armor : 0.0f, 0.0f, kSaFullHealth), std::isfinite(a_damage) ? (std::max)(a_damage, 0.0f) : 0.0f };
+        }
+        a_damage = std::isfinite(a_damage) ? (std::max)(a_damage, 0.0f) : 0.0f;
+        return Absorb(a_armor, a_damage / a_skyrimMax * kSaFullHealth, a_skyrimMax);
+    }
+
+    inline Settled Settle(float a_armor, float a_reported, float a_factor, float a_skyrimMax, Kind a_kind, bool a_armourOn)
+    {
+        const float damage = DamageOf(a_reported);
+        const float scaled = damage * (std::isfinite(a_factor) ? (std::max)(a_factor, 0.0f) : 1.0f);
+        Settled     s;
+        if (a_armourOn && ArmourTakes(a_kind)) {
+            const auto split = AbsorbSkyrim(a_armor, scaled, a_skyrimMax);
+            s.armor = split.armor;
+            s.health = split.health;
+        } else {
+            s.armor = std::clamp(std::isfinite(a_armor) ? a_armor : 0.0f, 0.0f, kSaFullHealth);
+            s.health = scaled;
+        }
+        s.back = damage - s.health;
         return s;
     }
 }

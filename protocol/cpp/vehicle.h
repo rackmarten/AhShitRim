@@ -39,6 +39,7 @@ namespace AhShitRim::Vehicle
     inline constexpr float kMaxUneven = 0.8f;    // highest minus lowest ground under the footprint, metres
     inline constexpr float kMaxStep = 1.5f;      // the ground's middle height at most this far from CJ's feet
     inline constexpr float kSampleInset = 0.9f;  // samples sit this far towards the middle of the footprint
+    inline constexpr float kEdgeSkirt = 0.5f;    // metres past the footprint where the ground mustn't drop away
 
     // Half the vehicle's size, metres, from its collision box: San Andreas models face +Y.
     struct Footprint
@@ -95,6 +96,24 @@ namespace AhShitRim::Vehicle
         return out;
     }
 
+    // Points round the footprint, kEdgeSkirt past its corners and sides (x, y; z is the spot's), in SamplePoints'
+    // order without the middle. A bike spawned on a rocky ledge with its wheels at the very edge rolled half off it
+    // and hung there: the ground under the footprint was flat, the drop was just past it.
+    inline constexpr int kEdgeSamples = kSamples - 1;
+
+    inline std::array<Vec3, kEdgeSamples> EdgePoints(const Spot& a_spot, const Footprint& a_size)
+    {
+        const Footprint wider{ a_size.halfWidth + kEdgeSkirt, a_size.halfLength + kEdgeSkirt };
+        const auto      all = SamplePoints(a_spot, wider);
+        std::array<Vec3, kEdgeSamples> out{};
+        for (int i = 0; i < kEdgeSamples; i++) {
+            const Vec3 middle = a_spot.center;
+            // SamplePoints insets by kSampleInset; these go all the way out.
+            out[i] = { middle.x + (all[i].x - middle.x) / kSampleInset, middle.y + (all[i].y - middle.y) / kSampleInset, middle.z };
+        }
+        return out;
+    }
+
     // What was found at a spot's sample points: the ground's height under each, if any.
     struct Ground
     {
@@ -123,6 +142,18 @@ namespace AhShitRim::Vehicle
             return std::nullopt;
         }
         return middle;
+    }
+
+    // Whether the ground round a spot holds: something under every edge point, none of it more than a_maxUneven below
+    // a_groundZ (GroundHeight's). Higher is fine: a wall or a bank beside it, which the clear lines look at.
+    inline bool EdgesHold(const std::array<bool, kEdgeSamples>& a_hit, const std::array<float, kEdgeSamples>& a_z, float a_groundZ, float a_maxUneven = kMaxUneven)
+    {
+        for (int i = 0; i < kEdgeSamples; i++) {
+            if (!a_hit[i] || !std::isfinite(a_z[i]) || a_z[i] < a_groundZ - a_maxUneven) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- A vehicle's model ----

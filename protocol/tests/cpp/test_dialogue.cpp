@@ -99,6 +99,18 @@ TEST_CASE("every category has lines of CJ's, none for nothing")
     CHECK(std::string(NameOf(Category::Threaten)) == "threaten");
 }
 
+TEST_CASE("nobody talks to CJ in a vehicle or faster than a walk")
+{
+    CHECK(MayTalk(false, 0.0f));
+    CHECK(MayTalk(false, 1.5f));  // walking
+    CHECK(MayTalk(false, kTalkSpeedMax));
+    CHECK_FALSE(MayTalk(false, 4.0f));   // jogging
+    CHECK_FALSE(MayTalk(false, 30.0f));  // falling, or thrown
+    CHECK_FALSE(MayTalk(true, 0.0f));    // parked: still in the vehicle
+    CHECK_FALSE(MayTalk(true, 25.0f));
+    CHECK_FALSE(MayTalk(false, std::nanf("")));
+}
+
 TEST_CASE("a new selection is a pick, what was there on opening isn't")
 {
     PickTracker t;

@@ -207,6 +207,8 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
         const auto next = ForceFor(stars + 1);
         CHECK(next.total > now.total);
         CHECK(next.cooldown < now.cooldown);
+        CHECK(next.breather < now.breather);  // a shorter gap the more stars
+        CHECK(now.breather > now.cooldown);
         int special = 0;
         for (const int n : now.most) {
             special += n;
@@ -214,8 +216,12 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
         CHECK(special <= now.total);
     }
     CHECK(ForceFor(kMaxStars).total == kForceCap);
-    CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Rider)] > 0);   // riders from 3
-    CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Rider)] == 0);
+    CHECK(ForceFor(2).most[static_cast<std::size_t>(Unit::Wolf)] == 0);
+    CHECK(ForceFor(3).most[static_cast<std::size_t>(Unit::Wolf)] == 2);   // a couple of wolves at 3, a pack that grows
+    for (int stars = 3; stars < kMaxStars; stars++) {
+        CHECK(ForceFor(stars + 1).most[static_cast<std::size_t>(Unit::Wolf)] >= ForceFor(stars).most[static_cast<std::size_t>(Unit::Wolf)]);
+    }
+    CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Wolf)] == 4);
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Wizard)] > 0);  // a guard wizard from 4
     CHECK(ForceFor(5).most[static_cast<std::size_t>(Unit::Soldier)] > 0); // soldiers from 5
     CHECK(ForceFor(4).most[static_cast<std::size_t>(Unit::Dragon)] == 0);
@@ -225,15 +231,17 @@ TEST_CASE("the force grows with the stars, faster, never more than twelve")
     CHECK(ForceFor(6).most[static_cast<std::size_t>(Unit::Mammoth)] == 1);
 }
 
-TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
+TEST_CASE("guards hit CJ a quarter with no stars, 0.4 at 1, more with each star, fully from 5")
 {
     CHECK(GuardDamage(0) == 0.25f);
-    CHECK(GuardDamage(1) == 0.25f);
-    CHECK(GuardDamage(3) == 0.5f);
-    CHECK(GuardDamage(4) == 1.0f);
+    CHECK(GuardDamage(1) == doctest::Approx(0.4f));
+    CHECK(GuardDamage(1) >= 0.25f);  // tier 1 at least a quarter (the user's call after testing)
+    CHECK(GuardDamage(3) == doctest::Approx(0.7f));
+    CHECK(GuardDamage(4) < 1.0f);
+    CHECK(GuardDamage(5) == 1.0f);
     CHECK(GuardDamage(6) == 1.0f);
-    for (int stars = 0; stars < kMaxStars; stars++) {
-        CHECK(GuardDamage(stars + 1) >= GuardDamage(stars));
+    for (int stars = 0; stars < kMaxStars - 1; stars++) {
+        CHECK(GuardDamage(stars + 1) > GuardDamage(stars));  // every star up to 5 hits harder
     }
     CHECK(GiveBack(-40.0f, 0.25f) == doctest::Approx(30.0f));  // Skyrim's damage comes negative or positive
     CHECK(GiveBack(40.0f, 0.5f) == doctest::Approx(20.0f));
@@ -241,32 +249,76 @@ TEST_CASE("guards hit CJ gently at 1 star, half at 3, fully from 4")
     CHECK(GiveBack(std::numeric_limits<float>::quiet_NaN(), 0.5f) == 0.0f);
 }
 
-TEST_CASE("the next unit: the dragon, giants, the mammoth, riders, the captain, wizards, soldiers, then guards")
+TEST_CASE("the next unit: the dragon, giants, the mammoth, wolves, the captain, wizards, soldiers, then guards")
 {
     const auto force = ForceFor(6);
     Counts     counts{};
     CHECK(NextUnit(force, counts) == Unit::Dragon);
-    CHECK(NextUnit(force, counts, false) == Unit::Rider);  // in a city: no dragon, giants or mammoth
+    CHECK(NextUnit(force, counts, false) == Unit::Wolf);  // in a city: no dragon, giants or mammoth
     counts[static_cast<std::size_t>(Unit::Dragon)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Giant);
     counts[static_cast<std::size_t>(Unit::Giant)] = 2;
     CHECK(NextUnit(force, counts) == Unit::Mammoth);
     counts[static_cast<std::size_t>(Unit::Mammoth)] = 1;
-    CHECK(NextUnit(force, counts) == Unit::Rider);
-    counts[static_cast<std::size_t>(Unit::Rider)] = 2;
+    CHECK(NextUnit(force, counts) == Unit::Wolf);
+    counts[static_cast<std::size_t>(Unit::Wolf)] = 4;
     CHECK(NextUnit(force, counts) == Unit::Captain);
     counts[static_cast<std::size_t>(Unit::Captain)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Wizard);
-    counts[static_cast<std::size_t>(Unit::Wizard)] = 2;
+    counts[static_cast<std::size_t>(Unit::Wizard)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Soldier);
-    counts[static_cast<std::size_t>(Unit::Soldier)] = 2;
+    counts[static_cast<std::size_t>(Unit::Soldier)] = 1;
     CHECK(NextUnit(force, counts) == Unit::Guard);
     CHECK(TotalOf(counts) == 11);
     CHECK(OpenWorldOnly(Unit::Mammoth));
     CHECK_FALSE(OpenWorldOnly(Unit::Soldier));
+    CHECK_FALSE(OpenWorldOnly(Unit::Wolf));  // wolves come into a city too
     CHECK(std::string(NameOf(Unit::Giant)) == "giant");
     CHECK(NextUnit(ForceFor(2), Counts{}) == Unit::Guard);
+    CHECK(NextUnit(ForceFor(3), Counts{}) == Unit::Wolf);  // at 3 stars the wolves come first
     CHECK(std::string(NameOf(Unit::Wizard)) == "wizard");
+    CHECK(std::string(NameOf(Unit::Wolf)) == "wolf");
+}
+
+TEST_CASE("wolves: ice wolves from 5 stars, and they don't bust CJ")
+{
+    CHECK(WolfFor(3) == kWolf);
+    CHECK(WolfFor(4) == kWolf);
+    CHECK(WolfFor(5) == kIceWolf);
+    CHECK(WolfFor(6) == kIceWolf);
+    CHECK_FALSE(Arrests(Unit::Wolf));
+    CHECK_FALSE(Arrests(Unit::Dragon));
+    CHECK(Arrests(Unit::Guard));
+    CHECK(Arrests(Unit::Captain));
+}
+
+TEST_CASE("a wolf keeps up with CJ on foot or in a car, and catches up from behind")
+{
+    // Close by and CJ sprinting (about the wolf's own run) or standing: Skyrim's own speed.
+    CHECK(ChaseSpeedMult(300.0f, 0.0f) == 100.0f);
+    CHECK(ChaseSpeedMult(kChaseNear, 520.0f) == 100.0f);
+    // Left behind on foot: faster, up to half again.
+    CHECK(ChaseSpeedMult(2560.0f, 520.0f) == doctest::Approx(140.0f));
+    CHECK(ChaseSpeedMult(kChaseFar, 520.0f) == 150.0f);
+    CHECK(ChaseSpeedMult(20000.0f, 0.0f) == 150.0f);
+    // CJ in a car at 25 m/s (1750 units a second): as fast as the car beside it, faster behind it.
+    CHECK(ChaseSpeedMult(500.0f, 1750.0f) == doctest::Approx(310.0f));
+    CHECK(ChaseSpeedMult(kChaseFar, 1750.0f) == doctest::Approx(470.0f));
+    // A fast car: kChaseMost at most.
+    CHECK(ChaseSpeedMult(kChaseFar, 4000.0f) == kChaseMost);
+    // Never slower the further behind, nor the faster CJ goes; whole steps only.
+    for (float d = 0.0f; d < 5000.0f; d += 250.0f) {
+        for (float v = 0.0f; v < 4000.0f; v += 250.0f) {
+            const float m = ChaseSpeedMult(d, v);
+            CHECK(ChaseSpeedMult(d + 250.0f, v) >= m);
+            CHECK(ChaseSpeedMult(d, v + 250.0f) >= m);
+            CHECK(std::fmod(m, kChaseStep) == 0.0f);
+            CHECK(m >= 100.0f);
+            CHECK(m <= kChaseMost);
+        }
+    }
+    CHECK(ChaseSpeedMult(std::numeric_limits<float>::quiet_NaN(), 500.0f) == 100.0f);
+    CHECK(ChaseSpeedMult(500.0f, std::numeric_limits<float>::infinity()) == 100.0f);
 }
 
 TEST_CASE("the director spawns one per cooldown up to the force, and gives a breather when they're all dead")
@@ -286,20 +338,84 @@ TEST_CASE("the director spawns one per cooldown up to the force, and gives a bre
         t += 0.1f;
     }
     CHECK(alive == force.total);  // and no more
-    CHECK(first == doctest::Approx(force.cooldown).epsilon(0.05));
-    // All killed: the next one waits two cooldowns.
+    CHECK(first == doctest::Approx(kFirstSpawn).epsilon(0.1));  // the first comes soon after the stars
+    // All killed: the next one waits the breather.
     int   spawned = 0;
     float wait = 0.0f;
     while (spawned == 0 && wait < 60.0f) {
         spawned += d.Tick(0.1f, 3, 0) ? 1 : 0;
         wait += 0.1f;
     }
-    CHECK(wait == doctest::Approx(2.0f * force.cooldown).epsilon(0.05));
+    CHECK(wait == doctest::Approx(force.breather).epsilon(0.05));
+    // Then one per cooldown again, the breather only after a wipe-out.
+    int   more = 1;
+    float again = 0.0f;
+    while (more < 3 && again < 60.0f) {
+        more += d.Tick(0.1f, 3, more) ? 1 : 0;
+        again += 0.1f;
+    }
+    CHECK(again == doctest::Approx(2.0f * force.cooldown).epsilon(0.05));
     // 1 star: nothing of ours.
     Director none;
     for (int i = 0; i < 1000; i++) {
         CHECK_FALSE(none.Tick(0.1f, 1, 0));
     }
+}
+
+TEST_CASE("wiped out, the next wave comes before CJ loses a star just for nobody being left to see him")
+{
+    for (int stars = 2; stars <= kMaxStars; stars++) {
+        const auto force = ForceFor(stars);
+        CAPTURE(stars);
+        CHECK(force.breather + kArriveSeconds < kFlashAfter + LoseSeconds(stars));
+    }
+    // Played out at 2 stars: everyone dead, CJ standing where he was, the next one spawns while the stars still show.
+    Pursuit pursuit;
+    pursuit.Restore(HeatFor(2), 0.0f);
+    Director d;
+    int   alive = 1;
+    float t = 0.0f;
+    while (alive > 0 && t < 30.0f) {
+        d.Tick(0.1f, pursuit.Stars(), alive);
+        alive = 0;  // all killed at once
+        t += 0.1f;
+    }
+    bool came = false;
+    for (float s = 0.0f; s < 30.0f && !came; s += 0.1f) {
+        came = d.Tick(0.1f, pursuit.Stars(), 0);
+        pursuit.Tick(0.1f, false, false);
+    }
+    CHECK(came);
+    CHECK(pursuit.Stars() == 2);
+}
+
+TEST_CASE("a spawn with no spot is tried again within a second or so, not a whole cooldown later")
+{
+    Director d;
+    float t = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && t < 30.0f) {
+        t += 0.1f;
+    }
+    d.Retry();
+    float wait = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && wait < 30.0f) {
+        wait += 0.1f;
+    }
+    CHECK(wait <= kRetrySeconds + 0.15f);
+}
+
+TEST_CASE("the director starts over once the stars are gone")
+{
+    Director d;
+    for (int i = 0; i < 100; i++) {
+        d.Tick(0.1f, 4, 2);
+    }
+    CHECK_FALSE(d.Tick(0.1f, 0, 2));
+    float t = 0.0f;
+    while (!d.Tick(0.1f, 2, 0) && t < 30.0f) {
+        t += 0.1f;
+    }
+    CHECK(t == doctest::Approx(kFirstSpawn).epsilon(0.15));
 }
 
 TEST_CASE("never in view: behind the camera is hidden, in front isn't")
@@ -312,16 +428,145 @@ TEST_CASE("never in view: behind the camera is hidden, in front isn't")
     CHECK(InView(camera, north, { 300.0f, 0.0f }));         // close by
     CHECK_FALSE(InView(camera, north, { 0.0f, -2000.0f })); // behind
     CHECK_FALSE(InView(camera, north, { 2000.0f, -500.0f }));  // off to the side, a little behind
-    for (int i = 0; i < 8; i++) {
+    float nearest = kSpawnFar, furthest = 0.0f;
+    for (int i = 0; i < 24; i++) {
         const Point at = SpawnSpot(cj, north, i);
         const float distance = std::hypot(at.x - cj.x, at.y - cj.y);
         CHECK(distance >= kSpawnNear);
         CHECK(distance <= kSpawnFar);
         CHECK_FALSE(InView(camera, north, at));
+        nearest = (std::min)(nearest, distance);
+        furthest = (std::max)(furthest, distance);
+        for (int j = 0; j < i; j++) {  // 24 different spots before one comes again
+            const Point other = SpawnSpot(cj, north, j);
+            CHECK(std::hypot(at.x - other.x, at.y - other.y) > 1.0f);
+        }
     }
+    CHECK(furthest - nearest > 1000.0f);  // near, middling and far
+    CHECK(SpawnSpot(cj, north, 24).x == doctest::Approx(SpawnSpot(cj, north, 0).x));
+    // 15 to 40 m, in Skyrim units (70 a metre).
+    CHECK(kSpawnNear >= 15.0f * 70.0f);
+    CHECK(kSpawnFar <= 40.0f * 70.0f);
     // Facing east, behind is west.
     const Point west = SpawnSpot(cj, 1.5707963f, 0);
     CHECK(west.x < -kSpawnNear);
+}
+
+namespace
+{
+    // Ticks a leash a_seconds in 0.1 s frames on a_target; returns how often it pulled.
+    int Pulls(Leash& a_leash, Target a_target, float a_seconds)
+    {
+        int pulls = 0;
+        for (float t = 0.0f; t < a_seconds - 1e-4f; t += 0.1f) {
+            pulls += a_leash.Tick(0.1f, a_target) ? 1 : 0;
+        }
+        return pulls;
+    }
+}
+
+TEST_CASE("the leash: on CJ never pulled, a stray after a while, a lost one sooner, none more often than the gap")
+{
+    Leash leash;
+    CHECK(Pulls(leash, Target::Cj, 60.0f) == 0);
+    CHECK(Pulls(leash, Target::Other, kStrayFor - 0.5f) == 0);  // a short fight with someone else is left alone
+    CHECK(Pulls(leash, Target::Other, 1.0f) == 1);
+    CHECK(Pulls(leash, Target::Other, 60.0f) <= static_cast<int>(60.0f / kLeashGap) + 1);  // at most once a gap
+    CHECK(Pulls(leash, Target::Other, 60.0f) >= static_cast<int>(60.0f / (kStrayFor + 0.2f)) - 1);
+
+    Leash lost;
+    CHECK(Pulls(lost, Target::None, kLostFor - 0.3f) == 0);
+    CHECK(Pulls(lost, Target::None, 0.5f) == 1);
+    CHECK(Pulls(lost, Target::None, kLeashGap - 0.5f) == 0);  // not again before the gap
+
+    Leash back;
+    Pulls(back, Target::Other, kStrayFor - 1.0f);
+    Pulls(back, Target::Cj, 0.5f);  // back on CJ: the time away starts over
+    CHECK(Pulls(back, Target::Other, kStrayFor - 1.0f) == 0);
+
+    Leash pulled;
+    pulled.Pulled();  // a rejoin just set it on CJ
+    CHECK(Pulls(pulled, Target::None, kLeashGap - 0.5f) == 0);
+    CHECK(Pulls(pulled, Target::None, 1.0f) == 1);
+    CHECK(kLeashGap >= 3.0f);  // a path takes a moment to build
+}
+
+TEST_CASE("a copy made from a runtime base, left in a save by an earlier build, is found; Skyrim's own actors aren't")
+{
+    CHECK(LeftoverCopy(0xFF000E6E, 0xFF000D73));        // the load test's crasher: an Imperial Soldier made from a guard's runtime base
+    CHECK_FALSE(LeftoverCopy(0xFF000E6C, 0x000872A2));  // one of ours made from the game's own record (a runtime base of its own is normal)
+    CHECK_FALSE(LeftoverCopy(0xFF000DB6, 0x00023ABF));  // an ice wolf made from its record
+    CHECK_FALSE(LeftoverCopy(0x000D8C56, 0x000D8C50));  // a guard placed in the game
+    CHECK_FALSE(LeftoverCopy(0x000D8C56, 0xFF000DD5));  // a placed actor with a runtime base: Skyrim's own levelled guard
+}
+
+TEST_CASE("no quick save or quickload while wanted or while any of ours are out")
+{
+    const float later = kQuickAfterGone + 1.0f;
+    CHECK(QuickAllowed(0, 0, 0, later));
+    CHECK_FALSE(QuickAllowed(6, 7, 0, later));   // F9 at 6 stars with the force out: the crash
+    CHECK_FALSE(QuickAllowed(1, 0, 0, later));   // wanted, nobody spawned yet
+    CHECK_FALSE(QuickAllowed(0, 0, 12, later));  // ASNAEB just sent twelve off: not until they're gone
+    CHECK_FALSE(QuickAllowed(0, 3, 0, later));
+    // ASNAEB, LJSPQK, AEZAKMI, then F9: AEZAKMI clears the stars and sends ours off at once; F9 waits until they're gone
+    // and a moment more (the final build's crash: one leaving, then a load a second later).
+    CHECK_FALSE(QuickAllowed(0, 0, 1, later));
+    CHECK_FALSE(QuickAllowed(0, 0, 0, 0.5f));
+    CHECK_FALSE(QuickAllowed(0, 0, 0, kQuickAfterGone - 0.1f));
+    CHECK(QuickAllowed(0, 0, 0, kQuickAfterGone));
+    // The message: once per press, not while held, not more often than kQuickNagEvery.
+    CHECK(QuickNag(true, 100.0f));
+    CHECK_FALSE(QuickNag(false, 100.0f));                 // held or repeated: refused silently
+    CHECK_FALSE(QuickNag(true, kQuickNagEvery - 0.1f));   // pressed again right away
+    CHECK(QuickNag(true, kQuickNagEvery));
+}
+
+TEST_CASE("ours are one side: the hold's guards' factions, their own left, the crime faction always")
+{
+    const std::vector<std::uint32_t> guards = { 0x10, 0x11, 0x12 };  // say GuardFaction, IsGuardFaction, the hold's guards
+    const std::uint32_t              crime = 0x267EA;
+    const auto giant = Enlist({ 0x50, 0x51 }, guards, crime);  // GiantFaction, CreatureFaction
+    CHECK(giant.join == std::vector<std::uint32_t>{ 0x10, 0x11, 0x12, crime });
+    CHECK(giant.leave == std::vector<std::uint32_t>{ 0x50, 0x51 });
+
+    const auto guard = Enlist({ 0x10, 0x11, 0x12, crime }, guards, crime);  // a copy of a guard: already one of them
+    CHECK(guard.leave.empty());
+    CHECK(guard.join.size() == 4);
+
+    const auto noCrime = Enlist({ 0x50, 0x50 }, { 0x10, crime }, crime);  // no doubles either way
+    CHECK(noCrime.join == std::vector<std::uint32_t>{ 0x10, crime });
+    CHECK(noCrime.leave == std::vector<std::uint32_t>{ 0x50 });
+    CHECK(Enlist({}, {}, 0).join.empty());
+    CHECK(kOursAggression == 1.0f);  // the player (an enemy), not everyone
+}
+
+TEST_CASE("ours are made from the game's own records, never a runtime form or a unique NPC")
+{
+    for (const auto& hold : kHolds) {
+        CHECK(Spawnable(hold.guard, false));  // every hold's guard record is the game's own
+    }
+    CHECK(Spawnable(kCaptainImperial, false));
+    CHECK(Spawnable(kSoldiersSons, false));
+    CHECK(Spawnable(0x00017145, false));         // a soldier picked from the levelled list
+    CHECK_FALSE(Spawnable(0xFF000D73, false));   // a base Skyrim made at runtime for a levelled or templated actor
+    CHECK_FALSE(Spawnable(0xFF000868, false));   // the base of a Whiterun guard about, which copies used to share
+    CHECK_FALSE(Spawnable(0x0001A69F, true));    // a unique NPC (Commander Caius)
+    CHECK_FALSE(Spawnable(0, false));
+}
+
+TEST_CASE("a levelled list's soldier: anyone up to the player's level, else the lowest")
+{
+    const std::uint16_t levels[] = { 1, 10, 25, 40 };
+    for (unsigned roll = 0; roll < 20; roll++) {
+        const int i = PickLeveled(levels, 4, 12, roll);
+        CHECK((i == 0 || i == 1));
+    }
+    CHECK(PickLeveled(levels, 4, 12, 0) != PickLeveled(levels, 4, 12, 1));  // the roll picks among them
+    CHECK(PickLeveled(levels, 4, 50, 3) == 3);
+    const std::uint16_t high[] = { 30, 20, 40 };
+    CHECK(PickLeveled(high, 3, 5, 7) == 1);  // nobody that low: the lowest
+    CHECK(PickLeveled(levels, 0, 10, 0) == -1);
+    CHECK(PickLeveled(nullptr, 3, 10, 0) == -1);
 }
 
 TEST_CASE("CJ's pursuit lines come after the conversation's categories")

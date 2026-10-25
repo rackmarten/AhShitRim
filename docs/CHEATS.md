@@ -13,7 +13,7 @@ San Andreas keeps only a key of each code (a checksum of its letters), so every 
 | LXGIWYL | THUGSARMOURY | Weapon set 1 (thug's tools) |
 | KJKSZPJ | PROFESSIONALSKIT | Weapon set 2 (professional tools) |
 | UZUMYMW | | Weapon set 3 (nutter tools) |
-| WANRLTW | FULLCLIP | Toggle. Infinite ammo, no reloading |
+| WANRLTW | FULLCLIP | Toggle. Infinite ammo, no reloading, and infinite shouting: no shout cooldown |
 | NCSGDAG | PROFESSIONALKILLER | Hitman in every weapon skill |
 | SZCMAWO | GOODBYECRUELWORLD | Suicide: Wasted (not while BAGUVIX is on, as in San Andreas) |
 | AEZAKMI | IDOASIPLEASE | Toggle. Never wanted: every bounty cleared and the guards' fight called off as it's typed; after that no stars, and any bounty a crime would add is put back as it was |
@@ -31,6 +31,7 @@ San Andreas keeps only a key of each code (a checksum of its letters), so every 
 | VKYPQCF | ICANGOALLNIGHT | Maximum stamina |
 | VQIMAHA | NATURALTALENT | Maximum driving, flying and bike skills |
 | LFGMHAL | KANGAROO | Toggle. Mega jump |
+| IAVENJQ | STINGLIKEABEE | Toggle. Mega punch: a blow with fists, brass knuckles or the parachute kills and throws the victim far (giants, mammoths and dragons only die; an essential person kneels, unless NOMERCY) |
 | YECGAA | ROCKETMAN | The jetpack on his back |
 | AIYPWZQP | LETSGOBASEJUMPING | The parachute in his hands |
 
@@ -67,6 +68,7 @@ They come in front of CJ on foot, as the spawn keys bring them; in a vehicle the
 | PGGOMOY | STICKLIKEGLUE | Toggle. Perfect handling |
 | COXEFGU | SPEEDFREAK | Toggle. Nitro in every car |
 | JCNRUAD | TOUCHMYCARYOUDIE | Toggle. Smash'n'boom: cars CJ hits blow up |
+| BSXSGGC | BUBBLECARS | Toggle. Cars float away when hit: a vehicle CJ's vehicle hits loses its gravity and floats up, and stays that way (as in San Andreas) |
 | CPKTNWT | ALLCARSGOBOOM | Blow up every vehicle (not wrecks: as in San Andreas, a burnt-out one doesn't go up again) |
 
 ## AhShitRim's own
@@ -82,11 +84,14 @@ Matched by their letters as typed.
 
 ## Not in yet
 
-Mega punch (IAVENJQ) and cars floating away (BSXSGGC) come later. San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), but the wanted level ones are (OSRBLHH, LJSPQK, ASNAEB, AEZAKMI).
+San Andreas's ped, traffic, gang, weather and time cheats aren't in (its world here has no peds or traffic, and the clock and weather are Skyrim's), but the wanted level ones are (OSRBLHH, LJSPQK, ASNAEB, AEZAKMI).
 
 ## Every vehicle by its name
 
-Ours: a vehicle's model name, as in your San Andreas's own `data/vehicles.ide` (read when Skyrim starts), upper case with anything but letters and digits left out, spawns it. Below are 1.0's 212 (model id in brackets). The shortest run of what you typed that is a cheat wins, so a name can go off inside a longer one: MONSTER comes before MONSTERA and MONSTERB, which can't be typed (AGBDLCID brings MONSTERA).
+Ours: a vehicle's model name, as in your San Andreas's own `data/vehicles.ide` (read when Skyrim starts), upper case with anything but letters and digits left out, spawns it.
+
+**AIR before a plane's name** (AIRAT400, AIRBEAGLE, AIRANDROM, AIRSHAMAL, AIRNEVADA, AIRDODO, AIRRUSTLER, AIRHYDRA) spawns it already flying, 150 m above CJ, facing where the camera looks, gear up, a little over the speed that holds it up, with CJ at the controls: hold W to keep it flying. Skyrim's ground is no runway, so this is how the big planes fly at all. Only planes: AIR before a helicopter (they take off from anywhere), the Vortex or anything else spawns it on the ground as its name alone does. As with every vehicle, CJ has to be on foot.
+ Below are 1.0's 212 (model id in brackets). The shortest run of what you typed that is a cheat wins, so a name can go off inside a longer one: MONSTER comes before MONSTERA and MONSTERB, which can't be typed (AGBDLCID brings MONSTERA).
 
 **Cars** (141): ADMIRAL (445), ALPHA (602), AMBULAN (416), BAGGAGE (485), BANDITO (568), BANSHEE (429), BARRACKS (433), BENSON (499), BFINJECT (424), BLADE (536), BLISTAC (496), BLOODRA (504), BOBCAT (422), BOXBURG (609), BOXVILLE (498), BRAVURA (401), BROADWAY (575), BUCCANEE (518), BUFFALO (402), BULLET (541), BURRITO (482), BUS (431), CABBIE (438), CADDY (457), CADRONA (527), CAMPER (483), CEMENT (524), CHEETAH (415), CLOVER (542), CLUB (589), COACH (437), COMBINE (532), COMET (480), COPCARLA (596), COPCARRU (599), COPCARSF (597), COPCARVG (598), DFT30 (578), DOZER (486), ELEGANT (507), ELEGY (562), EMPEROR (585), ENFORCER (427), ESPERANT (419), EUROS (587), FBIRANCH (490), FBITRUCK (528), FELTZER (533), FIRELA (544), FIRETRUK (407), FLASH (565), FLATBED (455), FORKLIFT (530), FORTUNE (526), GLENDALE (466), GLENSHIT (604), GREENWOO (492), HERMES (474), HOTDOG (588), HOTKNIFE (434), HOTRINA (502), HOTRINB (503), HOTRING (494), HUNTLEY (579), HUSTLER (545), INFERNUS (411), INTRUDER (546), JESTER (559), JOURNEY (508), KART (571), LANDSTAL (400), LINERUN (403), MAJESTIC (517), MANANA (410), MERIT (551), MESA (500), MOONBEAM (418), MOWER (572), MRWHOOP (423), MULE (414), NEBULA (516), NEWSVAN (582), OCEANIC (467), PACKER (443), PATRIOT (470), PEREN (404), PETRO (514), PHOENIX (603), PICADOR (600), PONY (413), PREMIER (426), PREVION (436), PRIMO (547), RANCHER (489), RDTRAIN (515), REGINA (479), REMINGTN (534), RHINO (432), RNCHLURE (505), ROMERO (442), RUMPO (440), SABRE (475), SADLER (543), SADLSHIT (605), SANDKING (495), SAVANNA (567), SECURICA (428), SENTINEL (405), SLAMVAN (535), SOLAIR (458), STAFFORD (580), STALLION (439), STRATUM (561), STRETCH (409), SULTAN (560), SUNRISE (550), SUPERGT (506), SWATVAN (601), SWEEPER (574), TAHOMA (566), TAMPA (549), TAXI (420), TOPFUN (459), TORNADO (576), TOWTRUCK (525), TRACTOR (531), TRASH (408), TUG (583), TURISMO (451), URANUS (558), UTILITY (552), VINCENT (540), VIRGO (491), VOODOO (412), WALTON (478), WASHING (421), WILLARD (529), WINDSOR (555), YANKEE (456), YOSEMITE (554), ZR350 (477)
 

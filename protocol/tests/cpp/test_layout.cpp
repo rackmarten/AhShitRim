@@ -28,9 +28,141 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v35: passengers, busts and vehicle proofs")
+{
+    CHECK(kProtocolVersion == 35);
+    CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
+    CHECK(kPlayerGettingInOut == 0x40);
+    CHECK(kBodyBulletProof == 0x80);
+    CHECK(kBodyFireProof == 0x100);
+    CHECK(kBodyExplosionProof == 0x200);
+    CHECK(kBodyMeleeProof == 0x400);
+}
+
+TEST_CASE("protocol v34: the land in a collision chunk")
+{
+    CHECK(kCollisionChunkCells == 32);
+    CHECK(offsetof(CollisionChunkHeader, landVertexCount) == 36);
+    CHECK(sizeof(CollisionChunkHeader) == 40);
+}
+
+TEST_CASE("protocol v33: fist fights and lock-on")
+{
+    CHECK(kProxyTarget == 0x4);
+    CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
+}
+
+TEST_CASE("protocol v32: the burnout")
+{
+    CHECK(kButtonAccelerate == 0x400000);
+    CHECK(kButtonBrake == 0x800000);
+}
+
+TEST_CASE("protocol v31: Skyrim's hits on CJ's vehicle")
+{
+    CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
+    CHECK(offsetof(BodyState, vehicleFrame) == 2036);
+    CHECK(offsetof(BodyState, boxMin) == 2064);
+    CHECK(offsetof(BodyState, boxMax) == 2076);
+    CHECK(sizeof(BodyState) == 2088);
+    CHECK(sizeof(BodySlot) == 2112);  // 64 bytes larger: every slot after the body slot and both rings move
+}
+
+TEST_CASE("protocol v30: HUD sounds")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 11);
+}
+
+TEST_CASE("protocol v29: CJ talking on his own")
+{
+    CHECK(sizeof(InputState) == 124);
+    CHECK(offsetof(InputState, stealthKillCount) == 116);
+    CHECK(offsetof(InputState, cashCount) == 118);
+    CHECK(offsetof(InputState, shopBuyCount) == 120);
+    CHECK(offsetof(InputState, shopLeaveCount) == 122);
+    CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
+    CHECK(kInputHostileNear == 0x100);
+    CHECK((kInputHostileNear & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera | kInputBusted)) == 0);
+}
+
+TEST_CASE("protocol v28: running people over and passengers")
+{
+    CHECK(kProxyMax == 16);
+    CHECK(kSeatMax == 3);
+    CHECK(static_cast<std::uint16_t>(MessageType::Impact) == 10);
+    CHECK(kProxyHeavy == 0x1);
+    CHECK(kProxyPerson == 0x2);
+    CHECK(kImpactHeavy == 0x1);
+    CHECK(kImpactBike == 0x2);
+    CHECK(sizeof(ActorProxy) == 64);
+    CHECK(offsetof(ActorProxy, flags) == 4);
+    CHECK(offsetof(ActorProxy, a) == 8);
+    CHECK(offsetof(ActorProxy, b) == 20);
+    CHECK(offsetof(ActorProxy, radius) == 32);
+    CHECK(offsetof(ActorProxy, mass) == 36);
+    CHECK(offsetof(ActorProxy, velocity) == 40);
+    CHECK(sizeof(ProxyState) == 1040);
+    CHECK(offsetof(ProxyState, proxies) == 16);
+    CHECK(sizeof(ProxySlot) == 1088);
+    CHECK(sizeof(ImpactEvent) == 48);
+    CHECK(offsetof(ImpactEvent, speed) == 8);
+    CHECK(offsetof(ImpactEvent, flags) == 12);
+    CHECK(offsetof(ImpactEvent, vehicleModel) == 14);
+    CHECK(offsetof(ImpactEvent, at) == 16);
+    CHECK(offsetof(ImpactEvent, push) == 28);
+    CHECK(offsetof(ImpactEvent, damage) == 40);
+}
+
+TEST_CASE("protocol v27: pickups")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupCommand) == 8);  // the payloads are checked with the v19 constants
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupEvent) == 9);
+}
+
+TEST_CASE("protocol v26: particles")
+{
+    CHECK(sizeof(BodyFx) == 56);
+    CHECK(offsetof(BodyFx, at) == 0);
+    CHECK(offsetof(BodyFx, along) == 24);
+    CHECK(offsetof(BodyFx, ground) == 48);
+    CHECK(offsetof(BodyFx, gas) == 52);
+    CHECK(offsetof(BodyFx, level) == 53);
+    CHECK(offsetof(BodyFx, dust) == 54);
+    CHECK(offsetof(BodyFx, flags) == 55);
+    CHECK(offsetof(BodyState, fx) == 1892);
+    CHECK(kFxLowGear == 0x1);
+    CHECK(kShotVehicleGun == 0x4);
+    CHECK((kShotVehicleGun & (kShotSpread | kShotFirstPerson)) == 0);
+    CHECK(kProjectileCannon == 0x2);
+    CHECK((kProjectileCannon & kProjectileBurst) == 0);
+}
+
+TEST_CASE("protocol v25: the shout's voice")
+{
+    CHECK(offsetof(InputState, lineKind) == 110);  // a shout goes as a lineKind (Thuum::kLineShout), no new field
+}
+
+TEST_CASE("protocol v24: sound cues")
+{
+    CHECK(kCueMissionPassed == 1);
+    CHECK(kCueIntroLine == 2);
+}
+
+TEST_CASE("protocol v23: the vehicle keymap")
+{
+    CHECK(kButtonVehicleFire == 0x40000);
+    CHECK(kButtonVehicleFireAlt == 0x80000);
+    CHECK(kButtonLookBehind == 0x100000);
+    CHECK(kButtonCameraView == 0x200000);
+    CHECK(kButtonAccelerate == 0x400000);
+    CHECK(kButtonBrake == 0x800000);
+    const std::uint32_t before = 0x3FFFF;  // every button up to v22's kButtonHydraulics
+    CHECK((before & kButtonHydraulics) != 0);
+    CHECK(((kButtonVehicleFire | kButtonVehicleFireAlt | kButtonLookBehind | kButtonCameraView | kButtonAccelerate | kButtonBrake) & before) == 0);
+}
+
 TEST_CASE("protocol v22: busted")
 {
-    CHECK(kProtocolVersion == 22);
     CHECK(kInputBusted == 0x80);
     CHECK(static_cast<std::uint8_t>(EffectKind::KnockCj) == 5);
     CHECK((kInputBusted & (kInputOwnsPlayer | kInputPaused | kInputFace | kInputScripted | kInputSeated | kInputWasted | kInputWastedCamera)) == 0);
@@ -44,6 +176,13 @@ TEST_CASE("protocol v20: cheats")
     CHECK(offsetof(CheatCommand, cheat) == 4);
     CHECK(offsetof(CheatCommand, flags) == 5);
     CHECK(kCheatOn == 0x1);
+}
+
+TEST_CASE("protocol v30: HUD sounds")
+{
+    CHECK(static_cast<std::uint16_t>(MessageType::FrontendSound) == 11);
+    CHECK(sizeof(FrontendSoundCommand) == 4);
+    CHECK(offsetof(FrontendSoundCommand, event) == 0);
 }
 
 TEST_CASE("protocol v19 constants")
@@ -81,6 +220,21 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(EffectEvent, projectile) == 8);
     CHECK(offsetof(EffectEvent, at) == 12);
     CHECK(offsetof(EffectEvent, seconds) == 24);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupCommand) == 8);
+    CHECK(static_cast<std::uint16_t>(MessageType::PickupEvent) == 9);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Health) == 1);
+    CHECK(static_cast<std::uint8_t>(PickupKind::Jetpack) == 6);
+    CHECK(static_cast<std::uint8_t>(PickupCommandKind::Collected) == 2);
+    CHECK(static_cast<std::uint8_t>(PickupEventKind::Dropped) == 2);
+    CHECK(sizeof(PickupCommand) == 16);
+    CHECK(sizeof(PickupEvent) == 144);
+    CHECK(kPickupPartMax == 4);
+    CHECK(offsetof(PickupEvent, kind) == 4);
+    CHECK(offsetof(PickupEvent, partCount) == 7);
+    CHECK(offsetof(PickupEvent, model) == 8);
+    CHECK(offsetof(PickupEvent, amount) == 12);
+    CHECK(offsetof(PickupEvent, at) == 16);
+    CHECK(offsetof(PickupEvent, parts) == 28);
     CHECK(kPlayerOnFire == 0x20);
     CHECK(kButtonFire == 0x200);
     CHECK(kButtonAim == 0x400);
@@ -114,7 +268,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8404736);
+    CHECK(kMappingSize == 8407360);
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -126,11 +280,11 @@ TEST_CASE("protocol v19 constants")
     CHECK(static_cast<std::uint32_t>(Side::SanAndreas) == 1);
 }
 
-TEST_CASE("the v14 slot and ring layout")
+TEST_CASE("the v31 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 112);
+    CHECK(sizeof(InputState) == 124);
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
@@ -147,6 +301,8 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(InputState, carHeading) == 104);
     CHECK(offsetof(InputState, lineCount) == 108);
     CHECK(offsetof(InputState, lineKind) == 110);
+    CHECK(offsetof(InputState, cueCount) == 112);  // v22: in the slot's padding, the slot stays 144 bytes
+    CHECK(offsetof(InputState, cue) == 114);
     CHECK(sizeof(InputSlot) == 144);
     CHECK(sizeof(PlayerState) == 248);
     CHECK(offsetof(PlayerState, skills) == 224);
@@ -180,22 +336,26 @@ TEST_CASE("the v14 slot and ring layout")
     CHECK(offsetof(AudioSlot, value) == 8);
     CHECK(kOffsetAudioSlot + sizeof(AudioSlot) == kOffsetBodySlot);
     CHECK(kOffsetBodySlot == 640);
-    CHECK(sizeof(BodySlot) == 1920);
+    CHECK(sizeof(BodySlot) == 2112);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 1892);
+    CHECK(sizeof(BodyState) == 2088);  // v31: the vehicle frame and box after the seats
+    CHECK(offsetof(BodyState, seatCount) == 1948);
+    CHECK(offsetof(BodyState, seats) == 1952);
     CHECK(offsetof(BodyState, cameraUp) == 1856);
     CHECK(offsetof(BodyState, health) == 1868);
     CHECK(offsetof(BodyState, engine) == 1872);
     CHECK(offsetof(BodyState, hiddenParts) == 1884);
-    CHECK(kOffsetVehicleSlots == 2560);
+    CHECK(kOffsetVehicleSlots == 2752);
     CHECK(kOffsetVehicleSlots % 64 == 0);
-    CHECK(kOffsetWeaponSlots == 2560 + 4 * 1920);
+    CHECK(kOffsetWeaponSlots == 2752 + 4 * 2112);
     CHECK(kOffsetWeaponSlots % 64 == 0);
-    CHECK(kOffsetGearSlot == 10240 + 2 * 1920);
+    CHECK(kOffsetGearSlot == 11200 + 2 * 2112);
     CHECK(kOffsetGearSlot % 64 == 0);
-    CHECK(kOffsetRingToSanAndreas == kOffsetGearSlot + 1920);
+    CHECK(kOffsetProxySlot == kOffsetGearSlot + 2112);
+    CHECK(kOffsetProxySlot % 64 == 0);
+    CHECK(kOffsetRingToSanAndreas == kOffsetProxySlot + 1088);
     CHECK(kRingToSanAndreasCapacity == 4u * 1024 * 1024);
-    CHECK(kOffsetRingToSkyrim == 4210368);
+    CHECK(kOffsetRingToSkyrim == 4212992);
     CHECK(kRingToSkyrimCapacity == 4u * 1024 * 1024);
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);

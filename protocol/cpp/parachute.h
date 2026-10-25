@@ -31,13 +31,15 @@ namespace AhShitRim::Parachute
 
     inline constexpr float kStartFall = 5.0f;     // falling this fast with the parachute in his hands, he skydives...
     inline constexpr float kStartHeight = 15.0f;  // ... with at least this much air under him
+    inline constexpr float kStartDrop = 3.0f;     // or once he has dropped this far since he last stood (FallWatch)
+    inline constexpr float kStandReach = 0.5f;    // San Andreas's standing counts only with ground this close under his feet
     inline constexpr float kGravity = 20.0f;      // San Andreas's (0.008 m a step squared at 50 steps a second)
     inline constexpr float kFreefallFall = 40.0f;  // terminal speed, flat
     inline constexpr float kDiveFall = 55.0f;      // W: head down
     inline constexpr float kSlowFall = 32.0f;      // S: spread out
-    inline constexpr float kFreefallForward = 4.0f;
-    inline constexpr float kDiveForward = 14.0f;
-    inline constexpr float kSlowForward = 1.0f;
+    inline constexpr float kFreefallForward = 8.0f;   // (v23: twice what it was, to clear a mountainside before opening)
+    inline constexpr float kDiveForward = 28.0f;
+    inline constexpr float kSlowForward = 2.0f;
     inline constexpr float kFreefallTurn = 1.5f;   // radians a second, A and D
 
     inline constexpr float kOpenSeconds = 1.1f;    // PARA_open
@@ -60,6 +62,56 @@ namespace AhShitRim::Parachute
         bool  free = true;         // on foot and his own: not in a vehicle, on the jetpack, in a scene or Wasted
         float fall = 0.0f;         // metres a second downwards (negative going up)
         float height = 1e9f;       // metres from his feet down to the ground, huge when nothing is below
+        float dropped = 0.0f;      // metres he has come down since he last stood (FallWatch)
+    };
+
+    // Whether CJ stands, for the parachute: San Andreas says so and the ground is right under his feet. On foot San
+    // Andreas's flag can still be up a moment after he walked off an edge, and then a skydive never started.
+    constexpr bool Grounded(bool a_standing, float a_height) { return a_standing && a_height < kStandReach; }
+
+    // Whether a fall starts the skydive: carrying the parachute, off the ground with kStartHeight of air under him, and
+    // falling at kStartFall or more, or already kStartDrop below where he last stood (walking off a bridge or a peak,
+    // when San Andreas's speed is slow to show the fall).
+    constexpr bool StartsSkydive(const Around& a_around)
+    {
+        return a_around.holdsChute && !a_around.standing && a_around.height >= kStartHeight &&
+               (a_around.fall >= kStartFall || a_around.dropped >= kStartDrop);
+    }
+
+    // Follows CJ's feet through a fall: how far he has come down since he last stood and how fast, from where his feet
+    // are each frame rather than San Andreas's speed. A jump of more than kTeleport in a frame (the fall rescue, the
+    // floating origin moving) starts it over.
+    class FallWatch
+    {
+    public:
+        static constexpr float kTeleport = 10.0f;
+
+        // a_feetZ: his feet, San Andreas metres; a_grounded: Grounded() this frame; a_dt seconds.
+        void Update(float a_feetZ, bool a_grounded, float a_dt)
+        {
+            if (!std::isfinite(a_feetZ)) {
+                return;
+            }
+            if (a_grounded || !_have || std::abs(a_feetZ - _last) > kTeleport) {
+                _have = true;
+                _top = _last = a_feetZ;
+                _rate = 0.0f;
+                return;
+            }
+            _top = (std::max)(_top, a_feetZ);
+            _rate = a_dt > 0.0f ? (_last - a_feetZ) / a_dt : _rate;
+            _last = a_feetZ;
+        }
+
+        float Dropped() const { return _have ? _top - _last : 0.0f; }
+        float Rate() const { return _rate; }  // metres a second down
+        void  Reset() { _have = false; _rate = 0.0f; }
+
+    private:
+        bool  _have = false;
+        float _top = 0.0f;
+        float _last = 0.0f;
+        float _rate = 0.0f;
     };
 
     struct Keys
@@ -84,6 +136,19 @@ namespace AhShitRim::Parachute
         return a_value + (a_target - a_value) * (std::min)(1.0f, a_rate * a_dt);
     }
 
+    // One a_dt of a fall towards a_terminal, as San Andreas's own physics falls: gravity less a drag that grows with the
+    // square of the speed (CPhysical::ApplyAirResistance), so it eases into the terminal speed rather than reaching it
+    // at a constant pull and stopping dead. For a ped (m_fAirResistance 1/175) that gives about 19 m/s after a second,
+    // 36 after two and 47 after three, towards 59. Faster than a_terminal (out of a dive) the air brakes him to it.
+    inline float FallStep(float a_fall, float a_terminal, float a_dt)
+    {
+        if (a_fall > a_terminal) {
+            return Toward(a_fall, a_terminal, kBrake, a_dt);
+        }
+        const float ratio = a_fall / a_terminal;
+        return (std::min)(a_fall + kGravity * (1.0f - ratio * ratio) * a_dt, a_terminal);
+    }
+
     inline void Enter(State& a_state, Phase a_phase)
     {
         a_state.phase = a_phase;
@@ -103,7 +168,7 @@ namespace AhShitRim::Parachute
         }
         switch (a_state.phase) {
         case Phase::Off:
-            if (a_around.holdsChute && !a_around.standing && a_around.fall >= kStartFall && a_around.height >= kStartHeight) {
+            if (StartsSkydive(a_around)) {
                 Enter(a_state, Phase::Freefall);
                 a_state.fall = a_around.fall;
                 a_state.forward = 0.0f;
@@ -122,8 +187,7 @@ namespace AhShitRim::Parachute
                 const float terminal = pitch > 0.0f ? kFreefallFall + (kDiveFall - kFreefallFall) * pitch : kFreefallFall + (kFreefallFall - kSlowFall) * pitch;
                 const float ahead = pitch > 0.0f ? kFreefallForward + (kDiveForward - kFreefallForward) * pitch
                                                  : kFreefallForward + (kFreefallForward - kSlowForward) * pitch;
-                // Gravity up to the terminal speed of how he lies; faster than that (out of a dive) the air brakes him.
-                a_state.fall = a_state.fall > terminal ? Toward(a_state.fall, terminal, kBrake, a_dt) : (std::min)(a_state.fall + kGravity * a_dt, terminal);
+                a_state.fall = FallStep(a_state.fall, terminal, a_dt);
                 a_state.forward = Toward(a_state.forward, ahead, kBrake, a_dt);
                 a_state.turn = steer * kFreefallTurn;
             }

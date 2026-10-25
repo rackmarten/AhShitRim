@@ -4,7 +4,15 @@ name: build
 # (docs/DEV_SETUP.md, "CI"), which costs no Actions minutes. GitHub's windows-latest (billed double
 # on a private repo) only runs when asked for by hand, and is the only one that packages the
 # release zip.
+#
+# Pushes to main (development) and production (what players get, docs/DEV_SETUP.md, "Branches and
+# releases") build too, so both branches' heads are checked, and so is every PR into either.
 on:
+  push:
+    branches: [main, production]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   pull_request:
     paths-ignore:
       - 'docs/**'

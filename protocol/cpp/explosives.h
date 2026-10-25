@@ -476,6 +476,19 @@ namespace AhShitRim::Explosives
         return has("horse") || has("mammoth") || has("centurion") || (has("giant") && !has("spider"));
     }
 
+    inline constexpr std::uint16_t kModelHydra = 520;
+    inline constexpr std::uint16_t kModelHunter = 425;
+
+    // Whether Skyrim's lock steers the rockets CJ launches (v23): the heat seeker in his hands on foot, the Hydra's or
+    // the Hunter's in a vehicle. The Hydra's own lock (R1 held, CVehicle::GetPlaneWeaponFiringStatus) looks for San
+    // Andreas's vehicles, so it never locks and fires plain rockets: Skyrim's lock, aimed while the handbrake key is
+    // held, steers them instead. San Andreas's Hunter has no lock at all (CVehicle::SelectPlaneWeapon gives it double
+    // rockets, never lock-on ones); ours gets the Hydra's on purpose, so its rockets home once locked.
+    constexpr bool SeeksHeat(std::uint8_t a_cjWeapon, std::uint16_t a_vehicleModel)
+    {
+        return a_vehicleModel ? a_vehicleModel == kModelHydra || a_vehicleModel == kModelHunter : a_cjWeapon == Weapons::RocketLauncherHs;
+    }
+
     inline constexpr float kHsReach = 250.0f;         // metres: San Andreas's aim line is this long
     inline constexpr float kHsLockSeconds = 1.5f;     // a target held this long in sight is locked
     inline constexpr float kHsLosEvery = 1.0f;        // seconds between line of sight tests, as San Andreas's
@@ -550,4 +563,33 @@ namespace AhShitRim::Explosives
 
     // Whether a locked rocket at a_at is close enough to go off at a body of a_radius whose middle is a_target.
     inline bool NearTarget(const Vec3& a_at, const Vec3& a_target, float a_radius) { return Length(Sub(a_at, a_target)) <= a_radius + kHsProximity; }
+
+    // ---- The Rhino's cannon (v19) ----
+
+    // CAutomobile::TankControl's shot, in the tank's own space (metres, +y ahead, +z up): it fires along its turret's
+    // turn (m_fDoomVerticalRotation, radians from straight ahead, counter-clockwise) and lift (m_fDoomHorizontalRotation,
+    // radians up), from the CAR_MISC_C dummy at the barrel's tip, or without one from where that dummy stands on
+    // San Andreas's own Rhino (TANK_SHOT_DOOM_POS swung round by the turn towards TANK_SHOT_DOOM_DEFAULT_TARGET).
+    inline constexpr std::uint8_t kTankCannonNode = 22;  // CAR_MISC_C in San Andreas's car node table (20 is CAR_MISC_A,
+                                                         // the turret's base down on the hull, where the shells came out)
+    inline constexpr Vec3  kTankShotPivot{ 0.0f, -1.394f, 2.296f };
+    inline constexpr Vec3  kTankShotTip{ 0.0f, 2.95f, 2.97f };
+    inline constexpr float kTankShotRange = 60.0f;  // metres: TankControl's line test, and so the shell's reach
+
+    // The way the shot goes, a unit vector in the tank's space (TankControl's (sin(-turn), cos(turn), sin(lift)), which
+    // it doesn't normalize: its line test only needs the point 60 of them out).
+    inline Vec3 TankShotDirection(float a_turn, float a_lift)
+    {
+        const Vec3  d{ std::sin(-a_turn), std::cos(a_turn), std::sin(a_lift) };
+        const float length = Length(d);
+        return Scale(d, 1.0f / length);
+    }
+
+    // The barrel's tip in the tank's space for a turn, without the dummy.
+    inline Vec3 TankShotMuzzle(float a_turn)
+    {
+        const Vec3  reach = Sub(kTankShotTip, kTankShotPivot);
+        const float c = std::cos(a_turn), s = std::sin(a_turn);
+        return { kTankShotPivot.x + c * reach.x - s * reach.y, kTankShotPivot.y + c * reach.y + s * reach.x, kTankShotPivot.z + reach.z - 1.0f };
+    }
 }

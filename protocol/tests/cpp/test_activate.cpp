@@ -154,3 +154,55 @@ TEST_CASE("a reference without a name gets no prompt, as in Skyrim")
     CHECK(Prompt("Activate", "  ") == "");
     CHECK(Prompt("Activate\n", "\n") == "");
 }
+
+namespace
+{
+    // A claw door's three rings, one inside the other on a door facing south at y = 0: each ring's box is the
+    // whole of its ring, so the inner ones sit inside the outer one's box.
+    std::vector<Candidate> ClawRings()
+    {
+        std::vector<Candidate> rings;
+        for (const float radius : { 90.0f, 60.0f, 30.0f }) {
+            Candidate c;
+            c.box.center = { 0.0f, 0.0f, 150.0f };
+            c.box.half = { radius, 6.0f, radius };
+            c.id = static_cast<std::uint32_t>(radius);
+            rings.push_back(c);
+        }
+        return rings;
+    }
+}
+
+TEST_CASE("E acts on the reference the crosshair is on, not on whichever box comes first")
+{
+    const auto  rings = ClawRings();
+    const Vec3  camera{ 0.0f, -250.0f, 170.0f }, chest{ 0.0f, -80.0f, 140.0f };
+    const Vec3  dir = Direction(0.0f, 0.0f);  // north, at the door
+    // The ray hit the middle ring (its own collision): that one, though it is inside the outer ring's box.
+    CHECK(Aimed(camera, dir, chest, 180.0f, rings, { 1, 244.0f }) == std::optional<std::size_t>(1));
+    CHECK(Aimed(camera, dir, chest, 180.0f, rings, { 2, 244.0f }) == std::optional<std::size_t>(2));
+    // Out of CJ's reach: not that one, nor anything else the ray meets beyond reach.
+    const Vec3 far{ 0.0f, -600.0f, 140.0f };
+    CHECK_FALSE(Aimed(camera, dir, far, 180.0f, rings, { 1, 244.0f }).has_value());
+}
+
+TEST_CASE("without a reference hit, the crosshair's box in front of the wall and in reach")
+{
+    // A person in front of a wall: the sight layer passes through people, so only their box says.
+    std::vector<Candidate> people(1);
+    people[0].box = StandingBox({ 0.0f, 100.0f, 0.0f }, 0.0f, 1.0f);
+    people[0].kind = Kind::Person;
+    const Vec3 camera{ 0.0f, -150.0f, 120.0f }, chest{ 0.0f, 0.0f, 100.0f };
+    const Vec3 dir = Direction(0.0f, 0.0f);
+    CHECK(Aimed(camera, dir, chest, 180.0f, people, { std::nullopt, 400.0f }) == std::optional<std::size_t>(0));
+    // The wall comes first: hidden behind it.
+    CHECK_FALSE(Aimed(camera, dir, chest, 180.0f, people, { std::nullopt, 150.0f }).has_value());
+    // The ray met nothing at all: still them.
+    CHECK(Aimed(camera, dir, chest, 180.0f, people, {}) == std::optional<std::size_t>(0));
+    // Looking away from them: nothing, so E falls back to what CJ faces.
+    CHECK_FALSE(Aimed(camera, Direction(Pose::kPi / 2, 0.0f), chest, 180.0f, people, {}).has_value());
+    // A box the camera is inside (a trigger round CJ) is never what the crosshair is on.
+    std::vector<Candidate> trigger(1);
+    trigger[0].box = SphereBox(camera, 300.0f);
+    CHECK_FALSE(Aimed(camera, dir, chest, 180.0f, trigger, {}).has_value());
+}

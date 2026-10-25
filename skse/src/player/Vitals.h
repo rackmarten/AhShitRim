@@ -1,5 +1,7 @@
 #pragma once
 
+#include "health.h"
+
 namespace AhShitRim::Protocol
 {
     struct PlayerState;
@@ -39,6 +41,19 @@ namespace AhShitRim::Vitals
     // armour first, then Skyrim's health, as San Andreas's own damage goes. Not while Wasted runs.
     void Hurt(RE::PlayerCharacter* a_player, float a_damage);
 
+    // Hooks Skyrim's magic damage (the value modifier effects), so it goes through CJ's armour first too.
+    void Install();
+
+    // A hit that just took a_reported (either sign: HandleHealthDamage's is negative) off the player's health (Police's
+    // HandleHealthDamage hook): it becomes a_factor of it
+    // ([Balance] DamageTaken, the stars' share for guards), CJ's armour taking it first as San Andreas's does (every kind
+    // but drowning, falls, poison and disease, Health::ArmourTakes), the more taken or the rest given back. Returns the
+    // health given back (negative: taken on top). Nothing while Wasted runs or BAGUVIX is on.
+    float TakeHit(RE::PlayerCharacter* a_player, float a_reported, float a_factor, Health::Kind a_kind);
+
+    // Our own damage (San Andreas's, a hit's difference, a magic effect's) is being taken off the player: not a new hit.
+    bool OwnDamage();
+
     // CJ falls and lies dead (San Andreas gets kInputWasted), and once he lies still, under San
     // Andreas's death camera (kInputWastedCamera).
     bool IsDown();
@@ -49,6 +64,7 @@ namespace AhShitRim::Vitals
     // BAGUVIX (v20, CheatCodes): while on, nothing San Andreas or Skyrim does takes the player's health or CJ's armour, the
     // health bar stays full, and being hit doesn't train Block, Light Armor or Heavy Armor.
     void SetInvincible(bool a_on);
+    bool IsInvincible();
 
     // CJ's armour in San Andreas's points (0..100), part of the save.
     float Armor();

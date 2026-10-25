@@ -11,7 +11,9 @@
 //
 // AhShitRim's own codes (NOMERCY, MINIGUN, PAINT, LOWRIDER) and every vehicle typed by its model name from San
 // Andreas's vehicles.ide (SANCHEZ, HYDRA, MAVERICK: ParseVehicleNames, Typist::SetVehicleNames) match by their
-// letters instead, from 3 long, and digits count (NRG500).
+// letters instead, from 3 long, and digits count (NRG500). A plane's name right after AIR (AIRAT400, AIRHYDRA) spawns
+// it flying instead (air_spawn.h): the name is the shortest run that matches, so it's the three letters before it that
+// tell; AIR before anything else (AIRSANCHEZ, AIRMAVERICK) spawns it as its name alone does.
 //
 // What a cheat does is its Kind: San Andreas's own toggles and one-shot cheats go over the ring as a Cheat
 // command (its key and San Andreas's eCheats index), the weapon sets as the weapon commands' GiveSet, the
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include "../ahshitrim_protocol.h"
+#include "air_spawn.h"
 #include "input.h"
 #include "vehicle_kinds.h"
 
@@ -96,6 +99,7 @@ namespace AhShitRim::Cheats
         Jetpack = 64,
         NeverWanted = 65,  // CHEAT_I_DO_AS_I_PLEASE, AEZAKMI
         SixStars = 66,     // CHEAT_SIX_WANTED_STARS, LJSPQK
+        MegaPunch = 67,    // CHEAT_MEGA_PUNCH, IAVENJQ: Skyrim's (protocol/cpp/mega_punch.h)
         InfiniteAmmo = 72,
         MaxStamina = 81,
         HitmanAllWeapons = 82,
@@ -187,6 +191,8 @@ namespace AhShitRim::Cheats
         { "COXEFGU", Kind::SaToggle, SaCheat::AllCarsNitro, 0, "nitro in every car" },
         { "JCNRUAD", Kind::SaToggle, SaCheat::SmashNBoom, 0, "smash'n'boom (cars blow up on contact)" },
         { "LFGMHAL", Kind::SaToggle, SaCheat::MegaJump, 0, "mega jump" },
+        { "IAVENJQ", Kind::SaToggle, SaCheat::MegaPunch, 0, "mega punch (fists throw people far and kill)" },
+        { "BSXSGGC", Kind::SaToggle, SaCheat::CarsFloatAway, 0, "cars float away when hit" },
         { "CPKTNWT", Kind::SaOnce, SaCheat::BlowUpCars, 0, "blow up every vehicle" },
         { "BTCDBCB", Kind::SaOnce, SaCheat::Fat, 0, "fat CJ" },
         { "BUFFMEUP", Kind::SaOnce, SaCheat::Muscle, 0, "muscular CJ" },
@@ -320,9 +326,12 @@ namespace AhShitRim::Cheats
     struct Typed
     {
         const Cheat*  cheat = nullptr;
-        std::uint16_t model = 0;  // the named vehicle's model
+        std::uint16_t model = 0;         // the named vehicle's model
+        bool          airborne = false;  // AIR before a plane's name: it comes flying (Protocol::kSpawnAirborne)
         explicit operator bool() const { return cheat != nullptr || model != 0; }
     };
+
+    inline constexpr std::string_view kAir = "AIR";
 
     // The cheat string, as San Andreas keeps it (CCheat::m_CheatString, 30 characters with its end).
     class Typist
@@ -364,8 +373,9 @@ namespace AhShitRim::Cheats
                 }
                 for (const auto& name : _names) {
                     if (Ends(name.code, n)) {
+                        const bool airborne = AirSpawn::Flies(name.model) && Before(kAir, n);
                         Clear();
-                        return { nullptr, name.model };
+                        return { nullptr, name.model, airborne };
                     }
                 }
             }
@@ -377,6 +387,20 @@ namespace AhShitRim::Cheats
         std::size_t Count() const { return _count; }
 
     private:
+        // Whether the letters typed just before the newest a_n are a_word.
+        bool Before(std::string_view a_word, std::size_t a_n) const
+        {
+            if (a_n + a_word.size() > _count) {
+                return false;
+            }
+            for (std::size_t i = 0; i < a_word.size(); ++i) {
+                if (_letters[a_n + i] != a_word[a_word.size() - 1 - i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // Whether the newest a_n letters are a_code.
         bool Ends(std::string_view a_code, std::size_t a_n) const
         {

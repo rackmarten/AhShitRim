@@ -1,6 +1,8 @@
 #include "vehicles.h"
 
+#include "air_spawn.h"
 #include "cj_cheats.h"
+#include "fx_model.h"
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
@@ -58,6 +60,8 @@ namespace AhShitRim::Vehicles
         constexpr float kGroundBelow = Vehicle::kMaxStep + 1.0f;  // ... and look this far below them
         constexpr float kClearHeight = 0.8f;                       // the in-the-way lines run this far above the ground
         constexpr float kDropHeight = 0.3f;                        // a new vehicle is put this far above the ground first
+        constexpr float kFloatRise = 0.02f;                        // BSXSGGC: a car hit rises at least this fast (San Andreas's speed a step, 1 m/s)
+        constexpr float kDustReach = 40.0f;                        // metres down to look for the ground under a rotor's dust (San Andreas's reaches 30)
 
         struct Slot
         {
@@ -77,8 +81,8 @@ namespace AhShitRim::Vehicles
         {
             Slot          slots[Protocol::kVehicleMax];
             std::uint64_t spawns = 0;
-            std::uint32_t builds = 0;
             std::uint64_t drivenLogMs = 0;
+            int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -183,6 +187,15 @@ namespace AhShitRim::Vehicles
                 const auto z = Vehicle::GroundHeight(ground, feet.z, a_maxUneven);
                 if (!z) {
                     continue;
+                }
+                const auto edges = Vehicle::EdgePoints(spot, a_size);
+                std::array<bool, Vehicle::kEdgeSamples>  edgeHit{};
+                std::array<float, Vehicle::kEdgeSamples> edgeZ{};
+                for (int i = 0; i < Vehicle::kEdgeSamples; i++) {
+                    edgeHit[i] = GroundAt(edges[i], feet.z, edgeZ[i]);
+                }
+                if (!Vehicle::EdgesHold(edgeHit, edgeZ, *z, a_maxUneven)) {
+                    continue;  // a drop-off just past it: it would roll off and hang
                 }
                 const float h = *z + kClearHeight;
                 const auto  at = [&](int i) { return CVector(points[i].x, points[i].y, h); };
@@ -431,7 +444,7 @@ namespace AhShitRim::Vehicles
                 Log(std::format("vehicle: the {}'s model ({} bytes, {} meshes) would not load in Skyrim, not sent", slot.name, blob.size(), model.meshes.size()));
                 return false;
             }
-            slot.model = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;  // new for every build
+            slot.model = ModelSender::NewId();  // new for every build
             auto       chunks = SkinModel::Chunks(slot.model, blob);
             const auto chunkCount = chunks.size();
             ModelSender::Set(ModelSender::kVehicleKey + a_index, slot.model, std::move(chunks), std::format("vehicle: the {}'s model", slot.name));
@@ -442,6 +455,16 @@ namespace AhShitRim::Vehicles
                 slot.name, slot.scorched ? "scorched " : "", slot.model, ms, slot.parts.size(), baked, hidden, skipped, model.meshes.size(), vertices, triangles, flipped,
                 model.textures.size(), textureLog.empty() ? " none" : textureLog, blob.size(), chunkCount));
             return true;
+        }
+
+        // What WARP_CHAR_INTO_CAR does: CJ in the driver's seat at once.
+        void WarpIn(CPlayerPed* a_ped, CVehicle* a_vehicle)
+        {
+            auto* task = new CTaskSimpleCarSetPedInAsDriver(a_vehicle, nullptr);
+            task->m_bWarpingInToCar = true;
+            task->ProcessPed(a_ped);
+            delete task;
+            a_vehicle->bEngineOn = true;
         }
 
         // ---- The pose ----
@@ -492,6 +515,113 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // What San Andreas's particles on it come from (v26, protocol/cpp/fx_model.h). San Andreas runs its
+        // exhaust smoke (AddExhaustParticles), nitro (NitrousControl) and rotor dust (DoHeliDustEffect) hidden
+        // too, but draws none of it, so Skyrim lets the sprites out itself from these.
+        void Fx(CVehicle* a_vehicle, const CVector& a_at, Protocol::BodyFx& a_fx)
+        {
+            const float gas = std::isfinite(a_vehicle->m_fGasPedal) ? a_vehicle->m_fGasPedal : 0.0f;
+            a_fx.gas = FxModel::GasToByte(gas);
+            if (a_vehicle->m_nCurrentGear < 3) {
+                a_fx.flags |= Protocol::kFxLowGear;
+            }
+            // Its exhausts: the exhaust dummy (m_avDummyPos[6], DUMMY_EXHAUST), mirrored for a double exhaust, in
+            // the vehicle's frame (a bike's leaned one), letting out backwards.
+            auto*      info = InfoOf(a_vehicle->m_nModelIndex);
+            const bool bike = a_vehicle->m_nVehicleClass == VEHICLE_BIKE;
+            const auto& m = bike ? static_cast<CMatrix&>(static_cast<CBike*>(a_vehicle)->m_mLeanMatrix) : static_cast<CMatrix&>(*a_vehicle->m_matrix);
+            if (info && info->m_pVehicleStruct && a_vehicle->m_pHandlingData && !a_vehicle->m_pHandlingData->m_bNoExhaust && a_vehicle->bEngineOn &&
+                !Wrecked(a_vehicle)) {
+                const CVector& dummy = info->m_pVehicleStruct->m_avDummyPos[6];
+                if (dummy.x != 0.0f || dummy.y != 0.0f || dummy.z != 0.0f) {
+                    const int  count = a_vehicle->m_pHandlingData->m_bDoubleExhaust ? 2 : 1;
+                    const CVector back = m.up * -1.0f;
+                    for (int i = 0; i < count; i++) {
+                        const float   x = i == 0 ? dummy.x : -dummy.x;
+                        const CVector at = (m.pos + m.right * x + m.up * dummy.y + m.at * dummy.z - a_at) * Pose::kUnitsPerMeter;
+                        a_fx.at[i][0] = at.x;
+                        a_fx.at[i][1] = at.y;
+                        a_fx.at[i][2] = at.z;
+                        a_fx.along[i][0] = back.x;
+                        a_fx.along[i][1] = back.y;
+                        a_fx.along[i][2] = back.z;
+                    }
+                }
+            }
+            if (a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE) {
+                return;  // the nitro and the dust are CAutomobile's (a helicopter and a plane are too)
+            }
+            auto* car = static_cast<CAutomobile*>(a_vehicle);
+            if (car->m_pNitroParticle[0]) {
+                a_fx.level = FxModel::ToByte(FxModel::NitroLevel(car->m_fNitroValue, gas));
+            }
+            // The rotor dust's strength as DoHeliDustEffect last stepped it, on the ground under it.
+            if (a_vehicle->m_pDustParticle && car->m_heliDustFxTimeConst > 0.0f) {
+                CColPoint point;
+                CEntity*  entity = nullptr;
+                if (CWorld::ProcessVerticalLine(a_at, a_at.z - kDustReach, point, entity, true, false, false, false, false, false, nullptr)) {
+                    a_fx.dust = FxModel::ToByte(car->m_heliDustFxTimeConst);
+                    a_fx.ground = (point.m_vecPoint.z - a_at.z) * Pose::kUnitsPerMeter;
+                }
+            }
+        }
+
+        // A passenger seat in the vehicle's own frame, as CPed::GetSeatPositionInVehicle places San Andreas's passengers:
+        // the first on the front seat dummy (a bike's or a quad's on the back one), the second on the back one
+        // mirrored to the left, the third on the back one.
+        CVector SeatOf(CVehicleModelInfo* a_info, CVehicle* a_vehicle, int a_seat)
+        {
+            const CVector& front = a_info->m_pVehicleStruct->m_avDummyPos[4];  // DUMMY_SEAT_FRONT
+            const CVector& back = a_info->m_pVehicleStruct->m_avDummyPos[5];   // DUMMY_SEAT_REAR
+            switch (a_seat) {
+            case 0: return a_vehicle->m_nVehicleClass == VEHICLE_BIKE || a_vehicle->m_nVehicleSubClass == VEHICLE_QUAD ? back : front;
+            case 1: return CVector(-back.x, back.y, back.z);
+            default: return back;
+            }
+        }
+
+        // Its passenger seats (v28) for Skyrim to seat CJ's followers in: as many as San Andreas lets ride
+        // (m_nMaxPassengers) and its model has a dummy for, each where SetPedPositionInCar puts a passenger (on a
+        // bike's lean matrix, so a pillion leans with it), turned as the vehicle.
+        void PublishSeats(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            auto* info = InfoOf(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pVehicleStruct || Wrecked(a_vehicle)) {
+                return;
+            }
+            const CMatrix& m = a_vehicle->m_nVehicleClass == VEHICLE_BIKE ? static_cast<CBike*>(a_vehicle)->m_mLeanMatrix : static_cast<const CMatrix&>(a_vehicle->GetMatrix());
+            const auto     count = (std::min)(static_cast<std::uint32_t>(a_vehicle->m_nMaxPassengers), Protocol::kSeatMax);
+            for (std::uint32_t i = 0; i < count; i++) {
+                const CVector local = SeatOf(info, a_vehicle, static_cast<int>(i));
+                if (local.x == 0.0f && local.y == 0.0f && local.z == 0.0f) {
+                    break;  // no dummy for it: no seat
+                }
+                Body::RwRows rows{ Vec(m.right), Vec(m.up), Vec(m.at), Vec(m.pos + m.right * local.x + m.up * local.y + m.at * local.z) };
+                a_out.seats[i] = Body::ToBone(rows, Vec(a_vehicle->GetPosition()));
+                a_out.seatCount = i + 1;
+            }
+        }
+
+        // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
+        // frame (what CarHits sweeps against Skyrim's actors), in Skyrim units.
+        void PublishShape(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            const CMatrix& m = a_vehicle->GetMatrix();
+            a_out.vehicleFrame = Body::ToBone(Body::RwRows{ Vec(m.right), Vec(m.up), Vec(m.at), Vec(m.pos) }, Vec(m.pos));
+            auto* info = CModelInfo::GetModelInfo(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pColModel) {
+                return;
+            }
+            const auto& box = info->m_pColModel->m_boundBox;
+            const CVector lo = box.m_vecMin * Pose::kUnitsPerMeter, hi = box.m_vecMax * Pose::kUnitsPerMeter;
+            a_out.boxMin[0] = lo.x;
+            a_out.boxMin[1] = lo.y;
+            a_out.boxMin[2] = lo.z;
+            a_out.boxMax[0] = hi.x;
+            a_out.boxMax[1] = hi.y;
+            a_out.boxMax[2] = hi.z;
+        }
+
         void Publish(int a_index, CVehicle* a_vehicle, bool a_driven, const CVector& a_spawnFeet, unsigned a_handover, unsigned a_frame)
         {
             const Slot&         slot = state.slots[a_index];
@@ -508,6 +638,10 @@ namespace AhShitRim::Vehicles
             if (VehicleDamage::EngineBurns(a_vehicle->m_fHealth, wrecked, a_vehicle->bIsDrowning) || (wrecked && a_vehicle->m_pFire)) {
                 s.flags |= Protocol::kBodyBurning;
             }
+            // Its proofs (v35): what Skyrim's attacks can't do to it, nor to anyone in it (the Rhino's bullets and blasts).
+            const bool spared = !a_vehicle->bCanBeDamaged;
+            s.flags |= (spared || a_vehicle->bBulletProof ? Protocol::kBodyBulletProof : 0) | (spared || a_vehicle->bFireProof ? Protocol::kBodyFireProof : 0) |
+                       (spared || a_vehicle->bExplosionProof ? Protocol::kBodyExplosionProof : 0) | (spared || a_vehicle->bMeleeProof ? Protocol::kBodyMeleeProof : 0);
             if (a_vehicle->m_nHandlingFlags.bHydraulicInst) {
                 s.flags |= Protocol::kBodyHydraulics;  // v20: LOWRIDER takes them off again
             }
@@ -516,6 +650,7 @@ namespace AhShitRim::Vehicles
             s.engine[0] = engine.x;
             s.engine[1] = engine.y;
             s.engine[2] = engine.z;
+            Fx(a_vehicle, at, s.fx);
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
@@ -532,6 +667,8 @@ namespace AhShitRim::Vehicles
                     s.hiddenParts |= 1ull << i;
                 }
             }
+            PublishSeats(a_vehicle, s);
+            PublishShape(a_vehicle, s);
             for (const auto& extra : slot.extras) {
                 auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
                 const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));
@@ -592,6 +729,34 @@ namespace AhShitRim::Vehicles
                 a_vehicle->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_vehicle->m_vecCentreOfMass + forward);
             }
         }
+
+        // BSXSGGC (CHEAT_CARS_FLOAT_AWAY_WHEN_HIT, v20 table): a vehicle the player's vehicle hits loses its gravity and
+        // floats up. San Andreas does it in CPhysical::ApplyCollision for every vehicle but a mission vehicle, and every
+        // vehicle here is one (Create), so it never happens to them: done here instead, for the vehicles in the slots
+        // the player's vehicle touched this step (its collision records, cleared at the start of each). A parked
+        // vehicle hit gently gets a little lift too, so it floats rather than hangs.
+        void FloatAway(CVehicle* a_driven)
+        {
+            if (!CjCheats::Active(Cheats::SaCheat::CarsFloatAway) || CTimer::m_UserPause || CTimer::m_CodePause) {
+                return;
+            }
+            const int count = (std::min)(static_cast<int>(a_driven->m_nNumEntitiesCollided), static_cast<int>(std::size(a_driven->m_apCollidedEntities)));
+            for (int c = 0; c < count; c++) {
+                CEntity* hit = a_driven->m_apCollidedEntities[c];
+                for (int i = 0; hit && hit != a_driven && i < static_cast<int>(Protocol::kVehicleMax); i++) {
+                    auto* vehicle = Live(i);
+                    if (vehicle != hit || !vehicle->bApplyGravity) {
+                        continue;
+                    }
+                    vehicle->bApplyGravity = false;
+                    vehicle->SetIsStatic(false);
+                    if (vehicle->m_vecMoveSpeed.z < kFloatRise) {
+                        vehicle->m_vecMoveSpeed.z = kFloatRise;
+                    }
+                    Log(std::format("vehicle: the {} in slot {} was hit by CJ's and floats away (BSXSGGC)", state.slots[i].name, i));
+                }
+            }
+        }
     }
 
 
@@ -600,7 +765,47 @@ namespace AhShitRim::Vehicles
         return a_ped && a_ped->bInVehicle ? a_ped->m_pVehicle : nullptr;
     }
 
-    void Spawn(CPlayerPed* a_ped, int a_model)
+    namespace
+    {
+        // AIR + a plane's name: the plane high above CJ, already flying, CJ its pilot. Nothing is in the way up there, and
+        // the ground below is in reach of the ground's rays and the fall rescue.
+        void SpawnFlying(CPlayerPed* a_ped, CVehicleModelInfo* a_info, int a_model, const std::string& a_name)
+        {
+            const int index = FreeSlot();
+            CVehicle* vehicle = index >= 0 ? Create(a_info, a_model) : nullptr;
+            if (!vehicle) {
+                Log(std::format("vehicle: no slot or no way to make the {}, nothing spawned flying", a_name));
+                return;
+            }
+            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
+            const auto&   look = TheCamera.m_aCams[TheCamera.m_nActiveCam].m_vecFront;
+            vehicle->SetPosn(feet + CVector(0.0f, 0.0f, AirSpawn::kHeight));
+            vehicle->SetHeading(AirSpawn::HeadingOf(look.x, look.y, a_ped->GetHeading()));
+            vehicle->m_nStatus = STATUS_ABANDONED;
+            vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
+            CWorld::Add(vehicle);
+            auto* plane = static_cast<CPlane*>(vehicle);
+            plane->SetGearUp();
+            *reinterpret_cast<float*>(reinterpret_cast<std::uint8_t*>(vehicle) + 0x9C4) = CPlane::PLANE_MAX_PROP_SPEED;  // m_fPropSpeed (SpinOf)
+            const float speed = AirSpawn::LaunchSpeed(vehicle->m_pFlyingHandlingData ? vehicle->m_pFlyingHandlingData->m_fFormLift : 0.0f);
+            vehicle->m_vecMoveSpeed = vehicle->GetForward() * (speed / AirSpawn::kStepsPerSecond);
+            vehicle->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+            Slot& slot = state.slots[index];
+            slot = Slot{};
+            slot.ref = CPools::GetVehicleRef(vehicle);
+            slot.spawned = ++state.spawns;
+            slot.name = a_name;
+            WarpIn(a_ped, vehicle);
+            vehicle->m_fGasPedal = 1.0f;  // full throttle until the player's keys take over, on San Andreas's next step
+            const CVector& at = vehicle->GetPosition();
+            Log(std::format("vehicle: {} spawned flying in slot {} at ({:.1f},{:.1f},{:.1f}), {:.0f} m above CJ, heading {:.2f}, {:.1f} m/s (form lift {:.4f}), "
+                            "gear up, CJ {}",
+                a_name, index, at.x, at.y, at.z, AirSpawn::kHeight, vehicle->GetHeading(), speed,
+                vehicle->m_pFlyingHandlingData ? vehicle->m_pFlyingHandlingData->m_fFormLift : 0.0f, Driven(a_ped) ? "at the controls" : "could not be seated"));
+        }
+    }
+
+    void Spawn(CPlayerPed* a_ped, int a_model, bool a_airborne)
     {
         auto* info = InfoOf(a_model);
         if (!info) {
@@ -621,10 +826,18 @@ namespace AhShitRim::Vehicles
             Log(std::format("vehicle: CJ is in a vehicle, no {} spawned", name));
             return;
         }
+        if (a_airborne && (!AirSpawn::Flies(static_cast<std::uint16_t>(a_model)) || info->m_nVehicleType != VEHICLE_PLANE)) {
+            Log(std::format("vehicle: the {} doesn't come flying, spawned on the ground", name));
+            a_airborne = false;
+        }
         CStreaming::RequestModel(a_model, 0x2 | 0x8);  // game required, keep in memory
         CStreaming::LoadAllRequestedModels(false);
         if (CStreaming::ms_aInfoForModel[a_model].m_nLoadState != 1 || !info->m_pColModel) {  // LOADSTATE_LOADED
             Log(std::format("vehicle: the {} did not load, nothing spawned", name));
+            return;
+        }
+        if (a_airborne) {
+            SpawnFlying(a_ped, info, a_model, name);
             return;
         }
         const auto     size = FootprintOf(info);
@@ -714,12 +927,7 @@ namespace AhShitRim::Vehicles
         slot.ref = CPools::GetVehicleRef(vehicle);
         slot.spawned = ++state.spawns;
         slot.name = name;
-        // What WARP_CHAR_INTO_CAR does: CJ in the driver's seat at once.
-        auto* task = new CTaskSimpleCarSetPedInAsDriver(vehicle, nullptr);
-        task->m_bWarpingInToCar = true;
-        task->ProcessPed(a_ped);
-        delete task;
-        vehicle->bEngineOn = true;
+        WarpIn(a_ped, vehicle);
         const CVector& now = vehicle->GetPosition();
         Log(std::format("vehicle: the {} from the save restored in slot {} at ({:.1f},{:.1f},{:.1f}), colours {}/{}/{}/{}, CJ {}", name, index, now.x, now.y, now.z,
             a_car.colours[0], a_car.colours[1], a_car.colours[2], a_car.colours[3], Driven(a_ped) ? "at the wheel" : "could not be seated"));
@@ -895,7 +1103,21 @@ namespace AhShitRim::Vehicles
         }
         if (driven) {
             AirControl(driven, a_ped);
+            FloatAway(driven);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
+            // A plane's landing gear (R3, v23), as it finishes going up or down.
+            if (driven->m_nVehicleSubClass == VEHICLE_PLANE) {
+                const float angle = static_cast<CPlane*>(driven)->m_fLandingGearStatus;
+                const int   gear = angle >= 1.0f ? 1 : angle <= 0.0f ? 0 : state.planeGear;
+                if (gear != state.planeGear) {
+                    if (state.planeGear >= 0) {
+                        Log(std::format("vehicle: landing gear {} (model {})", gear ? "up" : "down", driven->m_nModelIndex));
+                    }
+                    state.planeGear = gear;
+                }
+            } else {
+                state.planeGear = -1;
+            }
             // What the vehicle makes of the input and the ground, every 5 s while CJ drives.
             if (const std::uint64_t now = ::GetTickCount64(); now - state.drivenLogMs >= 5000) {
                 state.drivenLogMs = now;

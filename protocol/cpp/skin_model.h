@@ -19,6 +19,18 @@
 
 namespace AhShitRim::SkinModel
 {
+    // ---- Model ids (San Andreas side) ----
+
+    // The id for a new model: odd (Skyrim's own copies are even), from San Andreas's clock so a San Andreas that started
+    // again doesn't hand out ids a running Skyrim built already, and above a_last, the one given out before. Skyrim builds
+    // an id once, so two models must never share one: (tick << 4 | n) | 1 did for the 2nd and 3rd built in one tick
+    // (the 15.6 ms one of GetTickCount64), and the next pickup drew as the one before.
+    constexpr std::uint32_t NextId(std::uint32_t a_last, std::uint64_t a_tickMs)
+    {
+        const std::uint32_t fromClock = static_cast<std::uint32_t>(a_tickMs) << 4 | 1u;
+        return fromClock > a_last ? fromClock : (a_last + 2u) | 1u;
+    }
+
     // ---- Building a blob (San Andreas side) ----
 
     struct TextureIn
@@ -319,4 +331,29 @@ namespace AhShitRim::SkinModel
         std::uint32_t             _total = 0;
         bool                      _receiving = false;
     };
+
+    // Ids for the models San Andreas sends: odd (so never 0), one after another for the whole run, starting from the
+    // clock at the first one so a restarted San Andreas doesn't reuse an id Skyrim has built already (it builds an id
+    // once). One counter for every sender: the old (ms << 4 | count & 0xF) | 1 per sender gave counts 2 and 3 in the
+    // same millisecond the same id, so a twin sawn-off's two hands came as one model and Skyrim drew one gun.
+    class ModelIds
+    {
+    public:
+        std::uint32_t Next(std::uint64_t a_nowMs)
+        {
+            if (!_next) {
+                _next = static_cast<std::uint32_t>(a_nowMs) << 4 | 1;
+            }
+            const std::uint32_t id = _next;
+            _next += 2;
+            if (_next == 1) {
+                _next = 3;  // wrapped round past 0
+            }
+            return id;
+        }
+
+    private:
+        std::uint32_t _next = 0;
+    };
+
 }

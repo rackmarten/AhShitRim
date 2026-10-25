@@ -1,6 +1,6 @@
-// What E activates while CJ has the player, the game-free half: a ray from CJ along San Andreas's
-// camera against each activatable reference's box, the line of sight to it, and the help box prompt
-// from Skyrim's own activate text. Header-only and free of game types, so the protocol tests cover
+// What E activates while CJ has the player, the game-free half: what the crosshair is on (the camera's ray
+// through it, within reach of CJ), else a ray from CJ along San Andreas's camera against each activatable
+// reference's box, the line of sight to it, and the help box prompt from Skyrim's own activate text. Header-only and free of game types, so the protocol tests cover
 // it; the SKSE plugin feeds it the references around the player (skse/src/player/Activation.cpp).
 //
 // Skyrim units and axes: X east, Y north, Z up; heading 0 = north, clockwise; pitch positive looks
@@ -169,6 +169,42 @@ namespace AhShitRim::Activate
             }
         }
         return best && person && a_candidates[best->index].kind == Kind::Furniture ? person : best;
+    }
+
+    // What the camera's ray through the crosshair met first (passing through CJ): a_candidate when that is one
+    // of the candidates (its index), a_distance along the ray to it (infinity when it met nothing).
+    struct CrosshairHit
+    {
+        std::optional<std::size_t> candidate;
+        float                      distance = std::numeric_limits<float>::infinity();
+    };
+
+    // What the crosshair is on, within a_reach of CJ's chest (a_chest): the reference the camera's ray through it
+    // hit (a_hit), when that is a candidate and the point hit is in reach; else the candidate whose box that
+    // ray enters first, no further than whatever it hit (less kSightTolerance: a box is loose, and the ray
+    // passes through clutter and people, which have only boxes here), where it enters in reach. Nothing when
+    // the crosshair is on nothing activatable in reach: then E falls back to Pick along his facing. Boxes
+    // overlap (the three rings of a claw door are one inside the other), so the reference actually hit wins.
+    inline std::optional<std::size_t> Aimed(const Vec3& a_camera, const Vec3& a_dir, const Vec3& a_chest, float a_reach,
+        const std::vector<Candidate>& a_candidates, const CrosshairHit& a_hit)
+    {
+        const auto inReach = [&](float a_along) {
+            const Vec3 at = Sub(Add(a_camera, Scale(a_dir, a_along)), a_chest);
+            return Dot(at, at) <= a_reach * a_reach;
+        };
+        if (a_hit.candidate && *a_hit.candidate < a_candidates.size() && std::isfinite(a_hit.distance) && inReach(a_hit.distance)) {
+            return a_hit.candidate;
+        }
+        std::optional<std::size_t> best;
+        float                      nearest = a_hit.distance + kSightTolerance;
+        for (std::size_t i = 0; i < a_candidates.size(); ++i) {
+            const auto t = Hit(a_camera, a_dir, a_candidates[i].box);
+            if (t && *t > 0.0f && *t <= nearest && inReach(*t)) {
+                best = i;
+                nearest = *t;
+            }
+        }
+        return best;
     }
 
     // Whether CJ sees the target: the line of sight ray along the pick ray met nothing (a_hit false),

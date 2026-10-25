@@ -1,6 +1,7 @@
 #include "cj_projectiles.h"
 
 #include "body.h"
+#include "car_hits.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
 #include "explosives.h"
@@ -60,7 +61,6 @@ namespace AhShitRim::CjProjectiles
         constexpr std::uint32_t  kStandInGrace = 2000;  // ms a rocket's stand-in outlives its fuse if Skyrim never says it went off
         constexpr std::uintptr_t kAddExplosion = 0x736A50;  // CExplosion::AddExplosion (cdecl): the Rhino's shell goes off through it (CAutomobile::TankControl)
         constexpr int            kModelRhino = 432;
-        constexpr int            kCarMiscC = 20;            // CAR_MISC_C: the Rhino's muzzle, where TankControl fires from
         constexpr float          kShellSpeed = 200.0f;      // metres a second: San Andreas's shell is a line test, Skyrim's flies this fast (60 m in 0.3 s)
 
         SafetyHookInline g_addProjectile;
@@ -97,7 +97,6 @@ namespace AhShitRim::CjProjectiles
         struct State
         {
             std::map<int, Model> models;  // by San Andreas's model index
-            std::uint32_t        builds = 0;
             std::set<int>        logged;  // projectile types logged once
             std::uint32_t        nextId = 0;
             std::vector<StandIn> standIns;
@@ -159,7 +158,7 @@ namespace AhShitRim::CjProjectiles
             if (parts.size() > Protocol::kProjectilePartMax) {
                 Log(std::format("projectiles: model {} has {} parts, the first {} are drawn", index, parts.size(), Protocol::kProjectilePartMax));
             }
-            model.id = (static_cast<std::uint32_t>(::GetTickCount64()) << 4 | (++state.builds & 0xF)) | 1;
+            model.id = ModelSender::NewId();
             ModelSender::Set(ModelSender::kProjectileKey + (a_type - Weapons::Grenade), model.id, SkinModel::Chunks(model.id, blob),
                 std::format("projectiles: model {} for projectile {}", index, a_type));
             return &model;
@@ -304,6 +303,10 @@ namespace AhShitRim::CjProjectiles
                     Log(std::format("projectiles: a blow in Skyrim throws CJ at ({:.1f},{:.1f},{:.1f}) m/s, falling {}", launch.x, launch.y, launch.z, fall));
                 }
                 break;
+            case Protocol::EffectKind::HitVehicle:
+                // v31: one of Skyrim's attacks hit CJ's vehicle: its health and his line (CarHits).
+                CarHits::TakeHit(a_ped, a_effect.weaponType, a_effect.seconds, at);
+                break;
             default: break;
             }
         }
@@ -410,8 +413,9 @@ namespace AhShitRim::CjProjectiles
 
         // The Rhino's shell (v19): CAutomobile::TankControl tests a line 60 m out from its muzzle and sets off
         // EXPLOSION_TANK_FIRE where it hits, or at its end. San Andreas's world has only the ground in it, so the shell
-        // goes to Skyrim instead, as a rocket without a model, fast, from the muzzle towards that point: it goes off on
-        // whatever is in the way there, or at the point (its fuse). Skyrim's Effect brings San Andreas's blast sound back.
+        // goes to Skyrim instead, as a rocket without a model, fast, from the barrel's tip along the turret's turn and
+        // lift (Explosives::TankShotDirection) as far as that point: it goes off on whatever is in the way there, or at
+        // the point (its fuse). Skyrim's Effect brings San Andreas's blast sound back.
         bool __cdecl AddExplosionHook(CEntity* a_victim, CEntity* a_creator, eExplosionType a_type, CVector a_at, unsigned int a_time,
             unsigned char a_sound, float a_shake, unsigned char a_visible)
         {
@@ -419,21 +423,22 @@ namespace AhShitRim::CjProjectiles
             if (a_type != EXPLOSION_TANK_FIRE || !IsCj(a_creator) || !tank || tank->m_nModelIndex != kModelRhino) {
                 return g_addExplosion.call<bool>(a_victim, a_creator, a_type, a_at, a_time, a_sound, a_shake, a_visible);
             }
-            CVector muzzle = tank->GetPosition() + tank->GetUp() * 1.5f;
-            if (RwFrame* frame = static_cast<CAutomobile*>(tank)->m_aCarNodes[kCarMiscC]) {
+            auto*          rhino = static_cast<CAutomobile*>(tank);
+            const CMatrix& m = tank->GetMatrix();
+            const auto     inTank = [&](const Explosives::Vec3& a_v) { return m.right * a_v.x + m.up * a_v.y + m.at * a_v.z; };
+            CVector        muzzle = tank->GetPosition() + inTank(Explosives::TankShotMuzzle(rhino->m_fDoomVerticalRotation));
+            if (RwFrame* frame = rhino->m_aCarNodes[Explosives::kTankCannonNode]) {
                 const RwMatrix* ltm = RwFrameGetLTM(frame);
                 muzzle = CVector(ltm->pos.x, ltm->pos.y, ltm->pos.z);
             }
-            CVector     along = a_at - muzzle;
-            float       length = along.Magnitude();
+            const CVector along = inTank(Explosives::TankShotDirection(rhino->m_fDoomVerticalRotation, rhino->m_fDoomHorizontalRotation));
+            float         length = (std::min)((a_at - muzzle).Magnitude(), Explosives::kTankShotRange);
             if (length < 1.0f) {
-                along = tank->GetForward();
-                length = 60.0f;
-            } else {
-                along /= length;
+                length = Explosives::kTankShotRange;
             }
             Protocol::ProjectileEvent event{};
             event.weaponType = Explosives::kRocket;
+            event.flags = Protocol::kProjectileCannon;  // v26: Skyrim puts tank_fire's smoke and flash at the muzzle
             CVector spawnFeet;
             if (Frame(event, muzzle, spawnFeet)) {
                 event.velocity[0] = along.x * kShellSpeed * Pose::kUnitsPerMeter;

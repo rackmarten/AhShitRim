@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <span>
@@ -25,20 +26,48 @@
 namespace AhShitRim::Radio
 {
     // San Andreas's volumes from Skyrim's sliders (each 0..1): effects for CJ, his vehicles and
-    // weapons, music for the radio. Silent while Skyrim has the player.
+    // weapons, music for the radio. Silent while Skyrim has the player, but for a sound cue playing
+    // (v24: the mission passed tune, CJ's intro line).
     struct Volumes
     {
         float effects = 0.0f;
         float music = 0.0f;
     };
 
-    constexpr Volumes FromSliders(float a_master, float a_effects, float a_music, bool a_owned)
+    constexpr Volumes FromSliders(float a_master, float a_effects, float a_music, bool a_owned, bool a_cue = false)
     {
-        if (!a_owned) {
+        if (!a_owned && !a_cue) {
             return {};
         }
         const float master = std::clamp(a_master, 0.0f, 1.0f);
         return { master * std::clamp(a_effects, 0.0f, 1.0f), master * std::clamp(a_music, 0.0f, 1.0f) };
+    }
+
+    // How far San Andreas turns its radio down under its music volume, in dB
+    // (CAERadioTrackManager::UpdateRadioVolumes): 4 dB, and 20 log10(effects / music) - 9 more where
+    // that is below 0, so with music above about effects / 2.8 the radio follows the effects volume.
+    inline float SaRadioDb(Volumes a_volumes)
+    {
+        if (a_volumes.effects <= 0.0f || a_volumes.music <= 0.0f) {
+            return -4.0f;
+        }
+        return -4.0f + (std::min)(0.0f, 20.0f * std::log10(a_volumes.effects / a_volumes.music) - 9.0f);
+    }
+
+    // Skyrim plays a station's tracks this much louder than San Andreas's rule above, for the
+    // difference in the two games' mixing: measured in game at effects 0.53 and music 0.31, where a
+    // track at music volume came out 6 dB under San Andreas's stations (SaRadioDb -8.3 dB there).
+    inline constexpr float kStationMakeupDb = 14.3f;
+
+    // The volume Skyrim plays Radio Sovngarde and Sweetroll FM at (0..1), as loud as San Andreas's own
+    // stations at the same sliders; silent while Skyrim has the player.
+    inline float StationVolume(Volumes a_volumes)
+    {
+        if (a_volumes.music <= 0.0f) {
+            return 0.0f;
+        }
+        const float gain = std::pow(10.0f, (kStationMakeupDb + SaRadioDb(a_volumes)) / 20.0f);
+        return std::clamp(a_volumes.music * gain, 0.0f, 1.0f);
     }
 
     // ---- Stations ----
@@ -218,19 +247,18 @@ namespace AhShitRim::Radio
     // ---- Sweetroll FM ----
 
     // The tracks, by path under Skyrim's Data folder, as named in music/CREDITS.md.
-    inline constexpr std::array<std::string_view, 12> kSweetrollTracks = {
-        "music\\ahshitrim\\sweetrollfm\\01-november-snow.xwm",
-        "music\\ahshitrim\\sweetrollfm\\02-another-august.xwm",
-        "music\\ahshitrim\\sweetrollfm\\03-battle-theme-a.xwm",
-        "music\\ahshitrim\\sweetrollfm\\04-megasong.xwm",
-        "music\\ahshitrim\\sweetrollfm\\05-chill-lofi.xwm",
-        "music\\ahshitrim\\sweetrollfm\\06-the-bards-tale.xwm",
-        "music\\ahshitrim\\sweetrollfm\\07-night-prowler.xwm",
-        "music\\ahshitrim\\sweetrollfm\\08-meadow-thoughts.xwm",
-        "music\\ahshitrim\\sweetrollfm\\09-the-rush.xwm",
-        "music\\ahshitrim\\sweetrollfm\\10-winning-the-race.xwm",
-        "music\\ahshitrim\\sweetrollfm\\11-kings-feast.xwm",
-        "music\\ahshitrim\\sweetrollfm\\12-cyberpunk-moonlight-sonata.xwm",
+    inline constexpr std::array<std::string_view, 11> kSweetrollTracks = {
+        "music\\ahshitrim\\sweetrollfm\\01-the-bards-tale.xwm",
+        "music\\ahshitrim\\sweetrollfm\\02-kings-feast.xwm",
+        "music\\ahshitrim\\sweetrollfm\\03-the-old-tower-inn.xwm",
+        "music\\ahshitrim\\sweetrollfm\\04-minstrel-dance.xwm",
+        "music\\ahshitrim\\sweetrollfm\\05-harvest-season.xwm",
+        "music\\ahshitrim\\sweetrollfm\\06-exploration.xwm",
+        "music\\ahshitrim\\sweetrollfm\\07-grasslands-theme.xwm",
+        "music\\ahshitrim\\sweetrollfm\\08-morleys-pavan.xwm",
+        "music\\ahshitrim\\sweetrollfm\\09-interweave.xwm",
+        "music\\ahshitrim\\sweetrollfm\\10-the-highland-road.xwm",
+        "music\\ahshitrim\\sweetrollfm\\11-sunset-plains.xwm",
     };
 
     // A playlist shuffled like a deck: every track once, then a new order, whose first track is never

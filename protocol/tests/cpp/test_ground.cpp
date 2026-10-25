@@ -200,21 +200,43 @@ TEST_CASE("vertices keep about a centimetre of precision on a slope")
     }
 }
 
-TEST_CASE("triangles out of the 256 m reach and flat ones are dropped and counted")
+TEST_CASE("a triangle reaching past 256 m is cut and the parts in reach kept; flat ones are dropped and counted")
 {
     Collision::Heightfield f;
     f.Reset(0, 0, 1);
     const std::vector<float> statics = {
         0, 0, 0, 100, 0, 0, 0, 100, 0,                // kept
-        0, 0, 0, 100, 0, 30000, 0, 100, 0,           // a corner 430 m up the median: out of reach
+        0, 0, 0, 100, 0, 30000, 0, 100, 0,           // a corner 430 m up the median: its lower part kept
         0, 0, 0, 0.1f, 0, 0, 0, 0.1f, 0,             // under 1/128 m across: flat once compressed
     };
     const auto payload = Collision::BuildChunkPayload(f, 0, 1, statics);
     Chunk      chunk;
     REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
     const Mesh mesh = BuildMesh(chunk, At(0.0f, 0.0f, 0.0f));
-    CHECK(mesh.triangles.size() == 3);
-    CHECK(mesh.dropped == 2);
+    CHECK(mesh.triangles.size() > 6);  // the first, and parts of the second
+    CHECK(mesh.dropped >= 1);         // the flat one (and slivers of the cut one's edge)
+    CHECK(mesh.max.z > 200.0f);       // the second goes up to the reach
+    CHECK(mesh.max.z <= kVertexReach + 0.01f);
+}
+
+TEST_CASE("a mountain's huge face over the chunk is kept where it is near it")
+{
+    // One triangle 1000 m across (Skyrim units 70000), its middle over chunk (0, 0): every corner out of reach.
+    Collision::Heightfield f;
+    f.Reset(0, 0, 1);
+    const std::vector<float> statics = { -35000, -35000, 500, 35000, -35000, 500, 0, 35000, 500 };
+    const auto payload = Collision::BuildChunkPayload(f, 0, 1, statics);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    const Mesh mesh = BuildMesh(chunk, At(0.0f, 0.0f, 0.0f));
+    REQUIRE_FALSE(mesh.triangles.empty());
+    // The kept parts cover the chunk's square round its middle, all inside the reach.
+    CHECK(mesh.min.x < -14.0f);
+    CHECK(mesh.max.x > 14.0f);
+    CHECK(mesh.min.y < -14.0f);
+    CHECK(mesh.max.y > 14.0f);
+    CHECK(mesh.max.x <= kVertexReach + 0.01f);
+    CHECK(mesh.vertices.size() / 3 < kMaxMeshVertices);
 }
 
 // ---- Which chunks San Andreas keeps ----
@@ -298,4 +320,59 @@ TEST_CASE("the point ahead goes 2 s out, at most as far as San Andreas keeps wha
     CHECK(a[1] == doctest::Approx(-6.0f * AhShitRim::Protocol::kCollisionChunkUnits));
     a = Ahead(0.0f, 0.0f);
     CHECK(a[0] == 0.0f);
+}
+
+// ---- The land under CJ ----
+
+TEST_CASE("the land's height comes from the land samples alone, through the origin")
+{
+    // A slope rising 1 unit per unit east over chunk (0, 0), and a static slab 300 units over it.
+    Collision::Heightfield field;
+    field.Reset(0, 0, Protocol::kCollisionChunkCells);
+    for (std::uint32_t k = 0; k < field.Samples(); k++) {
+        field.heights[k] = 1000.0f + field.X(k % field.Side());
+        field.hit[k] = 1;
+    }
+    const std::vector<float> slab = { 0, 0, 5000, 2048, 0, 5000, 0, 2048, 5000 };
+    const auto               payload = Collision::BuildChunkPayload(field, 0x3C, 1, slab);
+    Chunk                    chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    CHECK(chunk.header.landVertexCount == field.Samples());
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    const Origin origin = At(0.0f, 0.0f, 1000.0f);
+    for (const float x : { 100.0f, 1000.0f, 1500.0f }) {
+        const auto z = map.HeightAt(origin, origin.ToSanAndreas(x, 700.0, 0.0));
+        REQUIRE(z);
+        CHECK(*z == doctest::Approx(kHeight + x * Pose::kMetersPerUnit).epsilon(0.001));
+    }
+    CHECK_FALSE(map.HeightAt(origin, origin.ToSanAndreas(-100.0, 700.0, 0.0)));  // chunk (-1, 0): none
+}
+
+TEST_CASE("a missed land sample leaves no height on the triangles touching it")
+{
+    auto field = Flat(0, 0, Protocol::kCollisionChunkCells, 0.0f);
+    field.hit[0] = 0;
+    const auto payload = Collision::BuildChunkPayload(field, 0x3C, 1);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    const Origin origin = At(0.0f, 0.0f, 0.0f);
+    CHECK_FALSE(map.HeightAt(origin, origin.ToSanAndreas(10.0, 10.0, 0.0)));
+    CHECK(map.HeightAt(origin, origin.ToSanAndreas(300.0, 300.0, 0.0)));
+}
+
+TEST_CASE("the land goes with the chunks: far ones and a new handover's")
+{
+    const auto payload = Collision::BuildChunkPayload(Flat(0, 0, Protocol::kCollisionChunkCells, 0.0f), 0x3C, 1);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    LandMap map;
+    map.Set({ 0, 0 }, LandOf(chunk));
+    map.Set({ 20, 0 }, LandOf(chunk));
+    map.DropFar({ 1, 0 });
+    CHECK(map.Count() == 1);
+    map.Clear();
+    CHECK(map.Count() == 0);
 }

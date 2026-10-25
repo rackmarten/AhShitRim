@@ -63,6 +63,9 @@ namespace AhShitRim
         // The gear slot (v19): the jetpack or the open parachute on CJ, posed like a body (feet are CJ's).
         void WriteGear(const Protocol::BodyState& a_value);
         bool ReadGear(Protocol::BodyState& a_out) const;
+        // The proxy slot (v28): Skyrim's actors near CJ's vehicle, for San Andreas to test it against.
+        void WriteProxies(const Protocol::ProxyState& a_value);
+        bool ReadProxies(Protocol::ProxyState& a_out) const;
 
         // The rings: Send puts a message in the ring to the other side, and returns false when the
         // link is down, the ring is full or the message can never fit. Receive drains the ring to

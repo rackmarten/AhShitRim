@@ -34,16 +34,24 @@ if ($Target -in 'all', 'skse') {
     $plugins = Join-Path $skyrim 'Data/SKSE/Plugins'
     Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
     $ini = Join-Path $plugins 'AhShitRim.ini'
-    # The key layout is the player's choice: a KeyLayout already in the ini stays.
+    # The key layout, the misc quests' odd jobs and the compass are the player's choice: what the ini already has stays.
     $layout = 'Modern'
+    $miscPassed = '1'
+    $compass = '0'
     if (Test-Path $ini) {
         $kept = Select-String -Path $ini -Pattern '^\s*KeyLayout\s*=\s*(\S+)' | Select-Object -First 1
         if ($kept) { $layout = $kept.Matches[0].Groups[1].Value }
+        $kept = Select-String -Path $ini -Pattern '^\s*MiscPassed\s*=\s*(\S+)' | Select-Object -First 1
+        if ($kept) { $miscPassed = $kept.Matches[0].Groups[1].Value }
+        $kept = Select-String -Path $ini -Pattern '^\s*Compass\s*=\s*(\S+)' | Select-Object -First 1
+        if ($kept) { $compass = $kept.Matches[0].Groups[1].Value }
     }
     Set-Content -Path $ini -Encoding ascii -Value @(
         '[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')", '',
-        '[Input]', '; Modern (Shift sprints, Space jumps) or Classic (San Andreas''s own PC keys: Space sprints, Shift jumps)', "KeyLayout=$layout")
-    Write-Host "Wrote $ini (KeyLayout=$layout)"
+        '[Input]', '; Modern (Shift sprints, Space jumps) or Classic (San Andreas''s own PC keys: Space sprints, Shift jumps)', "KeyLayout=$layout", '',
+        '[Missions]', '; 1: a Miscellaneous quest done shows MISSION PASSED! with the jingle, as San Andreas''s odd jobs do; 0: Skyrim''s own', "MiscPassed=$miscPassed", '',
+        '[Hud]', '; 1 keeps Skyrim''s compass up beside San Andreas''s radar while CJ has the player', "Compass=$compass")
+    Write-Host "Wrote $ini (KeyLayout=$layout, MiscPassed=$miscPassed, Compass=$compass)"
 
     # Sweetroll FM's tracks, the same layout as the release.
     $tracks = @(Get-ChildItem -ErrorAction SilentlyContinue (Join-Path $RepoRoot 'music/sweetrollfm/*.xwm'))

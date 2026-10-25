@@ -10,7 +10,7 @@
 //    stop it, the first living actor takes it, the bone it hit gives the body part (the head is a headshot),
 //  - finds the actors a blow reaches around where it lands, once per blow (the chainsaw over and over),
 //  - hurts them through Skyrim's own hit (HitData, the player as the aggressor: kill credit, crime, aggro)
-//    by Damage::ToSkyrim, never scaled by the difficulty,
+//    by Damage::ToSkyrim times [Balance] (CJDamage, and Skyrim's difficulty when FollowDifficulty is on, Balance),
 //  - plays Skyrim's impacts: the race's blood on actors, the surface's effect and sound on statics,
 //  - hands the flamethrower's puffs (v15) to Projectiles,
 //  - counts the hits per weapon and sends them back as Hit commands, which raise San Andreas's skills.

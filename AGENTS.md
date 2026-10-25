@@ -11,8 +11,9 @@ Notes for agents working on AhShitRim, headless on Linux or on the user's Window
 Both games, MSVC and the scripts are here, so build and test locally instead of waiting on CI:
 
 - Run `scripts/*.ps1` from the PowerShell tool, or `pwsh -NoProfile -File scripts/<name>.ps1` from Git Bash. They set up the MSVC dev shell themselves; `cmake` isn't on PATH outside them.
-- `scripts/build.ps1` builds both plugins, `scripts/test.ps1` runs the game-free tests, `scripts/logs.ps1` tails both plugin logs. Long builds go in the background.
-- `scripts/restart-games.ps1` is the whole in-game loop (close, build, deploy, start both, wait for "link up"). `-NoBuild` deploys whatever was built last instead. `scripts/fake-skyrim.ps1`, `scripts/fake-weapons.ps1` and `scripts/fake-vehicles.ps1` check a running San Andreas without Skyrim.
+- `scripts/build.ps1` builds both plugins, `scripts/test.ps1` runs the game-free tests, `scripts/logs.ps1` tails both plugin logs. Long builds go in the background. While the user plays, build at idle priority on two cores so the games don't lag: `$env:CMAKE_BUILD_PARALLEL_LEVEL = 2; cmd /c start '""' /low /wait /b pwsh -NoProfile -File scripts/build.ps1`.
+- `scripts/restart-games.ps1` is the whole in-game loop (close, build, deploy, start both, wait for "link up"). `-NoBuild` deploys whatever was built last instead. `scripts/fake-skyrim.ps1`, `scripts/fake-weapons.ps1` and `scripts/fake-vehicles.ps1` check a running San Andreas without Skyrim. `scripts/hit-test.ps1` runs both games on its own (it loads the most recent save, never saves) and checks Skyrim's attacks on CJ's car and the bust at its door from the logs.
+- `scripts/load-test.ps1` runs hundreds of loads unattended and counts the crashes (`docs/DEV_SETUP.md`, Load test); it closes and starts both games itself.
 - You may close Skyrim and San Andreas whenever a deploy or test needs it; say so in your reply. Never run `fake_skyrim`, `fake_weapons` or `fake_vehicles` while Skyrim is running: they write the input slot and fight over the handover.
 - When the user is testing with you, skip the fake checks for anything visual or feel-based (models, animations, camera, effects, handling). They take minutes while the user waits, and the user checks those faster in game: build, run `scripts/test.ps1`, deploy with `restart-games.ps1` and hand over. Keep them for logic the user can't see, or for runs where nobody is waiting.
 - Dev and test keys stay off Skyrim's default binds (F9 is quick load; `/` is the HUD demo). Check the README's keys table first.
@@ -36,6 +37,7 @@ So CI can check your logic, put anything that doesn't need a game in a header un
 - A new shared memory slot or ring, or any other layout change, bumps `kProtocolVersion` in `protocol/ahshitrim_protocol.h` and updates `docs/PROTOCOL.md`.
 - Branding: no "GTA" in names (files, types, the mod's UI). Never commit Rockstar or Bethesda assets; the plugins read what they need from the user's own installs at runtime.
 - Don't touch `docs/ROADMAP.md`: it's the user's own untracked file.
+- Branches (`docs/DEV_SETUP.md`, "Branches and releases"): `main` is development, `production` is what players get. Feature PRs go against `main`; hotfix PRs branch from and go against `production` (`fix-<slug>`). Merge into `production` with a merge commit, never squash. Never create tags or GitHub releases: the maintainer does.
 - Add an entry under `## [Unreleased]` in `CHANGELOG.md` for changes players or developers notice (agent notes like this file don't need one).
 
 ## References

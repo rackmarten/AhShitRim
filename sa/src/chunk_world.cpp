@@ -1,5 +1,7 @@
 #include "chunk_world.h"
 
+#include "audio.h"
+#include "cj_pickups.h"
 #include "cj_cheats.h"
 #include "cj_projectiles.h"
 #include "cj_weapons.h"
@@ -29,6 +31,7 @@
 
 #include <cmath>
 #include <deque>
+#include <unordered_map>
 #include <format>
 #include <string>
 #include <vector>
@@ -60,12 +63,14 @@ namespace AhShitRim::ChunkWorld
             CBuilding* building = nullptr;
             CColModel* col = nullptr;  // the borrowed model's own collision model, filled with each chunk the slot gets
             bool       inWorld = false;
+            Ground::Mesh mesh;         // what it was filled with, to fill it again should San Andreas empty it
         };
 
         struct State
         {
             Ground::Origin    origin;
             Ground::ChunkBook book{ kSlots };
+            Ground::LandMap   land;  // v34: the land of the chunks built, for the fall rescue
             Slot              slots[kSlots];
             int               nextModel = kLastBorrowedModel;
             std::deque<std::vector<std::uint8_t>> waiting;
@@ -77,7 +82,7 @@ namespace AhShitRim::ChunkWorld
             CVehicle*             falling = nullptr;  // what fall watches: CJ's vehicle, or CJ himself (nullptr)
 
             // Stats, logged every 5 s while chunks come in.
-            int           built = 0, replaced = 0, triangles = 0, dropped = 0, stale = 0, distant = 0;
+            int           built = 0, replaced = 0, triangles = 0, dropped = 0, stale = 0, distant = 0, refilled = 0;
             std::uint64_t statMs = 0;
         } state;
 
@@ -88,12 +93,36 @@ namespace AhShitRim::ChunkWorld
             return a_info && a_info->GetModelType() == MODEL_INFO_ATOMIC && a_info->nSpecialType == 0 && a_info->m_nNum2dEffects == 0;
         }
 
+        // How many models use each collision model: some of the map's share one. Two slots filling one overwrote each
+        // other every frame (900 refills in 5 s) and one chunk's place held the other's triangles, a hole a car fell
+        // through; a model still in San Andreas's collision store sharing one with a slot wrote the map's collision over
+        // it. So a slot only borrows a model whose collision model is its alone. Counted once, the first time.
+        int ColUses(const CColModel* a_col)
+        {
+            static const auto uses = [] {
+                std::unordered_map<const CColModel*, int> count;
+                for (int id = 0; id < static_cast<int>(CModelInfo::ms_modelInfoCount); ++id) {
+                    if (auto* info = CModelInfo::GetModelInfo(id); info && info->m_pColModel) {
+                        count[info->m_pColModel]++;
+                    }
+                }
+                return count;
+            }();
+            const auto it = uses.find(a_col);
+            return it == uses.end() ? 0 : it->second;
+        }
+
+        // A borrowable model with a collision model of its own (none taken from San Andreas's nearly full pool).
         int BorrowModel()
         {
-            while (state.nextModel >= kFirstBorrowedModel && !Borrowable(CModelInfo::GetModelInfo(state.nextModel))) {
-                --state.nextModel;
+            while (state.nextModel >= kFirstBorrowedModel) {
+                const int id = state.nextModel--;
+                auto*     info = CModelInfo::GetModelInfo(id);
+                if (Borrowable(info) && info->m_pColModel && ColUses(info->m_pColModel) == 1) {
+                    return id;
+                }
             }
-            return state.nextModel >= kFirstBorrowedModel ? state.nextModel-- : -1;
+            return -1;
         }
 
         // Out of the world, but the building keeps its collision until the slot gets a new chunk:
@@ -169,25 +198,25 @@ namespace AhShitRim::ChunkWorld
                 slot.building->m_nAreaCode = 0;
             }
             // San Andreas's pool of collision models (10150) is all but full of the emptied map's own, a few left: a
-            // slot fills its borrowed model's own collision model with each chunk rather than taking one from the pool
-            // per chunk (past about 90 chunks the pool ran out and San Andreas crashed on a long flight).
+            // slot fills its borrowed model's own collision model with each chunk and never takes one from the pool
+            // (past about 90 chunks the pool ran out and San Andreas crashed on a long flight).
             auto* info = CModelInfo::GetModelInfo(slot.model);
             if (!slot.col) {
                 slot.col = info->m_pColModel;
-                if (!slot.col) {
-                    slot.col = new CColModel();
-                    if (!slot.col) {
-                        Log(std::format("ground: San Andreas's collision models are all taken, chunk ({},{}) not built", key.x, key.y));
-                        return;
-                    }
-                    info->SetColModel(slot.col, true);
-                }
+                // Not the collision store's any more: a map model's collision is streamed with San Andreas's map
+                // (CColStore, by where CJ is in San Andreas), and loading its area wrote the map's own collision into
+                // the chunk's, unloading it emptied it (CFileLoader::LoadCollisionFile and CColStore::RemoveCol only
+                // touch a model flagged so), and CJ fell through ground that had been fine. The game's own
+                // SetColModel clears the flag.
+                info->SetColModel(slot.col, false);
             }
             TakeOut(slot);
             FillColModel(slot.col, mesh);  // its triangle planes are freed with its volumes
+            slot.mesh = mesh;
             slot.building->SetPosn(CVector(mesh.position.x, mesh.position.y, mesh.position.z));
             CWorld::Add(slot.building);
             slot.inWorld = true;
+            state.land.Set(key, Ground::LandOf(a_chunk));
             state.built++;
             state.replaced += replaced;
             state.triangles += static_cast<int>(mesh.triangles.size() / 3);
@@ -353,20 +382,28 @@ namespace AhShitRim::ChunkWorld
             float below = 0.0f;
             around.surfaceBelow = Line(from, from.z - FallRescue::kBelowReach, below);
             around.surfaceAbove = Line(from, from.z + FallRescue::kAboveReach, around.aboveZ);
+            around.landZ = state.land.HeightAt(state.origin, ToVec(feet));
+            const bool underLand = FallRescue::UnderLand(around);
             const auto to = state.fall.Update(CTimer::ms_fTimeStep / 50.0f, around);
             if (!to) {
                 return;
             }
             if (vehicle) {
-                // Back where its middle was, or onto the surface over it, its wheels on it.
-                const bool onto = around.surfaceAbove && std::abs(to->z - around.aboveZ) < 0.001f;
+                // Back where its middle was, or onto the surface over it (or the land), its wheels on it.
+                const bool onLand = underLand && to->x == feet.x && to->y == feet.y && std::abs(to->z - *around.landZ) < 0.001f;
+                const bool onto = onLand || (around.surfaceAbove && std::abs(to->z - around.aboveZ) < 0.001f);
+                // Upright on its own heading: a car a rock flipped onto its side, lifted as it lay, sank back in.
+                const CVector& ahead = vehicle->GetForward();
+                const float    heading = std::atan2(-ahead.x, ahead.y);
                 vehicle->Teleport(CVector(to->x, to->y, to->z + (onto ? lift : 0.0f) + 0.05f), false);  // also stops it and resets its suspension
+                vehicle->SetHeading(heading);
             } else {
                 a_ped->SetPosn(CVector(to->x, to->y, to->z + lift + 0.05f));
                 a_ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
             }
-            Log(std::format("ground: {} was below the ground at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})",
-                vehicle ? "CJ's vehicle" : "CJ", feet.x, feet.y, feet.z, to->x, to->y, to->z));
+            Log(std::format("ground: {} was {} at ({:.1f},{:.1f},{:.1f}), put back at ({:.1f},{:.1f},{:.1f})", vehicle ? "CJ's vehicle" : "CJ",
+                underLand ? std::format("under the land ({:.1f} m down)", *around.landZ - feet.z) : std::string(around.surfaceAbove ? "below the ground" : "over a hole"),
+                feet.x, feet.y, feet.z, to->x, to->y, to->z));
         }
     }
 
@@ -375,6 +412,7 @@ namespace AhShitRim::ChunkWorld
         for (int slot : state.book.Begin(a_handover)) {
             TakeOut(state.slots[slot]);
         }
+        state.land.Clear();
         if (!state.origin.Reset(a_anchor)) {
             Log("ground: the handover's anchor isn't a number, the origin stays where it was");
         }
@@ -411,6 +449,10 @@ namespace AhShitRim::ChunkWorld
                 CjProjectiles::Queue(a_data, a_size);
             } else if (a_type == Protocol::MessageType::Cheat) {
                 CjCheats::Queue(a_data, a_size);
+            } else if (a_type == Protocol::MessageType::PickupCommand) {
+                CjPickups::Queue(a_data, a_size);
+            } else if (a_type == Protocol::MessageType::FrontendSound) {
+                Audio::PlayFrontend(a_data, a_size);
             }
         });
     }
@@ -429,6 +471,7 @@ namespace AhShitRim::ChunkWorld
 
         const auto cj = state.origin.ToSkyrim(ToVec(a_ped->GetPosition()));
         const auto distant = state.book.DropFar(Ground::KeyOf(cj[0], cj[1]));
+        state.land.DropFar(Ground::KeyOf(cj[0], cj[1]));
         for (int slot : distant) {
             TakeOut(state.slots[slot]);
         }
@@ -450,18 +493,29 @@ namespace AhShitRim::ChunkWorld
             Catch(a_ped);
         }
 
+        // A chunk's collision emptied or replaced underneath it (by anything: San Andreas's collision streaming did it)
+        // is filled again from what it was given, so the ground under CJ is always there.
+        for (auto& slot : state.slots) {
+            const auto* data = slot.inWorld && slot.col ? slot.col->m_pColData : nullptr;
+            if (slot.inWorld && (!data || data->m_nNumTriangles != slot.mesh.triangles.size() / 3 || slot.col->m_nColSlot != 0)) {
+                FillColModel(slot.col, slot.mesh);
+                state.refilled++;
+            }
+        }
+
         const std::uint64_t now = ::GetTickCount64();
         if (now - state.statMs >= 5000) {
-            if (state.built || state.distant || state.stale) {
+            if (state.built || state.distant || state.stale || state.refilled) {
                 // San Andreas's pools the chunks draw on: a full one returns nothing, and its users crash.
                 const auto used = [](auto* a_pool) { return a_pool ? std::format("{}/{}", a_pool->GetNoOfUsedSpaces(), a_pool->m_nSize) : std::string("?"); };
-                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale; {} chunks around CJ; "
-                                "pools: col models {}, buildings {}",
-                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.book.Count(), used(CPools::ms_pColModelPool),
-                    used(CPools::ms_pBuildingPool)));
+                Log(std::format("ground: {} chunks built ({} resent, {} triangles, {} left out), {} far ones dropped, {} stale, {} emptied and filled again; "
+                                "{} chunks around CJ; pools: col models {}, buildings {}, peds {}, vehicles {}, objects {}, dummies {}",
+                    state.built, state.replaced, state.triangles, state.dropped, state.distant, state.stale, state.refilled, state.book.Count(),
+                    used(CPools::ms_pColModelPool), used(CPools::ms_pBuildingPool), used(CPools::ms_pPedPool), used(CPools::ms_pVehiclePool),
+                    used(CPools::ms_pObjectPool), used(CPools::ms_pDummyPool)));
             }
             state.statMs = now;
-            state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = 0;
+            state.built = state.replaced = state.triangles = state.dropped = state.stale = state.distant = state.refilled = 0;
         }
     }
 

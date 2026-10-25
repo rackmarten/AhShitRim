@@ -1,6 +1,7 @@
 #include "player/Conversation.h"
 
 #include "hud/SaHud.h"
+#include "player/Missions.h"
 
 namespace AhShitRim::Conversation
 {
@@ -100,6 +101,33 @@ namespace AhShitRim::Conversation
             std::uint32_t count = 0;  // messages so far
         } hudSubtitle;
 
+        // Set from the main thread, read wherever Skyrim starts a dialogue (its AI threads too).
+        std::atomic<bool> mayTalk{ true };
+
+        // Every dialogue with the player starts with Actor::SetDialogueWithPlayer(true, ...): talking to
+        // someone, someone walking up to the player, a force-greet. Refused while CJ may not talk; a
+        // package that keeps trying is logged once per speaker per 5 s.
+        struct DialogueHook
+        {
+            static bool thunk(RE::Actor* a_actor, bool a_start, bool a_forceGreet, RE::TESTopicInfo* a_topic)
+            {
+                if (a_start && !mayTalk) {
+                    static std::atomic<RE::FormID> lastId{ 0 };
+                    static std::atomic<std::int64_t> lastAt{ 0 };
+                    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                    const auto id = a_actor ? a_actor->GetFormID() : 0;
+                    if (id != lastId.exchange(id) || now - lastAt > 5000) {
+                        lastAt = now;
+                        SKSE::log::info("conversation: {} ({:08X}) can't {} CJ: he's driving or moving fast", a_actor ? a_actor->GetName() : "?", id,
+                            a_forceGreet ? "force-greet" : "talk to");
+                    }
+                    return false;
+                }
+                return original(a_actor, a_start, a_forceGreet, a_topic);
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
         struct HudMessageHook
         {
             static RE::UI_MESSAGE_RESULTS thunk(RE::HUDMenu* a_menu, RE::UIMessage& a_message)
@@ -107,6 +135,9 @@ namespace AhShitRim::Conversation
                 if (a_message.type == RE::UI_MESSAGE_TYPE::kUpdate && a_message.data) {
                     if (auto* data = skyrim_cast<RE::HUDData*>(a_message.data)) {
                         const auto type = data->type.get();
+                        if (Missions::OnHudMessage(*data)) {
+                            return RE::UI_MESSAGE_RESULTS::kHandled;  // a quest started or completed: San Andreas shows it
+                        }
                         if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
                             std::scoped_lock guard(hudSubtitle.lock);
                             if (hudSubtitle.count == 0) {
@@ -220,6 +251,9 @@ namespace AhShitRim::Conversation
             say = state.director.Open();
             SaHud::SetLetterbox(true);
             SKSE::log::info("conversation: talking to {} ({:08X}), CJ greets", speaker->GetName(), speaker->GetFormID());
+            if (!mayTalk) {
+                SKSE::log::warn("conversation: the dialogue opened though CJ is driving or moving fast");
+            }
         } else if (!speaker && state.director.IsOpen()) {
             say = state.director.Close();
             SaHud::SetLetterbox(false);
@@ -260,7 +294,12 @@ namespace AhShitRim::Conversation
     {
         REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_HUDMenu[0] };
         HudMessageHook::original = vtable.write_vfunc(0x4, HudMessageHook::thunk);
+        REL::Relocation<std::uintptr_t> character{ RE::VTABLE_Character[0] };
+        DialogueHook::original = character.write_vfunc(0x41, DialogueHook::thunk);
     }
+
+    void SetMayTalk(bool a_mayTalk) { mayTalk = a_mayTalk; }
+    bool MayTalk() { return mayTalk; }
 
     bool DialogueOpen() { return Speaker(RE::MenuTopicManager::GetSingleton()) != nullptr; }
 
