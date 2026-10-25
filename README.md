@@ -102,7 +102,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
 | Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |
-| V or Home | V or Home | | Change the camera distance (San Andreas's camera key) |
+| V or Home | V or Home | Change the camera distance: San Andreas's three chase distances (San Andreas's camera key) | Change the camera distance; one step is the view from the front of the vehicle, with San Andreas's crosshair in the Hunter, Hydra, Seasparrow and Rustler |
 | W / S, arrows up / down | W / S, arrows up / down | In Ammu-Nation: browse | |
 | E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | |
 | F or Enter | F or Enter | In Ammu-Nation: back, then leave | |
@@ -211,7 +211,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 
 - **The main quest** beyond Helgen isn't fully played through as CJ yet. If something blocks the way (a scene, a door, a menu), F10 hands the player back to Skyrim.
 - **Helgen**: the intro (the cart and the execution) isn't supported as CJ: play it as Skyrim's own player and press F10 afterwards. CJ's "Ah shit, here we go again." still plays in the cart.
-- **Camera**: San Andreas's third-person camera only, no first person.
+- **Camera**: no first person on foot (San Andreas has none either). A vehicle's first-person view sits just in front of it, so driving into a wall puts the camera in the wall.
 - **CJ and the vehicles** cast no shadow, and CJ always wears his starting clothes.
 - **Vehicle looks**: damage isn't shown (dents, broken windows and lost doors), and lights aren't drawn. The Hydra's flares are invisible (they still work), and its jet exhaust, missile trails, heat haze, a submerged exhaust's bubbles and the rotor dust's sand and water versions aren't drawn. Muzzle flashes are round where San Andreas stretches them along the barrel.
 - **Vehicles are temporary**: they live only while CJ has the player. They're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them. Fast travelling in a vehicle leaves it behind.

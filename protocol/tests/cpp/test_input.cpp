@@ -610,7 +610,7 @@ TEST_CASE("v23: the middle mouse button looks behind in a vehicle, both shoulder
     CHECK(b.Build(4, true, false).buttons == 0);  // a menu has the input
 }
 
-TEST_CASE("v23: V and Home change the camera distance in a vehicle")
+TEST_CASE("v23: V and Home change the camera distance in a vehicle, and (#911) on foot")
 {
     CHECK(VehicleActionFromScanCode(kDikV) == Action::CameraView);
     CHECK(VehicleActionFromScanCode(kDikHome) == Action::CameraView);
@@ -620,7 +620,8 @@ TEST_CASE("v23: V and Home change the camera distance in a vehicle")
     const auto in = b.Build(1, true, true);
     CHECK(in.buttons == Protocol::kButtonCameraView);
     CHECK(ToPad(in, true).select == 255);
-    CHECK(ToPad(in, false).select == 0);
+    CHECK(ToPad(in, false).select == 255);  // San Andreas's three chase distances
+    CHECK(ToPad(b.Build(2, true, false), false).select == 0);  // a menu has the input
 }
 
 TEST_CASE("v23: 2 and numpad + are the sub-mission key with numpad 5: the hydraulics' jump, a plane's landing gear")

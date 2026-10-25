@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The camera works like San Andreas's. On foot V (or Home) steps through San Andreas's three chase distances, close, middle and far; it used to do nothing there. There is still no first person on foot, as in San Andreas. In a vehicle, the first-person step of V now sits in front of the vehicle, past a car's bonnet, a bike's handlebars or an aircraft's nose, instead of inside the model Skyrim draws (San Andreas puts that view at the driver's head and simply doesn't draw the car; Skyrim drew it), and CJ isn't drawn in it. The Seasparrow and the Rustler show the rocket-sight crosshair in that view as the Hunter and the Hydra do, to aim their guns by.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

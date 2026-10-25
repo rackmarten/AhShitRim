@@ -48,6 +48,7 @@ add_executable(protocol_tests
     tests/cpp/test_activate.cpp
     tests/cpp/test_anchor.cpp
     tests/cpp/test_scene.cpp
+    tests/cpp/test_camera.cpp
     tests/cpp/test_health.cpp
     tests/cpp/test_voice_lines.cpp
     tests/cpp/test_wasted.cpp

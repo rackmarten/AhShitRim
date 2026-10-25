@@ -1,6 +1,7 @@
 #include "cj_body.h"
 
 #include "aim.h"
+#include "camera.h"
 #include "cj_gear.h"
 #include "log.h"
 #include "model_sender.h"
@@ -12,6 +13,7 @@
 #include <plugin.h>
 
 #include <CCamera.h>
+#include <CModelInfo.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
 #include <CTaskSimpleUseGun.h>
@@ -585,6 +587,25 @@ namespace AhShitRim::CjBody
             source = final.GetPosition();
             front = final.GetForward();
             camUp = final.at;
+        }
+        // (#911) A vehicle's first-person view (MODE_1STPERSON) sits at its front seat, at head height, inside the
+        // vehicle: San Andreas doesn't draw its player's vehicle then, Skyrim does. So it moves out of the col model's
+        // box the way it looks: in front of the bonnet, a bike's handlebars or an aircraft's nose.
+        if (a_ped->bInVehicle && a_ped->m_pVehicle && cam.m_nMode == MODE_1STPERSON) {
+            CVehicle*      vehicle = a_ped->m_pVehicle;
+            const auto*    info = CModelInfo::GetModelInfo(vehicle->m_nModelIndex);
+            if (info && info->m_pColModel) {
+                const CMatrix& m = vehicle->GetMatrix();  // right, up (forward) and at (up) rows
+                const CVector  rel = source - m.pos;
+                const float    seat[3] = { DotProduct(rel, m.right), DotProduct(rel, m.up), DotProduct(rel, m.at) };
+                const float    look[3] = { DotProduct(front, m.right), DotProduct(front, m.up), DotProduct(front, m.at) };
+                const auto&    box = info->m_pColModel->m_boundBox;
+                const float    lo[3] = { box.m_vecMin.x, box.m_vecMin.y, box.m_vecMin.z };
+                const float    hi[3] = { box.m_vecMax.x, box.m_vecMax.y, box.m_vecMax.z };
+                float          out[3];
+                Camera::OutOfBox(seat, look, lo, hi, Camera::kBumperMargin, out);
+                source = m.pos + m.right * out[0] + m.up * out[1] + m.at * out[2];
+            }
         }
         toSkyrim(source, body.cameraPosition);
         const auto forward = Body::Normalize(Vec(front), { 0.0f, 1.0f, 0.0f });
