@@ -31,7 +31,7 @@ Already playing PerkeleRim? Then Skyrim is ready as it is.
    3. San Andreas runs AhShitRim on exactly one exe, **1.0 US**, and Steam's is a later build, so setup offers to download the open-source downgrader, [gtasa-open-downgrader](https://github.com/xxanqw/gtasa-open-downgrader) 0.2.3 (57 MB, from its GitHub release). The launcher checks the file's SHA-256 before running it and keeps it in `Tools` next to the launcher. Then the downgrader opens. In it:
       - choose the copy as the game folder (setup put its path on the clipboard: paste it with Ctrl+V),
       - downgrade it to **1.0 US** (say yes if it asks to download its patches),
-      - optionally install **SilentPatch** from its mod list; leave the other mods (widescreen, frame rate, graphics) out, AhShitRim isn't tested with them,
+      - optionally install **SilentPatch** from its mod list; leave the other mods (widescreen, frame rate, graphics) out, AhShitRim isn't tested with them. The 4GB patch from its tools isn't needed: the launcher applies it (below),
       - close the downgrader. Setup checks that `gta_sa.exe` is now 1.0 US and offers another go if it isn't.
    4. If San Andreas has no ASI loader yet, setup offers to download [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) 9.7.4 (0.9 MB, from its GitHub release, SHA-256 checked) and puts its `dinput8.dll` into the copy.
    5. It asks how AhShitRim's Skyrim part goes in, if you have **Mod Organizer 2** or **Vortex** for this Skyrim. With neither, the launcher installs it itself (section 3).
@@ -41,7 +41,7 @@ Downloads only ever come from those two projects' own GitHub releases, pinned to
 
 ## 3. The Skyrim part
 
-**Without a mod manager** (or when you answered No to installing it with yours): the launcher copies `AhShitRim-Skyrim-<version>.zip` straight into Skyrim's `Data` folder, and writes down every file it copied in `Data\SKSE\Plugins\AhShitRim.installed.txt`. A new release's zip next to the launcher is installed over it the next time you start, and `Uninstall AhShitRim.bat` removes exactly those files again.
+**Without a mod manager** (or when you answered No to installing it with yours): the launcher copies `AhShitRim-Skyrim-<version>.zip` straight into Skyrim's `Data` folder, and writes down every file it copied in `Data\SKSE\Plugins\AhShitRim.installed.txt`. A new release's zip next to the launcher is installed over it the next time you start, and `Uninstall AhShitRim.bat` removes exactly those files again. A loose `AhShitRim.dll` already in `Data` from a hand install or an older release is installed over, so it can't stay a version that doesn't match San Andreas's part.
 
 **With Mod Organizer 2:** in MO2, Install a new mod from an archive (the CD icon), pick `AhShitRim-Skyrim-<version>.zip` from the extracted folder, name it AhShitRim, OK, and tick it in the left pane.
 
@@ -52,7 +52,7 @@ Either way, AhShitRim has no `.esp`: there's nothing to add to the load order.
 ## 4. Every launch
 
 1. Close both games and double-click `Start AhShitRim.bat`.
-2. It checks Skyrim's version, SKSE, Address Library and AhShitRim's Skyrim part, then that `gta_sa.exe` is 1.0 US and the ASI loader is there. If Steam undid the downgrade or the ASI loader is gone, it offers setup's step again. Anything else missing is listed in red with where to get it, and for SKSE or Address Library it offers to open their download pages; fix it and run it again.
+2. It checks Skyrim's version, SKSE, Address Library and AhShitRim's Skyrim part, then that `gta_sa.exe` is 1.0 US and the ASI loader is there. If Steam undid the downgrade or the ASI loader is gone, it offers setup's step again. It also applies the downgrader's **4GB patch** (Large Address Aware) to the plain 1.0 US exe, as AhShitRim is tested with it: only that one bit in the exe, and only when the result is the known 1.0 US exe with the 4GB flag. Anything else missing is listed in red with where to get it, and for SKSE or Address Library it offers to open their download pages; fix it and run it again.
 3. It copies `AhShitRim.asi` into San Andreas's `scripts` folder and tells AhShitRim where San Andreas is (`Data\SKSE\Plugins\AhShitRim.ini` in Skyrim's folder, which it writes; F11 screenshots go to `Screenshots` next to the launcher).
    It also paints the radar's San Andreas-style map of Skyrim from your own plugins into `Documents\My Games\AhShitRim` (a few seconds the first time, then again only when your plugins change).
 4. It starts San Andreas, which stays minimized, and waits until it's ready (up to two minutes).

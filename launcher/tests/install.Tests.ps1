@@ -186,6 +186,42 @@ Describe 'Save-VerifiedDownload' {
     }
 }
 
+Describe 'Set-LargeAddressAware' {
+    BeforeAll {
+        # A minimal PE: "MZ", e_lfanew = 0x80, then "PE\0\0" and a file header with Characteristics 0x0102.
+        function New-FakeExe([string] $Path) {
+            $bytes = New-Object byte[] 0x100
+            $bytes[0] = 0x4D; $bytes[1] = 0x5A
+            [BitConverter]::GetBytes([int] 0x80).CopyTo($bytes, 60)
+            [Text.Encoding]::ASCII.GetBytes("PE`0`0").CopyTo($bytes, 0x80)
+            $bytes[0x80 + 4 + 18] = 0x02; $bytes[0x80 + 4 + 19] = 0x01
+            [IO.File]::WriteAllBytes($Path, $bytes)
+            return $bytes
+        }
+        function Get-Md5([byte[]] $Bytes) { $md5 = [Security.Cryptography.MD5]::Create(); try { -join ($md5.ComputeHash($Bytes) | ForEach-Object { $_.ToString('x2') }) } finally { $md5.Dispose() } }
+    }
+    It 'sets the Large Address Aware bit when the result is the expected exe' {
+        $plain = New-FakeExe "$TestDrive\laa.exe"
+        $flagged = [byte[]] $plain.Clone(); $flagged[0x80 + 4 + 18] = 0x22
+        Set-LargeAddressAware "$TestDrive\laa.exe" (Get-Md5 $plain) (Get-Md5 $flagged) | Should -BeTrue
+        ([IO.File]::ReadAllBytes("$TestDrive\laa.exe"))[0x80 + 4 + 18] | Should -Be 0x22
+        Test-Path "$TestDrive\laa.exe.laa" | Should -BeFalse
+    }
+    It 'leaves any other exe alone' {
+        $plain = New-FakeExe "$TestDrive\other.exe"
+        Set-LargeAddressAware "$TestDrive\other.exe" ('0' * 32) ('1' * 32) | Should -BeFalse
+        Set-LargeAddressAware "$TestDrive\other.exe" (Get-Md5 $plain) ('1' * 32) | Should -BeFalse
+        Get-Md5 ([IO.File]::ReadAllBytes("$TestDrive\other.exe")) | Should -Be (Get-Md5 $plain)
+    }
+    It 'goes from the 1.0 US exe to its 4GB one by default' {
+        . (Join-Path $PSScriptRoot '..\checks.ps1')
+        $defaults = @{}
+        foreach ($p in (Get-Command Set-LargeAddressAware).ScriptBlock.Ast.Parameters) { if ($p.DefaultValue) { $defaults[$p.Name.VariablePath.UserPath] = $p.DefaultValue.Value } }
+        $SaExeVersions[$defaults['FromMd5']].Name | Should -Be '1.0 US (HOODLUM)'
+        $SaExeVersions[$defaults['ToMd5']].Name | Should -Be '1.0 US (HOODLUM, 4GB flag)'
+    }
+}
+
 Describe 'Install-AsiLoader' {
     It 'puts dinput8.dll in San Andreas and makes the scripts folder' {
         $zip = New-TestZip "$TestDrive\ual.zip" @{ 'dinput8.dll' = 'loader' }

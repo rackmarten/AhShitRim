@@ -159,13 +159,16 @@ function Get-Mo2Instances {
 $realPlugins = Join-Path $skyrim 'Data\SKSE\Plugins'
 $instances = @(Get-Mo2Instances)
 
-# How the Skyrim part goes in, decided once when it isn't installed anywhere yet: with no mod
-# manager the launcher copies it, with one the player picks. ModManager in launcher.ini keeps it.
+# How the Skyrim part goes in, decided once while no mod manager has it: with no mod manager the
+# launcher copies it, with one the player picks. ModManager in launcher.ini keeps it. A loose
+# AhShitRim.dll in Data that no record names (a hand install, a developer's deploy, an older
+# release) is no reason to stop: without a mod manager the launcher installs over it, so it can't
+# stay a version that doesn't match San Andreas's ASI.
 $skyrimData = Join-Path $skyrim 'Data'
-$installedSomewhere = (Test-Path (Join-Path $realPlugins 'AhShitRim.dll')) -or @($instances | Where-Object { $_.HasDll }).Count -gt 0
+$inModManager = @($instances | Where-Object { $_.HasDll }).Count -gt 0
 # A part the launcher installed before (launcher.ini deleted since) stays the launcher's to update.
 if (-not $config['ModManager'] -and (Read-SkyrimPartRecord $skyrimData)) { $config['ModManager'] = 'None'; Save-Config }
-if (-not $config['ModManager'] -and -not $installedSomewhere) {
+if (-not $config['ModManager'] -and -not $inModManager) {
     # Vortex keeps a deployment file in Data once it has deployed, and its settings in %APPDATA%\Vortex.
     $vortex = (Test-Path (Join-Path $skyrimData 'vortex.deployment.json')) -or (Test-Path (Join-Path $skyrimData 'vortex.deployment.msgpack')) -or (Test-Path (Join-Path $env:APPDATA 'Vortex'))
     $detected = Get-ModManager '' ($instances.Count -gt 0) $vortex
@@ -199,6 +202,11 @@ $problems = @(Get-SkyrimProblems (Get-Item $skyrimExe).VersionInfo.FileVersion (
 $saVersion = Get-SaFolderVersion $sa
 if (-not (Test-Path (Join-Path $sa 'gta_sa.exe')) -or ($saVersion -and -not $saVersion.Supported)) { [void] (Invoke-SaDowngrade $sa (Join-Path $Root 'Tools')) }
 if (-not (Get-SaFolderAsiLoader $sa)) { [void] (Invoke-AsiLoaderSetup $sa (Join-Path $Root 'Tools')) }
+# AhShitRim is tested with the downgrader's 4GB patch, so the plain 1.0 US exe gets it (install.ps1).
+if (Test-Path (Join-Path $sa 'gta_sa.exe')) {
+    try { if (Set-LargeAddressAware (Join-Path $sa 'gta_sa.exe')) { Write-Host "Applied the 4GB patch (Large Address Aware) to $(Join-Path $sa 'gta_sa.exe')" } }
+    catch { Write-Host "Couldn't apply the 4GB patch to gta_sa.exe ($($_.Exception.Message)). San Andreas runs without it; close it and run the launcher again." -ForegroundColor Yellow }
+}
 
 $saExe = Join-Path $sa 'gta_sa.exe'
 $md5 = if (Test-Path $saExe) { (Get-FileHash -Algorithm MD5 $saExe).Hash }
