@@ -45,6 +45,37 @@ Describe 'Get-FolderFromRegistryValue' {
     }
 }
 
+Describe 'A Steam library on a drive that is gone' {
+    BeforeAll {
+        # A drive letter this PC doesn't have, as when a library's disk was removed.
+        $gone = [char[]] 'QRSTUVWXYZJKLMNOP' | Where-Object { -not (Test-Path "$($_):\") } | Select-Object -First 1
+        $steam = New-Item -ItemType Directory "$TestDrive\Steam"
+        New-Item -ItemType Directory "$steam\steamapps" | Out-Null
+        Set-Content "$steam\steamapps\libraryfolders.vdf" @"
+"libraryfolders"
+{
+    "0" { "path" "$("$steam" -replace '\\', '\\')" }
+    "1" { "path" "$($gone):\\SteamLibrary" }
+}
+"@
+    }
+    It 'lists it without throwing' {
+        $libraries = @(Get-SteamLibraries "$steam")
+        $libraries | Should -Contain "$($gone):\SteamLibrary"
+    }
+    It 'guesses San Andreas there without throwing, and Select-SaInstalls drops it' {
+        $guesses = @(Get-SaFolderGuesses (Get-SteamLibraries "$steam"))
+        $guesses | Should -Contain "$($gone):\SteamLibrary\steamapps\common\Grand Theft Auto San Andreas"
+        @(Select-SaInstalls $guesses | Where-Object { $_.Path -like "$($gone):*" }).Count | Should -Be 0
+    }
+    It 'takes registry values and paths on it without throwing' {
+        Get-FolderFromRegistryValue "`"$($gone):\Games\SA\gta_sa.exe`"" | Should -Be "$($gone):\Games\SA"
+        Join-Guess "$($gone):\Games" 'gta_sa.exe' | Should -Be "$($gone):\Games\gta_sa.exe"
+        Join-Guess $null 'gta_sa.exe' | Should -BeNullOrEmpty
+        @(Select-SaInstalls @("$($gone):\Games\SA", 'bad|name')).Count | Should -Be 0
+    }
+}
+
 Describe 'Select-SaInstalls' {
     BeforeAll {
         $steam = New-Item -ItemType Directory (Join-Path $TestDrive 'steam')

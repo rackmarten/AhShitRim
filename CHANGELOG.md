@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- The launcher's setup no longer stops at once with "Cannot find drive" when Steam still lists a library on a drive that isn't there any more (or launcher.ini names one): such folders are skipped while it looks for Skyrim and San Andreas. For developers, `scripts/test.ps1` now runs the launcher's tests in Windows PowerShell 5.1 too, which the launcher runs on.
 - A Skyrim plugin and a San Andreas ASI of different versions no longer strand the player. Before, the first mismatch switched the link off for good, so San Andreas ignored even the right Skyrim plugin started after a leftover old one, and F10 did nothing until San Andreas was restarted too. Now both halves keep watching and link up as soon as the other one restarts with the same version, and a shared memory block left by an older or crashed run is let go of and made again, whichever game starts first. While they differ, Skyrim says so in a message box (when a save is loaded, again every 5 minutes, and when F10 is pressed): "San Andreas has version X, Skyrim has version Y. Install the same version in both", naming the file to update; San Andreas's log says the same once a minute. The launcher checks the Skyrim plugin it will load and San Andreas's ASI carry the same version (a stamp in both files) before starting anything, and says which one to replace.
 
 ## [0.1.0] - 2026-10-25

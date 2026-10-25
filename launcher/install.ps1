@@ -42,18 +42,40 @@ function Format-Size([long] $Bytes) {
 
 # --- San Andreas ------------------------------------------------------------------------------
 
+# $Base\$Child as plain text, or $null when it can't be one. Join-Path and Split-Path throw for a
+# drive that doesn't exist (a Steam library on a drive since removed), so guesses use these instead.
+function Join-Guess([string] $Base, [string] $Child) {
+    if (-not $Base) { return $null }
+    try { return [IO.Path]::Combine($Base, $Child) } catch { return $null }
+}
+
+# Steam's library folders: Steam's own folder and every "path" in its libraryfolders.vdf, which
+# may name a drive that isn't there any more. $SteamPath defaults to the one in the registry.
+function Get-SteamLibraries([string] $SteamPath = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath) {
+    if (-not $SteamPath) { return @() }
+    $libraries = @($SteamPath)
+    $vdf = Join-Guess $SteamPath 'steamapps\libraryfolders.vdf'
+    if ($vdf -and (Test-Path -LiteralPath $vdf)) {
+        foreach ($match in [regex]::Matches((Get-Content -Raw -LiteralPath $vdf), '"path"\s+"([^"]+)"')) {
+            $libraries += $match.Groups[1].Value -replace '\\\\', '\'
+        }
+    }
+    return $libraries | Select-Object -Unique
+}
+
 # A game folder from a registry value: a folder, or an exe path (quoted or not).
 function Get-FolderFromRegistryValue([string] $Value) {
     if (-not $Value) { return $null }
     $path = $Value.Trim().Trim('"')
-    if ($path -match '\.exe$') { $path = Split-Path $path }
+    try { if ($path -match '\.exe$') { $path = [IO.Path]::GetDirectoryName($path) } } catch { return $null }
     if (-not $path) { return $null }
     return $path.TrimEnd('\')
 }
 
 # The folders where San Andreas may be: Rockstar's own registry keys (retail, Rockstar Games
 # Launcher), any uninstall entry named San Andreas (Steam's "Steam App 12120" among them, never the
-# Definitive Edition), the Steam libraries and the usual install folders. Not checked on disk.
+# Definitive Edition), the Steam libraries and the usual install folders. Not checked on disk, and
+# never throws: a folder on a drive that's gone is just a guess Select-SaInstalls drops.
 function Get-SaFolderGuesses($SteamLibraries) {
     $guesses = @()
     $rockstar = 'Software\WOW6432Node\Rockstar Games', 'Software\Rockstar Games'
@@ -67,26 +89,28 @@ function Get-SaFolderGuesses($SteamLibraries) {
     foreach ($entry in Get-ItemProperty $uninstall -ErrorAction SilentlyContinue) {
         if ($entry.DisplayName -match 'San Andreas' -and $entry.DisplayName -notmatch 'Definitive') { $guesses += Get-FolderFromRegistryValue $entry.InstallLocation }
     }
-    foreach ($library in @($SteamLibraries)) { if ($library) { $guesses += Join-Path $library 'steamapps\common\Grand Theft Auto San Andreas' } }
+    foreach ($library in @($SteamLibraries)) { $guesses += Join-Guess $library 'steamapps\common\Grand Theft Auto San Andreas' }
     foreach ($programs in ${env:ProgramFiles(x86)}, $env:ProgramFiles) {
         if (-not $programs) { continue }
-        foreach ($name in 'Rockstar Games\GTA San Andreas', 'Rockstar Games\Grand Theft Auto San Andreas', 'Rockstar Games\San Andreas') { $guesses += Join-Path $programs $name }
+        foreach ($name in 'Rockstar Games\GTA San Andreas', 'Rockstar Games\Grand Theft Auto San Andreas', 'Rockstar Games\San Andreas') { $guesses += Join-Guess $programs $name }
     }
     return @($guesses | Where-Object { $_ })
 }
 
 # The guesses that hold a San Andreas exe (gta_sa.exe, or gta-sa.exe for the current Steam build),
-# once each, as @{ Path; Exe }.
+# once each, as @{ Path; Exe }. A folder that can't be read (a drive that's gone, a bad name) is skipped.
 function Select-SaInstalls([string[]] $Folders) {
     $seen = @{}
     foreach ($folder in $Folders) {
-        if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
-        $full = (Resolve-Path -LiteralPath $folder).Path.TrimEnd('\')
-        if ($seen[$full.ToLowerInvariant()]) { continue }
-        $seen[$full.ToLowerInvariant()] = $true
-        foreach ($exe in 'gta_sa.exe', 'gta-sa.exe') {
-            if (Test-Path -LiteralPath (Join-Path $full $exe)) { [pscustomobject] @{ Path = $full; Exe = $exe }; break }
-        }
+        try {
+            if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+            $full = (Resolve-Path -LiteralPath $folder).Path.TrimEnd('\')
+            if ($seen[$full.ToLowerInvariant()]) { continue }
+            $seen[$full.ToLowerInvariant()] = $true
+            foreach ($exe in 'gta_sa.exe', 'gta-sa.exe') {
+                if (Test-Path -LiteralPath ([IO.Path]::Combine($full, $exe))) { [pscustomobject] @{ Path = $full; Exe = $exe }; break }
+            }
+        } catch { continue }
     }
 }
 
