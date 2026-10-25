@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "damage.h"
 #include "link/LinkService.h"
+#include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Projectiles.h"
 #include "weapons.h"
@@ -159,7 +160,7 @@ namespace AhShitRim::Shots
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls);
+            const float damage = Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * Balance::DealtFactor(a_player, a_shot.weaponType);
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
 

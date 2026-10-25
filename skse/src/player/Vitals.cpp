@@ -265,6 +265,25 @@ namespace AhShitRim::Vitals
         }
     }
 
+    float TakeHit(RE::PlayerCharacter* a_player, float a_damage, float a_factor)
+    {
+        if (!a_player || state.sequence.Running() || state.invincible || !std::isfinite(a_damage) || !(a_damage > 0.0f)) {
+            return 0.0f;
+        }
+        const auto  split = Health::AbsorbSkyrim(state.armor, a_damage * (std::isfinite(a_factor) ? (std::max)(a_factor, 0.0f) : 1.0f), MaxHealth(a_player));
+        const float back = a_damage - split.health;
+        if (split.armor != state.armor) {
+            SetArmor(split.armor);
+        }
+        auto* values = a_player->AsActorValueOwner();
+        if (back > 0.0f) {
+            values->RestoreActorValue(RE::ActorValue::kHealth, back);
+        } else if (back < 0.0f) {
+            values->DamageActorValue(RE::ActorValue::kHealth, -back);
+        }
+        return back;
+    }
+
     void OnTakeOver(RE::PlayerCharacter* a_player)
     {
         state.meter.Reset();
@@ -368,6 +387,8 @@ namespace AhShitRim::Vitals
             SKSE::log::info("vitals: the player {}", a_on ? "takes no damage (BAGUVIX)" : "takes damage again");
         }
     }
+
+    bool IsInvincible() { return state.invincible; }
 
     float Armor() { return state.armor; }
 

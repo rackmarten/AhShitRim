@@ -91,6 +91,23 @@ Skyrim's own player actor stays the real player, so dialogue, quests, bounties a
 - **Quests**: complete Skyrim's quests as CJ. Anything that needs spells or lockpicking hands the player back to Skyrim.
 - **Wanted level**: stars from the hold's bounty and the crimes CJ commits. More stars, more guards, and from 3 stars they chase CJ on horseback. Lose them by staying out of sight, or pay the guard. Stopped in a car with a guard at the door, you're dragged out and Busted (done, see [Wanted level and Busted](#wanted-level-and-busted)).
 
+## Combat balance
+
+How hard CJ hits and how hard he's hit, under `[Balance]` in `Data/SKSE/Plugins/AhShitRim.ini` (read when the game starts):
+
+```ini
+[Balance]
+CJDamage=1.0         ; CJ's guns and explosives, times this (melee isn't touched)
+DamageTaken=1.0      ; what Skyrim's people and creatures do to CJ, times this
+FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn't
+```
+
+- With `FollowDifficulty=1` CJ's guns and explosives get Skyrim's own multiplier for the player's damage at the difficulty you play (`fDiffMultHPByPC*`): twice at Novice, as before at Adept, half at Master, a quarter at Legendary. Fists and melee weapons stay as they are. Skyrim already puts its difficulty on what its people do to the player, CJ included.
+- So at Master a Colt 45 needs about twice the shots it did: 9 body shots for a level 6 bandit instead of 5. `CJDamage=0.5` with `FollowDifficulty=0` gives that at any difficulty.
+- CJ's body armour (the blue bar) now takes Skyrim's hits first, as San Andreas's armour takes bullets and blows: a hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health.
+- `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
+- BAGUVIX still blocks everything.
+
 ## Wanted level and Busted
 
 Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guards still arrest, fine and fight the player as they do. On top of it San Andreas's wanted stars show in the HUD while CJ has the player:
@@ -98,7 +115,7 @@ Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guar
 - Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars start to flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars. A guard who fights CJ later knows him by his bounty, and a star or two come back.
 - The guards never run out: reinforcements keep coming while CJ is wanted, one at a time and never where he's looking (behind him, round a corner, out of the city's barracks). Kill them all and there's a short breather to get away. From 3 stars some come on horseback, from 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth that run CJ down if he stays on foot (dragons, giants and mammoths only out in the open world, not in a city). At most 12 at once.
-- Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4. Bandits, wolves and everyone else hit as usual.
+- Skyrim's guards hit much harder than San Andreas's cops, so at first they go easy on CJ: a quarter of their damage at 1 star, half at 3, all of it from 4, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
 - CJ has his own lines for being chased and busted.
 - A giant's club or a mammoth throws CJ through the air as a car's blast does, and he gets back up San Andreas's way.
 - In a car, stop for a second or two with a guard at the driver's door and he drags CJ out: Busted. On a bike, a stopped CJ gets knocked off. Keep moving and they can't.
