@@ -143,16 +143,16 @@ The map is a San Andreas-style map of Skyrim the launcher paints from your own p
 
 ## Wanted level and Busted
 
-Skyrim's guards still arrest, fine and fight the player, but while CJ has the player crime works like San Andreas's: one wanted level for all of Skyrim, and nobody remembers once it's over.
+While CJ has the player, crime works like San Andreas's: stars only, one wanted level for all of Skyrim, and nobody remembers once it's over. Skyrim keeps no bounty on CJ (a crime's bounty is wiped as it comes, and becomes stars), so guards only fight him while stars show. Back as the Dragonborn (F10), Skyrim's own crime works as usual.
 
 - Each crime heats things up, wherever it happens (three stars in Whiterun are still three in Falkreath): shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
 - Out of the guards' sight for a few seconds the stars flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars.
-- Losing the stars clears every bounty in Skyrim. A small bounty that never raised a star goes after a minute out of the guards' sight, and people CJ fought forget it once he's been out of their sight for a minute. Bandits and wild animals don't forgive.
+- When the stars are gone the guards stop, and people CJ fought forget it once he's been out of their sight for a minute. Bandits and wild animals don't forgive. A petty crime on its own (trespassing, a stolen apple) is no star and is forgotten at once.
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
 - As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
 - Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
-- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
-- Busted takes the bounty out of CJ's gold (all of it if that's short), clears every bounty, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard, or Wasted, ends the stars and the bounty too.
+- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. On foot, a guard who reaches CJ while he stands still busts him too. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
+- Busted takes the fine out of CJ's gold (what Skyrim would have charged for this chase's crimes, all of it if that's short), and CJ comes to outside the hold's barracks with all his weapons. No jail. Wasted ends the stars too.
 
 ## Cheat codes
 

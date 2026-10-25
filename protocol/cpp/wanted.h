@@ -4,16 +4,17 @@
 // vehicle, the Busted sequence, the fine and where CJ wakes, and the stars' record in the co-save. Header-only
 // and free of game types, so the protocol tests cover it; the SKSE plugin feeds it (skse/src/player/Police.cpp).
 //
-// One wanted level for all of Skyrim, as San Andreas's follows CJ from Los Santos to San Fierro (0.1.1): each crime
-// (the bounty any crime faction puts on the player went up, the nine holds', the Legion's, the Stormcloaks') adds
-// heat to the one pursuit, and every hold's guards chase it. Out of every pursuer's sight the stars start to flash,
-// then go one at a time; all go with Busted, Wasted, the fine paid or AEZAKMI. Nobody remembers: when the stars go,
-// every bounty goes with them, a bounty that never raised a star goes once no guard has seen CJ for kForgetAfter, and
-// people who fought CJ forget it once he has been out of their sight that long (Grudges).
+// Stars only, one wanted level for all of Skyrim, as San Andreas's follows CJ from Los Santos to San Fierro (0.1.1).
+// While CJ has the player Skyrim keeps no bounty: each crime (the bounty any crime faction puts on the player went up,
+// the nine holds', the Legion's, the Stormcloaks') adds heat to the one pursuit and its price to the fine, and the
+// bounty is wiped at once. Guards fight CJ only while stars show (every hold's), and are called off at none. Out of
+// every pursuer's sight the stars start to flash, then go one at a time; all go with Busted (a guard catching CJ on
+// foot or at his car's door), Wasted or AEZAKMI. Nobody remembers: people who fought CJ forget it once he has been out
+// of their sight for kForgetAfter (Grudges).
 //
-// The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 2 is the heat (f32), the
-// hold the force comes from (its crime faction, u32) and the seconds CJ has been unseen (f32); version 1 had the stars
-// (u8) for the heat.
+// The co-save record ("ASWL", its own beside ASRM so it can grow apart from it): version 3 is the heat (f32), the
+// hold the force comes from (its crime faction, u32), the seconds CJ has been unseen (f32) and the fine so far (u32,
+// the crimes' prices); version 2 had no fine, version 1 had the stars (u8) for the heat.
 
 #pragma once
 
@@ -141,9 +142,6 @@ namespace AhShitRim::Wanted
         return a_added >= 1000 ? 100.0f : a_added >= 40 ? 60.0f : a_added > 0 ? 15.0f : 0.0f;
     }
 
-    // A guard who fights CJ while no stars show knows him by his bounty: a star, two for a murderer's. No more.
-    constexpr int StarsForBounty(int a_bounty) { return a_bounty >= 1000 ? 2 : a_bounty > 0 ? 1 : 0; }
-
     inline constexpr float kFlashAfter = 5.0f;   // unseen this long, the stars start to flash
     inline constexpr float kChangeFlash = 2.0f;  // and they flash this long after they change, as San Andreas's do
 
@@ -156,15 +154,18 @@ namespace AhShitRim::Wanted
         bool flashing = false;
     };
 
-    // The pursuit: the heat and how long CJ has been out of sight.
+    // The pursuit: the heat, how long CJ has been out of sight, and the fine Busted takes (the crimes' prices, as Skyrim
+    // would have put them on his bounty).
     class Pursuit
     {
     public:
         static constexpr float kHeatMax = 9999.0f;
+        static constexpr int   kFineMax = 1000000;
 
         int   Stars() const { return StarsForHeat(_heat); }
         float Heat() const { return _heat; }
         float Unseen() const { return _unseen; }
+        int   Fine() const { return _fine; }
 
         // A crime that added a_added to any faction's bounty, wherever it was: one pursuit for all of Skyrim, so a crime
         // in another hold only ever adds. Returns the stars.
@@ -174,6 +175,7 @@ namespace AhShitRim::Wanted
                 Clear();
                 return 0;
             }
+            _fine = (std::min)(_fine + (std::max)(a_added, 0), kFineMax);
             const float added = HeatForCrime(a_added);
             // Petty crimes alone (trespassing, theft, a horse taken) raise no more than a star: Skyrim reports some of
             // them over and over (each step trespassing), and they shouldn't call in the army.
@@ -191,19 +193,10 @@ namespace AhShitRim::Wanted
             _losing = 0.0f;
         }
 
-        // A guard of the hold fights CJ while no stars show: he is recognised by his bounty.
-        void Recognised(int a_bounty, bool a_neverWanted)
-        {
-            if (Stars() == 0 && !a_neverWanted && a_bounty > 0) {
-                Set(HeatFor(StarsForBounty(a_bounty)));
-                _unseen = 0.0f;
-                _losing = 0.0f;
-            }
-        }
-
         // A frame of a_delta seconds: a_seen while a pursuer sees CJ. The bounty doesn't matter: Skyrim drops it when the
         // witnesses die, and San Andreas's stars don't go because CJ shot the cops who saw him. Paying the fine, Busted
-        // and Wasted clear them (Clear). The caller clears every bounty when the last star goes.
+        // and Wasted clear them (Clear), and so does losing the last star: heat under a star (a petty crime alone) is
+        // nothing, so it goes at once too.
         Look Tick(float a_delta, bool a_seen, bool a_neverWanted)
         {
             _changed += a_delta;
@@ -238,15 +231,19 @@ namespace AhShitRim::Wanted
             _heat = 0.0f;
             _unseen = 0.0f;
             _losing = 0.0f;
+            _fine = 0;
         }
 
-        // A loaded save's.
-        void Restore(float a_heat, float a_unseen)
+        // A loaded save's, or a cheat's stars (a_fine left as it was unless given).
+        void Restore(float a_heat, float a_unseen, int a_fine = -1)
         {
             _heat = std::isfinite(a_heat) ? std::clamp(a_heat, 0.0f, kHeatMax) : 0.0f;
             _unseen = std::isfinite(a_unseen) ? std::clamp(a_unseen, 0.0f, kFlashAfter) : 0.0f;
             _losing = 0.0f;
             _changed = kChangeFlash;
+            if (a_fine >= 0) {
+                _fine = (std::min)(a_fine, kFineMax);
+            }
         }
 
     private:
@@ -263,48 +260,22 @@ namespace AhShitRim::Wanted
         float _unseen = 0.0f;
         float _losing = 0.0f;  // seconds towards losing the top star, once flashing
         float _changed = kChangeFlash;
+        int   _fine = 0;  // the crimes' prices since the pursuit began
     };
 
     // ---- Nobody remembers ----
 
-    // San Andreas's citizens don't remember CJ, so Skyrim's don't either: unseen this long, a bounty that raised no star
-    // goes (Amnesty), and so does the grudge of anyone who fought him (Grudges).
+    // San Andreas's citizens don't remember CJ, so Skyrim's don't either: unseen this long, anyone who fought him forgets
+    // it (Grudges).
     inline constexpr float kForgetAfter = 60.0f;
-
-    // A bounty with no stars: cleared once no guard has seen CJ for kForgetAfter.
-    class Amnesty
-    {
-    public:
-        // A frame of a_delta seconds: a_stars showing, a_owed while there's any bounty, a_seen while a guard (or one of
-        // ours) sees CJ. Returns whether to clear every bounty now.
-        bool Tick(float a_delta, int a_stars, bool a_owed, bool a_seen)
-        {
-            if (a_stars > 0 || !a_owed || a_seen) {
-                _quiet = 0.0f;
-                return false;
-            }
-            _quiet += a_delta;
-            if (_quiet >= kForgetAfter) {
-                _quiet = 0.0f;
-                return true;
-            }
-            return false;
-        }
-
-        float Quiet() const { return _quiet; }
-        void  Reset() { _quiet = 0.0f; }
-
-    private:
-        float _quiet = 0.0f;
-    };
 
     // Who forgives CJ: the people who weren't against him from the start. Guards, townsfolk (in a crime faction) and
     // anyone unaggressive by their base (farmers, merchants, chickens, horses); never bandits, necromancers, draugr or
     // wild predators, whose base attacks on sight, and never ours (they leave with the stars).
     constexpr bool Forgives(bool a_guard, bool a_ours, bool a_townsfolk, bool a_unaggressive) { return !a_ours && (a_guard || a_townsfolk || a_unaggressive); }
 
-    // Everyone fighting CJ who forgives him (Forgives; guards only while no stars show, the stars are theirs), by how long
-    // he has been out of their sight. Each one unseen for kForgetAfter is called off, once.
+    // Everyone but the pursuit (guards and ours, whom the stars call off) fighting CJ who forgives him (Forgives), by how
+    // long he has been out of their sight. Each one unseen for kForgetAfter is called off, once.
     class Grudges
     {
     public:
@@ -349,6 +320,9 @@ namespace AhShitRim::Wanted
         };
         std::vector<Entry> _entries;
     };
+
+    // Whether one of the pursuit (a_pursues: a guard or one of ours) fighting CJ is called off: whenever no stars show.
+    constexpr bool CallsOff(int a_stars, bool a_pursues, bool a_fightsCj) { return a_stars <= 0 && a_pursues && a_fightsCj; }
 
     // ---- Bystanders ----
 
@@ -411,10 +385,12 @@ namespace AhShitRim::Wanted
 
     // ---- The response ----
 
-    // The hold's own guards round about join the fight from 2 stars: this close, in Skyrim units.
+    // Every hold's guards round about join the fight while stars show: this close, in Skyrim units. With none, a guard
+    // fighting CJ is called off (CallsOff): stars only, no bounty, so nothing else makes him the guards' business.
     constexpr float JoinRadius(int a_stars)
     {
         switch (std::clamp(a_stars, 0, kMaxStars)) {
+        case 1: return 1500.0f;
         case 2: return 2000.0f;
         case 3: return 4000.0f;
         case 4: return 6000.0f;
@@ -806,9 +782,11 @@ namespace AhShitRim::Wanted
 
     enum class Bust : std::uint8_t
     {
-        None,     // a vehicle no guard busts CJ out of (a boat, an aircraft) or on foot (Skyrim's own arrest)
+        None,     // a vehicle no guard busts CJ out of (a boat, an aircraft)
         Door,     // a car: a guard at the driver's door opens it and drags him out
         KnockOff, // a bike, bicycle or quad: a guard reaching him knocks him off
+        OnFoot,   // on foot: a guard reaching him nearly stopped puts his hands up, as San Andreas's cops do (no bounty, so
+                  // Skyrim's own arrest never comes while CJ has the player)
     };
 
     constexpr Bust BustOf(VehicleKinds::Kind a_kind)
@@ -1019,30 +997,33 @@ namespace AhShitRim::Wanted
         float  _time = 0.0f;
     };
 
-    // The fine Busted takes: the whole bounty, every faction's (since no bounty outlasts a pursuit, that is what this one
-    // raised), or all the gold if that's short. Every bounty is cleared either way.
-    constexpr int FineFor(int a_bounty, int a_gold) { return (std::max)(0, (std::min)(a_bounty, a_gold)); }
+    // The fine Busted takes: the crimes' prices since the pursuit began (Pursuit::Fine, what Skyrim would have put on the
+    // bounty), or all the gold if that's short.
+    constexpr int FineFor(int a_fine, int a_gold) { return (std::max)(0, (std::min)(a_fine, a_gold)); }
 
     // ---- The co-save ----
 
     inline constexpr std::uint32_t kRecordType = 0x4C575341;  // "ASWL"
-    inline constexpr std::uint32_t kVersion = 2;
-    inline constexpr std::size_t   kSizeV1 = 1 + 4 + 4;  // the stars (u8), the faction, the seconds unseen
-    inline constexpr std::size_t   kSizeV2 = 4 + 4 + 4;  // the heat (f32), the faction, the seconds unseen
+    inline constexpr std::uint32_t kVersion = 3;
+    inline constexpr std::size_t   kSizeV1 = 1 + 4 + 4;      // the stars (u8), the faction, the seconds unseen
+    inline constexpr std::size_t   kSizeV2 = 4 + 4 + 4;      // the heat (f32), the faction, the seconds unseen
+    inline constexpr std::size_t   kSizeV3 = 4 + 4 + 4 + 4;  // and the fine so far (u32)
 
     struct Record
     {
         float         heat = 0.0f;
         std::uint32_t faction = 0;  // the hold's crime faction, 0 for none
         float         unseen = 0.0f;
+        std::uint32_t fine = 0;  // the crimes' prices since the pursuit began
     };
 
     inline std::vector<std::uint8_t> Write(const Record& a_record)
     {
-        std::vector<std::uint8_t> out(kSizeV2);
+        std::vector<std::uint8_t> out(kSizeV3);
         std::memcpy(out.data(), &a_record.heat, 4);
         std::memcpy(out.data() + 4, &a_record.faction, 4);
         std::memcpy(out.data() + 8, &a_record.unseen, 4);
+        std::memcpy(out.data() + 12, &a_record.fine, 4);
         return out;
     }
 
@@ -1056,10 +1037,13 @@ namespace AhShitRim::Wanted
             record.heat = HeatFor(a_data[0]);
             std::memcpy(&record.faction, a_data + 1, 4);
             std::memcpy(&record.unseen, a_data + 5, 4);
-        } else if (a_version == 2 && a_size >= kSizeV2) {
+        } else if ((a_version == 2 && a_size >= kSizeV2) || (a_version == 3 && a_size >= kSizeV3)) {
             std::memcpy(&record.heat, a_data, 4);
             std::memcpy(&record.faction, a_data + 4, 4);
             std::memcpy(&record.unseen, a_data + 8, 4);
+            if (a_version == 3) {
+                std::memcpy(&record.fine, a_data + 12, 4);
+            }
         } else {
             return false;
         }

@@ -9,18 +9,16 @@ namespace AhShitRim::Protocol
 }
 
 // San Andreas's wanted level on top of Skyrim's crime system, and Busted (protocol v22; the rules in
-// protocol/cpp/wanted.h). One wanted level for all of Skyrim (0.1.1), and nobody remembers.
+// protocol/cpp/wanted.h). Stars only, one wanted level for all of Skyrim (0.1.1), and nobody remembers.
 // - Stars (0 to 6) show in San Andreas's HUD while CJ has the player, from heat: each crime (any crime faction's bounty
-//   on the player went up: the nine holds', the Legion's, the Stormcloaks') adds some, by how bad it was, to the one
-//   pursuit wherever it happened. Out of every pursuer's sight (any hold's guards, ours) for 5 s they flash, then go one
-//   at a time.
-// - Nobody remembers: the stars lost, Busted, Wasted, the fine paid and AEZAKMI clear every bounty and call everyone's
-//   fight with the player off. A bounty that raised no star goes once no guard has seen CJ for a minute
-//   (Wanted::Amnesty), and anyone who fought CJ but forgives him (Wanted::Forgives: guards, townsfolk, the unaggressive)
-//   stops once he has been out of their sight that long (Wanted::Grudges).
-// - Skyrim drops a bounty when the witnesses die; the stars stay (San Andreas's don't go because CJ shot the cops
-//   who saw him).
-// - The response: from 2 stars every hold's guards round about join the fight, and a director keeps a force of ours
+//   on the player: the nine holds', the Legion's, the Stormcloaks') adds some, by how bad it was, and its price to the
+//   fine, to the one pursuit wherever it happened, and the bounty is wiped at once: Skyrim keeps none on CJ. Out of
+//   every pursuer's sight (any hold's guards, ours) for 5 s they flash, then go one at a time.
+// - Nobody remembers: the stars lost, Busted, Wasted and AEZAKMI call everyone's fight and alarm with the player off;
+//   with no stars a guard still fighting CJ is called off (Wanted::CallsOff), and anyone else who fought CJ but forgives
+//   him (Wanted::Forgives: townsfolk, the unaggressive) stops once he has been out of their sight for a minute
+//   (Wanted::Grudges).
+// - The response: from 1 star every hold's guards round about join the fight, and a director keeps a force of ours
 //   after him (Wanted::ForceFor), from the hold the player is in (else the last one's): copies of the hold's guards,
 //   the hold's wolves from 3 (in its guards' factions, sped up to keep CJ's pace on foot or in a car,
 //   Wanted::ChaseSpeedMult), a captain and a guard wizard from 4, the hold's
@@ -33,16 +31,17 @@ namespace AhShitRim::Protocol
 //   doesn't start a brawl at the stables.
 // - Guards (any hold's) and ours hit CJ by the stars: 0.4 of their damage at 1 star up to all of it from 5
 //   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
-// - AEZAKMI (CheatCodes) clears every bounty and calls off the fight as it's typed, then keeps the stars
-//   at 0, puts back any bounty a crime adds and stops any guard fighting the player.
+// - AEZAKMI (CheatCodes) calls off the fight as it's typed, then keeps the stars at 0, wipes any bounty a crime adds
+//   with no heat, and stops any guard fighting the player.
 // - Busted in a vehicle: wanted, the car nearly stopped for 1.5 s, a guard of the hold at the driver's door:
 //   San Andreas drags CJ out (kInputBusted, its jacked animation). A bike, bicycle or quad has no door: a guard
 //   reaching him knocks him off. Moving keeps him safe.
-// - On foot Skyrim's guard dialogue stays (the fine, resisting, persuading); only "go to jail" changes: the
-//   player's GoToPrison (Actor's vfunc 0xB9) is hooked while CJ has the player, and Busted runs instead.
+// - Busted on foot: wanted, CJ nearly stopped for a second with a guard in reach, as San Andreas's cops do (with no
+//   bounty Skyrim's guards never arrest him). The player's GoToPrison (Actor's vfunc 0xB9) stays hooked while CJ has the
+//   player, so any arrest Skyrim still makes runs Busted instead.
 // - Busted: the arrest, "busted", the fade to black, the player taken to the hold's barracks (the arresting guard's
-//   hold, else the pursuit's; the barracks' door's own teleport outside, the jail marker as the fallback), every bounty
-//   paid from gold (all of it if short) and cleared, the stars gone, the fade back in. Weapons are kept; no jail. From the arrest on nobody
+//   hold, else the pursuit's; the barracks' door's own teleport outside, the jail marker as the fallback), the fine (the
+//   crimes' prices) paid from gold (all of it if short), the stars gone, the fade back in. Weapons are kept; no jail. From the arrest on nobody
 //   fights the player (and Vitals keeps its health), and CJ says one of his arrested lines.
 // - CJ's lines (Wanted::kLine*, through PlayerSync's input): his chased line on a star gained and now and then while
 //   pursuers see him.

@@ -9,14 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
-- Nobody remembers. Losing the stars, Busted, Wasted, paying the fine or ASNAEB clear every bounty in Skyrim. A bounty that never raised a star goes after a minute unseen by the guards, and people CJ fought forget it after a minute out of their sight (bandits and wild animals don't).
-- Busted takes every bounty as the fine and lets CJ go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
+- Stars only: while CJ has the player Skyrim keeps no bounty. A crime's bounty is wiped as it comes and adds stars instead, so guards fight CJ only while stars show, from 1 star, and stop when they're gone.
+- Nobody remembers. People CJ fought forget it after a minute out of their sight (bandits and wild animals don't), and a bounty the Dragonborn had is wiped when CJ takes over.
+- Busted on foot: a guard who reaches CJ while he stands still busts him, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
 
 ### Fixed
 
 - A wanted level turning into a free-for-all: a pursuer's stray blow on a bystander (the stable's people, the carriage's invincible horse at Whiterun) started a brawl that kept the guards and the reinforcements off CJ. Bystanders now stop fighting the pursuit, and guards go back to CJ.
 - Nobody fighting CJ after a giant knocked him down: the hidden player's skeleton could stay in its ragdoll where it fell, and Skyrim's AI looks for the player by its bones. It's now put back on the player when that happens.
 - Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
+- A guard still shooting at CJ after the stars were gone, over a bounty that outlived them.
 
 ## [0.1.0] - 2026-10-25
 

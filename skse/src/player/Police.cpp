@@ -92,17 +92,8 @@ namespace AhShitRim::Police
             bool                     owned = false;
             Wanted::Pursuit          pursuit;
             const Wanted::Hold*      hold = nullptr;  // the hold the force comes from: where the player is, else the last crime's
-            struct Bounty  // a crime faction's bounty on the player last frame, its two halves
-            {
-                RE::FormID    faction = 0;
-                std::uint32_t violent = 0;
-                std::uint32_t nonViolent = 0;
-            };
-            std::vector<Bounty>      bounties;
-            int                      owed = 0;        // every faction's bounty together, last frame
-            bool                     seeded = false;  // the bounties above are this game's
+            bool                     seeded = false;  // a bounty from now on is a crime of CJ's (one there before is the Dragonborn's)
             bool                     seen = false;
-            Wanted::Amnesty          amnesty;         // a bounty with no stars, forgotten unseen
             Wanted::Grudges          grudges;         // people fighting CJ, forgotten unseen
             Wanted::Gaps             gaps;            // bystanders and guards turned in a crowd
             float                    lookTimer = 0.0f;
@@ -164,12 +155,6 @@ namespace AhShitRim::Police
         }
 
         RE::TESFaction* FactionOf(const Wanted::Hold& a_hold) { return RE::TESForm::LookupByID<RE::TESFaction>(a_hold.faction); }
-
-        int BountyOf(RE::PlayerCharacter* a_player, const Wanted::Hold* a_hold)
-        {
-            auto* faction = a_hold ? FactionOf(*a_hold) : nullptr;
-            return faction ? static_cast<int>(a_player->GetViolentCrimeGoldValue(faction) + a_player->GetNonViolentCrimeGoldValue(faction)) : 0;
-        }
 
         bool NeverWanted() { return CheatCodes::On(Cheats::SaCheat::NeverWanted); }
 
@@ -456,10 +441,10 @@ namespace AhShitRim::Police
             }
         }
 
-        // Every bounty cleared and the guards' and ours' fight with the player called off: nobody remembers (the stars lost,
-        // Busted, Wasted, the fine paid, AEZAKMI, a bounty forgotten unseen). a_alarm also calls off everyone's alarm, for
-        // the ends that are a clean slate (Busted, Wasted, the fine, the cheats); not when the stars or a bounty just
-        // wear off, or a bandit CJ is fighting would stop too. Returns the gold cleared.
+        // Every bounty cleared (none should be left: WatchCrimes wipes each as it comes) and the guards' and ours' fight with
+        // the player called off: nobody remembers (the stars lost, Busted, Wasted, the fine paid, AEZAKMI, ASNAEB). a_alarm
+        // also calls off everyone's alarm against the player, which is what keeps a guard at it after the stars. Returns
+        // the gold cleared.
         int ClearBounties(RE::PlayerCharacter* a_player, const char* a_why, bool a_alarm = true)
         {
             int cleared = 0;
@@ -472,62 +457,51 @@ namespace AhShitRim::Police
                 }
             });
             Calm(a_player, a_alarm);
-            state.seeded = false;  // the cleared bounties are no crime the other way either
-            state.owed = 0;
-            state.amnesty.Reset();
             state.grudges.Reset();
             SKSE::log::info("police: {}: every bounty cleared ({} gold in {} faction(s)), nobody remembers", a_why, cleared, factions);
             return cleared;
         }
 
-        // Reads every crime faction's bounty: one that went up is a crime, which adds to the one pursuit wherever it was.
-        // AEZAKMI puts it back and calls the fight off.
+        // Stars only: while CJ has the player Skyrim keeps no bounty. Every crime faction's bounty on the player is a crime just
+        // committed (the last frame wiped them all), which adds its heat and its price to the one pursuit wherever it was,
+        // and is wiped at once. AEZAKMI wipes it with nothing added. A bounty already there as CJ takes the player (the
+        // Dragonborn's own) is wiped with nothing added either: no guard holds it against CJ.
         void WatchCrimes(RE::PlayerCharacter* a_player)
         {
-            const bool          never = NeverWanted();
-            std::vector<State::Bounty> now;
-            int                 owed = 0;
+            const bool never = NeverWanted();
+            bool       undone = false;
             ForEachCrimeFaction(a_player, [&](RE::TESFaction* a_faction) {
-                State::Bounty b{ a_faction->GetFormID(), a_player->GetViolentCrimeGoldValue(a_faction), a_player->GetNonViolentCrimeGoldValue(a_faction) };
-                State::Bounty last{ b.faction, 0, 0 };
-                for (const auto& old : state.bounties) {
-                    if (old.faction == b.faction) {
-                        last = old;
-                        break;
-                    }
+                const int gold = static_cast<int>(a_player->GetCrimeGoldValue(a_faction));
+                if (gold <= 0) {
+                    return;
                 }
-                const int before = static_cast<int>(last.violent + last.nonViolent);
-                const int total = static_cast<int>(b.violent + b.nonViolent);
-                if (state.seeded && total > before) {
-                    const auto* hold = Wanted::HoldOf(b.faction);
-                    if (never) {
-                        a_player->SetCrimeGoldValue(a_faction, true, last.violent);
-                        a_player->SetCrimeGoldValue(a_faction, false, last.nonViolent);
-                        Calm(a_player, true);
-                        SKSE::log::info("police: AEZAKMI: a crime against {} ({} gold) undone, the bounty stays {}", a_faction->GetName(), total - before, before);
-                        b = last;
-                    } else {
-                        if (hold) {
-                            state.hold = hold;
-                        }
-                        const int stars = state.pursuit.Crime(total - before, false);
-                        SKSE::log::info("police: a crime against {}{}: its bounty is {} ({} more), heat {:.0f}, {} star(s)", a_faction->GetName(),
-                            hold ? std::format(" ({})", hold->name) : std::string(), total, total - before, state.pursuit.Heat(), stars);
+                const auto* hold = Wanted::HoldOf(a_faction->GetFormID());
+                if (!state.seeded) {
+                    SKSE::log::info("police: a bounty of {} gold with {} from before CJ had the player is wiped", gold, a_faction->GetName());
+                } else if (never) {
+                    undone = true;
+                    SKSE::log::info("police: AEZAKMI: a crime against {} ({} gold) undone", a_faction->GetName(), gold);
+                } else {
+                    if (hold) {
+                        state.hold = hold;
                     }
+                    const int stars = state.pursuit.Crime(gold, false);
+                    SKSE::log::info("police: a crime against {}{}: {} gold, wiped, the fine {} so far, heat {:.0f}, {} star(s)", a_faction->GetName(),
+                        hold ? std::format(" ({})", hold->name) : std::string(), gold, state.pursuit.Fine(), state.pursuit.Heat(), stars);
                 }
-                owed += static_cast<int>(b.violent + b.nonViolent);
-                now.push_back(b);
+                a_player->ClearAllCrimeGold(a_faction);
             });
-            state.bounties = std::move(now);
-            state.owed = owed;
+            if (undone) {
+                Calm(a_player, true);
+            }
             state.seeded = true;
         }
 
         // ---- Who sees CJ ----
 
-        // Whether any pursuer (any hold's guard, or ours) sees the player; while no stars show, a guard of a hold with a
-        // bounty on the player fighting it brings a star or two back. Also who holds a grudge against CJ (Wanted::Grudges),
-        // and, while stars show, bystanders fighting the pursuit and guards fighting bystanders (Wanted::TurnOf).
+        // Whether any pursuer (any hold's guard, or ours) sees the player. Also, with no stars, guards still fighting CJ, who
+        // are called off (Wanted::CallsOff); who else holds a grudge against CJ (Wanted::Grudges); and, while stars show,
+        // bystanders fighting the pursuit and guards fighting bystanders (Wanted::TurnOf).
         void Look(RE::PlayerCharacter* a_player)
         {
             state.seen = false;
@@ -536,7 +510,6 @@ namespace AhShitRim::Police
                 return;
             }
             const auto   feet = a_player->GetPosition();
-            const bool   never = NeverWanted();
             const int    stars = state.pursuit.Stars();
             const double now = NowSeconds();
             std::vector<Wanted::Grudges::Holder>                         holders;
@@ -549,17 +522,6 @@ namespace AhShitRim::Police
                 const auto target = a_actor->GetActorRuntimeData().currentCombatTarget.get();
                 const bool pursues = Pursues(a_actor);
                 bool       unused = false;
-                if (stars == 0 && a_actor->IsGuard() && target.get() == a_player) {
-                    auto*       faction = a_actor->GetCrimeFaction();
-                    const auto* hold = faction ? Wanted::HoldOf(faction->GetFormID()) : nullptr;
-                    const int   bounty = BountyOf(a_player, hold);
-                    if (hold && bounty > 0 && !never) {
-                        state.hold = hold;
-                        state.pursuit.Recognised(bounty, false);
-                        SKSE::log::info("police: {} ({:08X}) of {} recognises CJ: the bounty is {}, {} star(s)", a_actor->GetName(), a_actor->GetFormID(), hold->name,
-                            bounty, state.pursuit.Stars());
-                    }
-                }
                 if (!state.seen && pursues && a_actor->HasLineOfSight(a_player, unused)) {
                     state.seen = true;
                 }
@@ -567,7 +529,11 @@ namespace AhShitRim::Police
                     return RE::BSContainer::ForEachResult::kContinue;
                 }
                 if (target.get() == a_player) {
-                    if (!(stars > 0 && pursues) && ForgivesOf(a_actor)) {
+                    if (Wanted::CallsOff(stars, pursues, true)) {
+                        if (state.gaps.Take(a_actor->GetFormID(), now)) {
+                            turns.emplace_back(a_actor, Wanted::Turn::CallOff);
+                        }
+                    } else if (!pursues && ForgivesOf(a_actor)) {
                         holders.push_back({ a_actor->GetFormID(), a_actor->HasLineOfSight(a_player, unused) });
                         holderActors.emplace_back(a_actor);
                     }
@@ -594,7 +560,7 @@ namespace AhShitRim::Police
                 }
             }
             if (!turns.empty()) {
-                SKSE::log::info("police: in the crowd: {} bystander(s) stop fighting the pursuit, {} guard(s) back on CJ", calledOff, onCj);
+                SKSE::log::info("police: {}: {} called off, {} guard(s) back on CJ", stars > 0 ? "in the crowd" : "no stars", calledOff, onCj);
             }
             for (const auto id : state.grudges.Tick(kLookEvery, holders)) {
                 for (std::size_t i = 0; i < holders.size(); i++) {
@@ -1156,14 +1122,13 @@ namespace AhShitRim::Police
             SKSE::log::info("police: the player is taken to {}'s jail marker {:08X}", state.bustFaction->GetName(), marker->GetFormID());
         }
 
-        // The fine from the gold (all of it if short): every faction's bounty, which no pursuit outlasts. Every bounty
-        // cleared, the stars gone, everyone's fight over.
+        // The fine from the gold (all of it if short): the crimes' prices since the pursuit began (Pursuit::Fine). The stars
+        // gone, everyone's fight over.
         void Release(RE::PlayerCharacter* a_player)
         {
             const auto* hold = BustHold();
-            int         bounty = 0;
-            ForEachCrimeFaction(a_player, [&](RE::TESFaction* a_faction) { bounty += static_cast<int>(a_player->GetCrimeGoldValue(a_faction)); });
-            const int fine = Wanted::FineFor(bounty, a_player->GetGoldAmount());
+            const int   bounty = state.pursuit.Fine();
+            const int   fine = Wanted::FineFor(bounty, a_player->GetGoldAmount());
             if (fine > 0) {
                 if (auto* gold = RE::TESForm::LookupByID<RE::TESBoundObject>(kGold)) {
                     a_player->RemoveItem(gold, fine, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
@@ -1173,11 +1138,11 @@ namespace AhShitRim::Police
             state.pursuit.Clear();
             Dismiss("Busted", true);
             auto* cell = a_player->GetParentCell();
-            SKSE::log::info("police: Busted is paid: a {} gold fine of a {} bounty, in {:08X}{}", fine, bounty, cell ? cell->GetFormID() : 0,
+            SKSE::log::info("police: Busted is paid: a {} gold fine of the crimes' {}, in {:08X}{}", fine, bounty, cell ? cell->GetFormID() : 0,
                 state.moveAsked && !state.arrived ? " (the barracks never opened: where it was)" : "");
             SaHud::HideBigMessage();
             const std::string where = hold ? std::format("You were let go outside {}.", Wanted::BarracksName(*hold)) : std::string("You were let go.");
-            SaHud::ShowHelp(fine > 0 ? std::format("{} The guards took {} gold for the bounty.", where, fine) : where);
+            SaHud::ShowHelp(fine > 0 ? std::format("{} The guards took {} gold for your crimes.", where, fine) : where);
         }
 
         void Run(RE::PlayerCharacter* a_player, float a_delta, bool a_cjDrawn)
@@ -1218,8 +1183,10 @@ namespace AhShitRim::Police
         bool CheckVehicle(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::PlayerState* a_pose, float a_delta, Wanted::Bust& a_bust)
         {
             const bool inVehicle = a_pose && (a_pose->flags & Protocol::kPlayerInVehicle) && a_pose->vehicleModel;
-            a_bust = inVehicle ? VehicleHits::BustNow(Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)), (a_pose->flags & Protocol::kPlayerGettingInOut) != 0)
-                               : Wanted::Bust::None;
+            const bool gettingInOut = a_pose && (a_pose->flags & Protocol::kPlayerGettingInOut) != 0;
+            a_bust = !a_pose ? Wanted::Bust::None
+                     : inVehicle ? VehicleHits::BustNow(Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)), gettingInOut)
+                                 : VehicleHits::BustNow(Wanted::Bust::OnFoot, gettingInOut);  // on foot: a guard reaching him (no bounty, so no Skyrim arrest)
             if (a_bust == Wanted::Bust::None || state.pursuit.Stars() == 0) {
                 state.stop.Reset();
                 EndRun(a_player, state.pursuit.Stars() > 0);
@@ -1249,6 +1216,10 @@ namespace AhShitRim::Police
                 });
             }
             const float speed = std::hypot(a_pose->velocity[0], a_pose->velocity[1]);
+            if (a_bust == Wanted::Bust::OnFoot) {
+                EndRun(a_player, true);  // nobody runs for a door on foot
+                return state.stop.Tick(a_delta, true, a_bust, speed, reach);
+            }
             const auto  orders = state.doorRun.Tick(a_delta, true, a_bust, speed, pursuers);
             if (orders.recall) {
                 RecallRunner(a_player, orders.recall, orders.gaveUp, true);
@@ -1345,7 +1316,7 @@ namespace AhShitRim::Police
             static void thunk(RE::PlayerCharacter* a_player, RE::TESFaction* a_faction, bool a_goToJail, bool a_removeStolenItems)
             {
                 original(a_player, a_faction, a_goToJail, a_removeStolenItems);
-                if (state.owned && (state.pursuit.Stars() > 0 || state.owed > 0)) {
+                if (state.owned && state.pursuit.Stars() > 0) {
                     SKSE::log::info("police: the fine paid to {}: the stars go", a_faction ? a_faction->GetName() : "?");
                     ClearBounties(a_player, "the fine paid");
                     state.pursuit.Clear();
@@ -1381,7 +1352,7 @@ namespace AhShitRim::Police
                     SaHud::HideBigMessage();
                     SKSE::log::info("police: Busted gave way to Wasted");
                 }
-                if (state.pursuit.Stars() > 0 || state.owed > 0) {
+                if (state.pursuit.Stars() > 0) {
                     state.pursuit.Clear();  // San Andreas clears the wanted level with Wasted, and nobody remembers
                     ClearBounties(a_player, "Wasted");
                     Dismiss("Wasted");
@@ -1441,9 +1412,7 @@ namespace AhShitRim::Police
             const auto look = state.pursuit.Tick(a_delta, state.seen, never);
             Show(look.stars, look.flashing);
             if (look.stars == 0 && state.loggedStars > 0 && !never) {
-                ClearBounties(a_player, "the stars are lost", false);  // nobody remembers
-            } else if (state.amnesty.Tick(a_delta, look.stars, state.owed > 0, state.seen)) {
-                ClearBounties(a_player, std::format("no guard has seen CJ for {:.0f} s", Wanted::kForgetAfter).c_str(), false);
+                ClearBounties(a_player, "the stars are lost");  // nobody remembers, the guards' alarm included
             }
             if (look.stars != state.loggedStars) {
                 SKSE::log::info("police: {} star(s){}", look.stars, look.stars < state.loggedStars && look.stars == 0 ? " (lost them)" : "");
@@ -1463,7 +1432,8 @@ namespace AhShitRim::Police
 
             Wanted::Bust bust = Wanted::Bust::None;
             if (!a_scene && CheckVehicle(a_player, a_anchor, a_pose, a_delta, bust) && state.hold) {
-                Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : Wanted::Arrest::KnockOff, FactionOf(*state.hold));
+                Begin(a_player, bust == Wanted::Bust::Door ? Wanted::Arrest::Door : bust == Wanted::Bust::KnockOff ? Wanted::Arrest::KnockOff : Wanted::Arrest::OnFoot,
+                    FactionOf(*state.hold));
                 return true;
             }
             return false;
@@ -1733,9 +1703,6 @@ namespace AhShitRim::Police
         state.settle = kSettle;
         state.clearOut = false;
         state.seeded = false;
-        state.bounties.clear();
-        state.owed = 0;
-        state.amnesty.Reset();
         state.grudges.Reset();
         state.gaps.Reset();
         state.neverWanted = false;
@@ -1753,6 +1720,7 @@ namespace AhShitRim::Police
         record.heat = state.pursuit.Heat();
         record.faction = state.hold ? state.hold->faction : 0;
         record.unseen = state.pursuit.Unseen();
+        record.fine = static_cast<std::uint32_t>(state.pursuit.Fine());
         const auto bytes = Wanted::Write(record);
         if (!a_intfc->WriteRecord(Wanted::kRecordType, Wanted::kVersion, bytes.data(), static_cast<std::uint32_t>(bytes.size()))) {
             SKSE::log::error("police: the wanted level's co-save record could not be written");
@@ -1769,7 +1737,7 @@ namespace AhShitRim::Police
             return;
         }
         state.hold = Wanted::HoldOf(record.faction);
-        state.pursuit.Restore(state.hold ? record.heat : 0.0f, record.unseen);
+        state.pursuit.Restore(state.hold ? record.heat : 0.0f, record.unseen, static_cast<int>((std::min)(record.fine, std::uint32_t{ Wanted::Pursuit::kFineMax })));
         state.loggedStars = state.pursuit.Stars();
         SKSE::log::info("police: loaded {} star(s){}", state.pursuit.Stars(), state.hold ? std::format(" in {}", state.hold->name) : std::string());
     }
@@ -1782,9 +1750,6 @@ namespace AhShitRim::Police
         state.hold = nullptr;
         state.loggedStars = 0;
         state.seeded = false;
-        state.bounties.clear();
-        state.owed = 0;
-        state.amnesty.Reset();
         state.grudges.Reset();
         state.spawned.clear();
     }
