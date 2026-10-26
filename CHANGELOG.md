@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
+The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.
+
+### Changed
+
+- One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
+- Stars only: while CJ has the player Skyrim keeps no bounty. A crime's bounty is wiped as it comes and adds stars instead, so guards fight CJ only while stars show, from 1 star, and stop when they're gone.
+- Nobody remembers. People CJ fought forget it after a minute out of their sight (bandits and wild animals don't), and a bounty the Dragonborn had is wiped when CJ takes over.
+- Busted on foot: a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Nobody busts CJ above 3 stars, on foot or in a vehicle, and giants, the mammoth, wolves and the dragon never do. Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
+- Running over an animal or a creature is no crime any more, whoever owns it: Riverwood's chickens, a farmer's cow and someone's horse bring no stars, and the village doesn't turn on CJ. Running over a person still is a crime.
+- A giant, a mammoth or a dragon is a wall only to a vehicle lighter than it, by San Andreas's handling mass. A car still stops dead at a giant; the Rhino (25 t) throws it as a car throws a person, takes no damage from it, and hurts it by its weight.
+- The radio station you last listened to comes along into every vehicle you get into, the radio off, Radio Sovngarde and Sweetroll FM included, instead of each vehicle starting on its own station as in San Andreas.
+- People may start a conversation with CJ while he walks or runs; only a vehicle stops them now. Force-greets fire again: Irileth stops CJ on his first visit to Dragonsreach, and the Jarl greets him after he ran up.
+
+### Added
+
+- The horn clears the way, as in PerkeleRim: while CJ sounds it (H or Caps Lock) in a vehicle, the people and animals ahead of it, or close by, dive aside out of its line, on the press and every second while it's held.
+
+### Fixed
+
+- A wanted level turning into a free-for-all: a pursuer's stray blow on a bystander (the stable's people, the carriage's invincible horse at Whiterun) started a brawl that kept the guards and the reinforcements off CJ. Bystanders now stop fighting the pursuit, and guards go back to CJ.
+- Nobody fighting CJ after a giant knocked him down: the hidden player's skeleton could stay in its ragdoll where it fell, and Skyrim's AI looks for the player by its bones. It's now put back on the player when that happens.
+- Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
+- A guard still shooting at CJ after the stars were gone, over a bounty that outlived them.
+- The whole chase losing CJ after a giant's blow with BAGUVIX on: the player stood up from its bleedout but stayed "down" for Skyrim's AI, which refused to fight it.
+- The pursuit fighting a Khajiit caravan: anyone not hostile to CJ counts as a bystander now.
+- Bicycles (the BMX, the Bike, the Mountain Bike) have no radio any more: no station plays or shows on them, and the mouse wheel tunes nothing there.
+- Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name comes first in San Andreas's cream, the line after it in white, in a smaller font than San Andreas's own so a line takes one or two rows, and Skyrim's own subtitle no longer shows over it.
+- Skyrim's skill increase and level up messages no longer show while CJ has the player; the skills and levels still go up.
+- A second cheat typed right after the first beeps again, as in San Andreas: the help box starts over with its sound whenever a message is shown, the one already up included.
+- San Andreas could crash right after CJ took over the player, once the ground under him was in (`exception 0xC0000005 at 0x00415DAE` in its log, issue #87). San Andreas allocates a chunk's collision without clearing its header, so a chunk could come out flagged as having face groups, and the camera's collision then read triangles past the chunk's own. The header's flags and shadow fields are now cleared whenever a chunk is filled.
+
 ## [0.1.0] - 2026-10-25
 
 The first release, Thane of Grove Street: CJ plays Skyrim from the Helgen cart to the Greybeards, on foot and in every land and air vehicle San Andreas has, with its guns, fists, cheat codes, wanted level, HUD and radar, radio and his own voice. Protocol v35. Install: [docs/INSTALL.md](docs/INSTALL.md); what doesn't work yet: the README's known issues.

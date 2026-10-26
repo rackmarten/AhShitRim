@@ -8,7 +8,8 @@ class CVector;
 // frame after San Andreas's physics step the vehicle's collision box is swept along the way it moved that
 // frame against each:
 // - a person, a horse or a beast takes the vehicle's push and slows it by its share (a person barely),
-// - a giant, a mammoth or a dragon stops it like a wall, dents it, and puts it back where it touched,
+// - a giant, a mammoth or a dragon heavier than the vehicle stops it like a wall, dents it, and puts it back where it
+//   touched (RunOver::IsWall); a heavier vehicle (the Rhino) throws it as it does a person,
 // - a hit at kMinImpact or more goes to Skyrim as an Impact (damage by speed, the throw), each actor once a
 //   second at most, and CJ says a crash line, one every 4 s at most.
 // - Skyrim's attacks on the vehicle (v31, protocol/cpp/vehicle_hits.h) come as HitVehicle effects: TakeHit takes them

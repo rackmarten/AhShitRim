@@ -15,6 +15,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "pose.h"
 #include "voice_lines.h"
@@ -190,16 +191,124 @@ namespace AhShitRim::Dialogue
 
     // ---- Who may talk ----
 
-    inline constexpr float kTalkSpeedMax = 2.5f;  // m/s: a brisk walk (San Andreas's walk is about 1.5, its jog about 4)
-
     // While CJ has the player, nobody starts a dialogue with him, neither he with E nor someone walking up
-    // to him or force-greeting him, while he is in a vehicle or moving faster than a walk: the cutscene
-    // takes the controls, and a vehicle would run on without him. A speed that isn't a number counts as
-    // moving.
-    constexpr bool MayTalk(bool a_inVehicle, float a_metersPerSecond)
+    // to him or force-greeting him, while he is in a vehicle: the cutscene takes the controls, and a
+    // vehicle would run on without him. On foot he may be talked to at any speed, so a force-greet
+    // (Irileth stopping him on his first visit to Dragonsreach) catches him walking or running.
+    constexpr bool MayTalk(bool a_inVehicle) { return !a_inVehicle; }
+
+    // ---- Subtitle text ----
+
+    // Skyrim's HTML as plain text: its tags go, the entities Flash would show as characters are those characters, and
+    // a '~' (a San Andreas colour code) becomes a '-'.
+    inline std::string PlainText(std::string_view a_text)
     {
-        return !a_inVehicle && a_metersPerSecond <= kTalkSpeedMax;
+        static constexpr std::pair<std::string_view, char> kEntities[] = { { "&amp;", '&' }, { "&lt;", '<' }, { "&gt;", '>' }, { "&quot;", '"' },
+            { "&apos;", '\'' }, { "&#39;", '\'' } };
+        std::string out;
+        out.reserve(a_text.size());
+        for (std::size_t i = 0; i < a_text.size();) {
+            if (a_text[i] == '<') {
+                const auto close = a_text.find('>', i);
+                if (close == std::string_view::npos) {
+                    break;
+                }
+                i = close + 1;
+                continue;
+            }
+            if (a_text[i] == '&') {
+                bool decoded = false;
+                for (const auto& [entity, character] : kEntities) {
+                    if (a_text.substr(i).starts_with(entity)) {
+                        out += character;
+                        i += entity.size();
+                        decoded = true;
+                        break;
+                    }
+                }
+                if (decoded) {
+                    continue;
+                }
+            }
+            out += a_text[i] == '~' ? '-' : a_text[i];
+            i++;
+        }
+        return out;
     }
+
+    // A line with its speaker's name in front, as San Andreas prints it: the name in San Andreas's cream (~y~), the
+    // line in the subtitles' own white (~w~). Both plain text; no name, the line alone; no line, nothing.
+    inline std::string SpeakerLine(std::string_view a_name, std::string_view a_line)
+    {
+        const auto name = PlainText(a_name);
+        const auto line = PlainText(a_line);
+        if (line.empty()) {
+            return {};
+        }
+        return name.empty() ? line : "~y~" + name + ":~w~ " + line;
+    }
+
+    // A subtitle Skyrim's HUD gets, as San Andreas prints it. Skyrim's text is HTML for its own HUD, the speaker's
+    // name in a grey font tag first ("<font color='#888888'>Whiterun Guard</font>: A fight!"); San Andreas's
+    // subtitles have no names, but without one it's hard to tell who talks, so the name stays in front in San
+    // Andreas's cream (~y~) and the line follows in the subtitles' own white (~w~). A name with no line shows nothing.
+    inline std::string SubtitleText(std::string_view a_text)
+    {
+        if (a_text.starts_with("<font")) {
+            if (const auto end = a_text.find("</font>"); end != std::string_view::npos) {
+                auto rest = a_text.substr(end + 7);
+                if (rest.empty() || rest.starts_with(":")) {
+                    rest.remove_prefix(rest.empty() ? 0 : 1);
+                    while (rest.starts_with(" ")) {
+                        rest.remove_prefix(1);
+                    }
+                    return SpeakerLine(a_text.substr(0, end), rest);
+                }
+            }
+        }
+        return PlainText(a_text);
+    }
+
+    // ---- Skyrim's subtitle settings ----
+
+    // Skyrim's two subtitle settings (bGeneralSubtitles for chatter, bDialogueSubtitles for conversations).
+    struct SubtitlePrefs
+    {
+        bool general = false;
+        bool dialogue = false;
+
+        constexpr bool operator==(const SubtitlePrefs&) const = default;
+    };
+
+    // With its subtitle settings off Skyrim makes no subtitles at all (its SubtitleManager stays empty and its HUD
+    // gets none to show), so San Andreas's would have nothing to draw. While CJ has the player both are on, in
+    // memory only (Skyrim's own subtitles are hidden then anyway); the player's own values are back whenever CJ
+    // lets go or Skyrim's journal is open, so its settings page shows them, a change made there is kept, and quitting
+    // from it writes them to SkyrimPrefs.ini. Update() on each change of either: a_current is what the settings are
+    // now; it returns what they should be.
+    class SubtitleForcing
+    {
+    public:
+        SubtitlePrefs Update(bool a_owned, bool a_journalOpen, SubtitlePrefs a_current)
+        {
+            const bool force = a_owned && !a_journalOpen;
+            if (force == _forced) {
+                return force ? SubtitlePrefs{ true, true } : a_current;
+            }
+            _forced = force;
+            if (force) {
+                _own = a_current;
+                return { true, true };
+            }
+            return _own;
+        }
+
+        bool Forced() const { return _forced; }
+
+    private:
+        bool          _forced = false;
+        SubtitlePrefs _own;
+    };
 
     // ---- Noticing a pick ----
 

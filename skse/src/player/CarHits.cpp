@@ -16,6 +16,18 @@ namespace AhShitRim::CarHits
         constexpr std::size_t kQueueMax = 64;
         constexpr int         kLoggedHits = 12;      // the first hits are logged in full
         constexpr float       kKnockBehind = 60.0f;  // Skyrim units behind the actor's middle the knock comes from
+        constexpr int         kDiveWaitFrames = 30;  // frames an actor the horn knocked gets to go ragdoll
+        constexpr int         kDiveFrames = 3;       // frames its ragdoll is thrown for (the first settle eats one)
+        constexpr int         kLoggedDives = 4;      // the first few divers of each honk are logged
+
+        // An actor the horn knocked down, whose ragdoll is to be thrown aside, in Havok units a second.
+        struct Dive
+        {
+            RE::ActorHandle actor;
+            RE::hkVector4   velocity;
+            int             wait = kDiveWaitFrames;
+            int             frames = kDiveFrames;
+        };
 
         struct Pending
         {
@@ -38,6 +50,8 @@ namespace AhShitRim::CarHits
             std::uint32_t                            frame = 0;
             int                                      logged = 0;
             unsigned                                 hits = 0, stale = 0, gone = 0;
+            RunOver::HornPulse                       horn;
+            std::vector<Dive>                        dives;
         } state;
 
         double NowMs() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
@@ -131,6 +145,48 @@ namespace AhShitRim::CarHits
             std::erase_if(state.seen, [&](const auto& a_entry) { return now - a_entry.second.ms > 2000.0; });
         }
 
+        // Whether the horn can make it dive: standing on its own feet (not ragdolled, knocked down, bleeding out, sitting,
+        // sleeping, dead or riding), and not the player, a passenger of CJ's or a child (Skyrim never lets them come to harm).
+        bool Standing(RE::Actor* a_actor, RE::PlayerCharacter* a_player)
+        {
+            if (!a_actor || a_actor == a_player || a_actor->IsDead() || a_actor->IsDisabled() || !a_actor->Is3DLoaded() || a_actor->IsInRagdollState() ||
+                a_actor->IsOnMount() || a_actor->IsChild() || Riders::Rides(a_actor->GetFormID())) {
+                return false;
+            }
+            auto* actorState = a_actor->AsActorState();
+            return !actorState || (actorState->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && !actorState->IsBleedingOut() &&
+                                      actorState->GetSitSleepState() == RE::SIT_SLEEP_STATE::kNormal);
+        }
+
+        // Sets every rigid body of the actor's ragdoll moving at a_velocity.
+        void ThrowRagdoll(RE::Actor* a_actor, const RE::hkVector4& a_velocity)
+        {
+            if (auto* root = a_actor->Get3D(false)) {
+                RE::BSVisit::TraverseScenegraphCollision(root, [&](RE::bhkNiCollisionObject* a_object) {
+                    if (auto* body = a_object->body ? skyrim_cast<RE::bhkRigidBody*>(a_object->body.get()) : nullptr) {
+                        body->SetLinearVelocity(a_velocity);
+                    }
+                    return RE::BSVisit::BSVisitControl::kContinue;
+                });
+            }
+        }
+
+        // Each frame: the horn's divers that went ragdoll are thrown aside, for a few frames.
+        void Throw()
+        {
+            for (auto it = state.dives.begin(); it != state.dives.end();) {
+                auto actor = it->actor.get();
+                bool done = !actor;
+                if (actor && actor->IsInRagdollState()) {
+                    ThrowRagdoll(actor.get(), it->velocity);
+                    done = --it->frames <= 0;
+                } else if (actor && --it->wait <= 0) {
+                    done = true;  // it never went ragdoll
+                }
+                it = done ? state.dives.erase(it) : it + 1;
+            }
+        }
+
         void Play(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, const Protocol::ImpactEvent& a_impact)
         {
             auto* actor = RE::TESForm::LookupByID<RE::Actor>(a_impact.id);
@@ -139,7 +195,7 @@ namespace AhShitRim::CarHits
                 return;
             }
             state.hits++;
-            const bool         heavy = (a_impact.flags & Protocol::kImpactHeavy) != 0;
+            const bool         wall = (a_impact.flags & Protocol::kImpactHeavy) != 0;
             const RE::NiPoint3 at = a_anchor + RE::NiPoint3(a_impact.at[0], a_impact.at[1], a_impact.at[2]);
             RE::NiPoint3       push(a_impact.push[0], a_impact.push[1], a_impact.push[2]);
             const float        speed = push.Length() * Pose::kMetersPerUnit;
@@ -153,7 +209,7 @@ namespace AhShitRim::CarHits
             }
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             Shots::Hurt(a_player, actor, RunOver::kRammedByCar, a_impact.damage, at, dir, true);
-            const float knock = heavy || Shots::ClassOf(actor) != Damage::Class::Normal ? 0.0f : RunOver::KnockOf(speed);
+            const float knock = RunOver::KnockFor(speed, wall, RunOver::Heavy(BuildOf(actor)), Shots::ClassOf(actor) == Damage::Class::Normal);
             if (knock > 0.0f) {
                 if (auto* process = actor->GetActorRuntimeData().currentProcess) {
                     const auto middle = actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 0.5f * actor->GetHeight());
@@ -164,7 +220,7 @@ namespace AhShitRim::CarHits
                 state.logged++;
                 const char* race = actor->GetRace() ? actor->GetRace()->GetFormEditorID() : "";
                 SKSE::log::info("car hits: hit {} ({:08X}, level {}, {}) at {:.1f} m/s{}: San Andreas's {:.0f}, health {:.1f} -> {:.1f}, thrown at {:.1f} m/s (knock {:.1f})",
-                    actor->GetName(), actor->GetFormID(), actor->GetLevel(), race ? race : "?", a_impact.speed, heavy ? ", heavy: the vehicle stopped" : "",
+                    actor->GetName(), actor->GetFormID(), actor->GetLevel(), race ? race : "?", a_impact.speed, wall ? ", a wall: the vehicle stopped" : "",
                     a_impact.damage, before, actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), speed, knock);
             }
         }
@@ -210,8 +266,53 @@ namespace AhShitRim::CarHits
         state.queue = std::move(later);
     }
 
+    void Horn(RE::PlayerCharacter* a_player, bool a_held, const RE::NiPoint3& a_vehicleAt, const RE::NiPoint3& a_velocity, float a_heading)
+    {
+        Throw();
+        auto* lists = RE::ProcessLists::GetSingleton();
+        if (!state.horn.Step(a_held, NowMs() / 1000.0) || !lists) {
+            return;
+        }
+        const auto way = RunOver::HornWay(a_velocity.x, a_velocity.y, a_heading);
+        int        scared = 0;
+        for (auto& handle : lists->highActorHandles) {
+            auto actor = handle.get();
+            if (!Standing(actor.get(), a_player)) {
+                continue;
+            }
+            const auto  pos = actor->GetPosition();
+            const float dx = pos.x - a_vehicleAt.x, dy = pos.y - a_vehicleAt.y;
+            if (!RunOver::InHornPath(dx, dy, pos.z - a_vehicleAt.z, way[0], way[1]) || RunOver::Heavy(BuildOf(actor.get()))) {
+                continue;
+            }
+            // A dive already asked for (not a ragdoll yet, so still standing) isn't asked again.
+            const bool diving = std::any_of(state.dives.begin(), state.dives.end(), [&](const Dive& a_dive) { return a_dive.actor.get().get() == actor.get(); });
+            auto*      process = actor->GetActorRuntimeData().currentProcess;
+            if (!diving && process) {
+                const auto  move = RunOver::HornDodge(dx, dy, way[0], way[1]);
+                const float length = std::hypot(move[0], move[1]);
+                // Knocked from its side nearest the vehicle's line, then thrown over the move in kHornDiveSeconds
+                // (Havok's units are metres, near enough).
+                RE::NiPoint3 from = pos;
+                from.x -= move[0] / length * 100.0f;
+                from.y -= move[1] / length * 100.0f;
+                process->KnockExplosion(actor.get(), from, RunOver::kHornDiveKnock);
+                const float perSecond = Pose::kMetersPerUnit / RunOver::kHornDiveSeconds;
+                state.dives.push_back({ actor->CreateRefHandle(), RE::hkVector4(move[0] * perSecond, move[1] * perSecond, RunOver::kHornDiveLift, 0.0f) });
+            }
+            if (scared++ < kLoggedDives) {
+                SKSE::log::info("car hits: the horn makes {} ({:08X}) dive aside, {:.0f} units away{}", actor->GetName(), actor->GetFormID(), pos.GetDistance(a_vehicleAt),
+                    diving ? " (already diving)" : "");
+            }
+        }
+        if (scared > 0) {
+            SKSE::log::info("car hits: CJ honked at {:.0f} km/h, {} in the way", std::hypot(a_velocity.x, a_velocity.y) * Pose::kMetersPerUnit * 3.6f, scared);
+        }
+    }
+
     void Clear()
     {
+        state.dives.clear();
         if (state.sending) {
             LinkService::Get().WriteProxies(Protocol::ProxyState{});
             state.sending = false;
