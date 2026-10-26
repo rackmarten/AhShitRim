@@ -12,8 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Stars only: while CJ has the player Skyrim keeps no bounty. A crime's bounty is wiped as it comes and adds stars instead, so guards fight CJ only while stars show, from 1 star, and stop when they're gone.
 - Nobody remembers. People CJ fought forget it after a minute out of their sight (bandits and wild animals don't), and a bounty the Dragonborn had is wiped when CJ takes over.
 - Busted on foot: a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Nobody busts CJ above 3 stars, on foot or in a vehicle, and giants, the mammoth, wolves and the dragon never do. Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
+- Running over an animal or a creature is no crime any more, whoever owns it: Riverwood's chickens, a farmer's cow and someone's horse bring no stars, and the village doesn't turn on CJ. Running over a person still is a crime.
+- A giant, a mammoth or a dragon is a wall only to a vehicle lighter than it, by San Andreas's handling mass. A car still stops dead at a giant; the Rhino (25 t) throws it as a car throws a person, takes no damage from it, and hurts it by its weight.
 - The radio station you last listened to comes along into every vehicle you get into, the radio off, Radio Sovngarde and Sweetroll FM included, instead of each vehicle starting on its own station as in San Andreas.
 - People may start a conversation with CJ while he walks or runs; only a vehicle stops them now. Force-greets fire again: Irileth stops CJ on his first visit to Dragonsreach, and the Jarl greets him after he ran up.
+
+### Added
+
+- The horn clears the way, as in PerkeleRim: while CJ sounds it (H or Caps Lock) in a vehicle, the people and animals ahead of it, or close by, dive aside out of its line, on the press and every second while it's held.
 
 ### Fixed
 

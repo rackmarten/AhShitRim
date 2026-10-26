@@ -18,6 +18,9 @@ namespace AhShitRim::Protocol
 //   with no stars a guard still fighting CJ is called off (Wanted::CallsOff), and anyone else who fought CJ but forgives
 //   him (Wanted::Forgives: townsfolk, the unaggressive) stops once he has been out of their sight for a minute
 //   (Wanted::Grudges).
+// - Running over an animal or a creature (a chicken, a cow, someone's horse) is no crime: a bounty that comes when
+//   that animal was CJ's latest victim the faction could be raising it for is wiped with no heat and no fine
+//   (Wanted::Pardon).
 // - The response: from 1 star every hold's guards round about join the fight, and a director keeps a force of ours
 //   after him (Wanted::ForceFor), from the hold the player is in (else the last one's): copies of the hold's guards,
 //   the hold's wolves from 3 (in its guards' factions, sped up to keep CJ's pace on foot or in a car,
@@ -72,6 +75,10 @@ namespace AhShitRim::Police
 
     // A hit given back left the player with health: no Wasted for its bleedout (TakeSpared).
     void NoteSpared(RE::PlayerCharacter* a_player);
+
+    // CJ hurt someone (Shots::Hurt): a_person, someone of a person's race (RunOver::CrimeToHit); a_byVehicle, with his
+    // vehicle; a_faction, its crime faction (0 for none). Running over anyone else is no crime (Wanted::Pardon).
+    void NoteHurt(bool a_person, bool a_byVehicle, std::uint32_t a_faction);
 
     // San Andreas's wanted cheats (CheatCodes): a_how 1 two more stars (OSRBLHH), 2 six (LJSPQK), 0 none (ASNAEB, which
     // clears every bounty too). The force comes from the hold the player stands in, else the last one's, else Whiterun's.
