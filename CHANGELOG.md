@@ -8,11 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
+- Stars only: while CJ has the player Skyrim keeps no bounty. A crime's bounty is wiped as it comes and adds stars instead, so guards fight CJ only while stars show, from 1 star, and stop when they're gone.
+- Nobody remembers. People CJ fought forget it after a minute out of their sight (bandits and wild animals don't), and a bounty the Dragonborn had is wiped when CJ takes over.
+- Busted on foot: a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Nobody busts CJ above 3 stars, on foot or in a vehicle, and giants, the mammoth, wolves and the dragon never do. Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
 - The radio station you last listened to comes along into every vehicle you get into, the radio off, Radio Sovngarde and Sweetroll FM included, instead of each vehicle starting on its own station as in San Andreas.
 - People may start a conversation with CJ while he walks or runs; only a vehicle stops them now. Force-greets fire again: Irileth stops CJ on his first visit to Dragonsreach, and the Jarl greets him after he ran up.
 
 ### Fixed
 
+- A wanted level turning into a free-for-all: a pursuer's stray blow on a bystander (the stable's people, the carriage's invincible horse at Whiterun) started a brawl that kept the guards and the reinforcements off CJ. Bystanders now stop fighting the pursuit, and guards go back to CJ.
+- Nobody fighting CJ after a giant knocked him down: the hidden player's skeleton could stay in its ragdoll where it fell, and Skyrim's AI looks for the player by its bones. It's now put back on the player when that happens.
+- Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
+- A guard still shooting at CJ after the stars were gone, over a bounty that outlived them.
+- The whole chase losing CJ after a giant's blow with BAGUVIX on: the player stood up from its bleedout but stayed "down" for Skyrim's AI, which refused to fight it.
+- The pursuit fighting a Khajiit caravan: anyone not hostile to CJ counts as a bystander now.
 - Bicycles (the BMX, the Bike, the Mountain Bike) have no radio any more: no station plays or shows on them, and the mouse wheel tunes nothing there.
 - Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name comes first in San Andreas's cream, the line after it in white, in a smaller font than San Andreas's own so a line takes one or two rows, and Skyrim's own subtitle no longer shows over it.
 - Skyrim's skill increase and level up messages no longer show while CJ has the player; the skills and levels still go up.
