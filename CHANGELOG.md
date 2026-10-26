@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Nobody fighting CJ after a giant knocked him down: the hidden player's skeleton could stay in its ragdoll where it fell, and Skyrim's AI looks for the player by its bones. It's now put back on the player when that happens.
 - Six stars dropping to one: a Legion soldier's arrest cleared only the Legion's bounty, and Whiterun's old one brought a star straight back.
 - A guard still shooting at CJ after the stars were gone, over a bounty that outlived them.
+- The whole chase losing CJ after a giant's blow with BAGUVIX on: the player stood up from its bleedout but stayed "down" for Skyrim's AI, which refused to fight it.
+- The pursuit fighting a Khajiit caravan: anyone not hostile to CJ counts as a bystander now.
 
 ## [0.1.0] - 2026-10-25
 

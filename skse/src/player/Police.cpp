@@ -179,12 +179,21 @@ namespace AhShitRim::Police
             return IsSpawned(a_actor) || a_actor->IsGuard();
         }
 
+        // Whether a_actor is a bystander in a crowd fight: not the pursuit, and someone who forgives CJ or isn't against him
+        // (a Khajiit caravan's guards are neither townsfolk nor unaggressive, and the pursuit fought them too).
+        bool BystanderOf(RE::Actor* a_actor, RE::PlayerCharacter* a_player);
+
         // Whether a_actor forgives CJ (Wanted::Forgives): a guard, townsfolk, or unaggressive by its base.
         bool ForgivesOf(RE::Actor* a_actor)
         {
             const auto* base = a_actor ? a_actor->GetActorBase() : nullptr;
             const bool  unaggressive = base && !base->aiData.aggression1 && !base->aiData.aggression2;
             return a_actor && Wanted::Forgives(a_actor->IsGuard(), IsSpawned(a_actor), a_actor->GetCrimeFaction() != nullptr, unaggressive);
+        }
+
+        bool BystanderOf(RE::Actor* a_actor, RE::PlayerCharacter* a_player)
+        {
+            return a_actor && !Pursues(a_actor) && (ForgivesOf(a_actor) || !a_actor->IsHostileToActor(a_player));
         }
 
         double NowSeconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
@@ -541,7 +550,7 @@ namespace AhShitRim::Police
                 }
                 if (stars > 0 && a_actor->GetFormID() != state.doorRun.Runner()) {
                     auto*      other = target.get();
-                    const auto turn = Wanted::TurnOf(pursues, ForgivesOf(a_actor), Pursues(other), ForgivesOf(other), false);
+                    const auto turn = Wanted::TurnOf(pursues, BystanderOf(a_actor, a_player), Pursues(other), BystanderOf(other, a_player), false);
                     // Ours fighting someone else are the Leash's (Lead), gently.
                     if (turn != Wanted::Turn::None && !(turn == Wanted::Turn::OnCj && IsSpawned(a_actor)) && state.gaps.Take(a_actor->GetFormID(), now)) {
                         turns.emplace_back(a_actor, turn);
@@ -1018,9 +1027,12 @@ namespace AhShitRim::Police
                     const auto target = actor->GetActorRuntimeData().currentCombatTarget.get();
                     const auto on = target ? (target.get() == a_player ? Wanted::Target::Cj : Wanted::Target::Other) : Wanted::Target::None;
                     if (s.leash.Tick(a_delta, on)) {
-                        const bool fights = actor->StartCombat(a_player);
+                        const bool  fights = actor->StartCombat(a_player);
+                        const auto* life = a_player->AsActorState();
                         SKSE::log::info("police: {} {:08X} {}, set on CJ again{}", Wanted::NameOf(s.unit), actor->GetFormID(),
-                            target ? std::format("fights {:08X}", target->GetFormID()) : std::string("fights nobody"), fights ? "" : " (refused)");
+                            target ? std::format("fights {:08X}", target->GetFormID()) : std::string("fights nobody"),
+                            fights ? "" : std::format(" (refused: the player's life state {}, knock state {})", life ? static_cast<int>(life->GetLifeState()) : -1,
+                                                  life ? static_cast<int>(life->GetKnockState()) : -1));
                     }
                 }
             }
