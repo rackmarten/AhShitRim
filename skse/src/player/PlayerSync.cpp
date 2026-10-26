@@ -1059,6 +1059,10 @@ namespace AhShitRim::PlayerSync
             }
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
             CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
+            const bool honking = valid && (pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput() && state.input.HornHeld();
+            CarHits::Horn(a_player, honking, cjFeet + RE::NiPoint3(pose.vehicleOffset[0], pose.vehicleOffset[1], pose.vehicleOffset[2]),
+                RE::NiPoint3(pose.velocity[0], pose.velocity[1], pose.velocity[2]), pose.vehicleHeading);
             Hitboxes::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, !scene && !held);
             Looting::Update(a_player, cjFeet, valid && !(pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput(), a_delta);
             // The heat seeker aims while CJ aims it, and in the Hydra or the Hunter (v23) while the lock-on, the handbrake key, is held.
