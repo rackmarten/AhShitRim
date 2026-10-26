@@ -78,6 +78,9 @@ namespace AhShitRim::Conversation
             }
             s.saying = a_topics->currentTopicInfo ? a_topics->currentTopicInfo->GetFormID() : 0;
             s.line = SpokenLine(a_topics);
+            if (auto speaker = Speaker(a_topics); speaker && !s.line.empty()) {
+                s.line = Dialogue::SpeakerLine(speaker->GetDisplayFullName() ? speaker->GetDisplayFullName() : "", s.line);
+            }
             REX::W32::LeaveCriticalSection(&a_topics->criticalSection);
             return s;
         }
@@ -104,6 +107,61 @@ namespace AhShitRim::Conversation
         // Set from the main thread, read wherever Skyrim starts a dialogue (its AI threads too).
         std::atomic<bool> mayTalk{ true };
 
+        // CJ has the player (Update has run since the last Clear): read on the UI's thread too.
+        std::atomic<bool> cjHasPlayer{ false };
+
+        // Skyrim's subtitle settings, on while CJ has the player (Dialogue::SubtitleForcing): with them off Skyrim
+        // makes no subtitles at all. Followed every frame CJ has the player and on Skyrim's journal opening and
+        // closing, which pauses the game (and with it Update); hence the lock.
+        struct Prefs
+        {
+            std::mutex                lock;
+            Dialogue::SubtitleForcing forcing;
+            RE::Setting*              general = nullptr;
+            RE::Setting*              dialogue = nullptr;
+            bool                      looked = false;
+        } prefs;
+
+        void FollowPrefs(bool a_owned, bool a_journalOpen)
+        {
+            std::scoped_lock guard(prefs.lock);
+            if (!prefs.looked) {
+                prefs.looked = true;
+                if (auto* collection = RE::INIPrefSettingCollection::GetSingleton()) {
+                    prefs.general = collection->GetSetting("bGeneralSubtitles:Interface");
+                    prefs.dialogue = collection->GetSetting("bDialogueSubtitles:Interface");
+                }
+                if (!prefs.general || !prefs.dialogue) {
+                    SKSE::log::warn("conversation: Skyrim's subtitle settings weren't found; with them off there are no subtitles to draw");
+                }
+            }
+            if (!prefs.general || !prefs.dialogue) {
+                return;
+            }
+            const Dialogue::SubtitlePrefs current{ prefs.general->GetBool(), prefs.dialogue->GetBool() };
+            const bool                    was = prefs.forcing.Forced();
+            const auto                    set = prefs.forcing.Update(a_owned, a_journalOpen, current);
+            prefs.general->data.b = set.general;
+            prefs.dialogue->data.b = set.dialogue;
+            if (was != prefs.forcing.Forced()) {
+                SKSE::log::info("conversation: Skyrim's subtitles {}", prefs.forcing.Forced() ? std::format("on while CJ has the player (the player's own: general {}, dialogue {})", current.general, current.dialogue)
+                                                                                        : std::format("back to the player's own (general {}, dialogue {})", set.general, set.dialogue));
+            }
+        }
+
+        // Skyrim's journal (its settings, its Quit) opening and closing: the player's own subtitle settings while it's open.
+        class JournalSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+        {
+        public:
+            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+            {
+                if (a_event && a_event->menuName == RE::JournalMenu::MENU_NAME) {
+                    FollowPrefs(cjHasPlayer, a_event->opening);
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        } journalSink;
+
         // Every dialogue with the player starts with Actor::SetDialogueWithPlayer(true, ...): talking to
         // someone, someone walking up to the player, a force-greet. Refused while CJ may not talk; a
         // package that keeps trying is logged once per speaker per 5 s.
@@ -118,7 +176,7 @@ namespace AhShitRim::Conversation
                     const auto id = a_actor ? a_actor->GetFormID() : 0;
                     if (id != lastId.exchange(id) || now - lastAt > 5000) {
                         lastAt = now;
-                        SKSE::log::info("conversation: {} ({:08X}) can't {} CJ: he's driving or moving fast", a_actor ? a_actor->GetName() : "?", id,
+                        SKSE::log::info("conversation: {} ({:08X}) can't {} CJ: he's in a vehicle", a_actor ? a_actor->GetName() : "?", id,
                             a_forceGreet ? "force-greet" : "talk to");
                     }
                     return false;
@@ -138,14 +196,25 @@ namespace AhShitRim::Conversation
                         if (Missions::OnHudMessage(*data)) {
                             return RE::UI_MESSAGE_RESULTS::kHandled;  // a quest started or completed: San Andreas shows it
                         }
+                        if (type == RE::HUD_MESSAGE_TYPE::kSkillIncrease && cjHasPlayer) {
+                            auto* player = RE::PlayerCharacter::GetSingleton();
+                            SKSE::log::info("conversation: Skyrim's \"{}\" not shown, CJ has the player (level {})", data->text.c_str() ? data->text.c_str() : "",
+                                player ? player->GetLevel() : 0);
+                            return RE::UI_MESSAGE_RESULTS::kHandled;  // the skill still goes up
+                        }
                         if (type == RE::HUD_MESSAGE_TYPE::kShowSubtitle || type == RE::HUD_MESSAGE_TYPE::kHideSubtitle) {
                             std::scoped_lock guard(hudSubtitle.lock);
                             if (hudSubtitle.count == 0) {
-                                SKSE::log::info("conversation: Skyrim's HUD shows its first subtitle");
+                                SKSE::log::info("conversation: Skyrim's HUD gets its first subtitle message ({})", type == RE::HUD_MESSAGE_TYPE::kShowSubtitle ? "show" : "hide");
                             }
                             hudSubtitle.shown = type == RE::HUD_MESSAGE_TYPE::kShowSubtitle;
                             hudSubtitle.text = hudSubtitle.shown && data->text.c_str() ? data->text.c_str() : "";
                             hudSubtitle.count++;
+                            if (cjHasPlayer) {
+                                // Skyrim's HUD never gets it: its subtitle clip came back with every line once its
+                                // subtitle settings were on (SubtitleForcing), over San Andreas's.
+                                return RE::UI_MESSAGE_RESULTS::kHandled;
+                            }
                         }
                     }
                 }
@@ -167,6 +236,7 @@ namespace AhShitRim::Conversation
                 shown = hudSubtitle.shown;
                 text = hudSubtitle.text;
             }
+            text = Dialogue::SubtitleText(text);
             if (!shown || text.empty()) {
                 text = a_dialogueLine;
             }
@@ -199,6 +269,70 @@ namespace AhShitRim::Conversation
                     return;
                 }
                 clip.SetMember("_visible", RE::GFxValue(!a_hide));
+            });
+        }
+
+        // Skyrim's dialogue menu shows the speaker's line itself too once its dialogue subtitles are on
+        // (SubtitleForcing), mid-screen under the topics, over San Andreas's in the letterbox. Its subtitle clips (the
+        // display objects under its root, three levels down, with "subtitle" in their names) are hidden every frame
+        // of a dialogue; the search runs until it finds them, once a second at most, and the log says what it found.
+        void FindSubtitleClips(const RE::GFxValue& a_object, const std::string& a_path, int a_depth, std::vector<std::string>& a_out)
+        {
+            a_object.VisitMembers([&](const char* a_name, const RE::GFxValue& a_value) {
+                if (!a_name || a_name[0] == '_' || !a_value.IsDisplayObject()) {
+                    return;  // _parent, _root and the like lead back up
+                }
+                std::string lower(a_name);
+                std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                const auto path = a_path + "." + a_name;
+                if (lower.find("subtitle") != std::string::npos) {
+                    a_out.push_back(path);
+                } else if (a_depth < 3) {
+                    FindSubtitleClips(a_value, path, a_depth + 1, a_out);
+                }
+            });
+        }
+
+        void HideDialogueMenuSubtitles()
+        {
+            SKSE::GetTaskInterface()->AddUITask([]() {
+                static std::vector<std::string> paths;
+                static auto                     searched = std::chrono::steady_clock::time_point{};
+                static bool                     loggedNone = false;
+                auto*                           ui = RE::UI::GetSingleton();
+                auto                            menu = ui ? ui->GetMenu(RE::DialogueMenu::MENU_NAME) : nullptr;
+                auto*                           movie = menu ? menu->uiMovie.get() : nullptr;
+                if (!movie) {
+                    return;
+                }
+                const auto now = std::chrono::steady_clock::now();
+                if (paths.empty() && now - searched > std::chrono::seconds(1)) {
+                    searched = now;
+                    RE::GFxValue root;
+                    if (movie->GetVariable(&root, "_root") && root.IsDisplayObject()) {
+                        FindSubtitleClips(root, "_root", 1, paths);
+                    }
+                    if (!paths.empty()) {
+                        std::string list;
+                        for (const auto& path : paths) {
+                            list += (list.empty() ? "" : ", ") + path;
+                        }
+                        SKSE::log::info("conversation: Skyrim's dialogue menu subtitles hidden while CJ talks: {}", list);
+                    } else if (!std::exchange(loggedNone, true)) {
+                        SKSE::log::warn("conversation: no subtitle clip found in Skyrim's dialogue menu; its own subtitle may show");
+                    }
+                }
+                bool any = false;
+                for (const auto& path : paths) {
+                    RE::GFxValue clip;
+                    if (movie->GetVariable(&clip, path.c_str()) && clip.IsDisplayObject()) {
+                        clip.SetMember("_visible", RE::GFxValue(false));
+                        any = true;
+                    }
+                }
+                if (!any) {
+                    paths.clear();  // not in this menu's movie: searched again
+                }
             });
         }
 
@@ -240,6 +374,11 @@ namespace AhShitRim::Conversation
 
     Dialogue::Category Update(float a_delta)
     {
+        cjHasPlayer = true;
+        {
+            auto* ui = RE::UI::GetSingleton();
+            FollowPrefs(true, ui && ui->IsMenuOpen(RE::JournalMenu::MENU_NAME));
+        }
         HideSkyrimSubtitles(true);
         auto*      topics = RE::MenuTopicManager::GetSingleton();
         const auto speaker = Speaker(topics);
@@ -252,7 +391,7 @@ namespace AhShitRim::Conversation
             SaHud::SetLetterbox(true);
             SKSE::log::info("conversation: talking to {} ({:08X}), CJ greets", speaker->GetName(), speaker->GetFormID());
             if (!mayTalk) {
-                SKSE::log::warn("conversation: the dialogue opened though CJ is driving or moving fast");
+                SKSE::log::warn("conversation: the dialogue opened though CJ is in a vehicle");
             }
         } else if (!speaker && state.director.IsOpen()) {
             say = state.director.Close();
@@ -268,6 +407,9 @@ namespace AhShitRim::Conversation
             }
         }
         state.director.Tick(a_delta);
+        if (speaker) {
+            HideDialogueMenuSubtitles();
+        }
         FollowSubtitle(s.line);
         return say;
     }
@@ -298,6 +440,13 @@ namespace AhShitRim::Conversation
         DialogueHook::original = character.write_vfunc(0x41, DialogueHook::thunk);
     }
 
+    void OnDataLoaded()
+    {
+        if (auto* ui = RE::UI::GetSingleton()) {
+            ui->AddEventSink<RE::MenuOpenCloseEvent>(&journalSink);
+        }
+    }
+
     void SetMayTalk(bool a_mayTalk) { mayTalk = a_mayTalk; }
     bool MayTalk() { return mayTalk; }
 
@@ -309,5 +458,7 @@ namespace AhShitRim::Conversation
         state.side = 0;
         state.subtitleShown = false;
         HideSkyrimSubtitles(false);
+        cjHasPlayer = false;
+        FollowPrefs(false, false);
     }
 }

@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Busted on foot: a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Nobody busts CJ above 3 stars, on foot or in a vehicle, and giants, the mammoth, wolves and the dragon never do. Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
 - Running over an animal or a creature is no crime any more, whoever owns it: Riverwood's chickens, a farmer's cow and someone's horse bring no stars, and the village doesn't turn on CJ. Running over a person still is a crime.
 - A giant, a mammoth or a dragon is a wall only to a vehicle lighter than it, by San Andreas's handling mass. A car still stops dead at a giant; the Rhino (25 t) throws it as a car throws a person, takes no damage from it, and hurts it by its weight.
+- The radio station you last listened to comes along into every vehicle you get into, the radio off, Radio Sovngarde and Sweetroll FM included, instead of each vehicle starting on its own station as in San Andreas.
+- People may start a conversation with CJ while he walks or runs; only a vehicle stops them now. Force-greets fire again: Irileth stops CJ on his first visit to Dragonsreach, and the Jarl greets him after he ran up.
 
 ### Added
 
@@ -27,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A guard still shooting at CJ after the stars were gone, over a bounty that outlived them.
 - The whole chase losing CJ after a giant's blow with BAGUVIX on: the player stood up from its bleedout but stayed "down" for Skyrim's AI, which refused to fight it.
 - The pursuit fighting a Khajiit caravan: anyone not hostile to CJ counts as a bystander now.
+- Bicycles (the BMX, the Bike, the Mountain Bike) have no radio any more: no station plays or shows on them, and the mouse wheel tunes nothing there.
+- Subtitles show again, in San Andreas's style, for conversations and for what people say around CJ. With Skyrim's own subtitle settings off (General Subtitles, Dialogue Subtitles) Skyrim made none for AhShitRim to draw; now both are on while CJ has the player and back to yours whenever the journal is open or Skyrim has the player. The speaker's name comes first in San Andreas's cream, the line after it in white, in a smaller font than San Andreas's own so a line takes one or two rows, and Skyrim's own subtitle no longer shows over it.
+- Skyrim's skill increase and level up messages no longer show while CJ has the player; the skills and levels still go up.
+- A second cheat typed right after the first beeps again, as in San Andreas: the help box starts over with its sound whenever a message is shown, the one already up included.
 
 ## [0.1.0] - 2026-10-25
 
