@@ -78,6 +78,9 @@ namespace AhShitRim::Conversation
             }
             s.saying = a_topics->currentTopicInfo ? a_topics->currentTopicInfo->GetFormID() : 0;
             s.line = SpokenLine(a_topics);
+            if (auto speaker = Speaker(a_topics); speaker && !s.line.empty()) {
+                s.line = Dialogue::SpeakerLine(speaker->GetDisplayFullName() ? speaker->GetDisplayFullName() : "", s.line);
+            }
             REX::W32::LeaveCriticalSection(&a_topics->criticalSection);
             return s;
         }
@@ -269,6 +272,70 @@ namespace AhShitRim::Conversation
             });
         }
 
+        // Skyrim's dialogue menu shows the speaker's line itself too once its dialogue subtitles are on
+        // (SubtitleForcing), mid-screen under the topics, over San Andreas's in the letterbox. Its subtitle clips (the
+        // display objects under its root, three levels down, with "subtitle" in their names) are hidden every frame
+        // of a dialogue; the search runs until it finds them, once a second at most, and the log says what it found.
+        void FindSubtitleClips(const RE::GFxValue& a_object, const std::string& a_path, int a_depth, std::vector<std::string>& a_out)
+        {
+            a_object.VisitMembers([&](const char* a_name, const RE::GFxValue& a_value) {
+                if (!a_name || a_name[0] == '_' || !a_value.IsDisplayObject()) {
+                    return;  // _parent, _root and the like lead back up
+                }
+                std::string lower(a_name);
+                std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                const auto path = a_path + "." + a_name;
+                if (lower.find("subtitle") != std::string::npos) {
+                    a_out.push_back(path);
+                } else if (a_depth < 3) {
+                    FindSubtitleClips(a_value, path, a_depth + 1, a_out);
+                }
+            });
+        }
+
+        void HideDialogueMenuSubtitles()
+        {
+            SKSE::GetTaskInterface()->AddUITask([]() {
+                static std::vector<std::string> paths;
+                static auto                     searched = std::chrono::steady_clock::time_point{};
+                static bool                     loggedNone = false;
+                auto*                           ui = RE::UI::GetSingleton();
+                auto                            menu = ui ? ui->GetMenu(RE::DialogueMenu::MENU_NAME) : nullptr;
+                auto*                           movie = menu ? menu->uiMovie.get() : nullptr;
+                if (!movie) {
+                    return;
+                }
+                const auto now = std::chrono::steady_clock::now();
+                if (paths.empty() && now - searched > std::chrono::seconds(1)) {
+                    searched = now;
+                    RE::GFxValue root;
+                    if (movie->GetVariable(&root, "_root") && root.IsDisplayObject()) {
+                        FindSubtitleClips(root, "_root", 1, paths);
+                    }
+                    if (!paths.empty()) {
+                        std::string list;
+                        for (const auto& path : paths) {
+                            list += (list.empty() ? "" : ", ") + path;
+                        }
+                        SKSE::log::info("conversation: Skyrim's dialogue menu subtitles hidden while CJ talks: {}", list);
+                    } else if (!std::exchange(loggedNone, true)) {
+                        SKSE::log::warn("conversation: no subtitle clip found in Skyrim's dialogue menu; its own subtitle may show");
+                    }
+                }
+                bool any = false;
+                for (const auto& path : paths) {
+                    RE::GFxValue clip;
+                    if (movie->GetVariable(&clip, path.c_str()) && clip.IsDisplayObject()) {
+                        clip.SetMember("_visible", RE::GFxValue(false));
+                        any = true;
+                    }
+                }
+                if (!any) {
+                    paths.clear();  // not in this menu's movie: searched again
+                }
+            });
+        }
+
         // How far from a_from to a_to (0..1) the first solid thing is, 1 when nothing is. People (the
         // hidden player, the speaker) don't count.
         float FirstHit(RE::PlayerCharacter* a_player, const Pose::Vec3& a_from, const Pose::Vec3& a_to)
@@ -340,6 +407,9 @@ namespace AhShitRim::Conversation
             }
         }
         state.director.Tick(a_delta);
+        if (speaker) {
+            HideDialogueMenuSubtitles();
+        }
         FollowSubtitle(s.line);
         return say;
     }

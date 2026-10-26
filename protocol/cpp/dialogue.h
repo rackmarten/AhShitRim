@@ -236,6 +236,18 @@ namespace AhShitRim::Dialogue
         return out;
     }
 
+    // A line with its speaker's name in front, as San Andreas prints it: the name in San Andreas's cream (~y~), the
+    // line in the subtitles' own white (~w~). Both plain text; no name, the line alone; no line, nothing.
+    inline std::string SpeakerLine(std::string_view a_name, std::string_view a_line)
+    {
+        const auto name = PlainText(a_name);
+        const auto line = PlainText(a_line);
+        if (line.empty()) {
+            return {};
+        }
+        return name.empty() ? line : "~y~" + name + ":~w~ " + line;
+    }
+
     // A subtitle Skyrim's HUD gets, as San Andreas prints it. Skyrim's text is HTML for its own HUD, the speaker's
     // name in a grey font tag first ("<font color='#888888'>Whiterun Guard</font>: A fight!"); San Andreas's
     // subtitles have no names, but without one it's hard to tell who talks, so the name stays in front in San
@@ -250,12 +262,7 @@ namespace AhShitRim::Dialogue
                     while (rest.starts_with(" ")) {
                         rest.remove_prefix(1);
                     }
-                    const auto name = PlainText(a_text.substr(0, end));
-                    const auto line = PlainText(rest);
-                    if (line.empty()) {
-                        return {};
-                    }
-                    return name.empty() ? line : "~y~" + name + ":~w~ " + line;
+                    return SpeakerLine(a_text.substr(0, end), rest);
                 }
             }
         }

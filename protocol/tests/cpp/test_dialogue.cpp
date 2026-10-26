@@ -117,6 +117,10 @@ TEST_CASE("a subtitle has the speaker's name in cream in front, without Skyrim's
     CHECK(SubtitleText("<font color='#888888'></font>: Psst.") == "Psst.");
     CHECK(SubtitleText("Wait~n~what") == "Wait-n-what");  // never a San Andreas code from Skyrim's text
     CHECK(SubtitleText("").empty());
+    // a dialogue's line from MenuTopicManager, with the speaker's name
+    CHECK(SpeakerLine("Ri'saad", "The road makes this one weary.") == "~y~Ri'saad:~w~ The road makes this one weary.");
+    CHECK(SpeakerLine("", "Psst.") == "Psst.");
+    CHECK(SpeakerLine("Lydia", "").empty());
 }
 
 TEST_CASE("Skyrim's subtitles are on while CJ has the player, the player's own settings back in the journal and after")
