@@ -151,7 +151,7 @@ While CJ has the player, crime works like San Andreas's: stars only, one wanted 
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
 - As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
 - Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
-- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. On foot, a guard who reaches CJ while he stands still busts him too. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
+- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. On foot, a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds. Only up to 3 stars: from 4 nobody busts CJ, they fight to the end. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
 - Busted takes the fine out of CJ's gold (what Skyrim would have charged for this chase's crimes, all of it if that's short), and CJ comes to outside the hold's barracks with all his weapons. No jail. Wasted ends the stars too.
 
 ## Cheat codes

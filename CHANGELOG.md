@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
 - Stars only: while CJ has the player Skyrim keeps no bounty. A crime's bounty is wiped as it comes and adds stars instead, so guards fight CJ only while stars show, from 1 star, and stop when they're gone.
 - Nobody remembers. People CJ fought forget it after a minute out of their sight (bandits and wild animals don't), and a bounty the Dragonborn had is wiped when CJ takes over.
-- Busted on foot: a guard who reaches CJ while he stands still busts him, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
+- Busted on foot: a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds, as San Andreas's cops do (Skyrim's own arrest needed a bounty). Nobody busts CJ above 3 stars, on foot or in a vehicle, and giants, the mammoth, wolves and the dragon never do. Busted's fine is what Skyrim would have charged for this chase's crimes, and CJ is let go outside the arresting guard's hold, or the pursuit's for a Legion soldier or a Stormcloak.
 
 ### Fixed
 

@@ -1186,8 +1186,8 @@ namespace AhShitRim::Police
             const bool gettingInOut = a_pose && (a_pose->flags & Protocol::kPlayerGettingInOut) != 0;
             a_bust = !a_pose ? Wanted::Bust::None
                      : inVehicle ? VehicleHits::BustNow(Wanted::BustOf(VehicleKinds::KindOf(a_pose->vehicleModel)), gettingInOut)
-                                 : VehicleHits::BustNow(Wanted::Bust::OnFoot, gettingInOut);  // on foot: a guard reaching him (no bounty, so no Skyrim arrest)
-            if (a_bust == Wanted::Bust::None || state.pursuit.Stars() == 0) {
+                                 : VehicleHits::BustNow(Wanted::BustOnFoot(a_pose->weaponType), gettingInOut);  // on foot, empty-handed: a guard reaching him (no bounty, so no Skyrim arrest)
+            if (a_bust == Wanted::Bust::None || !Wanted::Busts(state.pursuit.Stars())) {  // above 3 stars nobody busts him
                 state.stop.Reset();
                 EndRun(a_player, state.pursuit.Stars() > 0);
                 return false;

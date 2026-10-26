@@ -306,8 +306,21 @@ TEST_CASE("wolves: ice wolves from 5 stars, and they don't bust CJ")
     CHECK(WolfFor(6) == kIceWolf);
     CHECK_FALSE(Arrests(Unit::Wolf));
     CHECK_FALSE(Arrests(Unit::Dragon));
+    CHECK_FALSE(Arrests(Unit::Giant));    // a giant once busted CJ at 6 stars
+    CHECK_FALSE(Arrests(Unit::Mammoth));
     CHECK(Arrests(Unit::Guard));
     CHECK(Arrests(Unit::Captain));
+    CHECK(Arrests(Unit::Wizard));
+    CHECK(Arrests(Unit::Soldier));
+}
+
+TEST_CASE("busted only up to 3 stars; above, they fight to the end")
+{
+    CHECK_FALSE(Busts(0));
+    CHECK(Busts(1));
+    CHECK(Busts(3));
+    CHECK_FALSE(Busts(4));
+    CHECK_FALSE(Busts(6));
 }
 
 TEST_CASE("a wolf keeps up with CJ on foot or in a car, and catches up from behind")
@@ -867,14 +880,29 @@ TEST_CASE("in a crowd: nobody is turned more often than every few seconds")
     CHECK(g.Take(1, 1000.0));  // long forgotten
 }
 
-TEST_CASE("busted on foot: nearly stopped for a second with a guard in reach, as San Andreas's cops do")
+TEST_CASE("busted on foot: empty-handed, standing still for 3 s with a guard in reach, as San Andreas's cops do")
 {
+    CHECK(BustOnFoot(0) == Bust::OnFoot);  // fists
+    CHECK(BustOnFoot(22) == Bust::None);   // a pistol: shooting at a guard is no surrender
+    CHECK(BustOnFoot(5) == Bust::None);    // a bat
     StopWatch w;
-    CHECK_FALSE(w.Tick(0.5f, true, Bust::OnFoot, 50.0f, 100.0f));
-    CHECK(w.Tick(0.6f, true, Bust::OnFoot, 50.0f, 100.0f));
+    for (int i = 0; i < 29; i++) {
+        CHECK_FALSE(w.Tick(0.1f, true, Bust::OnFoot, 20.0f, 100.0f));  // under 3 s
+    }
+    bool busted = false;
+    for (int i = 0; i < 3 && !busted; i++) {
+        busted = w.Tick(0.1f, true, Bust::OnFoot, 20.0f, 100.0f);
+    }
+    CHECK(busted);
     w.Reset();
+    for (int i = 0; i < 50; i++) {
+        CHECK_FALSE(w.Tick(0.1f, true, Bust::OnFoot, 100.0f, 50.0f));  // walking slowly: no
+    }
     for (int i = 0; i < 30; i++) {
         CHECK_FALSE(w.Tick(0.1f, true, Bust::OnFoot, 400.0f, 50.0f));  // running: safe
+    }
+    for (int i = 0; i < 50; i++) {
+        CHECK_FALSE(w.Tick(0.1f, true, BustOnFoot(31), 0.0f, 50.0f));  // an M4 in hand: never
     }
     for (int i = 0; i < 30; i++) {
         CHECK_FALSE(w.Tick(0.1f, true, Bust::OnFoot, 50.0f, 400.0f));  // nobody in reach

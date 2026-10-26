@@ -518,8 +518,17 @@ namespace AhShitRim::Wanted
     // a deer 833 (prey), a guard 370 (500 sprinting). CJ sprints at about the wolf's run.
     constexpr std::uint32_t WolfFor(int a_stars) { return a_stars >= 5 ? kIceWolf : kWolf; }
 
-    // Whether one of a_unit at the driver's door busts CJ: not a wolf or the dragon.
-    constexpr bool Arrests(Unit a_unit) { return a_unit != Unit::Wolf && a_unit != Unit::Dragon; }
+    // Whether one of a_unit busts CJ (at his car's door, or on foot): only people, the guards, the captain, the wizards and
+    // the soldiers; never a wolf, the dragon, a giant or the mammoth (in the first 0.1.1 test a giant's blow left CJ
+    // standing still beside it, and it busted him at 6 stars).
+    constexpr bool Arrests(Unit a_unit)
+    {
+        return a_unit == Unit::Guard || a_unit == Unit::Captain || a_unit == Unit::Wizard || a_unit == Unit::Soldier;
+    }
+
+    // Busted only up to kBustMostStars: above it the pursuit fights to the end, as San Andreas's SWAT and army do.
+    inline constexpr int kBustMostStars = 3;
+    constexpr bool       Busts(int a_stars) { return a_stars >= 1 && a_stars <= kBustMostStars; }
 
     inline constexpr float kWolfRun = 556.0f;     // Wolf_Default_MT's run forward, units a second
     inline constexpr float kChaseNear = 800.0f;   // this close a wolf goes as fast as CJ does
@@ -785,8 +794,8 @@ namespace AhShitRim::Wanted
         None,     // a vehicle no guard busts CJ out of (a boat, an aircraft)
         Door,     // a car: a guard at the driver's door opens it and drags him out
         KnockOff, // a bike, bicycle or quad: a guard reaching him knocks him off
-        OnFoot,   // on foot: a guard reaching him nearly stopped puts his hands up, as San Andreas's cops do (no bounty, so
-                  // Skyrim's own arrest never comes while CJ has the player)
+        OnFoot,   // on foot, empty-handed and standing still: a guard in reach puts his hands up, as San Andreas's cops do
+                  // (no bounty, so Skyrim's own arrest never comes while CJ has the player)
     };
 
     constexpr Bust BustOf(VehicleKinds::Kind a_kind)
@@ -803,6 +812,14 @@ namespace AhShitRim::Wanted
 
     inline constexpr float kStoppedSpeed = 140.0f;  // Skyrim units per second, 2 m/s: nearly stopped
     inline constexpr float kStoppedFor = 1.0f;      // seconds nearly stopped before a guard can bust him
+    // On foot only standing still, empty-handed (BustOnFoot), for longer: in the first 0.1.1 test a guard busted CJ
+    // at 3 stars as he stood shooting at him.
+    inline constexpr float kStillSpeed = 50.0f;     // under 0.7 m/s: standing in one place
+    inline constexpr float kStillFor = 3.0f;
+
+    // Whether CJ on foot can be busted at all: with no weapon in his hands (a_weaponType 0, his fists). Holding a gun,
+    // a bat or anything else, the guards fight him instead.
+    constexpr Bust BustOnFoot(std::uint8_t a_weaponType) { return a_weaponType == 0 ? Bust::OnFoot : Bust::None; }
     inline constexpr float kReach = 150.0f;         // Skyrim units, about 2 m (a sword's reach): a guard this close to the door (or to CJ on a bike) has him
     inline constexpr float kDoorSide = 95.0f;       // the driver's door: this far left of the car's middle (San Andreas drives on the right, its driver sits left)
     inline constexpr float kDoorAhead = 15.0f;      // and this far forward
@@ -825,12 +842,13 @@ namespace AhShitRim::Wanted
         // keeps him safe. Returns whether he is busted now.
         bool Tick(float a_delta, bool a_wanted, Bust a_bust, float a_speed, float a_reach)
         {
-            if (!a_wanted || a_bust == Bust::None || !std::isfinite(a_speed) || a_speed > kStoppedSpeed) {
+            const bool onFoot = a_bust == Bust::OnFoot;
+            if (!a_wanted || a_bust == Bust::None || !std::isfinite(a_speed) || a_speed > (onFoot ? kStillSpeed : kStoppedSpeed)) {
                 _stopped = 0.0f;
                 return false;
             }
             _stopped += a_delta;
-            return _stopped >= kStoppedFor && std::isfinite(a_reach) && a_reach <= kReach;
+            return _stopped >= (onFoot ? kStillFor : kStoppedFor) && std::isfinite(a_reach) && a_reach <= kReach;
         }
 
         float Stopped() const { return _stopped; }
