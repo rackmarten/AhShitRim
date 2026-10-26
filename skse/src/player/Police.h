@@ -9,37 +9,46 @@ namespace AhShitRim::Protocol
 }
 
 // San Andreas's wanted level on top of Skyrim's crime system, and Busted (protocol v22; the rules in
-// protocol/cpp/wanted.h). The bounty stays Skyrim's; the stars are the pursuit.
-// - Stars (0 to 6) show in San Andreas's HUD while CJ has the player, from heat: each crime (any of the nine holds'
-//   bounty on the player went up) adds some, by how bad it was. Out of every pursuer's sight for 5 s they flash,
-//   then go one at a time; the bounty stays, and a guard of the hold who fights CJ later brings a star or two back.
-//   No bounty (the fine paid, Wasted) is no stars.
-// - Skyrim drops a bounty when the witnesses die; the stars stay (San Andreas's don't go because CJ shot the cops
-//   who saw him). The fine paid to a guard (PayFine, Actor's vfunc 0xBB, hooked), Busted and Wasted end them.
-// - The response: from 2 stars the hold's guards round about join the fight, and a director keeps a force of ours
-//   after him (Wanted::ForceFor): copies of the hold's guards, the hold's wolves from 3 (in its guards' factions, sped up
-//   to keep CJ's pace on foot or in a car, Wanted::ChaseSpeedMult), a captain and a guard wizard from 4, the hold's
+// protocol/cpp/wanted.h). Stars only, one wanted level for all of Skyrim (0.1.1), and nobody remembers.
+// - Stars (0 to 6) show in San Andreas's HUD while CJ has the player, from heat: each crime (any crime faction's bounty
+//   on the player: the nine holds', the Legion's, the Stormcloaks') adds some, by how bad it was, and its price to the
+//   fine, to the one pursuit wherever it happened, and the bounty is wiped at once: Skyrim keeps none on CJ. Out of
+//   every pursuer's sight (any hold's guards, ours) for 5 s they flash, then go one at a time.
+// - Nobody remembers: the stars lost, Busted, Wasted and AEZAKMI call everyone's fight and alarm with the player off;
+//   with no stars a guard still fighting CJ is called off (Wanted::CallsOff), and anyone else who fought CJ but forgives
+//   him (Wanted::Forgives: townsfolk, the unaggressive) stops once he has been out of their sight for a minute
+//   (Wanted::Grudges).
+// - Running over an animal or a creature (a chicken, a cow, someone's horse) is no crime: a bounty that comes when
+//   that animal was CJ's latest victim the faction could be raising it for is wiped with no heat and no fine
+//   (Wanted::Pardon).
+// - The response: from 1 star every hold's guards round about join the fight, and a director keeps a force of ours
+//   after him (Wanted::ForceFor), from the hold the player is in (else the last one's): copies of the hold's guards,
+//   the hold's wolves from 3 (in its guards' factions, sped up to keep CJ's pace on foot or in a car,
+//   Wanted::ChaseSpeedMult), a captain and a guard wizard from 4, the hold's
 //   soldiers and a dragon from 5 (bringing it down is a lot of heat), giants and a mammoth at 6. One spawns per cooldown, never in
 //   view: round CJ behind the camera on the ground, or out of the city's barracks door. Killing them all buys a
 //   breather, over before a star would go for nobody seeing him. They're after CJ: one fighting someone else
 //   is set on him again after a while of it, gently (Wanted::Leash, no fight stopped). When the stars go they stop
-//   fighting and are taken out a step a frame once the player can't see them (Sweep).
+//   fighting and are taken out a step a frame once the player can't see them (Sweep). In a crowd, a bystander
+//   fighting the pursuit is called off and a guard fighting a bystander is set on CJ (Wanted::TurnOf), so a stray blow
+//   doesn't start a brawl at the stables.
 // - Guards (any hold's) and ours hit CJ by the stars: 0.4 of their damage at 1 star up to all of it from 5
 //   (the player's HandleHealthDamage, Actor's vfunc 0x104, hooked: the rest is given back as each hit lands).
-// - AEZAKMI (CheatCodes) clears every hold's bounty and calls off the fight as it's typed, then keeps the stars
-//   at 0, puts back any bounty a crime adds and stops any guard fighting the player.
+// - AEZAKMI (CheatCodes) calls off the fight as it's typed, then keeps the stars at 0, wipes any bounty a crime adds
+//   with no heat, and stops any guard fighting the player.
 // - Busted in a vehicle: wanted, the car nearly stopped for 1.5 s, a guard of the hold at the driver's door:
 //   San Andreas drags CJ out (kInputBusted, its jacked animation). A bike, bicycle or quad has no door: a guard
 //   reaching him knocks him off. Moving keeps him safe.
-// - On foot Skyrim's guard dialogue stays (the fine, resisting, persuading); only "go to jail" changes: the
-//   player's GoToPrison (Actor's vfunc 0xB9) is hooked while CJ has the player, and Busted runs instead.
-// - Busted: the arrest, "busted", the fade to black, the player taken to the hold's barracks (its crime
-//   the barracks' door's own teleport outside, the jail marker as the fallback), the bounty paid from gold (all of it
-//   if short) and cleared, the stars gone, the fade back in. Weapons are kept; no jail. From the arrest on nobody
+// - Busted on foot: wanted, CJ nearly stopped for a second with a guard in reach, as San Andreas's cops do (with no
+//   bounty Skyrim's guards never arrest him). The player's GoToPrison (Actor's vfunc 0xB9) stays hooked while CJ has the
+//   player, so any arrest Skyrim still makes runs Busted instead.
+// - Busted: the arrest, "busted", the fade to black, the player taken to the hold's barracks (the arresting guard's
+//   hold, else the pursuit's; the barracks' door's own teleport outside, the jail marker as the fallback), the fine (the
+//   crimes' prices) paid from gold (all of it if short), the stars gone, the fade back in. Weapons are kept; no jail. From the arrest on nobody
 //   fights the player (and Vitals keeps its health), and CJ says one of his arrested lines.
 // - CJ's lines (Wanted::kLine*, through PlayerSync's input): his chased line on a star gained and now and then while
 //   pursuers see him.
-// - The heat, its hold and how long CJ has been unseen are in the co-save, a record of their own
+// - The heat, the force's hold and how long CJ has been unseen are in the co-save, a record of their own
 //   (Wanted::kRecordType).
 // Main thread only.
 namespace AhShitRim::Police
@@ -67,9 +76,13 @@ namespace AhShitRim::Police
     // A hit given back left the player with health: no Wasted for its bleedout (TakeSpared).
     void NoteSpared(RE::PlayerCharacter* a_player);
 
-    // San Andreas's wanted cheats (CheatCodes): a_how 1 two more stars (OSRBLHH), 2 six (LJSPQK), 0 none (ASNAEB). The
-    // pursuit is the last hold's, else the one the player stands in, else Whiterun's; the bounty is left alone. Not
-    // while AEZAKMI is on.
+    // CJ hurt someone (Shots::Hurt): a_person, someone of a person's race (RunOver::CrimeToHit); a_byVehicle, with his
+    // vehicle; a_faction, its crime faction (0 for none). Running over anyone else is no crime (Wanted::Pardon).
+    void NoteHurt(bool a_person, bool a_byVehicle, std::uint32_t a_faction);
+
+    // San Andreas's wanted cheats (CheatCodes): a_how 1 two more stars (OSRBLHH), 2 six (LJSPQK), 0 none (ASNAEB, which
+    // clears every bounty too). The force comes from the hold the player stands in, else the last one's, else Whiterun's.
+    // Not while AEZAKMI is on.
     void CheatStars(int a_how);
 
     // Where the last hit on the player came from (anyone's, through the same hook), if it landed within a_seconds.

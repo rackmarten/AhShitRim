@@ -23,6 +23,8 @@
 #include <utility>
 #include <vector>
 
+#include "vehicle_kinds.h"
+
 namespace AhShitRim::Radio
 {
     // San Andreas's volumes from Skyrim's sliders (each 0..1): effects for CJ, his vehicles and
@@ -107,6 +109,97 @@ namespace AhShitRim::Radio
         at = ((at + a_steps) % kRadioOff + kRadioOff) % kRadioOff;
         return static_cast<std::int8_t>(at + 1);
     }
+
+    // ---- Which vehicles have one, and on what ----
+
+    // San Andreas's radio types (tVehicleAudioSettings::m_nRadioType, eRadioType): a civilian radio, and the
+    // emergency services' (it starts on Emergency AA, the dial tunes it like any other). Anything else (-1) has none.
+    inline constexpr int kSaRadioCivilian = 0;
+    inline constexpr int kSaRadioEmergency = 3;
+
+    // Whether CJ's vehicle has a radio: one San Andreas gives a civilian or an emergency radio, and never a bicycle
+    // (the BMX, the Bike, the Mountain Bike). On foot there is none, the jetpack and the parachute included. Without
+    // one no station plays or shows, and the wheel tunes nothing.
+    constexpr bool HasRadio(VehicleKinds::Kind a_kind, int a_saRadioType)
+    {
+        return a_kind != VehicleKinds::Kind::Unknown && a_kind != VehicleKinds::Kind::Bicycle &&
+               (a_saRadioType == kSaRadioCivilian || a_saRadioType == kSaRadioEmergency);
+    }
+
+    // The dial station a vehicle's radio starts on as CJ gets in: the last one he listened to (a_last; off, Radio
+    // Sovngarde and Sweetroll FM included) in every vehicle with a radio, a deliberate change from San Andreas's
+    // station per vehicle. The vehicle's own (a_vehicles) until he has listened to one. San Andreas tunes to its
+    // SaStation.
+    constexpr std::int8_t StartStation(std::int8_t a_last, std::int8_t a_vehicles)
+    {
+        return a_last >= 1 && a_last <= kRadioOff ? a_last : a_vehicles;
+    }
+
+    // What CJ's radio shows, and the dial after, from San Andreas's radio (a_actual, its current eRadioID; a_on, whether
+    // it runs: CAERadioTrackManager::IsRadioOn) and the dial (a_dial, kRadioNone until CJ listened to anything). While
+    // San Andreas's radio doesn't run yet (CJ getting in, before StartRadio) its station id is a stale one, never a
+    // station San Andreas chose: in 0.1.0's carry-over it was Radio X's 7 on every entry, which then replaced the dial.
+    // So the dial goes on and shows. Running but off (off, or Skyrim's two) the dial stays on one of Skyrim's stations
+    // and is off otherwise; on a station of its own San Andreas chose it (a vehicle's own, before any carry-over).
+    struct Followed
+    {
+        std::int8_t station;
+        std::int8_t dial;
+    };
+
+    constexpr Followed Follow(std::int8_t a_dial, std::int8_t a_actual, bool a_on)
+    {
+        const bool dialed = a_dial >= 1 && a_dial <= kRadioOff;
+        if (!a_on) {
+            return { dialed ? a_dial : std::int8_t{ -1 }, a_dial };
+        }
+        if (a_actual < kEmergency || a_actual >= kSaUserTracks) {
+            const std::int8_t dial = SkyrimPlays(a_dial) ? a_dial : kRadioOff;
+            return { dial, dial };
+        }
+        return { a_actual, a_actual };
+    }
+
+    // Getting into a vehicle with a radio, on the station carried over (StartStation): it's set as the vehicle's own
+    // station first (tVehicleAudioSettings::m_nRadioID, which San Andreas starts it on), and if San Andreas's radio comes
+    // on anywhere else (an emergency vehicle's Emergency AA, or San Andreas's own retune to the station of the last
+    // minute) it's retuned there once. Start() as CJ gets in, Step() every frame in the vehicle: the eRadioID to retune
+    // to now, or -1. Pending() until then, at most kBoardingMs: meanwhile the dial isn't taken from San Andreas's.
+    inline constexpr std::uint64_t kBoardingMs = 4000;
+
+    class Boarding
+    {
+    public:
+        void Start(std::int8_t a_dial, std::uint64_t a_ms)
+        {
+            _target = a_dial >= 1 && a_dial <= kRadioOff ? a_dial : std::int8_t{ -1 };
+            _since = a_ms;
+        }
+
+        bool Pending() const { return _target >= 0; }
+
+        std::int8_t Step(bool a_on, std::int8_t a_actual, std::uint64_t a_ms)
+        {
+            if (!Pending()) {
+                return -1;
+            }
+            if (a_ms - _since > kBoardingMs) {
+                _target = -1;
+                return -1;
+            }
+            if (!a_on) {
+                return -1;  // not running yet: its station id is a stale one
+            }
+            const auto want = SaStation(_target);
+            const bool off = a_actual < kEmergency || a_actual >= kSaUserTracks;
+            _target = -1;
+            return (want == kSaRadioOff ? off : a_actual == want) ? std::int8_t{ -1 } : want;
+        }
+
+    private:
+        std::int8_t   _target = -1;
+        std::uint64_t _since = 0;
+    };
 
     // ---- Radio Sovngarde ----
 

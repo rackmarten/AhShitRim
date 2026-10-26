@@ -181,6 +181,7 @@ namespace AhShitRim::HudFont
     {
         float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
+        char  token = 0;  // the ~x~ colour code in force for it (~y~ gives 'y'), 0 before any
     };
 
     inline float Advance(const Values& a_values, const Params& a_params, std::uint8_t a_letter)
@@ -244,17 +245,21 @@ namespace AhShitRim::HudFont
     }
 
     // a_text's letters, the first line's top at a_y and each line placed at a_x by a_params.align
-    // (its left edge, middle or right edge). Spaces and ~x~ codes draw nothing.
+    // (its left edge, middle or right edge). Spaces and ~x~ codes draw nothing; each glyph has the colour code in force.
     inline std::vector<Glyph> Layout(const Values& a_values, const Params& a_params, std::string_view a_text, float a_x, float a_y)
     {
         std::vector<Glyph> out;
         float              top = a_y;
+        char               token = 0;  // a colour code goes on to the next line, as San Andreas's does
         for (const auto& line : Lines(a_values, a_params, a_text)) {
             const float width = Width(a_values, a_params, line);
             float       x = a_params.align == Align::Left ? a_x : a_params.align == Align::Centre ? a_x - width / 2.0f : a_x - width;
             for (std::size_t i = 0; i < line.size(); i++) {
                 if (line[i] == '~') {
                     const auto close = line.find('~', i + 1);
+                    if (close == i + 2) {
+                        token = line[i + 1];
+                    }
                     i = close == std::string::npos ? line.size() : close;
                     continue;
                 }
@@ -276,6 +281,7 @@ namespace AhShitRim::HudFont
                     glyph.u1 = glyph.u0 + 0.0615f;
                     glyph.v0 = row + 0.0021f;
                     glyph.v1 = row + (cut ? 0.0625f : 0.078125f);
+                    glyph.token = token;
                     out.push_back(glyph);
                 }
                 x += Advance(a_values, a_params, letter);
