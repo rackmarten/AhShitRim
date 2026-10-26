@@ -93,6 +93,25 @@ namespace AhShitRim::HudLayout
     // San Andreas's subtitles come out at about 225 (measured off its screenshots). font1's letters are about
     // 87% white, so drawn in kLightGray they came out at 195; drawn white they come out where San Andreas's do.
     inline constexpr Colour kSubtitleWhite{ 255, 255, 255, 255 };
+    // HUD_COLOUR_CREAM (226, 192, 99), San Andreas's ~y~, brightened for font1 as kSubtitleWhite is: the speaker's
+    // name in front of a subtitle.
+    inline constexpr Colour kSubtitleCream{ 255, 221, 114, 255 };
+
+    // The colour of letters after a San Andreas ~x~ code (CFont::ParseToken): ~r~ red, ~g~ green, ~b~ dark blue, ~p~
+    // purple, ~l~ black, ~y~ cream (kSubtitleCream). ~w~ and ~s~ are light grey there, which is what the text's own
+    // colour (a_own, kSubtitleWhite in the subtitles) comes out as; so is any other code, and none at all.
+    constexpr Colour TokenColour(char a_token, Colour a_own)
+    {
+        switch (a_token) {
+        case 'r': case 'R': return Colour{ 180, 25, 29, a_own.a };
+        case 'g': case 'G': return Colour{ 54, 104, 44, a_own.a };
+        case 'b': case 'B': return Colour{ 50, 60, 127, a_own.a };
+        case 'p': case 'P': return Colour{ 168, 110, 252, a_own.a };
+        case 'l': return Colour{ 0, 0, 0, a_own.a };
+        case 'y': case 'Y': return Colour{ kSubtitleCream.r, kSubtitleCream.g, kSubtitleCream.b, a_own.a };
+        default: return a_own;
+        }
+    }
 
     inline Colour WithAlpha(Colour a_colour, float a_alpha)
     {
@@ -159,8 +178,9 @@ namespace AhShitRim::HudLayout
     // CHud::DrawHelpText: a dark box top left.
     inline constexpr TextStyle kHelp{ HudFont::Style::Subtitles, 0.52f, 1.1f, true, 0, HudFont::Align::Left, 36.0f, 24.0f, Edge::Start, Edge::Start, false, 192.0f, kLightGray };
     // CHud::DrawSubtitles: bottom centre, lines going up, with a drop shadow 2 units down and right and no
-    // outline (as San Andreas's screenshots show it).
-    inline constexpr TextStyle kSubtitles{ HudFont::Style::Subtitles, 0.58f, 1.2f, true, 0, HudFont::Align::Centre, 320.0f, 416.0f, Edge::Middle, Edge::End, true, 500.0f, kSubtitleWhite, 2 };
+    // outline (as San Andreas's screenshots show it). Smaller than San Andreas's own 0.58 x 1.2 and wider, so
+    // Skyrim's longer lines, with the speaker's name in front, take one or two lines rather than three or four.
+    inline constexpr TextStyle kSubtitles{ HudFont::Style::Subtitles, 0.45f, 0.95f, true, 0, HudFont::Align::Centre, 320.0f, 416.0f, Edge::Middle, Edge::End, true, 560.0f, kSubtitleWhite, 2 };
 
     // The radio station's name, top centre (CAERadioTrackManager::DisplayRadioStationName): gold once
     // tuned, dark grey while retuning (v7).

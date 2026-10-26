@@ -2,8 +2,8 @@
 // message); the hidden San Andreas plays it through its own audio engine (CAudioEngine::ReportFrontendAudioEvent),
 // with the sounds of the player's own install. Which event San Andreas plays where comes from gta-reversed and
 // gta_sa.exe:
-// - the help box beeps (AE_FRONTEND_DISPLAY_INFO, CHud::DrawHelpText at 0x58B81F) when a new message starts
-//   showing. That is all a cheat does: CCheat shows "Cheat activated" or "Cheat deactivated" and the box beeps.
+// - the help box beeps (AE_FRONTEND_DISPLAY_INFO, CHud::DrawHelpText at 0x58B81F) when a message starts showing,
+//   the one already up shown again included. That is all a cheat does: CCheat shows "Cheat activated" or "Cheat deactivated" and the box beeps.
 //   San Andreas's camera beeps the same when V cycles its view (CCamera::CamControl at 0x52B716);
 // - picking up a weapon, money, health or armour (CPickup::Update), a jetpack (CPickups::GivePlayerGoodiesWithPickUpMI),
 //   and taking gold off a body or out of a chest by walking over it (#830's looting, as San Andreas's money pickup);
@@ -76,11 +76,8 @@ namespace AhShitRim::HudSounds
         }
     }
 
-    // The help box beeps when a message starts showing, as San Andreas's does: not when the one already up is shown
-    // again (CHud::SetHelpMessage with the same text keeps it, without starting it over). a_up is whether a message
-    // is up now, a_current its text.
-    constexpr bool HelpBeeps(bool a_up, std::string_view a_current, std::string_view a_next)
-    {
-        return !a_next.empty() && (!a_up || a_current != a_next);
-    }
+    // The help box beeps whenever a message is set, as San Andreas's does: CHud::SetHelpMessage clears the text it
+    // would compare against before comparing, so even the one already up starts over and beeps again (a second
+    // cheat typed while "Cheat activated" still shows beeps a second time). Nothing to show doesn't beep.
+    constexpr bool HelpBeeps(std::string_view a_next) { return !a_next.empty(); }
 }
