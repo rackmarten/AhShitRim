@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
+The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.
+
 ### Changed
 
 - One wanted level for all of Skyrim, as in San Andreas. A crime anywhere (any hold, the Legion, the Stormcloaks) adds to the same stars, and every hold's guards chase them, so riding from Whiterun into Falkreath at six stars keeps six stars.
