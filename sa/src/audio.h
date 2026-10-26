@@ -19,7 +19,7 @@ class CVehicle;
 //   beep, pickups, a purchase; played as San Andreas plays them, on the effects volume.
 // - The mouse wheel in Skyrim dials the radio (Radio::Dial). After San Andreas's stations come Radio
 //   Sovngarde and Sweetroll FM: San Andreas's radio is off there, and Skyrim plays them. The last station
-//   carries over into every vehicle with a radio (Radio::StartStation); bicycles have none (Radio::HasRadio).
+//   carries over into every vehicle with a radio (Radio::StartStation, Radio::Boarding); bicycles have none (Radio::HasRadio).
 // - Sound cues (v24, InputState.cue, protocol/cpp/missions.h), whoever has the player: the mission passed
 //   tune and CJ's intro line, by San Andreas's own routines and ids.
 // Game thread only.
@@ -42,8 +42,9 @@ namespace AhShitRim::Audio
     // Once a frame after the simulation: volumes, pausing, the cue playing.
     void Update(bool a_owned, bool a_paused);
 
-    // The radio in CJ's pose: station and retuning, none unless a_radio (CJ's vehicle has one).
-    void Fill(Protocol::PlayerState& a_pose, bool a_radio);
+    // The radio in CJ's pose: station and retuning, none unless CJ's vehicle has a radio (nullptr on foot). Getting
+    // in, the vehicle comes on on the station carried over (Radio::Boarding).
+    void Fill(Protocol::PlayerState& a_pose, CVehicle* a_vehicle);
 
     // A station plays (San Andreas's, or one of Skyrim's; not off): as of the last Fill.
     bool RadioPlays();

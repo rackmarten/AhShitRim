@@ -192,6 +192,35 @@ TEST_CASE("getting in, San Andreas's stale station id never replaces the dial")
     CHECK(Follow(kRadioOff, kEmergency, true).station == kEmergency);  // San Andreas's own choice still shows
 }
 
+TEST_CASE("getting in, the carried-over station is retuned to once if San Andreas's radio comes on elsewhere")
+{
+    Boarding b;
+    b.Start(2, 1000);  // K-Rose carried over
+    CHECK(b.Pending());
+    CHECK(b.Step(false, 8, 1030) == -1);  // not running yet, a stale id
+    CHECK(b.Pending());
+    CHECK(b.Step(true, 2, 1100) == -1);  // came on on K-Rose: nothing to do
+    CHECK_FALSE(b.Pending());
+
+    b.Start(2, 2000);
+    CHECK(b.Step(true, kEmergency, 2100) == 2);  // a police car's Emergency AA: retuned once
+    CHECK_FALSE(b.Pending());
+    CHECK(b.Step(true, kEmergency, 2200) == -1);
+
+    b.Start(kSovngarde, 3000);
+    CHECK(b.Step(true, 5, 3100) == kSaRadioOff);  // San Andreas's own retune to its last station: off, Skyrim plays
+    b.Start(kSovngarde, 4000);
+    CHECK(b.Step(true, kSaRadioOff, 4100) == -1);  // off already
+
+    b.Start(-1, 5000);  // nothing carried over: the vehicle's own
+    CHECK_FALSE(b.Pending());
+    CHECK(b.Step(true, 5, 5100) == -1);
+
+    b.Start(2, 6000);
+    CHECK(b.Step(false, 8, 6000 + kBoardingMs + 1) == -1);  // never came on: given up
+    CHECK_FALSE(b.Pending());
+}
+
 TEST_CASE("station names and which ones silence Skyrim's music")
 {
     CHECK(StationName(6) == "Radio Los Santos");

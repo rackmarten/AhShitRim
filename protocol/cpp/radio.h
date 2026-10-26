@@ -160,6 +160,47 @@ namespace AhShitRim::Radio
         return { a_actual, a_actual };
     }
 
+    // Getting into a vehicle with a radio, on the station carried over (StartStation): it's set as the vehicle's own
+    // station first (tVehicleAudioSettings::m_nRadioID, which San Andreas starts it on), and if San Andreas's radio comes
+    // on anywhere else (an emergency vehicle's Emergency AA, or San Andreas's own retune to the station of the last
+    // minute) it's retuned there once. Start() as CJ gets in, Step() every frame in the vehicle: the eRadioID to retune
+    // to now, or -1. Pending() until then, at most kBoardingMs: meanwhile the dial isn't taken from San Andreas's.
+    inline constexpr std::uint64_t kBoardingMs = 4000;
+
+    class Boarding
+    {
+    public:
+        void Start(std::int8_t a_dial, std::uint64_t a_ms)
+        {
+            _target = a_dial >= 1 && a_dial <= kRadioOff ? a_dial : std::int8_t{ -1 };
+            _since = a_ms;
+        }
+
+        bool Pending() const { return _target >= 0; }
+
+        std::int8_t Step(bool a_on, std::int8_t a_actual, std::uint64_t a_ms)
+        {
+            if (!Pending()) {
+                return -1;
+            }
+            if (a_ms - _since > kBoardingMs) {
+                _target = -1;
+                return -1;
+            }
+            if (!a_on) {
+                return -1;  // not running yet: its station id is a stale one
+            }
+            const auto want = SaStation(_target);
+            const bool off = a_actual < kEmergency || a_actual >= kSaUserTracks;
+            _target = -1;
+            return (want == kSaRadioOff ? off : a_actual == want) ? std::int8_t{ -1 } : want;
+        }
+
+    private:
+        std::int8_t   _target = -1;
+        std::uint64_t _since = 0;
+    };
+
     // ---- Radio Sovngarde ----
 
     enum class Kind : std::uint8_t

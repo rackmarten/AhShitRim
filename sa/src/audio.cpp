@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <string>
 #include <utility>
 
 namespace AhShitRim::Audio
@@ -46,14 +47,16 @@ namespace AhShitRim::Audio
             0x4DF210,  // CAEGlobalWeaponAudioEntity::ServiceAmbientGunFire: distant gunfire, foghorns
         };
         constexpr std::uintptr_t kAmbienceService = 0x4D76C0;  // CAEAmbienceTrackManager::Service(int) (thiscall): area ambience tracks
-        constexpr std::uintptr_t kStartRadio = 0x4EB550;  // CAERadioTrackManager::StartRadio(const tVehicleAudioSettings&) (thiscall)
+        constexpr std::uintptr_t kBeatTrackStatus = 0x507170;   // CAudioEngine::GetBeatTrackStatus (thiscall): StartRadio and RetuneRadio do nothing unless 0
+        constexpr std::uintptr_t kAmbienceActive = 0x507210;    // CAudioEngine::IsAmbienceTrackActive (thiscall)
+        constexpr std::uintptr_t kAmbienceOverrides = 0x507270; // CAudioEngine::DoesAmbienceTrackOverrideRadio (thiscall): then the radio won't start
+        constexpr std::uintptr_t kCutsceneActive = 0x507150;    // CAudioEngine::IsCutsceneTrackActive (thiscall)
 
         constexpr int kVolumeMax = 64;  // San Andreas's master volumes run 0..64
         constexpr std::uint64_t kRetuneMs = 3000;  // a retune shows as one this long at most
 
         SafetyHookInline g_noOps[std::size(kNoOps)];
         SafetyHookInline g_ambience;
-        SafetyHookInline g_startRadio;
 
         struct State
         {
@@ -69,6 +72,9 @@ namespace AhShitRim::Audio
             std::uint64_t dialedMs = 0;
             std::int8_t   actual = Protocol::kRadioNone - 1;  // San Andreas's own station id, last logged
             bool          on = false;                         // and whether its radio ran
+            bool          inRadio = false;                    // CJ was in a vehicle with a radio at the last Fill
+            Radio::Boarding boarding;                          // getting in, on the station carried over
+            std::uint64_t inRadioMs = 0;                       // when he got in, until the log 3 s later
             std::int8_t   reported = Protocol::kRadioNone - 1;
 
             // v24: the sound cue playing (Protocol::kCue*), 0 for none.
@@ -84,36 +90,15 @@ namespace AhShitRim::Audio
         void __cdecl NoOp() {}
         void __fastcall NoOpAmbience(void*, void*, int) {}
 
-        // A vehicle's radio comes on with CJ in it: on the last station he listened to (Radio::StartStation), whatever
-        // the vehicle's own, and not at all on a bicycle. The vehicle keeps the station, as a retune would leave it.
-        void __fastcall StartRadio(void* a_manager, void*, tVehicleAudioSettings* a_settings)
+        // What can keep San Andreas's radio from starting or retuning, for the log.
+        std::string RadioBlockers()
         {
-            auto* ped = FindPlayerPed(0);
-            auto* vehicle = ped ? ped->m_pVehicle : nullptr;
-            if (!a_settings || !vehicle || a_settings != &vehicle->m_vehicleAudio.m_settings) {
-                static bool logged = false;
-                if (a_settings && !std::exchange(logged, true)) {
-                    Log("audio: a radio comes on in a vehicle CJ isn't in; left as San Andreas has it");
-                }
-                g_startRadio.thiscall(a_manager, a_settings);
-                return;
-            }
-            if (!HasRadio(vehicle)) {
-                Log(std::format("audio: model {} has no radio, none comes on", vehicle->m_nModelIndex));
-                return;
-            }
-            const auto start = Radio::StartStation(state.dial, Protocol::kRadioNone);
-            if (start == Protocol::kRadioNone) {
-                g_startRadio.thiscall(a_manager, a_settings);
-                return;
-            }
-            // An emergency vehicle's radio starts on Emergency AA whatever its station: started as a civilian one.
-            const auto type = a_settings->m_nRadioType;
-            a_settings->m_nRadioID = static_cast<eRadioID>(Radio::SaStation(start));
-            a_settings->m_nRadioType = RADIO_CIVILIAN;
-            g_startRadio.thiscall(a_manager, a_settings);
-            a_settings->m_nRadioType = type;
-            Log(std::format("audio: the radio comes on in model {} on {}, the last station", vehicle->m_nModelIndex, Radio::StationName(start)));
+            const int  beat = plugin::CallMethodAndReturn<std::int8_t, kBeatTrackStatus, CAudioEngine*>(&AudioEngine);
+            const bool ambience = plugin::CallMethodAndReturn<bool, kAmbienceActive, CAudioEngine*>(&AudioEngine);
+            const bool overrides = plugin::CallMethodAndReturn<bool, kAmbienceOverrides, CAudioEngine*>(&AudioEngine);
+            const bool cutscene = plugin::CallMethodAndReturn<bool, kCutsceneActive, CAudioEngine*>(&AudioEngine);
+            return std::format("radio on {}, station {}, beat track status {}, ambience track {}{}, cutscene track {}", AudioEngine.IsRadioOn(),
+                static_cast<int>(AudioEngine.GetCurrentRadioStationID()), beat, ambience, overrides ? " (overrides the radio)" : "", cutscene);
         }
 
         template <class T>
@@ -209,7 +194,6 @@ namespace AhShitRim::Audio
             g_noOps[i] = Hook(kNoOps[i], &NoOp);
         }
         g_ambience = Hook(kAmbienceService, &NoOpAmbience);
-        g_startRadio = Hook(kStartRadio, &StartRadio);
     }
 
     bool HasRadio(const CVehicle* a_vehicle)
@@ -297,11 +281,26 @@ namespace AhShitRim::Audio
         }
     }
 
-    void Fill(Protocol::PlayerState& a_pose, bool a_radio)
+    void Fill(Protocol::PlayerState& a_pose, CVehicle* a_vehicle)
     {
+        const bool  radio = HasRadio(a_vehicle);
         std::int8_t station = Protocol::kRadioNone;
         bool        retuning = false;
-        if (a_radio) {
+        if (radio && !state.inRadio) {
+            // Getting in (San Andreas starts the vehicle's radio a frame later): on the station carried over, set as the
+            // vehicle's own, the way one it was left tuned to comes on. No inline hook on CAERadioTrackManager::StartRadio:
+            // with one, San Andreas's radio never ran at all, its own station included.
+            if (const auto start = Radio::StartStation(state.dial, Protocol::kRadioNone); start != Protocol::kRadioNone) {
+                auto& settings = a_vehicle->m_vehicleAudio.m_settings;
+                settings.m_nRadioID = static_cast<eRadioID>(Radio::SaStation(start));
+                if (settings.m_nRadioType == RADIO_EMERGENCY) {
+                    settings.m_nRadioType = RADIO_CIVILIAN;  // its radio would come on on Emergency AA, which no retune leaves
+                }
+                Log(std::format("audio: model {} gets in on {}, the last station", a_vehicle->m_nModelIndex, Radio::StationName(start)));
+            }
+            state.boarding.Start(state.dial, ::GetTickCount64());
+        }
+        if (radio) {
             const auto actual = static_cast<std::int8_t>(AudioEngine.GetCurrentRadioStationID());
             const bool on = AudioEngine.IsRadioOn();
             const bool off = actual < Radio::kEmergency || actual >= Radio::kSaUserTracks;
@@ -309,6 +308,13 @@ namespace AhShitRim::Audio
                 Log(std::format("audio: San Andreas's radio at {} (on {}, retuning {})", actual, on, Retuning()));
                 state.actual = actual;
                 state.on = on;
+            }
+            // Came on elsewhere (an emergency vehicle's Emergency AA, San Andreas's own retune): retuned once (Radio::Boarding).
+            if (const auto retune = state.boarding.Step(on, actual, ::GetTickCount64()); retune >= 0) {
+                AudioEngine.RetuneRadio(retune);
+                state.dialed = true;
+                state.dialedMs = ::GetTickCount64();
+                Log(std::format("audio: San Andreas's radio came on at {}, retuned to {}", actual, Radio::StationName(state.dial)));
             }
             if (state.dialed) {
                 // A retune the wheel asked for: shown as where it goes until San Andreas gets there.
@@ -325,15 +331,24 @@ namespace AhShitRim::Audio
                 station = state.dial;
                 retuning = true;
             } else {
-                // Not running yet, its station id is stale: the dial goes on (Radio::Follow).
-                const auto followed = Radio::Follow(state.dial, actual, on);
+                // Not running yet, its station id is stale: the dial goes on (Radio::Follow), as while getting in.
+                const auto followed = Radio::Follow(state.dial, actual, on && !state.boarding.Pending());
                 station = followed.station;
                 state.dial = followed.dial;
             }
         }
-        if (!a_radio) {
+        if (!radio) {
             state.dialed = false;  // out before the retune got there: the dial has it for the next vehicle
         }
+        // Getting in, and 3 s after: what San Andreas's radio is doing.
+        if (radio && !state.inRadio) {
+            state.inRadioMs = ::GetTickCount64();
+            Log("audio: in a vehicle with a radio: " + RadioBlockers());
+        } else if (radio && state.inRadioMs && ::GetTickCount64() - state.inRadioMs > 3000) {
+            state.inRadioMs = 0;
+            Log("audio: 3 s in: " + RadioBlockers());
+        }
+        state.inRadio = radio;
         a_pose.radioStation = station;
         if (retuning) {
             a_pose.flags |= Protocol::kPlayerRadioRetuning;

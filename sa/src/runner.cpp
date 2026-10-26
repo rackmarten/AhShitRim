@@ -339,7 +339,7 @@ namespace AhShitRim::Runner
             if (GettingInOrOut(a_ped)) {
                 pose.flags |= Protocol::kPlayerGettingInOut;
             }
-            Audio::Fill(pose, Audio::HasRadio(vehicle));
+            Audio::Fill(pose, Vehicles::Driven(a_ped));
             GetLink().WritePlayer(pose);
         }
 
