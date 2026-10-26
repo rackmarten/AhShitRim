@@ -127,6 +127,18 @@ namespace AhShitRim::Vitals
             return state && state->GetLifeState() == RE::ACTOR_LIFE_STATE::kBleedout;
         }
 
+        // The essential player out of its bleedout: the graph's BleedoutStop, and its life state back to alive. The event
+        // alone left the life state down, and Skyrim's AI won't fight an actor that is down: after a giant's blow at 6 stars
+        // (BAGUVIX on) every pursuer's StartCombat on the player was refused, and the whole chase lost CJ.
+        void StandUp(RE::PlayerCharacter* a_player)
+        {
+            a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            if (Bleeding(a_player)) {
+                a_player->SetLifeState(RE::ACTOR_LIFE_STATE::kAlive);
+                SKSE::log::info("vitals: the player is out of its bleedout, its life state {}", Bleeding(a_player) ? "still bleedout" : "alive again");
+            }
+        }
+
         float MaxHealth(RE::PlayerCharacter* a_player) { return a_player->GetActorValueMax(RE::ActorValue::kHealth); }
 
         bool OutOfHealth(RE::PlayerCharacter* a_player)
@@ -214,7 +226,7 @@ namespace AhShitRim::Vitals
                 values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
             }
             if (Bleeding(a_player)) {
-                a_player->NotifyAnimationGraph("BleedoutStop"sv);
+                StandUp(a_player);
             }
             state.armor = 0.0f;
             Forgive(a_player);
@@ -289,7 +301,7 @@ namespace AhShitRim::Vitals
             const float back = (state.shieldFrom - now) * (1.0f - share);
             values->RestoreActorValue(RE::ActorValue::kHealth, back);
             if (Bleeding(a_player) && values->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {
-                a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
+                StandUp(a_player);  // one hit took it all at once, and the essential player went down
             }
             if (state.shieldLogged < 8) {
                 state.shieldLogged++;
@@ -506,7 +518,7 @@ namespace AhShitRim::Vitals
                 values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
             }
             if (Bleeding(a_player)) {
-                a_player->NotifyAnimationGraph("BleedoutStop"sv);
+                StandUp(a_player);
             }
             return false;
         }
@@ -518,7 +530,7 @@ namespace AhShitRim::Vitals
                 values->RestoreActorValue(RE::ActorValue::kHealth, max - now);
             }
             if (Bleeding(a_player)) {
-                a_player->NotifyAnimationGraph("BleedoutStop"sv);  // one hit took it all at once, and the essential player went down
+                StandUp(a_player);  // one hit took it all at once, and the essential player went down
             }
             HoldHitSkills(a_player);
             SaHud::SetArmor(state.armor / Health::kSaFullHealth);
@@ -532,7 +544,7 @@ namespace AhShitRim::Vitals
         }
         // A guard's hit put the essential player down, but his eased share of it (Police) left it standing: no Wasted.
         if (Police::TakeSpared() && Bleeding(a_player) && a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0.0f) {
-            a_player->NotifyAnimationGraph("BleedoutStop"sv);
+            StandUp(a_player);
             SKSE::log::info("vitals: a guard's eased hit left the player standing, its bleedout stopped");
             SaHud::SetArmor(state.armor / Health::kSaFullHealth);
             return false;
