@@ -223,6 +223,7 @@ namespace AhShitRim::HitTest
             static RE::FormID            firstLock = 0;
             static RE::NiPoint3          start;        // where the coc put the player: the drive starts there
             static int                   rounds = 0;   // in and out of the car with Y
+            static RE::FormID            disabled = 0;  // the locked guard disabled on purpose
             Protocol::PlayerState        pose{};
             const bool                   valid = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid);
             const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
@@ -390,17 +391,39 @@ namespace AhShitRim::HitTest
                     const auto first = firstLock;
                     PadCheck(LockOn::DebugGunTarget() != 0 && LockOn::DebugGunTarget() != first && pose.weaponType == before.weaponType,
                         std::format("the d-pad's right shifts the lock {:08X} -> {:08X}, the weapon stays {}:", first, LockOn::DebugGunTarget(), pose.weaponType));
+                    // The locked guard disabled while LT still holds it, as a script, a respawn or a cell change would: through
+                    // SKSE's task queue, outside the player's update (the lock keeps form ids only and looks its actors up again
+                    // every frame).
+                    disabled = LockOn::DebugGunTarget();
+                    SKSE::log::info("hit test: pad: disabling the locked guard {:08X} through SKSE's task queue, LT still held", disabled);
+                    SKSE::GetTaskInterface()->AddTask([id = disabled]() {
+                        auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                        SKSE::log::info("hit test: pad: task: disabling {:08X}", id);
+                        if (actor) {
+                            actor->Disable();
+                        }
+                        SKSE::log::info("hit test: pad: task: {:08X} disabled", id);
+                    });
+                    state.step = 23;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 23:
+                if (state.timer >= 2.0f) {
+                    auto* actor = RE::TESForm::LookupByID<RE::Actor>(disabled);
+                    PadCheck(actor && actor->IsDisabled() && LockOn::DebugGunTarget() != disabled,
+                        std::format("the locked guard disabled ({}): the lock is on {:08X} now, and Skyrim keeps going:", actor && actor->IsDisabled() ? "it is" : "it isn't",
+                            LockOn::DebugGunTarget()));
                     PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
-                    // Out of the way, not deleted: disabling them mid-fight here froze Skyrim once.
+                    // The other one out of the way until the end, where it's disabled from inside the player's update instead.
                     for (const auto& handle : state.attackers) {
                         auto  ref = handle.get();
-                        auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
-                        if (actor) {
-                            actor->StopCombat();
+                        auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
+                        if (guard && !guard->IsDisabled()) {
+                            guard->StopCombat();
                             ref->SetPosition(ref->GetPosition() + RE::NiPoint3(6000.0f, 6000.0f, 0.0f));
                         }
                     }
-                    state.attackers.clear();
                     state.step = 40;
                     state.timer = 0.0f;
                 }
@@ -527,6 +550,34 @@ namespace AhShitRim::HitTest
                 if (state.timer >= 1.5f) {
                     PlayerSync::DebugPad(Pad::kBack, 0.0f);
                     PadCheck(!PlayerSync::DebugOwned(), "Back held 1.5 s hands the player back to Skyrim:");
+                    state.step = 60;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 60:  // last, since it may freeze: the other guard back, set on the player, and disabled from inside its update
+                for (const auto& handle : state.attackers) {
+                    auto  ref = handle.get();
+                    auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (guard && player && !guard->IsDisabled()) {
+                        ref->SetPosition(player->GetPosition() + RE::NiPoint3(0.0f, 600.0f, 0.0f));
+                        guard->StartCombat(player);
+                        disabled = guard->GetFormID();
+                    }
+                }
+                state.step = 61;
+                state.timer = 0.0f;
+                break;
+            case 61:
+                if (state.timer >= 3.0f) {
+                    auto* guard = RE::TESForm::LookupByID<RE::Actor>(disabled);
+                    SKSE::log::info("hit test: pad: disabling {:08X} directly from the player's update, nobody locked on, {} (the call that froze Skyrim once)",
+                        disabled, guard && guard->IsInCombat() ? "in combat" : "not in combat");
+                    if (guard) {
+                        guard->Disable();
+                    }
+                    SKSE::log::info("hit test: pad: the direct Disable returned");
+                    state.attackers.clear();
                     SKSE::log::info("hit test: done");
                     state.phase = Phase::Done;
                 }
