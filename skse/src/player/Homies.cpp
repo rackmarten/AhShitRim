@@ -864,7 +864,8 @@ namespace AhShitRim::Homies
         }
 
         // Each homie: dead, lost, his fight, his place, his 3D hidden, then San Andreas's input and his drawing.
-        const auto cj = a_player->GetPosition();
+        const auto  cj = a_player->GetPosition();
+        const float cjHeading = a_pose ? a_pose->heading : a_player->GetAngleZ();
         Protocol::CrewInput input{};
         input.frame = static_cast<std::uint32_t>(RE::GetDurationOfApplicationRunTime());
         input.handover = a_handover;
@@ -939,7 +940,15 @@ namespace AhShitRim::Homies
                 m.feet[0] = feet.x;
                 m.feet[1] = feet.y;
                 m.feet[2] = feet.z;
-                m.heading = h.aiming ? Pose::HeadingOf(h.aim.x - actor->GetPosition().x, h.aim.y - actor->GetPosition().y) : actor->GetAngleZ();
+                // Which way he faces standing: his aim, CJ's way for a follower on foot, else his own. San Andreas
+                // turns him the way he goes while he walks or runs (Crew::Facing).
+                if (h.aiming) {
+                    m.heading = Pose::HeadingOf(h.aim.x - actor->GetPosition().x, h.aim.y - actor->GetPosition().y);
+                } else if (h.follower && !Riders::Rides(h.id)) {
+                    m.heading = cjHeading;
+                } else {
+                    m.heading = actor->GetAngleZ();
+                }
                 const auto aim = (h.aiming ? h.aim : actor->GetPosition() + RE::NiPoint3(std::sin(m.heading), std::cos(m.heading), 0.0f) * 500.0f) - a_anchor;
                 m.aim[0] = aim.x;
                 m.aim[1] = aim.y;

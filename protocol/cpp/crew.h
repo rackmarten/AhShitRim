@@ -1,21 +1,24 @@
 // The Grove Street crew (v39), the game-free half: how many homies CJ may lead, where the followers walk, where the
-// homies stand about at a hold's spots, when one opens fire, which one G picks, and what CJ's own hits on them do.
-// Header-only and free of game types, so the protocol tests cover it. Skyrim's half is skse/src/player/Crew.cpp (the
-// actors, the keys, the following and the fights), San Andreas's sa/src/crew.cpp (the puppets).
+// homies stand about at a hold's spots, when one opens fire, which one G picks, what CJ's own hits on them do, and which
+// way a puppet faces. Header-only and free of game types, so the protocol tests cover it. Skyrim's half is
+// skse/src/player/Homies.cpp (the actors, the keys, the following and the fights), San Andreas's
+// sa/src/crew_puppets.cpp (the puppets).
 //
 // Positions here are Skyrim units (70 to the metre) and Skyrim headings (radians, 0 north, clockwise) unless a name says
-// metres.
+// metres or San Andreas.
 
 #pragma once
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <vector>
 
 #include "pose.h"
+#include "scene.h"
 
 namespace AhShitRim::Crew
 {
@@ -417,4 +420,86 @@ namespace AhShitRim::Crew
         std::array<std::uint32_t, Protocol::kCrewMax> _ids{};
         std::array<float, Protocol::kCrewMax>         _rest{};
     };
+
+    // ---- The puppet (San Andreas side) ----
+
+    // Which way a homie's puppet faces, a San Andreas heading. While he walks or runs he faces the way he goes, as San
+    // Andreas's peds turn into their walk: his velocity smoothed, turned toward at a ped's rate. Standing he turns to
+    // a_still (CJ's heading for a follower, his own at a spot), and aiming he faces a_still, his aim, even on the move.
+    class Facing
+    {
+    public:
+        static constexpr float kTurnRate = 2.0f * Pose::kPi;  // rad/s
+        static constexpr float kMinSpeed = 0.5f;              // m/s: slower, the velocity gives no direction
+        static constexpr float kSmoothing = 0.25f;            // s
+        static constexpr float kJump = 5.0f;                  // m: a load or a move, not a step
+
+        // a_feet: where his feet are, metres; a_moving: he walks or runs (Scene::MotionTracker).
+        float Update(const Pose::Vec3& a_feet, float a_seconds, float a_still, bool a_moving, bool a_aiming)
+        {
+            const float dx = a_feet.x - _last.x;
+            const float dy = a_feet.y - _last.y;
+            const bool  jumped = !_have || std::hypot(dx, dy) > kJump;
+            _last = a_feet;
+            if (jumped) {
+                _have = true;
+                _vx = _vy = 0.0f;
+                _heading = a_still;
+                return _heading;
+            }
+            if (a_seconds > 0.0f) {
+                const float k = a_seconds / (a_seconds + kSmoothing);
+                _vx += (dx / a_seconds - _vx) * k;
+                _vy += (dy / a_seconds - _vy) * k;
+            }
+            float goal = a_still;
+            if (a_moving && !a_aiming && Speed() >= kMinSpeed) {
+                goal = Pose::SanAndreasHeading(Pose::HeadingOf(_vx, _vy));
+            }
+            _heading = Scene::TurnToward(_heading, goal, kTurnRate * a_seconds);
+            return _heading;
+        }
+
+        float Speed() const { return std::hypot(_vx, _vy); }
+
+    private:
+        bool       _have = false;
+        Pose::Vec3 _last;
+        float      _vx = 0.0f;
+        float      _vy = 0.0f;
+        float      _heading = 0.0f;
+    };
+
+    // One animation on a clump, as San Andreas's CAnimBlendAssociation has it.
+    struct Blend
+    {
+        float amount = 0.0f;        // m_fBlendAmount
+        float delta = 0.0f;         // m_fBlendDelta, per second
+        bool  deleteFaded = false;  // flag kBlendDeleteFaded: taken out once it has faded to nothing
+        bool  sequences = true;     // its hierarchy has its sequences (its anim block is in memory)
+    };
+
+    inline constexpr std::uint16_t kBlendDeleteFaded = 0x4;
+
+    // Whether a_blend is still on its clump after an update of a_step seconds and gives that update a node
+    // (CAnimBlendAssociation::UpdateBlend takes out one faded to nothing with its delete flag set; one without sequences
+    // gives no node).
+    constexpr bool Outlives(const Blend& a_blend, float a_step)
+    {
+        const bool goes = a_blend.deleteFaded && a_blend.delta < 0.0f && a_blend.amount + a_blend.delta * a_step <= 0.0f;
+        return !goes && a_blend.sequences;
+    }
+
+    // Whether RpAnimBlendClumpUpdateAnimations may run on a clump with these animations. San Andreas reads the first of
+    // the nodes it gathers without looking, so a clump whose last animation fades out in that very update crashes it (a
+    // homie's walk fading out before anything started his run).
+    inline bool LeavesANode(const Blend* a_blends, std::size_t a_count, float a_step)
+    {
+        for (std::size_t i = 0; i < a_count; i++) {
+            if (Outlives(a_blends[i], a_step)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
