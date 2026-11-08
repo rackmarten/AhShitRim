@@ -38,11 +38,10 @@ TEST_CASE("each pickup's own sound")
     CHECK(ForPickup(PickupKind::Parachute) == Sound::PickupWeapon);  // a weapon in San Andreas
 }
 
-TEST_CASE("the help box beeps when a message starts showing, not when the one up is shown again")
+TEST_CASE("the help box beeps on every message, the one already up shown again included")
 {
-    CHECK(HelpBeeps(false, "", "Cheat activated"));
-    CHECK(HelpBeeps(false, "Cheat activated", "Cheat activated"));  // gone already: shows again, beeps again
-    CHECK_FALSE(HelpBeeps(true, "Cheat activated", "Cheat activated"));
-    CHECK(HelpBeeps(true, "Cheat activated", "Cheat deactivated"));  // another one replaces it
-    CHECK_FALSE(HelpBeeps(false, "", ""));                            // nothing to show
+    CHECK(HelpBeeps("Cheat activated"));
+    CHECK(HelpBeeps("Cheat activated"));  // a second cheat while the first's message is up: beeps again, as San Andreas's does
+    CHECK(HelpBeeps("Cheat deactivated"));
+    CHECK_FALSE(HelpBeeps(""));  // nothing to show
 }

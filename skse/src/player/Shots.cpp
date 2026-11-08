@@ -10,7 +10,9 @@
 #include "player/ObjectHits.h"
 #include "player/CombatBalance.h"
 #include "player/People.h"
+#include "player/Police.h"
 #include "player/Projectiles.h"
+#include "run_over.h"
 #include "weapons.h"
 
 #include <random>
@@ -160,6 +162,17 @@ namespace AhShitRim::Shots
             return Damage::ClassOf(id ? id : "", race->HasKeywordString("ActorTypeDragon"));
         }
 
+        // Whether hurting it is a crime: someone of a person's race (RunOver::CrimeToHit), not an animal or a creature.
+        bool IsPerson(RE::Actor* a_actor)
+        {
+            auto* race = a_actor->GetRace();
+            if (!race) {
+                return false;
+            }
+            const char* id = race->GetFormEditorID();
+            return RunOver::CrimeToHit(RunOver::BuildOf(id ? id : "", race->HasKeywordString("ActorTypeNPC"), race->HasKeywordString("ActorTypeDragon")));
+        }
+
         // a_skyrimDamage, when over 0, is the damage itself (a mega punch's), not worked out from San Andreas's.
         void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
             bool a_blood = true, float a_skyrimDamage = 0.0f)
@@ -172,6 +185,9 @@ namespace AhShitRim::Shots
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
             // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
             const bool unseen = a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead();
+            // Skyrim's hit below may make it a crime; running over an animal isn't one (Wanted::Pardon).
+            auto* crimeFaction = actor->GetCrimeFaction();
+            Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
 
             if (state.processHit) {
                 auto* hit = RE::HitData::Create(a_player, actor, nullptr, false);

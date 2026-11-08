@@ -54,13 +54,13 @@ The first time, the launcher's setup finds San Andreas, copies it so your origin
 Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to get Skyrim's own player back (for spells, lockpicking, menus and trading).
 
 - **CJ on foot**, with San Andreas's movement, animations and camera, on Skyrim's own ground. He opens doors, pulls levers, searches chests, picks things up, talks to people and sits down with E, and stays the player through load doors, interiors, fast travel and scenes that take the player over.
-- **Every land and air vehicle San Andreas has**: cars, bikes, bicycles, quads, monster trucks, the Rhino, helicopters, planes, the jetpack and the parachute, with San Andreas's own physics, radio, sounds and particles. Run people over, take your followers along, and watch Skyrim's bandits, wolves and giants wreck your car until it burns.
+- **Every land and air vehicle San Andreas has**: cars, bikes, bicycles, quads, monster trucks, the Rhino, helicopters, planes, the jetpack and the parachute, with San Andreas's own physics, radio, sounds and particles. Run people over (honk and they jump aside; a giant stops a car, but the Rhino sends it flying), take your followers along, and watch Skyrim's bandits, wolves and giants wreck your car until it burns.
 - **San Andreas's guns**, switched on the mouse wheel, hurting Skyrim's people and creatures: headshots count, damage scales with the target (the minigun is for dragons), the Dragonborn gets the kill and the bounty, and San Andreas's weapon skills grow. Rockets, grenades, Molotovs, tear gas, the flamethrower and satchel charges all work, and the heat seeker locks on to dragons.
 - **Fist fights** with San Andreas's lock-on: CJ turns to his target, and a small triangle over their head goes from green to red with their health.
 - **Ammu-Nation** at the blacksmiths of the hold capitals (Warmaiden's in Whiterun first), and guns as rewards from the main quest and a few bosses.
 - **Looting without menus**: walk over a body, or press E on a chest, and its gold and quest items are yours.
 - **Pickups** spinning around Skyrim: hearts, armour, parachutes, weapons and money, with a heart turning up when you're low.
-- **Wanted stars** on top of Skyrim's bounty, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
+- **Wanted stars**, one level for all of Skyrim, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
@@ -86,7 +86,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
 | Left Alt | Left Alt | Walk | |
 | F or Enter | F or Enter | Get into the nearest vehicle | Get out |
-| H or Caps Lock | Caps Lock or H | | Horn; with hydraulics (LOWRIDER), raise and lower the car; a police helicopter's searchlight |
+| H or Caps Lock | Caps Lock or H | | Horn: people and animals in the way jump aside; with hydraulics (LOWRIDER), raise and lower the car; a police helicopter's searchlight |
 | Q / E | Q / E | E: activate what the crosshair is on (or else what CJ faces), through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop; standing on a weapon pickup while CJ carries another gun of its kind, it swaps his for it | Look left / right (both together: look behind); an aircraft's rudder |
 | Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Rhino's turret, the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car |
 | Numpad 5, 2 or numpad + | Same | | San Andreas's sub-mission key: a plane's landing gear up and down, the crop duster's and Stuntplane's smoke, the hydraulics' jump with the numpad's arrows |
@@ -127,13 +127,13 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 **Quests** start and end like San Andreas missions: a quest's name comes up as a mission title, finishing one is MISSION PASSED with San Andreas's tune, and a small quest done (a favour, a delivery) is an odd job, MISSION PASSED without the title. A new game opens with the line AhShitRim is named after: right after Ralof wakes you in the Helgen cart, CJ says "Ah shit, here we go again."
 
-**Conversations** play like San Andreas cutscenes (nobody starts one with CJ while he's in a vehicle or moving faster than a walk): letterbox bars, a two-shot of CJ and the speaker, Skyrim's subtitles in San Andreas's style. CJ greets people, answers each topic you pick in his own voice (agreeing, refusing, asking, threatening, joking) and says goodbye. E or the left mouse button skips the speaker's line.
+**Conversations** play like San Andreas cutscenes (nobody starts one with CJ while he's in a vehicle): letterbox bars, a two-shot of CJ and the speaker, Skyrim's subtitles in San Andreas's style. CJ greets people, answers each topic you pick in his own voice (agreeing, refusing, asking, threatening, joking) and says goodbye. E or the left mouse button skips the speaker's line.
 
 **Shouts.** Shouting works as in Skyrim (learn the words, hold the Shout key for more of them, wait out the cooldown), and the effect is Skyrim's, but instead of the dragon words CJ yells one of his San Andreas lines, picked for the shout and how many words you charged. Whirlwind Sprint carries CJ along with the dash, and WANRLTW (infinite ammo) also means infinite shouting. Dragons, draugr and the Greybeards still shout in their own voices. Which lines go with which shout (and with each situation below) can be picked by ear in the voice picker ([`scripts/voice-picker`](scripts/voice-picker/README.md)), which builds a local page from your own San Andreas install.
 
 **CJ talks on his own** now and then: when a punch lands, a burst of gunfire hits, he aims a gun on foot, after a sneak kill, when he loots gold, buys at Ammu-Nation and leaves, sprints away from a fight, or crashes hard. Left idle for a minute and a half, he sings.
 
-**Sound.** San Andreas plays CJ's, his vehicles' and his speech's sounds itself, at Skyrim's volume sliders. In a vehicle the radio plays San Andreas's stations, then **Radio Sovngarde**: Skyrim's own music (the main theme, combat and exploration tracks, the bards' instrumentals). After it comes **Sweetroll FM**, AhShitRim's own station: about half an hour of public domain (CC0) bard, tavern and folk music, shuffled so every track plays once before any repeats. Skyrim's own music stops while either station plays.
+**Sound.** San Andreas plays CJ's, his vehicles' and his speech's sounds itself, at Skyrim's volume sliders. In a vehicle (any but a bicycle) the radio plays San Andreas's stations, then **Radio Sovngarde**: Skyrim's own music (the main theme, combat and exploration tracks, the bards' instrumentals). After it comes **Sweetroll FM**, AhShitRim's own station: about half an hour of public domain (CC0) bard, tavern and folk music, shuffled so every track plays once before any repeats. Skyrim's own music stops while either station plays. Whatever you last listened to, the radio off included, comes along into every vehicle you get into.
 
 ## The radar
 
@@ -143,15 +143,17 @@ The map is a San Andreas-style map of Skyrim the launcher paints from your own p
 
 ## Wanted level and Busted
 
-Skyrim's crime system stays: the bounty is Skyrim's, kept per hold, and its guards still arrest, fine and fight the player. On top of it San Andreas's wanted stars show while CJ has the player:
+While CJ has the player, crime works like San Andreas's: stars only, one wanted level for all of Skyrim, and nobody remembers once it's over. Skyrim keeps no bounty on CJ (a crime's bounty is wiped as it comes, and becomes stars), so guards only fight him while stars show. Back as the Dragonborn (F10), Skyrim's own crime works as usual.
 
-- Each crime heats things up, as in San Andreas: shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
+- Each crime heats things up, wherever it happens (three stars in Whiterun are still three in Falkreath): shooting a guard is one star, killing two is two stars, four is three, and six stars take a real rampage. Petty crimes (trespassing, theft) are a star at most.
+- Running over an animal is never a crime, whoever owns it: Riverwood's chickens, a farmer's cow, someone's horse. Running over a person still is.
 - Out of the guards' sight for a few seconds the stars flash, then go one at a time. Killing the witnesses wipes Skyrim's bounty but not the stars.
+- When the stars are gone the guards stop, and people CJ fought forget it once he's been out of their sight for a minute. Bandits and wild animals don't forgive. A petty crime on its own (trespassing, a stolen apple) is no star and is forgotten at once.
 - Reinforcements keep coming while CJ is wanted, never where he's looking. From 3 stars the hold sets its tamed wolves on CJ, fast enough to catch him sprinting and even a car for a while. From 4 a captain and a guard wizard join, from 5 the hold's soldiers and a dragon, and at 6 two giants and a mammoth (out in the open world only). At most 12 at once.
 - As in San Andreas, no saving while wanted: F5 and F9 do nothing ("Lose the heat first") while stars show or reinforcements are still about.
 - Skyrim's guards go easy on CJ at first: 0.4 of their damage at 1 star, rising to all of it from 5, times `DamageTaken` (see [Combat balance](#combat-balance)). Bandits, wolves and everyone else hit as usual, never by the stars.
-- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
-- Busted takes the bounty out of CJ's gold (all of it if that's short), clears it, and CJ comes to outside the hold's barracks with all his weapons. No jail. Paying the fine to a guard ends the stars too.
+- In a car, stop for a second or two and the nearest guard runs round to the driver's door and drags CJ out: Busted. On a bike he knocks CJ off. On foot, a guard next to CJ busts him once he has stood still, empty-handed, for 3 seconds. Only up to 3 stars: from 4 nobody busts CJ, they fight to the end. Keep moving and they can't, and nobody busts CJ while he's getting in or out.
+- Busted takes the fine out of CJ's gold (what Skyrim would have charged for this chase's crimes, all of it if that's short), and CJ comes to outside the hold's barracks with all his weapons. No jail. Wasted ends the stars too.
 
 ## Cheat codes
 

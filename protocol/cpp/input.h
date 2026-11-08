@@ -318,6 +318,9 @@ namespace AhShitRim::Input
             return false;
         }
 
+        // Whether a horn key is held (0.1.1: the horn clears the way in Skyrim, RunOver::InHornPath).
+        bool HornHeld() const { return Held(Action::Horn); }
+
         bool Aiming() const { return _aim; }
         bool Firing() const { return _fire; }
 

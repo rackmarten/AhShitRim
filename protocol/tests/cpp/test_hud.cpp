@@ -90,6 +90,27 @@ TEST_CASE("Widths add each letter's width plus the edge, times the scale")
     CHECK(HudFont::Width(values, params, "~r~A~w~B") == doctest::Approx((27 + 3) * 2 * 2.0f));
 }
 
+TEST_CASE("each letter has the colour code in force, on the next line too")
+{
+    const auto      values = Values();
+    HudFont::Params params;
+    params.style = HudFont::Style::Subtitles;
+    const auto glyphs = HudFont::Layout(values, params, "A~y~B~n~C~w~D", 0.0f, 0.0f);
+    REQUIRE(glyphs.size() == 4);
+    CHECK(glyphs[0].token == 0);
+    CHECK(glyphs[1].token == 'y');
+    CHECK(glyphs[2].token == 'y');  // the next line goes on in cream, as San Andreas's does
+    CHECK(glyphs[3].token == 'w');
+    using namespace AhShitRim::HudLayout;
+    const Colour own{ 255, 255, 255, 128 };
+    const auto   cream = TokenColour('y', own);
+    CHECK((cream.r == kSubtitleCream.r && cream.g == kSubtitleCream.g && cream.b == kSubtitleCream.b));
+    CHECK(cream.a == 128);  // fading with the text
+    CHECK(TokenColour('w', own).r == 255);  // light grey in San Andreas: the text's own colour here
+    CHECK(TokenColour(0, own).g == 255);
+    CHECK(TokenColour('r', own).r == 180);
+}
+
 TEST_CASE("Layout puts each letter in its cell, aligned, and draws no spaces")
 {
     const auto      values = Values();
@@ -252,7 +273,7 @@ TEST_CASE("Text styles place their text: clock top right, big messages up from t
     const auto one = Place(values, screen, kSubtitles, "Ah");
     const auto two = Place(values, screen, kSubtitles, "Ah~n~sh");
     REQUIRE(one.lines == 1);
-    CHECK(two.y == doctest::Approx(one.y - 18.0f * 1.2f * uy));
+    CHECK(two.y == doctest::Approx(one.y - 18.0f * kSubtitles.scaleY * uy));
     CHECK(OutlinePixels(screen, kBigMessage) == doctest::Approx(3.0f * 2.25f));
     // Subtitles have a drop shadow down and right, no outline.
     CHECK(OutlinePixels(screen, kSubtitles) == 0.0f);
