@@ -46,6 +46,8 @@ namespace AhShitRim::PlayerSync
     int  DebugPadCheats();  // console cheat sequences finished on the pad so far
     // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
     void DebugKey(std::uint32_t a_dik, bool a_down);
+    // The hit test's respawns scenario (debug): / pressed, Skyrim's wait menu as the key opens it.
+    void DebugWait();
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

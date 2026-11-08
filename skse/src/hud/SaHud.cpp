@@ -138,7 +138,6 @@ namespace AhShitRim::SaHud
             int              wanted = 0;
             bool             wantedFlashing = false;
             float            armor = 0.0f;
-            int              demo = 0;
             std::uint32_t    frame = 0;
             bool             skyrimHudHidden = false;
             bool             loggedScreen = false;
@@ -959,30 +958,5 @@ namespace AhShitRim::SaHud
         FadeTo(0.0f, 0.0f);
         state.letterboxOn = false;
         state.names.Clear();
-    }
-
-    void NextDemo()
-    {
-        static constexpr const char* kSteps[] = { "mission title", "wasted", "busted", "mission passed", "help box", "subtitles", "fade to black",
-            "letterbox", "wanted stars", "radio station", "zone name", "off" };
-        const int step = state.demo;
-        state.demo = (state.demo + 1) % static_cast<int>(std::size(kSteps));
-        ClearText();
-        SetWantedLevel(0);
-        switch (step) {
-        case 0: ShowMissionTitle("Jarl Johnson"); break;
-        case 1: ShowBigMessage(BigMessage::Wasted); break;
-        case 2: ShowBigMessage(BigMessage::Busted); break;
-        case 3: ShowBigMessage(BigMessage::MissionPassed); break;
-        case 4: ShowHelp("Welcome to Los Solitude. Press F to get into a vehicle and F again to get out of it."); break;
-        case 5: ShowSubtitle("Ah shit, here we go again."); break;
-        case 6: FadeTo(1.0f, 1.0f); break;
-        case 7: SetLetterbox(true); ShowSubtitle("Thane of Grove Street.", 6.0f); break;
-        case 8: SetWantedLevel(3); break;
-        case 9: ShowRadioStation("Radio Sovngarde", false); break;
-        case 10: ShowZoneName("Riverwood"); break;
-        default: break;
-        }
-        SKSE::log::info("sa hud: demo {} ({})", step + 1, kSteps[step]);
     }
 }

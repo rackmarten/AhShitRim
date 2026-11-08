@@ -1285,7 +1285,8 @@ namespace AhShitRim::PlayerSync
         };
 
         // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
-        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
+        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu. Nor does T, the wait menu:
+        // / opens it instead (WaitKey).
         // On the pad (DESIGN.md, Controller) Back is held back from Skyrim's wait menu in either game, so a second's hold can
         // hand the player over (Pad::Mapper), and a tap with Skyrim on the player opens the menu through Skyrim's own
         // handler (OpenWaitMenu). While CJ has the player only the pad's journal (Start) and tween menu (B) open.
@@ -1314,9 +1315,9 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Back tapped on the pad while Skyrim has the player: its wait menu, through Skyrim's own menu open handler (which
-        // refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
-        void OpenMenu(const RE::BSFixedString& a_userEvent, std::uint32_t a_id)
+        // Back tapped on the pad while Skyrim has the player, or / while CJ has it: its wait menu, through Skyrim's own
+        // menu open handler (which refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
+        void OpenMenu(const RE::BSFixedString& a_userEvent, std::uint32_t a_id, RE::INPUT_DEVICE a_device = RE::INPUT_DEVICE::kGamepad)
         {
             auto* controls = RE::MenuControls::GetSingleton();
             auto* handler = controls ? controls->menuOpenHandler : nullptr;
@@ -1324,7 +1325,7 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             for (const float value : { 1.0f, 0.0f }) {
-                auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kGamepad, a_userEvent, a_id, value, value > 0.0f ? 0.0f : 0.1f);
+                auto* event = RE::ButtonEvent::Create(a_device, a_userEvent, a_id, value, value > 0.0f ? 0.0f : 0.1f);
                 if (!event) {
                     return;
                 }
@@ -1340,6 +1341,24 @@ namespace AhShitRim::PlayerSync
             if (auto* events = RE::UserEvents::GetSingleton()) {
                 OpenMenu(events->wait, Pad::kBack);
             }
+        }
+
+        // / while CJ has the player, on foot: Skyrim's wait menu, since T is a letter of the cheat codes here.
+        void WaitKey()
+        {
+            if (!state.owned || MenuHasInput() || AmmuNation::IsOpen() || Vitals::IsWasted() || Police::IsBusted()) {
+                return;
+            }
+            if (InVehicle()) {
+                SaHud::ShowHelp("Get out of the vehicle to wait.", 3.0f);
+                return;
+            }
+            auto* events = RE::UserEvents::GetSingleton();
+            if (!events) {
+                return;
+            }
+            SKSE::log::info("player sync: / pressed: Skyrim's wait menu, as T without CJ");
+            OpenMenu(events->wait, Input::kDikWait, RE::INPUT_DEVICE::kKeyboard);
         }
 
         // Skyrim's Shout on the pad (RB) is the handbrake while CJ is in a vehicle (DESIGN.md, Controller): Z still shouts.
@@ -1632,9 +1651,9 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikApostrophe && !state.devKeys) {
                         continue;
                     }
-                    if (code == Input::kDikSlash && state.owned) {
-                        if (button->IsDown() && !MenuHasInput()) {
-                            SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
+                    if (code == Input::kDikWait && state.owned) {
+                        if (button->IsDown()) {
+                            WaitKey();  // Skyrim's wait menu, as T opens it without CJ
                         }
                         continue;
                     }
@@ -1857,6 +1876,8 @@ namespace AhShitRim::PlayerSync
             state.input.SetKey(a_dik, a_down);
         }
     }
+
+    void DebugWait() { WaitKey(); }
 
     void DebugType(const char* a_code)
     {
