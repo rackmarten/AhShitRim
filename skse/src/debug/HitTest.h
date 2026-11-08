@@ -8,7 +8,7 @@
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). HitTest=oil (with HitTestStart
-// BleakFallsBarrow01) hands nothing over: it lights three oil pools near the player the way CJ's bullet, Molotov and rocket
+// BleakFallsBarrow01) hands nothing over: it places three fresh oil pools (a save may hold the barrow's burnt out) and lights them the way CJ's bullet, Molotov and rocket
 // do (ObjectHits), logs each pool's health until they burn out or HitTestSeconds pass, and whether each burned.
 // Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
