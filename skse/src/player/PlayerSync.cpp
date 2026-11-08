@@ -988,6 +988,12 @@ namespace AhShitRim::PlayerSync
                 Release("the player died");
                 return;
             }
+            // A stealth kill's kill move eases the player it pairs with the victim into place: that isn't the game
+            // moving it (a re-anchor would carry CJ off wherever the move took the hidden player).
+            if (StealthKills::HoldsPlayer(a_player)) {
+                StealthKills::Pushed(a_player->GetPosition() - state.lastPlaced);
+                state.lastPlaced = a_player->GetPosition();
+            }
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
@@ -1057,10 +1063,12 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
-            const bool killMove = StealthKills::HoldsPlayer(a_player);  // a stealth kill's kill move moves the player itself
-            if (killMove) {
-                state.lastPlaced = a_player->GetPosition();
-            }
+            // In a stealth kill's kill move the hidden player is the pair's to line up with the victim (put at CJ's
+            // feet every frame, Skyrim's move waits on it and runs twice as long), as long as it stays within
+            // StealthKill::kKillMoveStray of him.
+            const bool killMove = valid && StealthKills::HoldsPlayer(a_player) &&
+                                  a_player->GetPosition().GetDistance(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2])) <=
+                                      StealthKill::kKillMoveStray * Pose::kUnitsPerMeter;
             if (valid && !scene && !unpinned && !killMove) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;

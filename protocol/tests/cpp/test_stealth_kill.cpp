@@ -222,6 +222,7 @@ TEST_CASE("stealth kill: Skyrim's sneak kill move, on level ground")
     CHECK(KillMoveFits({ 0.0f, 0.0f, M(0.3f) }, { 0.0f, M(1.0f), 0.0f }));
     CHECK_FALSE(KillMoveFits({ 0.0f, 0.0f, 0.0f }, { 0.0f, M(1.0f), M(0.4f) }));
     CHECK_FALSE(KillMoveFits({ 0.0f, 0.0f, M(0.4f) }, { 0.0f, M(1.0f), 0.0f }));
+    CHECK_FALSE(KillMoveFits({ 0.0f, 0.0f, 0.0f }, { 0.0f, M(1.0f), 0.0f }, true));  // seated: the ragdoll
 }
 
 TEST_CASE("stealth kill: sitting or leaning is on its feet, as San Andreas sees it; sleeping isn't")

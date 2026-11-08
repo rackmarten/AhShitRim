@@ -22,7 +22,57 @@ namespace AhShitRim::StealthKills
             bool       confirmed = false;  // Skyrim shows it in the kill move
             bool       loggedIdles = false;
             bool       owed = false;       // stabbed in the kill move but still alive: killed when it's over
+            int          traced = 0;       // frames of the kill move traced in the log
+            RE::NiPoint3 tracePlayer;
+            RE::NiPoint3 traceVictim;
+            RE::NiPoint3 pushed;           // how far the move pushed the player since last frame
+            RE::NiPoint3 pinAt;            // the victim's feet and heading at the grab, where it's held for the move
+            float        pinHeading = 0.0f;
         } state;
+
+        constexpr int kTraceFrames = 24;
+
+        RE::NiPoint3 VelocityOf(RE::Actor* a_actor)
+        {
+            RE::hkVector4 v;
+            if (auto* controller = a_actor->GetCharController()) {
+                controller->GetLinearVelocityImpl(v);
+            }
+            return RE::NiPoint3(v.quad.m128_f32[0], v.quad.m128_f32[1], v.quad.m128_f32[2]) * 69.99f;  // Havok metres to units
+        }
+
+        // Where the kill move puts both actors each frame, its first frames: what moves them.
+        void Trace(RE::PlayerCharacter* a_player, RE::Actor* a_victim)
+        {
+            if (state.traced >= kTraceFrames || !a_player || !a_victim) {
+                return;
+            }
+            const auto p = a_player->GetPosition();
+            const auto v = a_victim->GetPosition();
+            const auto pv = VelocityOf(a_player);
+            const auto vv = VelocityOf(a_victim);
+            SKSE::log::info("stealth kill trace {:.3f} s: player ({:.0f},{:.0f},{:.0f}) moved {:.0f} (pushed ({:.0f},{:.0f},{:.0f}) by the move), velocity ({:.0f},{:.0f},{:.0f}), in move {}; victim ({:.0f},{:.0f},{:.0f}) moved {:.0f}, velocity ({:.0f},{:.0f},{:.0f}), in move {}; {:.0f} apart",
+                state.movingFor, p.x, p.y, p.z, state.traced ? p.GetDistance(state.tracePlayer) : 0.0f, state.pushed.x, state.pushed.y, state.pushed.z, pv.x, pv.y, pv.z, a_player->IsInKillMove(),
+                v.x, v.y, v.z, state.traced ? v.GetDistance(state.traceVictim) : 0.0f, vv.x, vv.y, vv.z, a_victim->IsInKillMove(), p.GetDistance(v));
+            state.tracePlayer = p;
+            state.traceVictim = v;
+            state.traced++;
+            state.pushed = {};
+        }
+
+        // San Andreas holds its victim still for the stealth kill (CTaskSimpleStealthKill moves only CJ): the kill
+        // move's root motion and its pair alignment would walk it forward, so it stays where CJ grabbed it.
+        void Pin(RE::Actor* a_victim)
+        {
+            if (a_victim->GetPosition().GetDistance(state.pinAt) > 0.5f) {
+                a_victim->SetPosition(state.pinAt, true);
+            }
+            a_victim->SetHeading(state.pinHeading);
+            if (auto* controller = a_victim->GetCharController()) {
+                controller->SetLinearVelocityImpl(RE::hkVector4(0.0f, 0.0f, 0.0f, 0.0f));
+            }
+            state.traceVictim = state.pinAt;
+        }
 
         RE::Actor* ActorOf(RE::FormID a_id)
         {
@@ -67,6 +117,10 @@ namespace AhShitRim::StealthKills
             }
             const auto feet = a_player->GetPosition();
             const auto at = a_actor->GetPosition();
+            if (TargetOf(a_actor, a_player).seated) {
+                SKSE::log::info("stealth kill: {} ({:08X}) sits, no kill move", a_actor->GetName(), a_actor->GetFormID());
+                return false;
+            }
             if (!StealthKill::KillMoveFits({ feet.x, feet.y, feet.z }, { at.x, at.y, at.z })) {
                 SKSE::log::info("stealth kill: {:.2f} m of height to {} ({:08X}), no kill move", std::fabs(at.z - feet.z) * Pose::kMetersPerUnit, a_actor->GetName(),
                     a_actor->GetFormID());
@@ -92,7 +146,12 @@ namespace AhShitRim::StealthKills
                     state.movingFor = 0.0f;
                     state.confirmed = false;
                     state.loggedIdles = true;
+                    state.traced = 0;
+                    state.pushed = {};
+                    state.pinAt = at;
+                    state.pinHeading = a_actor->GetAngleZ();
                     SKSE::log::info("stealth kill: {} plays on {} ({:08X})", move.editorId, a_actor->GetName(), a_actor->GetFormID());
+                    Trace(a_player, a_actor);
                     return true;
                 }
                 SKSE::log::info("stealth kill: Skyrim didn't start {} on {} ({:08X})", move.editorId, a_actor->GetName(), a_actor->GetFormID());
@@ -219,6 +278,8 @@ namespace AhShitRim::StealthKills
         SKSE::log::info("stealth kill: victims {}", state.killMoves ? "play Skyrim's sneak kill move, or ragdoll" : "ragdoll ([Weapons] StealthKillMove=0)");
     }
 
+    void Pushed(const RE::NiPoint3& a_by) { state.pushed = state.pushed + a_by; }
+
     bool HoldsPlayer(RE::PlayerCharacter* a_player)
     {
         return state.moving && a_player && (state.confirmed || state.movingFor < StealthKill::kKillMoveConfirm);
@@ -230,6 +291,10 @@ namespace AhShitRim::StealthKills
         if (state.moving) {
             state.movingFor += dt;
             auto*      victim = ActorOf(state.moving);
+            if (victim) {
+                Trace(a_player, victim);
+                Pin(victim);
+            }
             const bool in = victim && (victim->IsInKillMove() || (a_player && a_player->IsInKillMove()));
             if (in && !state.confirmed) {
                 state.confirmed = true;
