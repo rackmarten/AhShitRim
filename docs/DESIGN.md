@@ -319,7 +319,7 @@ Goal: the whole loop on a gamepad alone: walk, fight, aim and shoot, get into an
 - Skyrim's menus, dialogue, the map and the journal already work on the pad, and with Skyrim's pad on they're what the player uses anyway. No other source gives "talk" for free.
 - One source for everything: no double handling of a button by Skyrim and by us.
 - Skyrim's own functions are read by their user events (`QUserEvent`: shout, tween menu, journal), so a player's remapped Skyrim pad still works for those.
-- The cost: the player turns on Skyrim's gamepad (Settings, Controls, Gamepad; `bGamepadEnable`). If XInput sees a pad but Skyrim sends no pad events, the help box says so once.
+- The cost: the player turns on Skyrim's gamepad (Settings, Controls, Gamepad; `bGamepadEnable`), which the README says; the log says at start whether it is on (`BSInputDeviceManager::IsGamepadEnabled`).
 
 Alternatives:
 
@@ -389,7 +389,7 @@ Aircraft (planes, helicopters, the Hydra) take the vehicle map with these differ
 | R3 | Landing gear, the crop duster's and Stuntplane's smoke | R3 |
 | Right stick | Look around; in the Hydra its up / down moves the nozzles (as San Andreas's right stick, the numpad's 8 and 2 today) | mouse; right stick Y |
 
-Menus and dialogue: Skyrim's own pad controls, untouched (the left stick or d-pad picks, A chooses, B backs out). In a dialogue A skips the speaker's line, as `BlockHook` already lets through. A seat or a scene: the left stick or A stands up, Skyrim's own. Ammu-Nation (ours): left stick or d-pad up / down browse, A chooses a category and buys, B goes back and then leaves.
+Menus and dialogue: Skyrim's own pad controls, untouched (the left stick or d-pad picks, A chooses, B backs out). In a dialogue A skips the speaker's line, as `BlockHook` already lets through. A seat or a scene: the left stick or A stands up, Skyrim's own. Ammu-Nation (ours): left stick or d-pad up / down browse, A (the sprint button, San Andreas's shop key) or LB chooses a category and buys, Y (enter and exit) goes back and then leaves, as the keyboard's same actions do.
 
 While Skyrim has the player its pad is entirely Skyrim's, except Back: a tap opens the wait menu as Skyrim does (opened by us on release, since the press is held back to time it), held 1 s it hands the player to CJ.
 
@@ -426,7 +426,7 @@ The dev keys (`;`, `'`, `=`, `/`), F11 (the pad's own capture button, Steam's or
 
 Each builds and plays on its own, in this order. Game-free logic goes in `protocol/cpp/pad.h` with doctest cases: the button and stick map per context, the stick curve, the Back tap and hold timer, the lock-on steering, the cheat sequences.
 
-1. **The pad map** (no protocol change; about one session with tuning in game): the sink reads the pad, `Input::Builder` gets the on-foot, vehicle and aircraft maps, the right stick as mouse counts, `MenuOpenHook` lets the pad's tween menu and journal through and holds Back, the Shout handler ignores the pad in a vehicle, Back's tap and hold (camera distance, the handover both ways), Ammu-Nation on the pad, the help box's pad names, the "turn on Skyrim's gamepad" hint, the README's controller column. Throttle and brake are on or off here (a trigger past 30%), the lean is the stick past half. With the melee lock and free aim, this already plays the acceptance loop but for shooting comfortably.
+1. **The pad map** (no protocol change; about one session with tuning in game): the sink reads the pad, `Input::Builder` gets the on-foot, vehicle and aircraft maps, the right stick as mouse counts, `MenuOpenHook` lets the pad's tween menu and journal through and holds Back, the Shout handler ignores the pad in a vehicle, Back's tap and hold (camera distance, the handover both ways), Ammu-Nation on the pad, the help box's pad names, the README's Pad column. Built in `protocol/cpp/pad.h` (`Pad::Mapper`, a frame of actions from Skyrim's pad events) and `PlayerSync`'s `UpdatePad`, which merges them into `Input::Builder` once a frame (`SetPad`, `AddMouseCounts`). Throttle and brake are on or off here (a trigger past 30%), the lean is the stick past half. With the melee lock and free aim, this already plays the acceptance loop but for shooting comfortably.
 2. **Analog driving** (a protocol bump; a few hours): `InputState` gains the triggers' throttle and brake and the stick's lean as values, which San Andreas writes as the analog `ButtonCross`, `ButtonSquare` and `LeftStickY` it reads in mode 0. Takes the next free bytes after the camera, headlights and parked vehicles PRs, which already claim byte 115 and grow the slot to 128.
 3. **Gun lock-on** (about one session, most of it feel): the LT lock above, on Skyrim's side only.
 4. **Cheat sequences** (a few hours): the sequence table and its matcher (`protocol/cpp/cheats.h`), B's and RB's hold before their Skyrim actions, finished codes through `CheatCodes`.

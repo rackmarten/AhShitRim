@@ -32,6 +32,7 @@ add_executable(protocol_tests
     tests/cpp/test_vehicle_kinds.cpp
     tests/cpp/test_parachute.cpp
     tests/cpp/test_input.cpp
+    tests/cpp/test_pad.cpp
     tests/cpp/test_pose.cpp
     tests/cpp/test_collision.cpp
     tests/cpp/test_ground.cpp

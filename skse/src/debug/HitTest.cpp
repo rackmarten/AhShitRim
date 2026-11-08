@@ -2,6 +2,7 @@
 
 #include "Ini.h"
 #include "link/LinkService.h"
+#include "pad.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/StealthKills.h"
@@ -51,6 +52,7 @@ namespace AhShitRim::HitTest
             bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
             bool               stealth = false;  // the scenario: the knife stealth kill (v38)
+            bool               pad = false;      // the scenario: the gamepad's actions (DESIGN.md, Controller)
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
@@ -151,6 +153,194 @@ namespace AhShitRim::HitTest
                 if (actor && !actor->IsDead() && actor->Is3DLoaded() && actor->GetActorRuntimeData().currentCombatTarget.get().get() != a_player) {
                     actor->StartCombat(a_player);
                 }
+            }
+        }
+
+        // ---- The pad scenario (DESIGN.md, Controller) ----
+
+        float Meters(const float (&a_from)[3], const float (&a_to)[3])
+        {
+            const float dx = a_to[0] - a_from[0], dy = a_to[1] - a_from[1];
+            return std::sqrt(dx * dx + dy * dy) * Pose::kMetersPerUnit;
+        }
+
+        void PadCheck(bool a_ok, const std::string& a_what) { SKSE::log::info("hit test: pad: {} {}", a_what, a_ok ? "ok" : "FAILED"); }
+
+        void PadNext()
+        {
+            state.step++;
+            state.timer = 0.0f;
+        }
+
+        // From Arriving on: the pad's events injected as Skyrim would send them (PlayerSync::DebugPad, DebugStick), each
+        // action's effect read back from San Andreas's pose and logged: "hit test: pad: ... ok" or "... FAILED".
+        void PadSteps()
+        {
+            static Protocol::PlayerState before{};
+            static float                 peak = 0.0f;  // the drive's top speed, km/h
+            static int                   tries = 0;    // d-pad presses looking for a gun
+            Protocol::PlayerState        pose{};
+            const bool                   valid = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid);
+            const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
+            switch (state.step) {
+            case 0:  // Back held a second, with Skyrim on the player
+                if (state.timer >= 6.0f) {
+                    SKSE::log::info("hit test: pad: holding Back with Skyrim on the player");
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 1:
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kBack, 0.0f);
+                    PadCheck(PlayerSync::DebugOwned(), "Back held 1.5 s hands the player to CJ:");
+                    PadNext();
+                }
+                break;
+            case 2:  // the left stick forward
+                if (onFoot && state.timer >= 5.0f) {
+                    before = pose;
+                    PlayerSync::DebugStick(false, 0.0f, 1.0f);
+                    PadNext();
+                } else if (state.timer > 40.0f) {
+                    PadCheck(false, "CJ came on foot:");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 3:
+                if (state.timer >= 2.0f) {
+                    const float moved = Meters(before.offset, pose.offset);
+                    PadCheck(moved > 1.5f, std::format("the left stick forward 2 s walks CJ {:.1f} m:", moved));
+                    PlayerSync::DebugStick(false, 0.0f, 0.0f);
+                    before = pose;
+                    PlayerSync::DebugStick(true, 1.0f, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 4:  // the right stick right
+                if (state.timer >= 1.0f) {
+                    PlayerSync::DebugStick(true, 0.0f, 0.0f);
+                    float turned = (pose.viewHeading - before.viewHeading) * 57.29578f;
+                    while (turned > 180.0f) {
+                        turned -= 360.0f;
+                    }
+                    while (turned < -180.0f) {
+                        turned += 360.0f;
+                    }
+                    PadCheck(std::fabs(turned) > 20.0f, std::format("the right stick 1 s turns the camera {:.0f} degrees:", turned));
+                    PlayerSync::DebugType("LXGIWYL");
+                    PadNext();
+                }
+                break;
+            case 5:  // the d-pad's right: the next weapon
+                if (state.timer >= 3.0f) {
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 6:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kRight, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 7:
+                if (state.timer >= 1.5f) {
+                    if (tries == 0) {
+                        PadCheck(pose.weaponType != before.weaponType, std::format("the d-pad's right switches weapon {} to {}:", before.weaponType, pose.weaponType));
+                    }
+                    // On to a gun (the pistols to the sniper rifle) for LT and RT: the set's melee weapons have no aim camera or bullets.
+                    if ((pose.weaponType < 22 || pose.weaponType > 34) && ++tries < 10) {
+                        PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                        state.step = 6;
+                        state.timer = 0.0f;
+                        break;
+                    }
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
+                    PadNext();
+                }
+                break;
+            case 8:  // LT aims, RT fires
+                if (state.timer >= 1.0f) {
+                    PadCheck((pose.weaponFlags & Protocol::kWeaponAiming) != 0, std::format("LT aims (weapon {}):", pose.weaponType));
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 9:
+                if (state.timer >= 0.6f) {
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 10:
+                if (state.timer >= 1.0f) {
+                    const int fired = static_cast<std::uint16_t>(pose.shots - before.shots);
+                    PadCheck(fired > 0, std::format("RT fires {} shots:", fired));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    SKSE::log::info("hit test: pad: CJ into a Sandking where he stands");
+                    PlayerSync::TakeOverInVehicle(kSandking);
+                    PadNext();
+                }
+                break;
+            case 11:  // RT accelerates
+                if (valid && (pose.flags & Protocol::kPlayerInVehicle) && state.timer >= 4.0f) {
+                    before = pose;
+                    peak = 0.0f;
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 1.0f);
+                    PadNext();
+                } else if (state.timer > 30.0f) {
+                    PadCheck(false, "CJ got into the Sandking:");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 12:
+                peak = (std::max)(peak, std::sqrt(pose.velocity[0] * pose.velocity[0] + pose.velocity[1] * pose.velocity[1]) * Pose::kMetersPerUnit * 3.6f);
+                if (state.timer >= 3.0f) {
+                    const float moved = Meters(before.offset, pose.offset);
+                    PadCheck(peak > 15.0f && moved > 3.0f, std::format("RT 3 s drives the Sandking {:.0f} m, at up to {:.0f} km/h:", moved, peak));
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 0.0f);
+                    PlayerSync::DebugPad(Pad::kRightShoulder, 1.0f);  // RB, the handbrake, to stop
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kUp, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 13:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kUp, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 14:  // the d-pad's up: the next station
+                if (state.timer >= 2.0f) {
+                    PadCheck(pose.radioStation != before.radioStation, std::format("the d-pad's up tunes the radio from {} to {}:", before.radioStation, pose.radioStation));
+                    PlayerSync::DebugPad(Pad::kRightShoulder, 0.0f);
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 15:  // Y gets out
+                if (state.timer >= 0.4f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((onFoot && state.timer >= 0.4f) || state.timer > 10.0f) {
+                    PadCheck(onFoot, "Y gets CJ out:");
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 16:  // Back held: Skyrim has the player again
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kBack, 0.0f);
+                    PadCheck(!PlayerSync::DebugOwned(), "Back held 1.5 s hands the player back to Skyrim:");
+                    SKSE::log::info("hit test: done");
+                    state.phase = Phase::Done;
+                }
+                break;
+            default: break;
             }
         }
 
@@ -371,12 +561,13 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "pad") {
             return;
         }
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
+        state.pad = scenario == "pad";
         state.seconds = state.stealth ? 12.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
@@ -423,7 +614,9 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.stealth) {
+            if (state.pad) {
+                PadSteps();
+            } else if (state.stealth) {
                 Stealth(a_player, a_delta);
             } else if (state.timer >= 6.0f && state.respawns) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot", a_player->GetParentCell()->GetFormID());
