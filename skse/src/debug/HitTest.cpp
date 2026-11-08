@@ -505,7 +505,8 @@ namespace AhShitRim::HitTest
                 }
                 break;
             case 50:  // in and out with Y five times, watching that Skyrim keeps going (a stall here once stopped its log)
-                if (state.timer >= 1.5f) {
+                // San Andreas ignores Y while CJ is still climbing in or out (its enter and leave tasks): wait for those.
+                if (state.timer >= 1.5f && !(pose.flags & Protocol::kPlayerGettingInOut)) {
                     PlayerSync::DebugPad(Pad::kY, 1.0f);
                     PadNext();
                 }
@@ -523,7 +524,7 @@ namespace AhShitRim::HitTest
                 }
                 break;
             case 52:
-                if (state.timer >= 1.5f) {
+                if (state.timer >= 1.5f && !(pose.flags & Protocol::kPlayerGettingInOut)) {
                     PlayerSync::DebugPad(Pad::kY, 1.0f);
                     PadNext();
                 }
