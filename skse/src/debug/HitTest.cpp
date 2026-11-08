@@ -305,7 +305,12 @@ namespace AhShitRim::HitTest
             const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
             switch (state.step) {
             case 0:  // Back held a second, with Skyrim on the player
-                if (state.timer >= 6.0f) {
+                if (state.timer >= 6.0f && PlayerSync::DebugOwned()) {
+                    // The most recent save was made with CJ on the player: Skyrim has it first, as the steps below expect.
+                    SKSE::log::info("hit test: pad: the save had CJ on the player, handing it back first");
+                    PlayerSync::DebugToggle();
+                    state.timer = 2.0f;
+                } else if (state.timer >= 6.0f) {
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         start = player->GetPosition();
                     }
