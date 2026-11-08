@@ -110,6 +110,28 @@ namespace AhShitRim::GunLock
         return { dx, dy };
     }
 
+    inline constexpr float kGrace = 0.5f;  // seconds a locked target may be out of sight (a post, someone passing) before the lock moves on
+
+    // Keeps a lock through a moment out of sight, so it doesn't flicker between the target and nobody.
+    class Grace
+    {
+    public:
+        // a_lockable: the target is in range, in front and in sight this frame. Whether the lock stays on it.
+        bool Keep(bool a_lockable, float a_seconds)
+        {
+            if (a_lockable) {
+                _lost = 0.0f;
+                return true;
+            }
+            _lost += a_seconds;
+            return _lost <= kGrace;
+        }
+        void Reset() { _lost = 0.0f; }
+
+    private:
+        float _lost = 0.0f;
+    };
+
     // Holds the right stick's push: true once it has been kBreakStick over for kBreakSeconds.
     class Breaker
     {

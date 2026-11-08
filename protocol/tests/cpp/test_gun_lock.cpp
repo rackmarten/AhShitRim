@@ -75,3 +75,14 @@ TEST_CASE("the right stick pushed hard for a moment drops the lock")
     CHECK_FALSE(breaker.Update(0.0f, 0.85f, 0.2f));
     CHECK(breaker.Update(0.0f, 0.85f, 0.1f));
 }
+
+TEST_CASE("a moment out of sight keeps the lock; longer moves it on")
+{
+    Grace grace;
+    CHECK(grace.Keep(true, 0.1f));
+    CHECK(grace.Keep(false, 0.2f));
+    CHECK(grace.Keep(false, 0.2f));
+    CHECK(grace.Keep(true, 0.1f));   // back in sight: starts over
+    CHECK(grace.Keep(false, 0.4f));
+    CHECK_FALSE(grace.Keep(false, 0.2f));
+}
