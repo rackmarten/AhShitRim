@@ -140,7 +140,9 @@ namespace AhShitRim::Homies
             std::uint32_t            roll = 0x9E3779B9u;
             int                      key = 0;  // 1 G, 2 H, waiting for the next Update
             std::uint32_t            handover = 0;
+            std::uint32_t            freshFor = 0;
             float                    reanchorWait = 0.0f;
+            float                    fresh = 0.0f;  // seconds left in which spots fill in view: the loading screen just went
             unsigned                 made = 0, drawn = 0;
             float                    statIn = 5.0f;
         } state;
@@ -524,18 +526,19 @@ namespace AhShitRim::Homies
                     continue;
                 }
                 const bool missing = std::any_of(spot.standing.begin(), spot.standing.end(), [](RE::FormID a_id) { return a_id == 0; });
-                const bool inView = Wanted::InView(camera, a_viewHeading, Flat(spot.centre));
+                const bool fresh = state.fresh > 0.0f;
+                const bool inView = !fresh && Wanted::InView(camera, a_viewHeading, Flat(spot.centre));
                 if (!Crew::Fills(distance, inView, !missing)) {
                     continue;
                 }
-                for (std::size_t i = 0; i < spot.places.size() && made < kMakesPerFrame; i++) {
+                for (std::size_t i = 0; i < spot.places.size() && made < (fresh ? 8 : kMakesPerFrame); i++) {
                     if (spot.standing[i]) {
                         continue;
                     }
                     const auto&  place = spot.places[i];
                     RE::NiPoint3 at;
                     if (!GroundAt(a_player, RE::NiPoint3(place.at.x, place.at.y, spot.centre.z + 50.0f), at) ||
-                        Wanted::InView(camera, a_viewHeading, Flat(at))) {
+                        (!fresh && Wanted::InView(camera, a_viewHeading, Flat(at)))) {
                         continue;
                     }
                     const auto model = Crew::ModelFor(Roll());
@@ -832,9 +835,17 @@ namespace AhShitRim::Homies
                 Remake(a_player);
             }
         }
+        if (a_handover != state.freshFor) {
+            state.freshFor = a_handover;  // a handover or a re-anchor: its first moments come out of a load or F10
+            state.fresh = 3.0f;
+            state.scanIn = 0.0f;
+        }
         if (settled && (state.scanIn -= a_delta) <= 0.0f) {
             state.scanIn = kScanEvery;
             Scan(a_player);
+        }
+        if (settled) {
+            state.fresh -= a_delta;
         }
         if (settled) {
             Tend(a_player, viewHeading);
@@ -1030,6 +1041,51 @@ namespace AhShitRim::Homies
     }
 
     float DamageFactor() { return state.damageFactor; }
+
+    void DebugThanes(int a_count)
+    {
+        state.forcedThanes = a_count;
+        state.thanesIn = 0.0f;
+    }
+
+    int DebugRecruit(RE::PlayerCharacter* a_player, int a_count)
+    {
+        int joined = 0;
+        const auto feet = a_player->GetPosition();
+        std::sort(state.homies.begin(), state.homies.end(), [&](const Homie& a, const Homie& b) {
+            auto* x = Get(a);
+            auto* y = Get(b);
+            return (x ? x->GetPosition().GetDistance(feet) : 1e9f) < (y ? y->GetPosition().GetDistance(feet) : 1e9f);
+        });
+        for (auto& h : state.homies) {
+            auto* actor = Get(h);
+            if (joined >= a_count || h.follower || !actor || actor->IsDead()) {
+                continue;
+            }
+            if (Followers() >= Crew::SizeFor(Titles())) {
+                SKSE::log::info("homies: the crew is full at {}", Crew::SizeFor(Titles()));
+                break;
+            }
+            Join(a_player, h);
+            joined++;
+        }
+        return joined;
+    }
+
+    int DebugCount(bool a_followers)
+    {
+        return a_followers ? Followers() : static_cast<int>(state.homies.size());
+    }
+
+    RE::Actor* DebugFollower()
+    {
+        for (const auto& h : state.homies) {
+            if (h.follower) {
+                return Get(h);
+            }
+        }
+        return nullptr;
+    }
 
     void Save(SKSE::SerializationInterface* a_intfc)
     {

@@ -2,7 +2,9 @@
 
 #include "Ini.h"
 #include "link/LinkService.h"
+#include "player/Homies.h"
 #include "player/PlayerSync.h"
+#include "player/Shots.h"
 #include "player/Police.h"
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
@@ -31,6 +33,10 @@ namespace AhShitRim::HitTest
             Looking,    // still there: who gets up out of view, and who waits in view
             Away,       // in an interior, out of their sight
             Returning,  // back outside: are they up at their spots?
+            CrewSpots,  // crew (v39): the spots fill, two homies join
+            CrewFight,  // wolves come, the crew shoots
+            CrewHurt,   // CJ shoots one of his own: hurt, never hostile
+            CrewOut,    // F10 out and back: the crew comes again
             Done,
         };
 
@@ -54,6 +60,8 @@ namespace AhShitRim::HitTest
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
+            bool               crew = false;     // the scenario: the Grove Street crew (v39)
+            RE::ActorHandle    hurt;             // the follower CJ shot
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -371,8 +379,12 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew") {
             return;
+        }
+        state.crew = scenario == "crew";
+        if (state.crew) {
+            Homies::DebugThanes(1);  // Thane of Whiterun; hit-test.ps1 starts it inside Whiterun's gate
         }
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
@@ -425,6 +437,13 @@ namespace AhShitRim::HitTest
         case Phase::Arriving:
             if (state.stealth) {
                 Stealth(a_player, a_delta);
+            } else if (state.timer >= 6.0f && state.crew) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot for the crew", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                state.phase = Phase::CrewSpots;
+                state.timer = 0.0f;
             } else if (state.timer >= 6.0f && state.respawns) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot", a_player->GetParentCell()->GetFormID());
                 if (!PlayerSync::DebugOwned()) {
@@ -469,6 +488,79 @@ namespace AhShitRim::HitTest
             }
             if (state.timer >= state.seconds) {
                 SKSE::log::info("hit test: done after {:.0f} s", state.timer);
+                state.phase = Phase::Done;
+            }
+            break;
+        case Phase::CrewSpots:
+            if (state.timer >= 10.0f) {
+                SKSE::log::info("hit test: crew: {} homies about after 10 s", Homies::DebugCount(false));
+                const int joined = Homies::DebugRecruit(a_player, 3);  // the third is refused: a crew of 2 for one title
+                SKSE::log::info("hit test: crew: {} joined, {} following", joined, Homies::DebugCount(true));
+                // Two wolves 15 m ahead, set on the player.
+                const float heading = a_player->GetAngleZ();
+                for (int i = 0; i < 2; i++) {
+                    auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kWolf);
+                    auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
+                    if (ref) {
+                        const float side = (i == 0 ? -1.0f : 1.0f) * 200.0f;
+                        ref->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::sin(heading) * 1050.0f + std::cos(heading) * side,
+                                                                       std::cos(heading) * 1050.0f - std::sin(heading) * side, 0.0f));
+                        state.attackers.push_back(ref->GetHandle());
+                    }
+                }
+                state.phase = Phase::CrewFight;
+                state.timer = state.logTimer = 0.0f;
+            }
+            break;
+        case Phase::CrewFight:
+            SetOn(a_player);
+            state.logTimer += a_delta;
+            if (state.logTimer >= 2.0f) {
+                state.logTimer = 0.0f;
+                int alive = 0;
+                for (const auto& handle : state.attackers) {
+                    auto  ref = handle.get();
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    alive += actor && !actor->IsDead();
+                }
+                SKSE::log::info("hit test: crew: {:.0f} s of the fight, {} wolves alive, {} following", state.timer, alive, Homies::DebugCount(true));
+            }
+            if (state.timer >= 15.0f) {
+                if (auto* homie = Homies::DebugFollower()) {
+                    const float before = homie->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+                    Shots::Hurt(a_player, homie, 22, 25.0f, homie->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 90.0f), RE::NiPoint3(0.0f, 1.0f, 0.0f), true);
+                    state.hurt = homie->CreateRefHandle();
+                    SKSE::log::info("hit test: crew: CJ shot {:08X}: health {:.0f} -> {:.0f}", homie->GetFormID(), before,
+                        homie->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+                } else {
+                    SKSE::log::info("hit test: crew: nobody follows CJ to shoot");
+                }
+                state.phase = Phase::CrewHurt;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewHurt:
+            if (state.timer >= 3.0f) {
+                auto* homie = state.hurt.get().get();
+                if (homie) {
+                    const bool fights = homie->GetActorRuntimeData().currentCombatTarget.get().get() == a_player;
+                    SKSE::log::info("hit test: crew: the homie CJ shot is {}{}, {}hostile to the player, {} following", homie->IsDead() ? "dead" : "up",
+                        fights ? " and fighting CJ" : "", homie->IsHostileToActor(a_player) ? "" : "not ", Homies::DebugCount(true));
+                }
+                SKSE::log::info("hit test: crew: F10 out");
+                PlayerSync::DebugToggle();
+                state.phase = Phase::CrewOut;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewOut:
+            if (state.timer >= 3.0f && !PlayerSync::DebugOwned()) {
+                SKSE::log::info("hit test: crew: {} homies about with Skyrim's player, F10 back", Homies::DebugCount(false));
+                PlayerSync::DebugToggle();
+                state.timer = 0.0f;
+            } else if (state.timer >= 8.0f && PlayerSync::DebugOwned()) {
+                SKSE::log::info("hit test: crew: {} following after F10 out and back", Homies::DebugCount(true));
+                SKSE::log::info("hit test: done after the crew run");
                 state.phase = Phase::Done;
             }
             break;

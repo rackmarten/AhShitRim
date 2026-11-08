@@ -54,6 +54,13 @@ namespace AhShitRim::Homies
     void Load(std::uint32_t a_version, const std::uint8_t* a_data, std::size_t a_size);
     void Revert();
 
+    // The hit test's crew scenario (scripts/hit-test.ps1 -Scenario crew): the Thane count it plays with, a_count homies
+    // recruited (the nearest, wherever CJ faces), how many are about (a_followers: following), and one follower.
+    void       DebugThanes(int a_count);
+    int        DebugRecruit(RE::PlayerCharacter* a_player, int a_count);
+    int        DebugCount(bool a_followers);
+    RE::Actor* DebugFollower();
+
     inline constexpr std::uint32_t kRecordType = 'ASCR';
     inline constexpr std::uint32_t kRecordVersion = 1;
 }
