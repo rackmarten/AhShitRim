@@ -84,7 +84,48 @@ TEST_CASE("vehicle lights: dummies packed in whole Skyrim units")
     CHECK(Pack(NAN) == 0);
 }
 
-TEST_CASE("vehicle lights: a beam on the road ahead and a red glow behind")
+TEST_CASE("vehicle lights: the tail lights burn while braking, by day too")
+{
+    Lamps car;
+    car.engineOn = true;
+    car.twin = true;
+    car.hasFront = car.hasRear = true;
+    CHECK(Lit(car) == 0);
+    CHECK(StateOf(car) == 0);
+    car.braking = true;
+    CHECK(Lit(car) == (Protocol::kLightRearRight | Protocol::kLightRearLeft));
+    CHECK(StateOf(car) == Protocol::kLightBraking);
+    car.smashed[2] = car.smashed[3] = true;  // both tail lights smashed: nothing brakes red
+    CHECK(Lit(car) == 0);
+    CHECK(StateOf(car) == 0);
+    car.smashed[2] = car.smashed[3] = false;
+    car.engineOn = false;
+    CHECK(Lit(car) == 0);
+    car.engineOn = true;
+    car.wanted = true;
+    CHECK(Lit(car) == 0xF);
+}
+
+TEST_CASE("vehicle lights: San Andreas's lamp materials, each its own lamp")
+{
+    CHECK(LampOfMaterial(255, 175, 0) == Protocol::kLightFrontLeft);
+    CHECK(LampOfMaterial(0, 255, 200) == Protocol::kLightFrontRight);
+    CHECK(LampOfMaterial(185, 255, 0) == Protocol::kLightRearLeft);
+    CHECK(LampOfMaterial(255, 60, 0) == Protocol::kLightRearRight);
+    CHECK(LampOfMaterial(255, 255, 255) == 0);
+    CHECK(LampOfMaterial(255, 0, 175) == 0);  // a paint placeholder, not a lamp
+
+    const auto flags = Protocol::kSkinMeshCutout | MeshFlagsOf(Protocol::kLightRearLeft);
+    CHECK((flags & Protocol::kSkinMeshCutout) != 0);  // its other flags kept
+    CHECK(LampOfMesh(flags) == Protocol::kLightRearLeft);
+    CHECK(MeshLit(flags, Protocol::kLightRearLeft | Protocol::kLightFrontRight));
+    CHECK_FALSE(MeshLit(flags, Protocol::kLightRearRight));
+    CHECK_FALSE(MeshLit(Protocol::kSkinMeshBlend, 0xF));  // glass never lights
+    CHECK((MeshFlagsOf(0xF) & ~Protocol::kSkinMeshLamp) == 0);
+    CHECK((Protocol::kSkinMeshLamp & (Protocol::kSkinMeshCutout | Protocol::kSkinMeshBlend | Protocol::kSkinMeshAdditive)) == 0);
+}
+
+TEST_CASE("vehicle lights: each lamp's light from where it is")
 {
     Protocol::BodyLights lights{};
     lights.front[0] = 50;  // 0.7 m right of the middle
@@ -93,30 +134,47 @@ TEST_CASE("vehicle lights: a beam on the road ahead and a red glow behind")
     lights.rear[0] = 55;
     lights.rear[1] = -160;
     lights.rear[2] = 20;
+    const Tuning tuning;
 
     Glow glow;
-    CHECK_FALSE(EndOf(lights, true, glow));  // nothing lit
-    CHECK_FALSE(EndOf(lights, false, glow));
+    for (int lamp = 0; lamp < 4; lamp++) {
+        CHECK_FALSE(LampOf(lights, lamp, tuning, glow));  // nothing lit
+    }
+    CHECK_FALSE(LampOf(lights, 4, tuning, glow));
 
-    lights.lit = Protocol::kLightFrontRight | Protocol::kLightFrontLeft | Protocol::kLightRearRight | Protocol::kLightRearLeft;
-    REQUIRE(EndOf(lights, true, glow));
-    CHECK(glow.at.x == 0.0f);  // between the pair
-    CHECK(glow.at.y == doctest::Approx(150.0f + kBeamAhead));
-    CHECK(glow.at.z == 10.0f);
-    CHECK(glow.radius == kBeamRadius);
+    lights.lit = 0xF;
+    REQUIRE(LampOf(lights, 0, tuning, glow));  // the right headlight
+    CHECK(glow.at.x == 50.0f);
+    CHECK(glow.at.y == doctest::Approx(150.0f + tuning.beamAhead));
+    CHECK(glow.at.z == doctest::Approx(10.0f + tuning.beamRaise));
+    CHECK(glow.radius == tuning.beamRadius);
+    CHECK(glow.intensity == tuning.beamIntensity);
     CHECK(glow.colour[2] < glow.colour[0]);  // a warm white
+    REQUIRE(LampOf(lights, 1, tuning, glow));  // the left one, mirrored
+    CHECK(glow.at.x == -50.0f);
 
-    REQUIRE(EndOf(lights, false, glow));
-    CHECK(glow.at.y == doctest::Approx(-160.0f - kTailBehind));
-    CHECK(glow.radius == kTailRadius);
+    REQUIRE(LampOf(lights, 2, tuning, glow));  // the right tail light, at its side, not the middle
+    CHECK(glow.at.x == 55.0f);
+    CHECK(glow.at.y == doctest::Approx(-160.0f - tuning.tailBehind));
+    CHECK(glow.at.z == 20.0f);
+    CHECK(glow.radius == tuning.tailRadius);
     CHECK(glow.colour[0] == 1.0f);
     CHECK(glow.colour[1] < 0.1f);  // red
+    REQUIRE(LampOf(lights, 3, tuning, glow));
+    CHECK(glow.at.x == -55.0f);
 
-    // One headlight smashed: the beam comes from the other.
+    // Braking: the tail lights larger and brighter, the headlights as they were.
+    lights.state = Protocol::kLightBraking;
+    REQUIRE(LampOf(lights, 3, tuning, glow));
+    CHECK(glow.radius == tuning.brakeRadius);
+    CHECK(glow.intensity == tuning.brakeIntensity);
+    CHECK(tuning.brakeIntensity > tuning.tailIntensity);
+    REQUIRE(LampOf(lights, 0, tuning, glow));
+    CHECK(glow.intensity == tuning.beamIntensity);
+
+    // One headlight smashed: only the other's light.
     lights.lit = Protocol::kLightFrontLeft;
-    REQUIRE(EndOf(lights, true, glow));
+    CHECK_FALSE(LampOf(lights, 0, tuning, glow));
+    REQUIRE(LampOf(lights, 1, tuning, glow));
     CHECK(glow.at.x == -50.0f);
-    lights.lit = Protocol::kLightFrontRight;
-    REQUIRE(EndOf(lights, true, glow));
-    CHECK(glow.at.x == 50.0f);
 }

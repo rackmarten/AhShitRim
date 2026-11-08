@@ -16,7 +16,10 @@
 //  - riders (HitTest=riders): places one of Whiterun's guards beside the player as a follower, hands CJ over in the Sandking
 //    (the follower takes its passenger seat), presses F after 3 s and logs the follower's feet and the player's in the
 //    vehicle's frame every frame until both have been out a second, then whether the follower got out smoothly (protocol/cpp/car_exit.h),
-// and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
+// and logs the car's and the player's health every 2 s for HitTestSeconds (90). HitTest=oil (with HitTestStart
+// BleakFallsBarrow01) hands nothing over: it places three fresh oil pools (a save may hold the barrow's burnt out) and lights them the way CJ's bullet, Molotov and rocket
+// do (ObjectHits), logs each pool's health until they burn out or HitTestSeconds pass, and whether each burned.
+// Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {
     void OnDataLoaded();

@@ -30,6 +30,10 @@ namespace AhShitRim::ModelView
     // isn't built.
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
 
+    // How strongly a vehicle's burning lamps glow (their meshes' emissive strength; AhShitRim.ini's [Headlights] LampGlow).
+    // Show draws a vehicle's lamp meshes (Protocol::kSkinMeshLamp) lit while a_pose.lights says they burn.
+    void SetLampGlow(float a_glow);
+
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
     void HideAll();

@@ -11,7 +11,8 @@ namespace AhShitRim::Protocol
 // The vehicles' headlights and tail lights in Skyrim (protocol v36; the rules in protocol/cpp/vehicle_lights.h).
 // San Andreas switches them by its own rule on Skyrim's clock and sky, which this puts in the input; each
 // vehicle slot then says where its lamps are and which burn, and this lights the scene there: a point light on
-// the road ahead of the headlights and a red one just behind the tail lights, none on a wreck.
+// the road ahead of each headlight and a red one just behind each tail light (brighter while braking), none on a
+// wreck. ModelView draws the burning lamps' meshes lit.
 // Main thread only.
 namespace AhShitRim::Headlights
 {
