@@ -285,7 +285,7 @@ namespace AhShitRim::HitTest
                     // The gun lock: two guards ahead, one each side of the camera, set on CJ.
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         const float view = pose.viewHeading;
-                        for (const float side : { -0.35f, 0.35f }) {
+                        for (const float side : { -0.22f, 0.22f }) {
                             auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
                             auto  ref = base ? player->PlaceObjectAtMe(base, false) : nullptr;
                             if (!ref) {

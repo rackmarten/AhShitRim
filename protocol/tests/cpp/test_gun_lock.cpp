@@ -45,6 +45,10 @@ TEST_CASE("the d-pad shifts the lock to the nearest one on that side")
     CHECK(all[Shift(all, 1, 1)].id == 2);   // nobody further right: it stays
     CHECK(all[Shift(all, 0, -1)].id == 4);
     CHECK(all[Shift(all, 0, 0)].id == 1);
+    // Just off the screen's edge (the lock turned the camera onto 1): still found; far off it, not.
+    std::vector<Candidate> off = { At(1, 0.5f, 0.5f, 10.0f), At(2, 1.3f, 0.5f, 10.0f), At(3, -0.9f, 0.5f, 10.0f) };
+    CHECK(off[Shift(off, 0, 1)].id == 2);
+    CHECK(off[Shift(off, 0, -1)].id == 1);
 }
 
 TEST_CASE("the steer closes the gap a share at a time, capped, toward the target")
