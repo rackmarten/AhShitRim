@@ -94,7 +94,10 @@ TEST_CASE("the pad in a vehicle: the triggers drive, the d-pad tunes the radio a
     CHECK(f.actions.moveY == 0.0f);                    // the stick's up leans; it never accelerates
     CHECK(Has(f, Protocol::kButtonAccelerate));
     CHECK(Has(f, Protocol::kButtonBrake));  // both: San Andreas's burnout
-    CHECK(Has(f, Protocol::kButtonLeanForward));
+    CHECK(f.actions.throttle == doctest::Approx(1.0f));  // v40: as they are, analog
+    CHECK(f.actions.brake == doctest::Approx(0.5f));
+    CHECK(f.actions.lean == doctest::Approx(0.9f));
+    CHECK_FALSE(Has(f, Protocol::kButtonLeanForward));  // the lean goes analog, not as the arrows' buttons
     CHECK(Has(f, Protocol::kButtonVehicleFire));
     CHECK(Has(f, Protocol::kButtonVehicleFireAlt));
     CHECK(Has(f, Protocol::kButtonHandbrake));
@@ -111,8 +114,7 @@ TEST_CASE("the pad in a vehicle: the triggers drive, the d-pad tunes the radio a
     {
         pad.SetStick(false, 0.0f, -0.8f);
         const auto g = InCar(pad);
-        CHECK(Has(g, Protocol::kButtonLeanBack));
-        CHECK_FALSE(Has(g, Protocol::kButtonLeanForward));
+        CHECK(g.actions.lean == doctest::Approx(-0.8f));
     }
 }
 
@@ -264,4 +266,44 @@ TEST_CASE("the input builder merges the pad with the keyboard")
     CHECK(s.mouseY == doctest::Approx(-2.25));
     builder.ReleaseAll();
     CHECK_FALSE(builder.Aiming());
+}
+
+TEST_CASE("v40: the pad's analog driving reaches San Andreas's pad as the analog values it reads")
+{
+    Input::Builder    builder;
+    Input::PadActions pad;
+    pad.throttle = 0.5f;
+    pad.brake = 0.25f;
+    pad.lean = -1.0f;
+    pad.buttons = Protocol::kButtonAccelerate | Protocol::kButtonBrake;
+    builder.SetPad(pad);
+    const auto s = builder.Build(1, true, true);
+    CHECK(s.throttle == 128);
+    CHECK(s.brake == 64);
+    CHECK(s.lean == -127);
+    const auto p = Input::ToPad(s, true);
+    CHECK(p.buttonCross == 128);    // half the trigger, half the throttle (CPad::GetAccelerate is ButtonCross)
+    CHECK(p.buttonSquare == 64);
+    CHECK(p.leftStickY == 128);     // the stick pulled back leans back: down is positive in San Andreas's pad
+    CHECK(Input::ToPad(s, false).buttonCross == 0);  // on foot the analog fields mean nothing
+
+    SUBCASE("a key held wins")
+    {
+        builder.SetKey(Input::kDikW, true);
+        builder.SetKey(Input::kDikUp, true);
+        const auto k = Input::ToPad(builder.Build(2, true, true), true);
+        CHECK(k.buttonCross == 255);
+        CHECK(k.leftStickY == -128);  // the up arrow leans forward
+    }
+
+    SUBCASE("no pad: the buttons as before")
+    {
+        Input::Builder keys;
+        keys.SetKey(Input::kDikS, true);
+        const auto k = keys.Build(3, true, true);
+        CHECK(k.throttle == 0);
+        CHECK(k.brake == 0);
+        CHECK(k.lean == 0);
+        CHECK(Input::ToPad(k, true).buttonSquare == 255);
+    }
 }

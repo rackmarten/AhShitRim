@@ -32,7 +32,7 @@ TEST_CASE("protocol v36: vehicle lights")
 {
     CHECK(offsetof(InputState, sky) == 115);  // the reserved byte before
     CHECK(offsetof(InputState, minuteOfDay) == 124);
-    CHECK(sizeof(InputState) == 128);
+    CHECK(sizeof(InputState) == 136);  // v40
     CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
     CHECK(kSkyClock == 0x1);
     CHECK(kSkyWet == 0x2);
@@ -305,7 +305,7 @@ TEST_CASE("the v31 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 128);  // v36
+    CHECK(sizeof(InputState) == 136);  // v40  // v36
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
@@ -387,7 +387,7 @@ TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicle
 {
     CHECK(offsetof(InputState, world) == 126);  // a byte reserved since v36, clear of sky (115)
     CHECK(offsetof(InputState, sky) == 115);
-    CHECK(sizeof(InputState) == 128);
+    CHECK(sizeof(InputState) == 136);  // v40
     CHECK(kWorldNone == 0);
     CHECK(kWorldTamriel == 1);
     CHECK(kWorldWhiterun == 2);
@@ -395,7 +395,7 @@ TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicle
 
 TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v35 side by side")
 {
-    CHECK(kProtocolVersion == 38);
+    CHECK(kProtocolVersion >= 38);
     CHECK(kProxyStealthKill == 0x8);
     CHECK(offsetof(ShotEvent, target) == 44);
     CHECK(sizeof(ShotEvent) == 64);
@@ -403,5 +403,16 @@ TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v
     CHECK(offsetof(InputState, sky) == 115);
     CHECK(offsetof(InputState, minuteOfDay) == 124);
     CHECK(offsetof(InputState, world) == 126);
-    CHECK(sizeof(InputState) == 128);
+    CHECK(sizeof(InputState) == 136);  // v40
+}
+
+TEST_CASE("protocol v40: the pad's analog driving in the input")
+{
+    CHECK(kProtocolVersion == 40);
+    CHECK(offsetof(InputState, world) == 126);
+    CHECK(offsetof(InputState, throttle) == 128);
+    CHECK(offsetof(InputState, brake) == 129);
+    CHECK(offsetof(InputState, lean) == 130);
+    CHECK(sizeof(InputState) == 136);
+    CHECK(sizeof(InputSlot) == 144);  // still inside the slot: the slots after it stay where they were
 }
