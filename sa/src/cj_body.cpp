@@ -290,10 +290,13 @@ namespace AhShitRim::CjBody
                 a_entity->bDontUpdateHierarchy = false;
                 auto* clump = a_entity->m_pRwClump;
                 if (clump && a_entity->m_pRwObject->type == rpCLUMP && RpAnimBlendClumpGetFirstAssociation(clump)) {
+                    const float step = CTimer::ms_fTimeStep / 50.0f;
                     if (cj) {
                         CjGear::HoldCjAnim(static_cast<CPlayerPed*>(a_entity));  // a skydive's pose, if he is in one
+                    } else {
+                        CrewPuppets::KeepAnimated(a_entity, step);  // never a clump left with no node
                     }
-                    RpAnimBlendClumpUpdateAnimations(clump, CTimer::ms_fTimeStep / 50.0f, true);
+                    RpAnimBlendClumpUpdateAnimations(clump, step, true);
                 }
                 return;
             }

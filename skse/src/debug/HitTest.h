@@ -26,4 +26,7 @@ namespace AhShitRim::HitTest
 
     // Every player update, after Skyrim's own.
     void Update(RE::PlayerCharacter* a_player, float a_delta);
+
+    // The crew scenario's walk (v39): while it walks CJ, his stick as the test holds it (true), else as the keys have it.
+    bool Drive(float& a_moveX, float& a_moveY);
 }

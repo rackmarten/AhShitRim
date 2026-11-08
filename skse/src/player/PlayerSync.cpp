@@ -219,6 +219,7 @@ namespace AhShitRim::PlayerSync
             const bool wasted = state.owned && (Vitals::IsWasted() || Police::IsBusted());  // the player is dying or arrested: CJ stands still
             // In Ammu-Nation the keys are the shop's: CJ stands still.
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted && !AmmuNation::IsOpen(), a_paused);
+            HitTest::Drive(input.moveX, input.moveY);  // the crew hit test walks CJ
             if (state.owned && Vitals::IsDown()) {
                 input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
             }

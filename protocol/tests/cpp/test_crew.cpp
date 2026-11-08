@@ -190,3 +190,65 @@ TEST_CASE("crew: each homie keeps his slot, and a freed one rests before the nex
     CHECK(slots.Take(5000) == -1);  // all taken
     CHECK(slots.Find(0) == -1);
 }
+
+TEST_CASE("crew: a puppet faces the way he walks, and CJ's heading or his aim when he stands")
+{
+    constexpr float kStep = 1.0f / 30.0f;
+    const float     still = 1.0f;  // a San Andreas heading
+    Crew::Facing    facing;
+    Pose::Vec3      feet{ 0.0f, 0.0f, 0.0f };
+    CHECK(facing.Update(feet, kStep, still, false, false) == doctest::Approx(still));  // the first call: as told
+
+    // Walking east at 1.5 m/s: he turns to face east (San Andreas heading -pi/2) within a second, not snapping.
+    const float east = Pose::SanAndreasHeading(Pose::HeadingOf(1.0f, 0.0f));
+    float       h = 0.0f;
+    float       first = 0.0f;
+    for (int i = 0; i < 30; i++) {
+        feet.x += 1.5f * kStep;
+        h = facing.Update(feet, kStep, still, true, false);
+        if (i == 0) {
+            first = h;
+        }
+    }
+    CHECK(std::fabs(first - still) <= Crew::Facing::kTurnRate * kStep + 1e-4f);
+    CHECK(h == doctest::Approx(east).epsilon(0.02));
+
+    // Aiming on the move, he faces his aim.
+    const float aim = 0.3f;
+    for (int i = 0; i < 30; i++) {
+        feet.x += 1.5f * kStep;
+        h = facing.Update(feet, kStep, aim, true, true);
+    }
+    CHECK(h == doctest::Approx(aim));
+
+    // Standing, he turns back to CJ's heading.
+    for (int i = 0; i < 30; i++) {
+        h = facing.Update(feet, kStep, still, false, false);
+    }
+    CHECK(h == doctest::Approx(still));
+
+    // A move of more than a few metres (a load door) is no direction: he faces as told at once.
+    feet.x += 50.0f;
+    CHECK(facing.Update(feet, kStep, -2.0f, true, false) == doctest::Approx(-2.0f));
+}
+
+TEST_CASE("crew: a puppet's anim update needs one animation that outlives it")
+{
+    constexpr float kStep = 1.0f / 30.0f;
+    // The crash: his walk alone, fading out with its delete flag (a task's anim at its end), the run not started yet.
+    const Crew::Blend fadingWalk{ 0.05f, -4.0f, true, true };
+    CHECK_FALSE(Crew::Outlives(fadingWalk, kStep));
+    CHECK_FALSE(Crew::LeavesANode(&fadingWalk, 1, kStep));
+    CHECK_FALSE(Crew::LeavesANode(nullptr, 0, kStep));
+
+    // Not faded through this step, or kept once faded, or fading in: it stays.
+    CHECK(Crew::Outlives({ 0.5f, -4.0f, true, true }, kStep));
+    CHECK(Crew::Outlives({ 0.05f, -4.0f, false, true }, kStep));
+    CHECK(Crew::Outlives({ 0.0f, 4.0f, true, true }, kStep));
+    // One whose anim block is gone gives no node.
+    CHECK_FALSE(Crew::Outlives({ 1.0f, 0.0f, false, false }, kStep));
+
+    // The fix: the run blended in beside the fading walk.
+    const Crew::Blend withRun[] = { fadingWalk, { 0.0f, 4.0f, true, true } };
+    CHECK(Crew::LeavesANode(withRun, 2, kStep));
+}
