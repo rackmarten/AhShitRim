@@ -3,16 +3,19 @@
     Checks Skyrim's attacks on CJ's vehicle with nobody at the keys (v31): closes both games, deploys what was built
     last, turns on the SKSE plugin's hit test ([Debug] HitTest, skse/src/debug/HitTest.h), starts San Andreas and
     Skyrim, and waits while it loads the most recent save, goes to Riverwood, hands CJ over in a Sandking and either sets
-    a giant and two guards on him (hits) or gives him two stars (bust). Then it prints what the logs say, closes both
+    a giant and two guards on him (hits) or gives him two stars (bust). Or (respawns) it hands CJ over on foot, has
+    him kill a few of the people around, puts the clock an hour on, steps into an interior and back out, and logs who
+    came back. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
+    scripts/hit-test.ps1 -Scenario respawns
     scripts/hit-test.ps1 -NewGame
 #>
 param(
-    [ValidateSet('hits', 'bust')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'respawns')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,
@@ -66,7 +69,7 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
     Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted' | ForEach-Object { $_.Line }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }

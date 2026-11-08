@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves a quest on. Essential people NOMERCY let CJ kill still always come back.
+- `scripts/hit-test.ps1 -Scenario respawns` checks it from the logs with nobody at the keys.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.

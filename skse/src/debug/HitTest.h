@@ -7,6 +7,9 @@
 //  - hits: places a giant and two of Whiterun's guards 12 m ahead and sets them on the player, so their blows land on
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,
+//  - respawns (HitTest=respawns): hands CJ the player on foot instead, logs what a kill would do to everyone placed
+//    in the editor nearby, has the player kill three that come back (and one that doesn't), puts the clock 1.1 game
+//    hours on, goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {

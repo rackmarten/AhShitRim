@@ -4,6 +4,7 @@
 #include "link/LinkService.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
+#include "player/Respawns.h"
 #include "player/Vitals.h"
 #include "wanted.h"
 
@@ -23,6 +24,10 @@ namespace AhShitRim::HitTest
             Arriving,
             Handing,   // CJ comes, in the Sandking
             Watching,
+            Killing,    // respawns: CJ kills a few of the people around
+            Waiting,    // their quests' window, then an hour on the clock
+            Away,       // in an interior, out of their sight
+            Returning,  // back outside: are they up at their spots?
             Done,
         };
 
@@ -33,6 +38,8 @@ namespace AhShitRim::HitTest
         {
             Phase              phase = Phase::Off;
             bool               bust = false;  // the scenario: bust, else hits
+            bool               respawns = false;  // the scenario: respawns
+            std::string        away = "RiverwoodSleepingGiantInn";
             std::string        start = "Riverwood";
             float              seconds = 90.0f;
             float              timer = 0.0f;
@@ -40,6 +47,7 @@ namespace AhShitRim::HitTest
             float              combatTimer = 0.0f;
             bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
+            std::vector<RE::FormID>          victims;  // respawns
         } state;
 
         void RunConsole(const std::string& a_command)
@@ -136,17 +144,66 @@ namespace AhShitRim::HitTest
                 }
             }
         }
+
+        // Respawns: what a kill would do to everyone placed in the editor nearby, and the first few that come back
+        // (and one that doesn't, if any) killed by the player.
+        void KillAround(RE::PlayerCharacter* a_player)
+        {
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            std::vector<RE::Actor*> back, stay;
+            for (auto& handle : lists->highActorHandles) {
+                auto  ref = handle.get();
+                auto* actor = ref.get();
+                if (!actor || actor == a_player || actor->IsDead() || actor->GetFormID() >= 0xFF000000 || actor->IsPlayerTeammate() ||
+                    actor->GetPosition().GetDistance(a_player->GetPosition()) > 6000.0f) {
+                    continue;
+                }
+                const std::string why = Respawns::DryRun(actor, a_player);
+                SKSE::log::info("hit test: {} ({:08X}) killed by CJ: {}", actor->GetDisplayFullName(), actor->GetFormID(), why);
+                (why.starts_with("back") ? back : stay).push_back(actor);
+            }
+            if (back.size() > 3) {
+                back.resize(3);
+            }
+            if (!stay.empty()) {
+                back.push_back(stay.front());
+            }
+            for (auto* actor : back) {
+                state.victims.push_back(actor->GetFormID());
+                actor->KillImpl(a_player, 100000.0f, true, true);
+                SKSE::log::info("hit test: the player killed {} ({:08X})", actor->GetDisplayFullName(), actor->GetFormID());
+            }
+        }
+
+        void Survey()
+        {
+            for (const auto id : state.victims) {
+                auto*        actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                RE::NiPoint3 at, angle;
+                RE::TESForm* where = nullptr;
+                const bool   home = actor && actor->GetEditorLocation(at, angle, where, nullptr);
+                SKSE::log::info("hit test: {:08X} {} is {}{}", id, actor ? actor->GetDisplayFullName() : "?", !actor ? "not in memory" : actor->IsDead() ? "dead" : "up",
+                    home && actor && !actor->IsDead() ? std::format(", {:.0f} units from the editor spot", actor->GetPosition().GetDistance(at)) : "");
+            }
+        }
     }
 
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "respawns") {
             return;
         }
         state.bust = scenario == "bust";
+        state.respawns = scenario == "respawns";
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
+        }
+        if (const auto away = Ini::Value("Debug", "HitTestAway"); !away.empty()) {
+            state.away = away;
         }
         if (const auto seconds = Ini::Value("Debug", "HitTestSeconds"); !seconds.empty()) {
             try {
@@ -187,7 +244,14 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.timer >= 6.0f) {
+            if (state.timer >= 6.0f && state.respawns) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                state.phase = Phase::Killing;
+                state.timer = 0.0f;
+            } else if (state.timer >= 6.0f) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
                 state.phase = Phase::Handing;
@@ -224,6 +288,53 @@ namespace AhShitRim::HitTest
             }
             if (state.timer >= state.seconds) {
                 SKSE::log::info("hit test: done after {:.0f} s", state.timer);
+                state.phase = Phase::Done;
+            }
+            break;
+        case Phase::Killing:
+            if (!PlayerSync::DebugOwned()) {
+                if (state.timer > 30.0f) {
+                    SKSE::log::info("hit test: CJ never got the player, stopping");
+                    state.phase = Phase::Done;
+                }
+                break;
+            }
+            if (state.timer >= 3.0f) {
+                KillAround(a_player);
+                state.phase = Phase::Waiting;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::Waiting:
+            if (state.timer >= 5.0f) {
+                if (auto* calendar = RE::Calendar::GetSingleton(); calendar && calendar->gameDaysPassed && calendar->gameHour) {
+                    constexpr float kHours = 1.1f;
+                    calendar->gameDaysPassed->value += kHours / 24.0f;
+                    calendar->gameHour->value += kHours;
+                    if (calendar->gameHour->value >= 24.0f) {
+                        calendar->gameHour->value -= 24.0f;
+                    }
+                    SKSE::log::info("hit test: {:.1f} game hours on", kHours);
+                }
+                Survey();
+                RunConsole("coc " + state.away);
+                state.phase = Phase::Away;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::Away:
+            if (state.timer >= 10.0f) {
+                SKSE::log::info("hit test: in {:08X}, out of their sight", a_player->GetParentCell()->GetFormID());
+                Survey();
+                RunConsole("coc " + state.start);
+                state.phase = Phase::Returning;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::Returning:
+            if (state.timer >= 8.0f) {
+                Survey();
+                SKSE::log::info("hit test: done after the respawn run");
                 state.phase = Phase::Done;
             }
             break;
