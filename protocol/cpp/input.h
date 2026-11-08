@@ -61,7 +61,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikDown = 0xD0;
     inline constexpr std::uint32_t kDikF = 0x21;
     inline constexpr std::uint32_t kDikReturn = 0x1C;
-    inline constexpr std::uint32_t kDikH = 0x23;
+    inline constexpr std::uint32_t kDikH = 0x23;  // the horn in a vehicle; v39, on foot: dismiss a follower, or the whole crew
     inline constexpr std::uint32_t kDikLeftBracket = 0x1A;
     inline constexpr std::uint32_t kDikRightBracket = 0x1B;
     inline constexpr std::uint32_t kDikBackslash = 0x2B;
@@ -69,6 +69,7 @@ namespace AhShitRim::Input
     inline constexpr std::uint32_t kDikRightCtrl = 0x9D;
     inline constexpr std::uint32_t kDikLeftCtrl = 0x1D;
     inline constexpr std::uint32_t kDikX = 0x2D;  // the insult key (v16): CJ insults whoever's about, on Skyrim's side
+    inline constexpr std::uint32_t kDikG = 0x22;  // v39, on foot: San Andreas's group key: recruit the homie CJ targets, or regroup
     inline constexpr std::uint32_t kDikCapsLock = 0x3A;
     inline constexpr std::uint32_t kDikQ = 0x10;            // v19: look left in a vehicle (Skyrim's favorites key, which is blocked while CJ has the player)
     inline constexpr std::uint32_t kDikSemicolon = 0x27;    // v19: the dev key that picks the next vehicle to spawn

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../ahshitrim_protocol.h"
+#include "body.h"
 
 class CPlayerPed;
 class CVector;
@@ -51,4 +52,12 @@ namespace AhShitRim::CjBody
     // That clump's bones as its skeleton has them now, relative to a_feet (San Andreas metres) as CJ's are, into
     // a_out.bones; false when it has no skeleton or skin.
     bool PoseSkinned(RpClump* a_clump, std::uint32_t a_boneCount, const CVector& a_feet, Protocol::BodyState& a_out);
+
+    // v39, a homie's puppet: his right arm turned onto the line from his shoulder to a_target and his hand so the gun's
+    // barrel points at it, as CJ's one-handed aim is posed (Aim::ReachAlong). a_forward is the way he faces. After his
+    // bones are posed for the frame.
+    void AimRightArm(RpClump* a_clump, const CVector& a_forward, const CVector& a_target);
+
+    // A RenderWare matrix as the rows Body::ToBone takes.
+    Body::RwRows Rows(const RwMatrixTag& a_m);
 }

@@ -289,7 +289,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8407360);
+    CHECK(kOffsetCrewInput == 8407360);  // v39: the old mapping's end, where the crew's slots start
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -395,7 +395,7 @@ TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicle
 
 TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v35 side by side")
 {
-    CHECK(kProtocolVersion == 38);
+    CHECK(kProtocolVersion >= 38);
     CHECK(kProxyStealthKill == 0x8);
     CHECK(offsetof(ShotEvent, target) == 44);
     CHECK(sizeof(ShotEvent) == 64);
@@ -404,4 +404,19 @@ TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v
     CHECK(offsetof(InputState, minuteOfDay) == 124);
     CHECK(offsetof(InputState, world) == 126);
     CHECK(sizeof(InputState) == 128);
+}
+
+TEST_CASE("protocol v39: the Grove Street crew's slots after the rings, and the shooter of a shot")
+{
+    CHECK(kProtocolVersion == 39);
+    CHECK(kCrewMax == 24);
+    CHECK(kOffsetCrewInput == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);  // nothing before it moved
+    CHECK(kOffsetCrewSlots == 8408576);
+    CHECK(kMappingSize == 8509952);
+    CHECK(sizeof(CrewMember) == 48);
+    CHECK(sizeof(CrewSlot) == 4224);
+    CHECK(offsetof(ShotEvent, shooter) == 48);  // out of v38's reserved bytes, after target
+    CHECK(offsetof(ShotEvent, target) == 44);
+    CHECK(sizeof(ShotEvent) == 64);
+    CHECK((kCrewPresent | kCrewAiming | kCrewFiring | kCrewDead | kCrewSeated | kCrewFollower) == 0x3F);
 }

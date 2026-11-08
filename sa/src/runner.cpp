@@ -12,6 +12,7 @@
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
+#include "crew_puppets.h"
 #include "ground.h"
 #include "input.h"
 #include "log.h"
@@ -513,6 +514,7 @@ namespace AhShitRim::Runner
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjGear::Update(ped, state.owned && !state.wasted && !Scenes::Following(), state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            CrewPuppets::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame, state.owned && !state.wasted);  // v39: the Grove Street crew
             CjProjectiles::Update(ped, state.owned);
             CjPickups::Update(ped, state.owned);
             ModelSender::Pump();

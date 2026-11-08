@@ -1,0 +1,478 @@
+#include "crew_puppets.h"
+
+#include "aim.h"
+#include "body.h"
+#include "cj_body.h"
+#include "cj_weapons.h"
+#include "log.h"
+#include "model_sender.h"
+#include "pose.h"
+#include "scene.h"
+#include "skin_model.h"
+
+#include <plugin.h>
+
+#include <CAnimManager.h>
+#include <CModelInfo.h>
+#include <CPedIntelligence.h>
+#include <CPlayerPed.h>
+#include <CPools.h>
+#include <CPopulation.h>
+#include <CStreaming.h>
+#include <CTaskSimpleRunAnim.h>
+#include <CTimer.h>
+#include <CWeapon.h>
+#include <CWeaponInfo.h>
+#include <CWorld.h>
+#include <common.h>
+
+#include <Windows.h>
+
+#include <array>
+#include <cmath>
+#include <format>
+#include <map>
+#include <random>
+
+namespace AhShitRim::CrewPuppets
+{
+    namespace
+    {
+        constexpr int kTaskPrimary = 3;       // TASK_PRIMARY_PRIMARY, as Scenes sets it
+        constexpr int kGroupDefault = 0;      // ANIM_GROUP_DEFAULT
+        constexpr int kMoveWalk = 0;          // ANIM_ID_WALK
+        constexpr int kMoveRun = 1;           // ANIM_ID_RUN
+        constexpr int kMoveIdle = 3;          // ANIM_ID_IDLE
+        constexpr int kSeatIdle = 150;        // ANIM_DEFAULT_SEAT_IDLE
+        constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
+        constexpr int kBoneRightHand = 24;
+        constexpr unsigned short kAnimLooped = 0x2;
+        constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
+
+        struct Puppet
+        {
+            CPed*                  ped = nullptr;
+            std::uint32_t          id = 0;
+            std::uint16_t          model = 0;
+            std::uint8_t           weapon = 0;
+            Scene::MotionTracker   motion;
+            int                    playing = -1;  // the Scene::Motion played, -1 before any
+            bool                   fallen = false;
+            float                  fireWait = 0.0f;
+            std::uint32_t          shots = 0;
+        };
+
+        struct ModelEntry
+        {
+            std::uint32_t id = 0;     // the id sent to Skyrim
+            std::uint32_t bones = 0;  // a body's bone count, a weapon's parts
+            bool          failed = false;
+        };
+
+        struct State
+        {
+            std::array<Puppet, Protocol::kCrewMax> puppets{};
+            std::map<std::uint16_t, ModelEntry>    bodies;   // by ped model
+            std::map<std::uint8_t, ModelEntry>     weapons;  // by weapon type
+            unsigned                               handover = 0;
+            bool                                   loggedFirst = false;
+            std::mt19937                           rng{ 0x5EED };
+            std::uint64_t                          statMs = 0;
+            unsigned                               posed = 0, fired = 0;
+        } state;
+
+        Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
+
+        bool LoadModel(int a_model)
+        {
+            if (a_model < 0) {
+                return false;
+            }
+            if (CStreaming::ms_aInfoForModel[a_model].m_nLoadState != 1) {  // LOADSTATE_LOADED
+                CStreaming::RequestModel(a_model, 0x2 | 0x8);               // game required, keep in memory
+                CStreaming::LoadAllRequestedModels(false);
+            }
+            return CStreaming::ms_aInfoForModel[a_model].m_nLoadState == 1;
+        }
+
+        int WeaponModelOf(std::uint8_t a_weapon)
+        {
+            const auto* info = CWeaponInfo::GetWeaponInfo(static_cast<eWeaponType>(a_weapon), 1);
+            return info ? info->m_nModelId : -1;
+        }
+
+        void Remove(Puppet& a_puppet, const char* a_why)
+        {
+            if (a_puppet.ped) {
+                if (CPools::ms_pPedPool->IsObjectValid(a_puppet.ped)) {
+                    CPopulation::RemovePed(a_puppet.ped);  // as San Andreas takes its own peds out (groups, the world, the pool)
+                }
+                Log(std::format("crew: homie {:08X}'s puppet removed ({})", a_puppet.id, a_why));
+            }
+            a_puppet = Puppet{};
+        }
+
+        // The Families ped as a puppet: a mission ped San Andreas's population never takes, empty of decisions (no event
+        // makes him act), no collision, no gravity, nothing of San Andreas's hurts him.
+        CPed* Create(std::uint16_t a_model, std::uint8_t a_weapon, const CVector& a_at)
+        {
+            if (!LoadModel(a_model)) {
+                Log(std::format("crew: ped model {} didn't load", a_model));
+                return nullptr;
+            }
+            const int weaponModel = WeaponModelOf(a_weapon);
+            if (weaponModel >= 0) {
+                LoadModel(weaponModel);
+            }
+            CPed* ped = CPopulation::AddPed(PED_TYPE_GANG2, a_model, a_at, false);
+            if (!ped) {
+                Log(std::format("crew: San Andreas made no ped of model {}", a_model));
+                return nullptr;
+            }
+            ped->SetCharCreatedBy(2);  // PED_MISSION
+            if (ped->m_pIntelligence) {
+                ped->m_pIntelligence->SetPedDecisionMakerType(eDecisionMakerType::PED_EMPTY);
+                ped->m_pIntelligence->ClearTasks(true, true);
+            }
+            ped->bApplyGravity = false;
+            ped->bBulletProof = true;
+            ped->bFireProof = true;
+            ped->bCollisionProof = true;
+            ped->bMeleeProof = true;
+            ped->bExplosionProof = true;
+            ped->bInvulnerable = true;
+            ped->bUsesCollision = false;
+            ped->bDontAcceptIKLookAts = true;
+            if (a_weapon) {
+                ped->GiveWeapon(static_cast<eWeaponType>(a_weapon), 30000, true);
+                ped->SetCurrentWeapon(static_cast<eWeaponType>(a_weapon));
+            }
+            return ped;
+        }
+
+        // His model, once per ped model, for Skyrim to build once and copy for every homie wearing it.
+        ModelEntry* BodyModel(CPed* a_ped, std::uint16_t a_model)
+        {
+            auto& entry = state.bodies[a_model];
+            if (entry.id || entry.failed) {
+                return entry.failed ? nullptr : &entry;
+            }
+            std::uint32_t bones = 0;
+            const auto    blob = CjBody::ReadSkinnedModel(a_ped->m_pRwClump, std::format("fam{}", a_model - 104), Protocol::kSkinModelBody, bones);
+            if (blob.empty()) {
+                entry.failed = true;
+                return nullptr;
+            }
+            entry.id = ModelSender::NewId();
+            entry.bones = bones;
+            ModelSender::Set(ModelSender::kCrewBodyKey + (a_model - 105), entry.id, SkinModel::Chunks(entry.id, blob),
+                std::format("crew: the fam{} model", a_model - 104));
+            return &entry;
+        }
+
+        ModelEntry* WeaponModel(CPed* a_ped, std::uint8_t a_weapon)
+        {
+            auto* clump = reinterpret_cast<RpClump*>(a_ped->m_pWeaponObject);
+            if (!a_weapon || !clump) {
+                return nullptr;
+            }
+            auto& entry = state.weapons[a_weapon];
+            if (entry.id || entry.failed) {
+                return entry.failed ? nullptr : &entry;
+            }
+            std::vector<RpAtomic*> parts;
+            const auto blob = CjWeapons::BuildModel(reinterpret_cast<RwObject*>(clump), a_weapon, parts);
+            if (blob.empty()) {
+                entry.failed = true;
+                return nullptr;
+            }
+            entry.id = ModelSender::NewId();
+            entry.bones = static_cast<std::uint32_t>(parts.size());
+            ModelSender::Set(ModelSender::kCrewWeaponKey + (a_weapon % 16), entry.id, SkinModel::Chunks(entry.id, blob),
+                std::format("crew: weapon {}'s model", a_weapon));
+            return &entry;
+        }
+
+        void PlayMotion(CPed* a_ped, Scene::Motion a_motion)
+        {
+            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
+            switch (a_motion) {
+            case Scene::Motion::Seated:
+                tasks.SetTask(new CTaskSimpleRunAnim(kGroupDefault, kSeatIdle, 4.0f, false), kTaskPrimary, false);
+                break;
+            case Scene::Motion::Walk:
+                tasks.SetTask(new CTaskSimpleRunAnim(a_ped->m_nAnimGroup, kMoveWalk, 4.0f, false), kTaskPrimary, false);
+                break;
+            case Scene::Motion::Run:
+                tasks.SetTask(new CTaskSimpleRunAnim(a_ped->m_nAnimGroup, kMoveRun, 4.0f, false), kTaskPrimary, false);
+                break;
+            default:
+                tasks.SetTask(nullptr, kTaskPrimary, false);
+                CAnimManager::BlendAnimation(a_ped->m_pRwClump, a_ped->m_nAnimGroup, kMoveIdle, 4.0f);
+                break;
+            }
+        }
+
+        // His fall as the actor dies (San Andreas's shot-in-front knockout), held on its last frame.
+        void Fall(Puppet& a_puppet)
+        {
+            a_puppet.fallen = true;
+            a_puppet.ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
+            if (auto* assoc = CAnimManager::BlendAnimation(a_puppet.ped->m_pRwClump, kGroupDefault, kShotFront, 8.0f)) {
+                assoc->m_nFlags = static_cast<unsigned short>(assoc->m_nFlags & ~kAnimLooped);
+                assoc->Start(0.0f);
+            }
+        }
+
+        // Seconds between his shots (the weapon's own rate, slower as San Andreas's gang peds fire).
+        float FireEvery(std::uint8_t a_weapon)
+        {
+            switch (a_weapon) {
+            case Crew::kMicroSmg:
+            case Crew::kTec9: return 0.12f;
+            case Crew::kAk47: return 0.16f;
+            default: return 0.4f;
+            }
+        }
+
+        bool HandMatrix(CPed* a_ped, RwMatrix& a_out) { return CjBody::BoneWorld(static_cast<CPlayerPed*>(a_ped), kBoneRightHand, a_out); }
+
+        // His gun on his right hand, as San Andreas puts it there when it draws a ped (RenderWeaponPedsForPC).
+        bool PlaceGun(CPed* a_ped)
+        {
+            auto*    clump = reinterpret_cast<RpClump*>(a_ped->m_pWeaponObject);
+            RwMatrix hand;
+            if (!clump || !HandMatrix(a_ped, hand)) {
+                return false;
+            }
+            RwFrame*  frame = RpClumpGetFrame(clump);
+            RwMatrix* matrix = RwFrameGetMatrix(frame);
+            std::memcpy(matrix, &hand, sizeof(RwMatrix));
+            RwFrameUpdateObjects(frame);
+            return true;
+        }
+
+        CVector Muzzle(CPed* a_ped)
+        {
+            RwMatrix hand;
+            if (!HandMatrix(a_ped, hand)) {
+                return a_ped->GetPosition() + CVector(0.0f, 0.0f, 0.5f);
+            }
+            const auto* info = CWeaponInfo::GetWeaponInfo(a_ped->m_aWeapons[a_ped->m_nSelectedWepSlot].m_eWeaponType, 1);
+            const CVector offset = info ? CVector(info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z) : CVector();
+            return CVector(hand.pos.x, hand.pos.y, hand.pos.z) + CVector(hand.right.x, hand.right.y, hand.right.z) * offset.x +
+                   CVector(hand.up.x, hand.up.y, hand.up.z) * offset.y + CVector(hand.at.x, hand.at.y, hand.at.z) * offset.z;
+        }
+
+        // One shot at a_target: San Andreas's own fire (its sound, its ammo), whose bullet CjShots sends to Skyrim
+        // with this homie as its shooter instead of testing it in San Andreas's world.
+        void Shoot(Puppet& a_puppet, const CVector& a_target)
+        {
+            CPed* ped = a_puppet.ped;
+            auto& weapon = ped->m_aWeapons[ped->m_nSelectedWepSlot];
+            if (weapon.m_eWeaponType == WEAPONTYPE_UNARMED) {
+                return;
+            }
+            weapon.m_nAmmoTotal = 30000;
+            if (weapon.m_nAmmoInClip <= 1) {
+                weapon.m_nAmmoInClip = 50;
+            }
+            weapon.m_nState = WEAPONSTATE_READY;
+            weapon.m_nTimeForNextShot = 0;
+            CVector muzzle = Muzzle(ped);
+            CVector target = a_target;
+            weapon.Fire(ped, &muzzle, &muzzle, nullptr, &target, nullptr);
+            a_puppet.shots++;
+            state.fired++;
+        }
+    }
+
+    bool IsPuppet(const void* a_entity) { return SlotOf(a_entity) >= 0; }
+
+    int SlotOf(const void* a_entity)
+    {
+        if (!a_entity) {
+            return -1;
+        }
+        for (std::uint32_t i = 0; i < Protocol::kCrewMax; i++) {
+            if (state.puppets[i].ped == a_entity) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    float SpreadRadians(std::uint32_t a_seed)
+    {
+        // gang peds are poor shots: up to 2.5 degrees off, deterministic per shot
+        const float t = static_cast<float>((a_seed * 2654435761u) >> 16 & 0xFFFF) / 65535.0f;
+        return (t - 0.5f) * 2.0f * 2.5f * Pose::kPi / 180.0f;
+    }
+
+    void Clear()
+    {
+        for (auto& puppet : state.puppets) {
+            Remove(puppet, "the crew is cleared");
+        }
+    }
+
+    void Update(CPlayerPed* a_cj, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame, bool a_owned)
+    {
+        Protocol::CrewInput input{};
+        const bool have = a_owned && GetLink().ReadCrewInput(input) && input.handover == a_handover;
+        if (a_handover != state.handover) {
+            state.handover = a_handover;
+            Clear();  // a re-anchor: Skyrim sends them again for the new anchor
+        }
+        if (!a_owned) {
+            Clear();
+            return;
+        }
+        const float  ground = a_cj->GetDistanceFromCentreOfMassToBaseOfModel();
+        const CVector spawnFeet = a_spawn - CVector(0.0f, 0.0f, ground + a_lift);
+        const float  seconds = CTimer::ms_fTimeStep * kStepSeconds;
+        const auto   toSa = [&](const float (&a_rel)[3]) {
+            return spawnFeet + CVector(a_rel[0] * Pose::kMetersPerUnit, a_rel[1] * Pose::kMetersPerUnit, a_rel[2] * Pose::kMetersPerUnit);
+        };
+
+        for (std::uint32_t i = 0; i < Protocol::kCrewMax; i++) {
+            auto&       puppet = state.puppets[i];
+            const auto& member = input.members[i];
+            const bool  present = have && (member.flags & Protocol::kCrewPresent) != 0 && member.id != 0;
+            if (!present) {
+                if (puppet.ped && have) {
+                    Remove(puppet, "Skyrim let him go");
+                }
+                if (!have) {
+                    continue;  // a torn read: as they were
+                }
+                Protocol::CrewBody none{};
+                GetLink().WriteCrew(i, none);
+                continue;
+            }
+            if (puppet.ped && (puppet.id != member.id || puppet.model != member.model || !CPools::ms_pPedPool->IsObjectValid(puppet.ped))) {
+                Remove(puppet, "another homie took the slot");
+            }
+            const CVector feet = toSa(member.feet);
+            if (!puppet.ped) {
+                puppet.ped = Create(member.model, member.weapon, feet + CVector(0.0f, 0.0f, 1.0f));
+                if (!puppet.ped) {
+                    continue;
+                }
+                puppet.id = member.id;
+                puppet.model = member.model;
+                puppet.weapon = member.weapon;
+                if (!state.loggedFirst) {
+                    state.loggedFirst = true;
+                    Log(std::format("crew: the first homie's puppet ({:08X}, fam{}, weapon {}) made at ({:.1f},{:.1f},{:.1f})", member.id, member.model - 104,
+                        member.weapon, feet.x, feet.y, feet.z));
+                }
+            }
+            CPed* ped = puppet.ped;
+            if (member.weapon != puppet.weapon && member.weapon) {
+                LoadModel(WeaponModelOf(member.weapon));
+                ped->GiveWeapon(static_cast<eWeaponType>(member.weapon), 30000, true);
+                ped->SetCurrentWeapon(static_cast<eWeaponType>(member.weapon));
+                puppet.weapon = member.weapon;
+            }
+
+            // Where Skyrim says, facing where Skyrim says.
+            const float heading = Pose::SanAndreasHeading(member.heading);
+            const float lift = ped->GetDistanceFromCentreOfMassToBaseOfModel();
+            ped->SetPosn(feet + CVector(0.0f, 0.0f, lift));
+            ped->SetHeading(heading);
+            ped->m_fHeadingCurrent = heading;
+            ped->m_fHeadingGoal = heading;
+            ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+            ped->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+            ped->m_fHealth = 100.0f;
+
+            const bool dead = (member.flags & Protocol::kCrewDead) != 0;
+            if (dead && !puppet.fallen) {
+                Fall(puppet);
+            } else if (!dead) {
+                puppet.fallen = false;
+                const auto motion = puppet.motion.Update((member.flags & Protocol::kCrewSeated) != 0, Vec(feet), seconds);
+                if (static_cast<int>(motion) != puppet.playing) {
+                    puppet.playing = static_cast<int>(motion);
+                    PlayMotion(ped, motion);
+                }
+            }
+
+            // His bones, posed as CJ's are (hidden, San Andreas poses nobody), his arm on his aim, his gun on his hand.
+            ped->bDontUpdateHierarchy = false;
+            ped->UpdateRwMatrix();
+            ped->UpdateRwFrame();
+            ped->UpdateRpHAnim();
+            const CVector aim = toSa(member.aim);
+            const bool    aiming = !dead && (member.flags & (Protocol::kCrewAiming | Protocol::kCrewFiring)) != 0;
+            if (aiming) {
+                CjBody::AimRightArm(ped->m_pRwClump, ped->GetForward(), aim);
+            }
+            PlaceGun(ped);
+
+            if (aiming && (member.flags & Protocol::kCrewFiring) != 0) {
+                puppet.fireWait -= seconds;
+                if (puppet.fireWait <= 0.0f) {
+                    puppet.fireWait = FireEvery(puppet.weapon);
+                    Shoot(puppet, aim);
+                }
+            } else {
+                puppet.fireWait = 0.0f;
+            }
+
+            Protocol::CrewBody out{};
+            out.id = member.id;
+            auto* body = BodyModel(ped, member.model);
+            const CVector pedFeet = ped->GetPosition() - CVector(0.0f, 0.0f, lift);
+            if (body && CjBody::PoseSkinned(ped->m_pRwClump, body->bones, pedFeet, out.body)) {
+                out.body.frame = a_frame;
+                out.body.flags = Protocol::kBodyValid;
+                out.body.handover = a_handover;
+                out.body.model = body->id;
+                out.body.timeMs = CjBody::NowMs();
+                const CVector d = pedFeet - spawnFeet;
+                out.body.feet[0] = d.x * Pose::kUnitsPerMeter;
+                out.body.feet[1] = d.y * Pose::kUnitsPerMeter;
+                out.body.feet[2] = d.z * Pose::kUnitsPerMeter;
+                out.body.cameraForward[1] = 1.0f;
+                if (auto* gun = WeaponModel(ped, puppet.weapon)) {
+                    auto*      clump = reinterpret_cast<RpClump*>(ped->m_pWeaponObject);
+                    const auto parts = CjWeapons::PartsOf(clump);
+                    if (parts.size() == gun->bones) {
+                        auto& w = out.weapon;
+                        w = {};
+                        w.frame = a_frame;
+                        w.flags = Protocol::kBodyValid;
+                        w.handover = a_handover;
+                        w.model = gun->id;
+                        w.boneCount = gun->bones;
+                        w.timeMs = out.body.timeMs;
+                        std::copy_n(out.body.feet, 3, w.feet);
+                        w.cameraForward[1] = 1.0f;
+                        for (std::uint32_t b = 0; b < gun->bones; b++) {
+                            w.bones[b] = Body::ToBone(CjBody::Rows(*RwFrameGetLTM(RpAtomicGetFrame(parts[b]))), Vec(pedFeet));
+                        }
+                    }
+                }
+                if (Body::Finite(out.body) && (out.weapon.flags == 0 || Body::Finite(out.weapon))) {
+                    GetLink().WriteCrew(i, out);
+                    state.posed++;
+                }
+            }
+        }
+
+        const std::uint64_t now = ::GetTickCount64();
+        if (now - state.statMs >= 5000) {
+            if (state.statMs && state.posed) {
+                int puppets = 0;
+                for (const auto& p : state.puppets) {
+                    puppets += p.ped ? 1 : 0;
+                }
+                Log(std::format("crew: {} puppets, {} poses sent and {} shots fired in the last 5 s", puppets, state.posed, state.fired));
+            }
+            state.statMs = now;
+            state.posed = state.fired = 0;
+        }
+    }
+}

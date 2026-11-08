@@ -14,11 +14,12 @@
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,
@@ -26,6 +27,8 @@ param(
 )
 
 . "$PSScriptRoot/common.ps1"
+
+if ($Scenario -eq 'crew' -and -not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }  # the Whiterun stables' cell, by the gate
 
 $config = Get-LocalConfig
 $skyrim = Get-RequiredSetting $config 'SkyrimPath'
@@ -72,9 +75,9 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
-    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout' | ForEach-Object { $_.Line }
+    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: ' | ForEach-Object { $_.Line }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
 } finally {
     Stop-Games
