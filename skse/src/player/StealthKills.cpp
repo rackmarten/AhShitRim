@@ -1,6 +1,7 @@
 #include "player/StealthKills.h"
 
 #include "Ini.h"
+#include "player/Chatter.h"
 #include "player/Shots.h"
 #include "weapons.h"
 
@@ -123,7 +124,11 @@ namespace AhShitRim::StealthKills
         {
             state.held = 0;
             const auto feet = a_player->GetPosition();
-            const auto verdict = StealthKill::CheckStab({ feet.x, feet.y, feet.z }, a_weapon, TargetOf(a_actor, a_player));
+            auto       target = TargetOf(a_actor, a_player);
+            if (state.moving == a_actor->GetFormID()) {
+                target.standing = true;  // in our own kill move, which is what takes it off its feet
+            }
+            const auto verdict = StealthKill::CheckStab({ feet.x, feet.y, feet.z }, a_weapon, target);
             if (verdict != StealthKill::Verdict::Yes) {
                 SKSE::log::info("stealth kill: CJ's stab misses {} ({:08X}), who is {}", a_actor->GetName(), a_actor->GetFormID(), StealthKill::Why(verdict));
                 return;
@@ -217,7 +222,9 @@ namespace AhShitRim::StealthKills
             } else if (state.confirmed && (!in || state.movingFor >= StealthKill::kKillMoveMax)) {
                 SKSE::log::info("stealth kill: the kill move on {:08X} is over after {:.2f} s, the victim {}", state.moving, state.movingFor,
                     victim && victim->IsDead() ? "dead" : "alive");
-                if (state.owed && victim && a_player && !victim->IsDead()) {
+                if (state.owed && victim && victim->IsDead()) {
+                    Chatter::StealthKill();  // the kill move killed it, holding off the stab's hit
+                } else if (state.owed && victim && a_player && !victim->IsDead()) {
                     const auto dir = Toward(a_player, victim);
                     Shots::Kill(a_player, victim, Weapons::Knife, Middle(victim) - dir * 10.0f, dir);
                     SKSE::log::info("stealth kill: the stab Skyrim held off in the kill move lands now, {:08X} {}", state.moving, victim->IsDead() ? "dies" : "still lives");
