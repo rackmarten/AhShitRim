@@ -72,6 +72,58 @@ TEST_CASE("the parked vehicles' spot table")
     CHECK(SpotById(9999) == nullptr);
 }
 
+TEST_CASE("nothing bigger than a car waits in a town or a structure")
+{
+    // Aircraft, monster trucks, and the trucks, tanks and works vehicles among San Andreas's cars are big.
+    for (const std::uint16_t model : { kRhino, kHunter, kSeasparrow, kMonster, kCombine, kCropduster, kDozer, std::uint16_t{ 403 }, std::uint16_t{ 431 } }) {
+        CHECK(BigOne(model));
+    }
+    // Cars, vans, SUVs, bikes and quads aren't.
+    for (const std::uint16_t model : { kSanchez, kBmx, kPatriot, kRomero, kCamper, kQuad, kFreeway, std::uint16_t{ 400 } }) {
+        CHECK_FALSE(BigOne(model));
+    }
+    CHECK_FALSE(BigOne(399));  // not a vehicle
+
+    // A tank in the middle of Fort Greymoor is in it; a BMX there may wait there.
+    const Vec3 fort{ -13759.0f, -8448.0f, -5552.0f };
+    const auto* in = Enclosing(kRhino, fort);
+    REQUIRE(in != nullptr);
+    CHECK(in->name == "Fort Greymoor");
+    CHECK(Enclosing(kBmx, fort) == nullptr);
+    // Its walls reach 61 m: just inside the margin it's still in, just past it it's in the open.
+    CHECK(Enclosing(kRhino, { fort.x + (in->reach + kOpenMargin - 1.0f) * kMeter, fort.y, fort.z }) == in);
+    CHECK(Enclosing(kRhino, { fort.x + (in->reach + kOpenMargin + 1.0f) * kMeter, fort.y, fort.z }) == nullptr);
+
+    std::set<std::string_view> places;
+    for (const auto& place : kPlaces) {
+        CHECK(places.insert(place.name).second);
+        CHECK(place.reach > 0.0f);
+    }
+    for (const auto& spot : kSpots) {
+        INFO(spot.name);
+        // Every spot keeps the rule: the big ones in the open.
+        const auto* place = Enclosing(spot.model, spot.at);
+        CHECK_MESSAGE(place == nullptr, (place ? place->name : std::string_view{}));
+        // Its theme is still near: within 250 m of a place.
+        if (BigOne(spot.model)) {
+            bool near = false;
+            for (const auto& p : kPlaces) {
+                near |= std::hypot(spot.at.x - p.at.x, spot.at.y - p.at.y) / kMeter < 250.0f;
+            }
+            CHECK(near);
+        }
+        // Clear of the pickups.
+        for (const auto& pickup : Pickups::kSpots) {
+            if (pickup.world == spot.world) {
+                CHECK(std::hypot(pickup.at.x - spot.at.x, pickup.at.y - spot.at.y) > 5.0f * kMeter);
+            }
+        }
+    }
+    // Riverwood's BMX stands in the village, by its road.
+    const auto& riverwood = Find(20);
+    CHECK(std::hypot(riverwood.at.x - kPlaces[0].at.x, riverwood.at.y - kPlaces[0].at.y) / kMeter < 20.0f);
+}
+
 TEST_CASE("a spot is only near CJ in its own world")
 {
     const auto& stables = Find(1);
