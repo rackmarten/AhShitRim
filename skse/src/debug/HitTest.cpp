@@ -582,7 +582,8 @@ namespace AhShitRim::HitTest
                     auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
                     auto* player = RE::PlayerCharacter::GetSingleton();
                     if (guard && player && !guard->IsDisabled()) {
-                        ref->SetPosition(player->GetPosition() + RE::NiPoint3(0.0f, 600.0f, 0.0f));
+                        const float h = pose.viewHeading;  // in front of the camera, for the lock
+                        ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * 600.0f, std::cos(h) * 600.0f, 0.0f));
                         guard->StartCombat(player);
                         disabled = guard->GetFormID();
                     }
