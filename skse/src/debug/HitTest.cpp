@@ -726,6 +726,11 @@ namespace AhShitRim::HitTest
                 at.z, riding ? "in" : "out", cj.x, cj.y, cj.z, cjIn ? "in" : "out");
             state.outFor = !riding && !cjIn ? state.outFor + a_delta : 0.0f;
             if (state.outFor >= 1.0f || state.timer > 10.0f) {
+                if (state.crewRider) {
+                    // A homie walks off to his formation behind CJ once let go: judge the step out, up to there.
+                    const auto let = std::find_if(state.riderTrace.begin(), state.riderTrace.end(), [](const CarExit::Sample& a_sample) { return !a_sample.inVehicle; });
+                    state.riderTrace.erase(let == state.riderTrace.end() ? let : let + 1, state.riderTrace.end());
+                }
                 Report("the follower", state.riderTrace, true);
                 // San Andreas's line-up moves CJ's position to the door as the get-out begins and his animation keeps his
                 // body in the seat, so his feet jump where his body doesn't: logged, not judged (fake_vehicles judges his body).
@@ -1214,6 +1219,15 @@ namespace AhShitRim::HitTest
             break;
         case Phase::Seated:
             if (state.timer >= 3.0f) {
+                if (state.crewRider) {
+                    // The handover into the Sandking sends the crew away and brings it back as new actors: trace whoever rides now.
+                    const auto riding = Riders::Riding();
+                    if (!riding.empty()) {
+                        if (auto* rider = RE::TESForm::LookupByID<RE::Actor>(riding.front())) {
+                            state.follower = rider->GetHandle();
+                        }
+                    }
+                }
                 SKSE::log::info("hit test: {} riding, F: CJ gets out", Riders::Riding().size());
                 PlayerSync::DebugKey(Input::kDikF, true);
                 state.riderTrace.clear();
