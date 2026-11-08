@@ -322,6 +322,7 @@ namespace AhShitRim::HitTest
                     }
                     before = pose;
                     firstLock = LockOn::DebugGunTarget();
+                    tries = 0;  // the shift's side, tried once more the other way
                     PadCheck(LockOn::DebugGunTarget() != 0 && std::fabs(turned) > 3.0f,
                         std::format("LT locks on to {:08X} and the camera turns {:.0f} degrees onto it, the right stick untouched:", LockOn::DebugGunTarget(), turned));
                     PlayerSync::DebugPad(Pad::kRight, 1.0f);
@@ -331,6 +332,14 @@ namespace AhShitRim::HitTest
             case 22:
                 if (state.timer >= 0.2f) {
                     PlayerSync::DebugPad(Pad::kRight, 0.0f);
+                    PlayerSync::DebugPad(Pad::kLeft, 0.0f);
+                }
+                // The lock may have taken the right-hand guard: then the shift is to the left.
+                if (state.timer >= 1.0f && LockOn::DebugGunTarget() == firstLock && !tries) {
+                    tries = 1;
+                    PlayerSync::DebugPad(Pad::kLeft, 1.0f);
+                    state.timer = 0.0f;
+                    break;
                 }
                 if (state.timer >= 1.5f) {
                     const auto first = firstLock;
