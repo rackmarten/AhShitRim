@@ -926,7 +926,7 @@ namespace AhShitRim::Homies
                 if (actor->IsDead()) {
                     m.flags |= Protocol::kCrewDead;
                 }
-                if (Riders::Rides(h.id)) {
+                if (Riders::Sits(h.id)) {  // not once he steps out with CJ (Riders): he stands up as he walks out
                     m.flags |= Protocol::kCrewSeated;
                 }
                 if (h.aiming) {

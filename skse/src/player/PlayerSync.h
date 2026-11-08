@@ -44,6 +44,8 @@ namespace AhShitRim::PlayerSync
     void DebugPad(std::uint32_t a_id, float a_value);
     void DebugStick(bool a_right, float a_x, float a_y);
     int  DebugPadCheats();  // console cheat sequences finished on the pad so far
+    // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
+    void DebugKey(std::uint32_t a_dik, bool a_down);
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

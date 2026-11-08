@@ -58,6 +58,8 @@
 #include "vehicle_kinds.h"
 #include "weapons.h"
 
+#include <bitset>
+
 namespace AhShitRim::PlayerSync
 {
     namespace
@@ -91,6 +93,7 @@ namespace AhShitRim::PlayerSync
             int            sneakResend = 0;   // frames until a sneak event the graph ignored is sent again
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
+            std::bitset<256> debugKeys;  // held by the hit test (DebugKey), not by the keyboard
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
@@ -260,7 +263,7 @@ namespace AhShitRim::PlayerSync
             }
             const auto& down = keyboard->GetRuntimeData().curState;
             for (std::uint32_t dik = 0; dik < 0x100; dik++) {
-                if ((down[dik] & 0x80) == 0 && state.input.IsKeyDown(dik)) {
+                if ((down[dik] & 0x80) == 0 && state.input.IsKeyDown(dik) && !state.debugKeys.test(dik)) {
                     state.input.SetKey(dik, false);
                     SKSE::log::info("player sync: released stuck key (scan code {:02X})", dik);
                 }
@@ -516,7 +519,12 @@ namespace AhShitRim::PlayerSync
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
-            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            // Getting in or out: San Andreas's enter or leave task, or already out while the smoothed vehicle is still drawn
+            // driven (a frame or two), which isn't him staying in.
+            Protocol::PlayerState player{};
+            const bool            gettingInOut = LinkService::Get().ReadPlayer(player) && player.handover == state.handover &&
+                                      ((player.flags & Protocol::kPlayerGettingInOut) != 0 || (player.flags & Protocol::kPlayerInVehicle) == 0);
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet, gettingInOut, a_delta);
             Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
@@ -1840,6 +1848,14 @@ namespace AhShitRim::PlayerSync
     {
         state.input.SetAim(a_aim);
         state.input.SetFire(a_fire);
+    }
+
+    void DebugKey(std::uint32_t a_dik, bool a_down)
+    {
+        if (a_dik < 256) {
+            state.debugKeys.set(a_dik, a_down);
+            state.input.SetKey(a_dik, a_down);
+        }
     }
 
     void DebugType(const char* a_code)

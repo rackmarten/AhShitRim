@@ -94,6 +94,7 @@ add_executable(protocol_tests
     tests/cpp/test_tracks.cpp
     tests/cpp/test_crew.cpp
     tests/cpp/test_passengers.cpp
+    tests/cpp/test_car_exit.cpp
     tests/cpp/test_vehicle_hits.cpp
     tests/cpp/test_melee.cpp
     tests/cpp/test_stealth_kill.cpp
