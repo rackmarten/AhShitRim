@@ -170,6 +170,40 @@ TEST_CASE("the barrel points from the muzzle at the aim point, not along the han
     CHECK(Degrees(Body::Sub(muzzle, hand), barrel) == doctest::Approx(15.0f).epsilon(0.02));
 }
 
+TEST_CASE("a gun's roll about its barrel, leaning right positive")
+{
+    const float degree = Pose::kPi / 180.0f;
+    const Vec3  north{ 0.0f, 1.0f, 0.0f };
+    // Upright, then its top leaning 30 degrees to the right (east) and to the left.
+    CHECK(RollOf(north, { 0.0f, 0.0f, 1.0f }) == doctest::Approx(0.0f));
+    CHECK(RollOf(north, { std::sin(30.0f * degree), 0.0f, std::cos(30.0f * degree) }) == doctest::Approx(30.0f * degree));
+    CHECK(RollOf(north, { -std::sin(30.0f * degree), 0.0f, std::cos(30.0f * degree) }) == doctest::Approx(-30.0f * degree));
+    // Aimed up and on its side: the top's part along the barrel doesn't count.
+    const Vec3 raised = Body::Normalize({ 0.0f, 1.0f, 1.0f }, {});
+    CHECK(RollOf(raised, { 1.0f, 0.0f, 0.0f }) == doctest::Approx(90.0f * degree));
+    // Upside down, and a barrel straight up has no roll.
+    CHECK(std::abs(RollOf(north, { 0.0f, 0.0f, -1.0f })) == doctest::Approx(180.0f * degree));
+    CHECK(RollOf({ 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }) == 0.0f);
+}
+
+TEST_CASE("twin guns roll in toward each other, mirrored")
+{
+    const float degree = Pose::kPi / 180.0f;
+    // The left gun leans 35 degrees right (inward): the right one leans 35 left.
+    CHECK(TwinRoll(35.0f * degree) == doctest::Approx(-35.0f * degree));
+    // A top rolled to a roll reads back as that roll, square to the barrel, whichever way the barrel points.
+    for (const Vec3 barrel : { Vec3{ 0.0f, 1.0f, 0.0f }, Body::Normalize({ 0.3f, 1.0f, 0.4f }, {}), Body::Normalize({ -1.0f, 0.2f, -0.5f }, {}) }) {
+        for (const float roll : { -35.0f * degree, 0.0f, 20.0f * degree, 120.0f * degree }) {
+            const Vec3 top = RolledTop(barrel, roll);
+            CHECK(RollOf(barrel, top) == doctest::Approx(roll).epsilon(0.001));
+            CHECK(Body::Dot(top, barrel) == doctest::Approx(0.0f).epsilon(0.001));
+            CHECK(Length(top) == doctest::Approx(1.0f));
+        }
+    }
+    // Upright: straight up.
+    CHECK(RolledTop({ 0.0f, 1.0f, 0.0f }, 0.0f).z == doctest::Approx(1.0f));
+}
+
 TEST_CASE("his head turns to the aim point within San Andreas's head limits")
 {
     const Vec3  north{ 0.0f, 1.0f, 0.0f };

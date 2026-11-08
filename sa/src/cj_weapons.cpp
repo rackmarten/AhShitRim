@@ -40,6 +40,7 @@
 #include <deque>
 #include <format>
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -109,6 +110,7 @@ namespace AhShitRim::CjWeapons
             std::uint32_t                     lastBullets = 0;
             bool                              twin = false;
             Pose::Vec3                        muzzle[2];
+            std::set<int>                     flashLogged;  // models whose flash part was logged
             bool                              mouseLogged = false;
         } state;
 
@@ -289,6 +291,24 @@ namespace AhShitRim::CjWeapons
                 parts.push_back(atomic);
             }
             return parts;
+        }
+
+        // The model's flash part (its "gunflash" frame, which San Andreas shows for a shot), if it has one with geometry.
+        RpAtomic* FlashPart(RpClump* a_clump)
+        {
+            RpAtomic* found = nullptr;
+            RpClumpForAllAtomics(
+                a_clump,
+                [](RpAtomic* a_atomic, void* a_data) -> RpAtomic* {
+                    const char* raw = GetFrameNodeName(RpAtomicGetFrame(a_atomic));
+                    if (raw && std::string_view(raw) == "gunflash" && a_atomic->geometry && a_atomic->geometry->morphTarget) {
+                        *static_cast<RpAtomic**>(a_data) = a_atomic;
+                        return nullptr;
+                    }
+                    return a_atomic;
+                },
+                &found);
+            return found;
         }
 
         bool Build(CPlayerPed* a_ped, eWeaponType a_type, const std::vector<RpAtomic*>& a_parts, Cache& a_out, std::string_view a_name = {})
@@ -472,13 +492,29 @@ namespace AhShitRim::CjWeapons
             if (Body::Finite(s)) {
                 GetLink().WriteWeapon(static_cast<std::uint32_t>(a_hand), s);
             }
-            // Where a shot leaves: the weapon's fire offset in the weapon's frame.
-            if (const auto* info = CWeaponInfo::GetWeaponInfo(a_type, a_ped->GetWeaponSkill(a_type)); info) {
-                const float offset[3] = { info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z };
-                float       out[3];
-                Weapons::Muzzle(ToFrame(*RwFrameGetLTM(RpClumpGetFrame(state.clump))), offset, Vec(a_feet), out);
-                state.muzzle[a_hand] = { out[0] * Pose::kMetersPerUnit, out[1] * Pose::kMetersPerUnit, out[2] * Pose::kMetersPerUnit };
+            // Where the flash shows: the model's own flash part, where San Andreas shows its flash (CPed::DoGunFlash),
+            // its middle on its frame. The fire offset is only where San Andreas starts the bullet, on the hand bone,
+            // and lies off to the side of the model's barrel. Without a flash part, the fire offset on the weapon's frame.
+            const auto* info = CWeaponInfo::GetWeaponInfo(a_type, a_ped->GetWeaponSkill(a_type));
+            const float offset[3] = { info ? info->m_vecFireOffset.x : 0.0f, info ? info->m_vecFireOffset.y : 0.0f, info ? info->m_vecFireOffset.z : 0.0f };
+            const auto  weapon = ToFrame(*RwFrameGetLTM(RpClumpGetFrame(state.clump)));
+            float       out[3];
+            if (RpAtomic* flash = FlashPart(state.clump)) {
+                const RwV3d& c = flash->geometry->morphTarget[0].boundingSphere.center;
+                const float  centre[3] = { c.x, c.y, c.z };
+                const auto   part = ToFrame(*RwFrameGetLTM(RpAtomicGetFrame(flash)));
+                Weapons::Muzzle(part, centre, Vec(a_feet), out);
+                if (a_hand == 0 && state.flashLogged.insert(state.modelIndex).second) {
+                    const auto at = Body::Sub(Body::Apply(part, { c.x, c.y, c.z }), weapon.pos);
+                    Log(std::format("weapons: model {}'s flash part sits at ({:.2f},{:.2f},{:.2f}) on the weapon's frame, its fire offset at ({:.2f},{:.2f},{:.2f})",
+                        state.modelIndex, Body::Dot(at, weapon.right), Body::Dot(at, weapon.up), Body::Dot(at, weapon.at), offset[0], offset[1], offset[2]));
+                }
+            } else if (info) {
+                Weapons::Muzzle(weapon, offset, Vec(a_feet), out);
+            } else {
+                return;
             }
+            state.muzzle[a_hand] = { out[0] * Pose::kMetersPerUnit, out[1] * Pose::kMetersPerUnit, out[2] * Pose::kMetersPerUnit };
         }
 
         // The minigun's barrels turn as the gun spins up; San Andreas does that in PreRender, which never
