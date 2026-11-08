@@ -20,11 +20,12 @@
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
     scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
+    scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
     scripts/hit-test.ps1 -Scenario ridecrew # the same with a recruited homie of the Grove Street crew, at the Whiterun stables
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,
@@ -80,9 +81,9 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
-    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: ' | ForEach-Object { $_.Line }
+    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: |health: ' | ForEach-Object { $_.Line }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
 } finally {
     Stop-Games
