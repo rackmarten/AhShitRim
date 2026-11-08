@@ -180,6 +180,7 @@ namespace AhShitRim::HitTest
             static Protocol::PlayerState before{};
             static float                 peak = 0.0f;  // the drive's top speed, km/h
             static int                   tries = 0;    // d-pad presses looking for a gun
+            static RE::FormID            firstLock = 0;
             Protocol::PlayerState        pose{};
             const bool                   valid = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid);
             const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
@@ -320,7 +321,7 @@ namespace AhShitRim::HitTest
                         turned += 360.0f;
                     }
                     before = pose;
-                    peak = static_cast<float>(LockOn::DebugGunTarget());
+                    firstLock = LockOn::DebugGunTarget();
                     PadCheck(LockOn::DebugGunTarget() != 0 && std::fabs(turned) > 3.0f,
                         std::format("LT locks on to {:08X} and the camera turns {:.0f} degrees onto it, the right stick untouched:", LockOn::DebugGunTarget(), turned));
                     PlayerSync::DebugPad(Pad::kRight, 1.0f);
@@ -332,14 +333,17 @@ namespace AhShitRim::HitTest
                     PlayerSync::DebugPad(Pad::kRight, 0.0f);
                 }
                 if (state.timer >= 1.5f) {
-                    const auto first = static_cast<RE::FormID>(peak);
+                    const auto first = firstLock;
                     PadCheck(LockOn::DebugGunTarget() != 0 && LockOn::DebugGunTarget() != first && pose.weaponType == before.weaponType,
                         std::format("the d-pad's right shifts the lock {:08X} -> {:08X}, the weapon stays {}:", first, LockOn::DebugGunTarget(), pose.weaponType));
                     PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    // Out of the way, not deleted: disabling them mid-fight here froze Skyrim once.
                     for (const auto& handle : state.attackers) {
-                        if (auto ref = handle.get()) {
-                            ref->Disable();
-                            ref->SetDelete(true);
+                        auto  ref = handle.get();
+                        auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                        if (actor) {
+                            actor->StopCombat();
+                            actor->SetPosition(actor->GetPosition() + RE::NiPoint3(6000.0f, 6000.0f, 0.0f));
                         }
                     }
                     state.attackers.clear();

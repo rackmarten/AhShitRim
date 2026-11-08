@@ -33,6 +33,7 @@ namespace AhShitRim::LockOn
             RE::FormID  gunLocked = 0;   // the pad's gun lock
             bool        gunFree = false;  // dropped by the right stick: free aim until LT is let go
             GunLock::Breaker breaker;
+            GunLock::Grace   grace;
         } state;
 
         constexpr int kLoggedVerdicts = 40;  // stealth kill verdicts logged as they change, then quiet
@@ -142,6 +143,7 @@ namespace AhShitRim::LockOn
             state.gunLocked = 0;
             state.gunFree = false;
             state.breaker.Reset();
+            state.grace.Reset();
         }
 
         // The pad's gun lock (protocol/cpp/gun_lock.h): LT held with a gun over the shoulder. Picks or keeps the target,
@@ -184,13 +186,20 @@ namespace AhShitRim::LockOn
                 }
                 all.push_back(c);
             }
-            if (current < all.size() && !(all[current].screen.visible && all[current].inSight && all[current].screen.distance <= GunLock::kRange)) {
-                current = all.size();  // dead, gone, out of sight or range: the next one
+            // Out of sight or range a moment: kept (GunLock::Grace); for longer, or dead and gone: the next one.
+            if (current < all.size() &&
+                !state.grace.Keep(all[current].screen.visible && all[current].inSight && all[current].screen.distance <= GunLock::kRange, a_seconds)) {
+                current = all.size();
             }
             if (current >= all.size()) {
                 current = GunLock::Pick(all, x, y, aspect);
+                state.grace.Reset();
             } else if (a_aim.shift) {
-                current = GunLock::Shift(all, current, a_aim.shift);
+                const auto shifted = GunLock::Shift(all, current, a_aim.shift);
+                if (shifted != current) {
+                    state.grace.Reset();
+                }
+                current = shifted;
             }
             const RE::FormID locked = current < all.size() ? all[current].id : 0;
             if (locked != state.gunLocked && locked) {
@@ -202,6 +211,10 @@ namespace AhShitRim::LockOn
                 return out;
             }
             Mark(actors[current]);
+            if (!all[current].screen.visible) {
+                out.gunLock = true;  // kept through a moment behind the camera: nothing to steer toward
+                return out;
+            }
             const auto counts = GunLock::Steer(all[current].screen.x, all[current].screen.y, x, y, aspect, a_seconds);
             out.gunLock = true;
             out.mouseX = counts.x;
