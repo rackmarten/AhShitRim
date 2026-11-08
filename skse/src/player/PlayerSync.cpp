@@ -500,7 +500,10 @@ namespace AhShitRim::PlayerSync
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
-            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            Protocol::PlayerState player{};
+            const bool            gettingInOut = LinkService::Get().ReadPlayer(player) && player.handover == state.handover &&
+                                      (player.flags & Protocol::kPlayerGettingInOut) != 0;
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet, gettingInOut, a_delta);
             Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
@@ -1588,6 +1591,8 @@ namespace AhShitRim::PlayerSync
         state.input.SetAim(a_aim);
         state.input.SetFire(a_fire);
     }
+
+    void DebugKey(std::uint32_t a_dik, bool a_down) { state.input.SetKey(a_dik, a_down); }
 
     void DebugType(const char* a_code)
     {

@@ -1,6 +1,7 @@
 #include "vehicles.h"
 
 #include "air_spawn.h"
+#include "car_exit.h"
 #include "cj_cheats.h"
 #include "fx_model.h"
 #include "log.h"
@@ -999,6 +1000,18 @@ namespace AhShitRim::Vehicles
 
     namespace
     {
+        bool HasTask(CPlayerPed* a_ped, int a_type)
+        {
+            return a_ped->m_pIntelligence && a_ped->m_pIntelligence->m_TaskMgr.FindActiveTaskByType(a_type);
+        }
+
+        // San Andreas's leave-car task (its get-out animation), and the bust's drag out of the driver's door.
+        bool Leaving(CPlayerPed* a_ped) { return HasTask(a_ped, TASK_COMPLEX_LEAVE_CAR); }
+        bool DraggedOut(CPlayerPed* a_ped) { return HasTask(a_ped, TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT); }
+    }
+
+    namespace
+    {
         // AIR + a plane's name: the plane high above CJ, already flying, CJ its pilot. Nothing is in the way up there, and
         // the ground below is in reach of the ground's rays and the fall rescue.
         void SpawnFlying(CPlayerPed* a_ped, CVehicleModelInfo* a_info, int a_model, const std::string& a_name)
@@ -1365,7 +1378,11 @@ namespace AhShitRim::Vehicles
             TrackGrip(driven);
             Heavy(driven);
             FloatAway(driven);
-            a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
+            // Seated where the (leaning) vehicle is now, except while San Andreas takes him out: its get-out task lines
+            // him up with the door along the animation (protocol/cpp/car_exit.h), and seating him again held him in the seat.
+            if (CarExit::Reseat(Leaving(a_ped), DraggedOut(a_ped))) {
+                a_ped->SetPedPositionInCar();
+            }
             // A plane's landing gear (R3, v23), as it finishes going up or down.
             if (driven->m_nVehicleSubClass == VEHICLE_PLANE) {
                 const float angle = static_cast<CPlane*>(driven)->m_fLandingGearStatus;

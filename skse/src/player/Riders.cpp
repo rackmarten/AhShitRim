@@ -12,6 +12,7 @@ namespace AhShitRim::Riders
             RE::ActorHandle handle;
             RE::FormID      id = 0;
             int             seat = 0;
+            float           out = -1.0f;  // seconds since it began to step out with CJ (Passengers::ExitPath), -1 while it sits
         };
 
         struct State
@@ -20,6 +21,9 @@ namespace AhShitRim::Riders
             bool                boarded = false;  // CJ got in and the followers were seated (or there were none)
             Protocol::BodyBone  seats[Protocol::kSeatMax]{};  // the vehicle's seats last frame, for getting out
             RE::NiPoint3        feet;
+            Protocol::BodyBone  frame{};  // how the vehicle is turned, last frame
+            float               floor = std::numeric_limits<float>::quiet_NaN();  // its ground from its feet (Passengers::FloorOf)
+            bool                settled = false;  // a frame in the vehicle with no enter or leave task: a leave task after it is CJ getting out
             std::string         sitEvent = "IdleSitCrossLeggedEnter";
             std::string         standEvent = "IdleForceDefaultState";
             float               drop = Passengers::kSeatDrop;
@@ -86,10 +90,13 @@ namespace AhShitRim::Riders
                     continue;
                 }
                 if (a_out && !actor->IsDead()) {
-                    const auto exit = Passengers::ExitAt(state.seats[rider.seat]);
+                    // Where its step out ends (on the ground beside its door), done or not.
+                    const auto exit = Passengers::ExitPath(state.seats[rider.seat], Passengers::kExitSeconds, state.floor, state.drop);
                     Hold(actor, state.feet + RE::NiPoint3(exit.x, exit.y, exit.z), actor->GetAngleZ());
                 }
-                actor->NotifyAnimationGraph(state.standEvent);
+                if (rider.out < 0.0f) {
+                    actor->NotifyAnimationGraph(state.standEvent);
+                }
                 SKSE::log::info("riders: {} ({:08X}) gets out{}", actor->GetName(), actor->GetFormID(), a_out ? "" : " where it is");
             }
             state.riders.clear();
@@ -114,18 +121,22 @@ namespace AhShitRim::Riders
         SKSE::log::info("riders: passengers sit with {} and stand with {}, feet {:.0f} units under the seat", state.sitEvent, state.standEvent, state.drop);
     }
 
-    void Update(RE::PlayerCharacter* a_player, const Protocol::BodyState* a_vehicle, const RE::NiPoint3& a_feet)
+    void Update(RE::PlayerCharacter* a_player, const Protocol::BodyState* a_vehicle, const RE::NiPoint3& a_feet, bool a_gettingInOut, float a_delta)
     {
         if (!a_vehicle) {
             if (state.boarded) {
                 GetOut(true);
                 state.boarded = false;
             }
+            state.settled = false;
             return;
         }
         if (!state.boarded) {
             Board(a_player, *a_vehicle);
         }
+        // San Andreas's leave task began after CJ sat (getting in has an enter task too): he gets out, so do they.
+        state.settled = state.settled || !a_gettingInOut;
+        const bool leaving = state.settled && a_gettingInOut;
         const auto seats = (std::min)(a_vehicle->seatCount, Protocol::kSeatMax);
         std::erase_if(state.riders, [&](const Rider& a_rider) {
             auto* actor = ActorOf(a_rider);
@@ -139,19 +150,45 @@ namespace AhShitRim::Riders
                 SKSE::log::info("riders: {:08X} doesn't ride any more", a_rider.id);
                 return true;
             }
-            const auto& seat = a_vehicle->seats[a_rider.seat];
-            const auto  feet = Passengers::SeatedFeet(seat, state.drop);
-            Hold(actor, a_feet + RE::NiPoint3(feet.x, feet.y, feet.z), Passengers::HeadingOf(seat));
             return false;
         });
+        const float floor = Passengers::FloorOf(*a_vehicle);
+        for (auto& rider : state.riders) {
+            auto*       actor = ActorOf(rider);
+            const auto& seat = a_vehicle->seats[rider.seat];
+            if (leaving && rider.out < 0.0f) {
+                rider.out = 0.0f;
+                actor->NotifyAnimationGraph(state.standEvent);
+                SKSE::log::info("riders: {} ({:08X}) steps out with CJ", actor->GetName(), actor->GetFormID());
+            } else if (!leaving && rider.out >= 0.0f) {
+                rider.out = -1.0f;  // he stayed in after all
+                actor->NotifyAnimationGraph(state.sitEvent);
+            }
+            // Sat on its seat, or on its way out beside its door (Passengers::ExitPath).
+            if (rider.out >= 0.0f) {
+                rider.out += a_delta;
+            }
+            const auto at = rider.out >= 0.0f ? Passengers::ExitPath(seat, rider.out, floor, state.drop) : Passengers::SeatedFeet(seat, state.drop);
+            Hold(actor, a_feet + RE::NiPoint3(at.x, at.y, at.z), Passengers::HeadingOf(seat));
+        }
         std::copy_n(a_vehicle->seats, seats, state.seats);
         state.feet = a_feet;
+        state.frame = a_vehicle->vehicleFrame;
+        state.floor = floor;
     }
 
     void Clear()
     {
         GetOut(false);
         state.boarded = false;
+        state.settled = false;
+    }
+
+    bool DebugVehicle(RE::NiPoint3& a_feet, Protocol::BodyBone& a_frame)
+    {
+        a_feet = state.feet;
+        a_frame = state.frame;
+        return state.frame.rotation[3] != 0.0f || state.frame.rotation[0] != 0.0f || state.frame.rotation[1] != 0.0f || state.frame.rotation[2] != 0.0f;
     }
 
     bool Rides(RE::FormID a_id)

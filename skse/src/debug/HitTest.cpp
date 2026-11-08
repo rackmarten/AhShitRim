@@ -1,11 +1,15 @@
 #include "debug/HitTest.h"
 
 #include "Ini.h"
+#include "car_exit.h"
+#include "input.h"
+#include "passengers.h"
 #include "link/LinkService.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
+#include "player/Riders.h"
 #include "player/Vitals.h"
 #include "wanted.h"
 #include "weapons.h"
@@ -31,6 +35,8 @@ namespace AhShitRim::HitTest
             Looking,    // still there: who gets up out of view, and who waits in view
             Away,       // in an interior, out of their sight
             Returning,  // back outside: are they up at their spots?
+            Seated,     // riders: CJ and his follower sit in the Sandking
+            Leaving,    // riders: F, both get out, traced every frame
             Done,
         };
 
@@ -54,6 +60,11 @@ namespace AhShitRim::HitTest
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
+            bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
+            RE::ObjectRefHandle follower;
+            std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
+            std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
+            float               outFor = 0.0f;     // seconds since both were out
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -151,6 +162,70 @@ namespace AhShitRim::HitTest
                 if (actor && !actor->IsDead() && actor->Is3DLoaded() && actor->GetActorRuntimeData().currentCombatTarget.get().get() != a_player) {
                     actor->StartCombat(a_player);
                 }
+            }
+        }
+
+        // ---- The riders scenario ----
+
+        // One of Whiterun's guards beside the player, made a follower, to ride in the Sandking's passenger seat.
+        void PlaceFollower(RE::PlayerCharacter* a_player)
+        {
+            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
+            auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
+            auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+            if (!actor) {
+                SKSE::log::warn("hit test: couldn't place a follower");
+                return;
+            }
+            const float heading = a_player->GetAngleZ();
+            ref->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::cos(heading) * 140.0f, -std::sin(heading) * 140.0f, 0.0f));
+            actor->GetActorRuntimeData().boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
+            state.follower = ref->GetHandle();
+            SKSE::log::info("hit test: placed {} ({:08X}) beside the player as a follower", actor->GetName(), actor->GetFormID());
+        }
+
+        // a_at in the vehicle's frame as last drawn (Riders), metres.
+        bool InVehicleFrame(const RE::NiPoint3& a_at, Pose::Vec3& a_out)
+        {
+            RE::NiPoint3       feet;
+            Protocol::BodyBone frame{};
+            if (!Riders::DebugVehicle(feet, frame)) {
+                return false;
+            }
+            const auto local = Passengers::Unrotate(Passengers::QuatOf(frame), { a_at.x - feet.x, a_at.y - feet.y, a_at.z - feet.z });
+            a_out = { local.x * Pose::kMetersPerUnit, local.y * Pose::kMetersPerUnit, local.z * Pose::kMetersPerUnit };
+            return true;
+        }
+
+        void Report(const char* a_who, const std::vector<CarExit::Sample>& a_trace)
+        {
+            const auto t = CarExit::Check(a_trace);
+            SKSE::log::info("hit test: {} got out: {} frames, biggest step {:.2f} m, back towards the middle {:.2f} m, out {:.2f} -> {:.2f} m ({:.2f} when let go): {}",
+                a_who, t.samples, t.maxStep, t.maxBack, t.startOut, t.endOut, t.outAtRelease, CarExit::Smooth(t) ? "smooth" : "NOT SMOOTH");
+        }
+
+        // Every frame from F until both have been out a second: the follower's feet and CJ's.
+        void TraceLeaving(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            auto       ref = state.follower.get();
+            auto*      actor = ref ? ref->As<RE::Actor>() : nullptr;
+            const bool riding = actor && Riders::Rides(actor->GetFormID());
+            const bool cjIn = InVehicle();
+            Pose::Vec3 at{}, cj{};
+            if (actor && InVehicleFrame(actor->GetPosition(), at)) {
+                state.riderTrace.push_back({ at, riding });
+            }
+            if (InVehicleFrame(a_player->GetPosition(), cj)) {
+                state.cjTrace.push_back({ cj, cjIn });
+            }
+            SKSE::log::info("hit test: leaving {:5.0f} ms, follower {:6.2f} {:6.2f} {:6.2f} {}, CJ {:6.2f} {:6.2f} {:6.2f} {}", state.timer * 1000.0f, at.x, at.y,
+                at.z, riding ? "in" : "out", cj.x, cj.y, cj.z, cjIn ? "in" : "out");
+            state.outFor = !riding && !cjIn ? state.outFor + a_delta : 0.0f;
+            if (state.outFor >= 1.0f || state.timer > 10.0f) {
+                Report("the follower", state.riderTrace);
+                Report("CJ (the player's feet)", state.cjTrace);
+                SKSE::log::info("hit test: done after the riders run");
+                state.phase = Phase::Done;
             }
         }
 
@@ -371,12 +446,13 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "riders") {
             return;
         }
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
+        state.riders = scenario == "riders";
         state.seconds = state.stealth ? 12.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
@@ -432,7 +508,9 @@ namespace AhShitRim::HitTest
                 }
                 state.phase = Phase::Killing;
                 state.timer = 0.0f;
-            } else if (state.timer >= 6.0f) {
+            } else if (state.timer >= 6.0f && state.riders && !state.follower) {
+                PlaceFollower(a_player);
+            } else if (state.timer >= (state.riders ? 8.0f : 6.0f)) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
                 state.phase = Phase::Handing;
@@ -440,7 +518,11 @@ namespace AhShitRim::HitTest
             }
             break;
         case Phase::Handing:
-            if (InVehicle()) {
+            if (InVehicle() && state.riders) {
+                SKSE::log::info("hit test: CJ is in the Sandking, {} riding with him", Riders::Riding().size());
+                state.phase = Phase::Seated;
+                state.timer = 0.0f;
+            } else if (InVehicle()) {
                 SKSE::log::info("hit test: CJ is in the Sandking (health {:.0f}), the {} begin", CarHealth(), state.bust ? "stars" : "attackers");
                 if (state.bust) {
                     Police::CheatStars(1);
@@ -524,6 +606,23 @@ namespace AhShitRim::HitTest
                 SKSE::log::info("hit test: done after the respawn run");
                 state.phase = Phase::Done;
             }
+            break;
+        case Phase::Seated:
+            if (state.timer >= 3.0f) {
+                SKSE::log::info("hit test: {} riding, F: CJ gets out", Riders::Riding().size());
+                PlayerSync::DebugKey(Input::kDikF, true);
+                state.riderTrace.clear();
+                state.cjTrace.clear();
+                state.outFor = 0.0f;
+                state.phase = Phase::Leaving;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::Leaving:
+            if (state.timer >= 0.3f) {
+                PlayerSync::DebugKey(Input::kDikF, false);
+            }
+            TraceLeaving(a_player, a_delta);
             break;
         default: break;
         }

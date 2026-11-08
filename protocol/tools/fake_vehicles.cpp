@@ -16,8 +16,9 @@
 // The radio (#907): no station on the BMX, and the station dialed in one vehicle comes on in the next, Radio Sovngarde
 // included, with San Andreas's own radio getting to a station dialed after (its retune ends before the 3 s it may take,
 // 2.6 s after the wheel's last step here).
-// AHSHITRIM_ONLY=cheats, =cliff, =pickups, =radio or =handling runs only those (handling: how the Rhino turns and rides, on
-// flat ground, humps and boulders, next to a Sandking; AHSHITRIM_GROUND=flat, rocks or boulders for one).
+// AHSHITRIM_ONLY=cheats, =cliff, =pickups, =radio, =handling or =exit runs only those (handling: how the Rhino turns and rides, on
+// flat ground, humps and boulders, next to a Sandking; AHSHITRIM_GROUND=flat, rocks or boulders for one; exit: CJ's body every
+// frame while he gets out of a car and a bike, which must go out through the door smoothly).
 
 #include <algorithm>
 #include <array>
@@ -35,10 +36,12 @@
 
 #include "../cpp/air_spawn.h"
 #include "../cpp/body.h"
+#include "../cpp/car_exit.h"
 #include "../cpp/cheats.h"
 #include "../cpp/collision.h"
 #include "../cpp/input.h"
 #include "../cpp/link.h"
+#include "../cpp/passengers.h"
 #include "../cpp/pose.h"
 #include "../cpp/radio.h"
 #include "../cpp/skin_model.h"
@@ -611,6 +614,87 @@ int main()
         return bad;
     };
 
+    // AHSHITRIM_ONLY=exit: CJ gets out of a Sandking, a ZR-350 and a Sanchez, his body's middle (his skinned vertices'
+    // average, what Skyrim draws) logged every San Andreas frame in the vehicle's frame from the press of F until a
+    // second after San Andreas let go of him. It must move out through the door with no jump and not come back into the
+    // vehicle (protocol/cpp/car_exit.h).
+    const auto exits = [&] {
+        int bad = 0;
+        for (const auto& [model, name] : { std::pair{ std::uint16_t{ 495 }, "SANDKIN" }, std::pair{ std::uint16_t{ 477 }, "ZR350" },
+                 std::pair{ std::uint16_t{ 468 }, "SANCHEZ" } }) {
+            fresh();
+            Protocol::BodyState car{};
+            const int slot = spawn(model, name, car);
+            if (slot < 0 || !board(name)) {
+                bad++;
+                continue;
+            }
+            std::optional<SkinModel::Model> cj;
+            std::uint32_t                   cjModel = 0;
+            std::vector<CarExit::Sample>    samples;
+            std::uint32_t                   lastFrame = 0;
+            std::uint64_t                   releasedMs = 0;
+            const std::uint64_t             startMs = ms();
+            input.SetKey(Input::kDikF, true);
+            std::printf("exit %s: ms, middle x (out), y (forward), z (up) in the vehicle's frame, m, in the vehicle\n", name);
+            run(8.0, [&] {
+                if (ms() - startMs > 300) {
+                    input.SetKey(Input::kDikF, false);
+                }
+                Protocol::BodyState body{}, now{};
+                if (!link.ReadBody(body) || !(body.flags & Protocol::kBodyValid) || body.frame == lastFrame || link.ReadVehicle(slot, now) == false ||
+                    !(now.flags & Protocol::kBodyValid)) {
+                    return false;
+                }
+                lastFrame = body.frame;
+                if (body.model != cjModel || !cj) {
+                    cjModel = body.model;
+                    cj = received.Model(body.model);
+                    if (!cj) {
+                        return false;
+                    }
+                }
+                std::vector<Body::Matrix34> bones;
+                for (std::uint32_t i = 0; i < body.boneCount; i++) {
+                    bones.push_back(Body::ToMatrix(body.bones[i]));
+                }
+                double      sx = 0.0, sy = 0.0, sz = 0.0;
+                std::size_t n = 0;
+                for (const auto& mesh : cj->meshes) {
+                    for (std::uint32_t i = 0; i < mesh.vertexCount; i++, n++) {
+                        Body::Vec3 at, nrm;
+                        Body::Skin(bones.data(), body.boneCount, mesh.Vertex(i), at, nrm);
+                        sx += at.x;
+                        sy += at.y;
+                        sz += at.z;
+                    }
+                }
+                if (!n) {
+                    return false;
+                }
+                const Pose::Vec3 d{ body.feet[0] + static_cast<float>(sx / n) - now.feet[0], body.feet[1] + static_cast<float>(sy / n) - now.feet[1],
+                    body.feet[2] + static_cast<float>(sz / n) - now.feet[2] };
+                const auto local = Passengers::Unrotate(Passengers::QuatOf(now.vehicleFrame), d);
+                const bool in = inVehicle();
+                samples.push_back({ { local.x * Pose::kMetersPerUnit, local.y * Pose::kMetersPerUnit, local.z * Pose::kMetersPerUnit }, in });
+                const auto& s = samples.back();
+                std::printf("exit %s: %5llu %6.2f %6.2f %6.2f %s\n", name, static_cast<unsigned long long>(ms() - startMs), s.at.x, s.at.y, s.at.z, in ? "in" : "out");
+                if (!in && !releasedMs) {
+                    releasedMs = ms();
+                }
+                return releasedMs && ms() - releasedMs > 1000;
+            });
+            input.SetKey(Input::kDikF, false);
+            const auto trace = CarExit::Check(samples);
+            const bool smooth = CarExit::Smooth(trace);
+            std::printf("exit %s: %zu frames, biggest step %.2f m, back towards the middle %.2f m, out %.2f -> %.2f m (%.2f when let go): %s\n", name,
+                trace.samples, trace.maxStep, trace.maxBack, trace.startOut, trace.endOut, trace.outAtRelease, smooth ? "smooth" : "NOT SMOOTH");
+            bad += !smooth || !releasedMs;
+        }
+        fresh();
+        return bad;
+    };
+
     // AHSHITRIM_ONLY=handling: how the Rhino turns and rides, next to a Sandking, on flat ground, over humps (RockAt) and
     // over steep boulders (Boulders) like the tundra's; AHSHITRIM_GROUND=flat, rocks or boulders runs one. Prints what each
     // leg does (San Andreas's log says what the track rules did) and fails if the Rhino can't be driven or, on flat
@@ -731,10 +815,12 @@ int main()
     wait(1.5);
     if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && std::string(only) == "cheats") {
         failed += cheats();
-    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio" || std::string(only) == "handling")) {
+    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio" || std::string(only) == "handling" ||
+                           std::string(only) == "exit")) {
         failed += std::string(only) == "cliff"    ? cliff() :
                   std::string(only) == "radio"    ? radio() :
                   std::string(only) == "handling" ? handling() :
+                  std::string(only) == "exit"     ? exits() :
                                                     pickupModels() + jetpackDrop();
         publish(false);
         link.Tick(ms());
