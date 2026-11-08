@@ -758,7 +758,7 @@ namespace AhShitRim::Vehicles
             if (!data || data->m_nNumLines < 4 + Tracks::kLines) {
                 return;
             }
-            const auto            const auto&                       d = car->m_doors;                             d = car->m_doors;  // San Andreas keeps the track lines' compressions in the rear doors
+            const auto& d = car->m_doors;  // San Andreas keeps the track lines' compressions in the rear doors
             const std::array<float, Tracks::kLines> lines = { d[4].m_fOpenAngle, d[4].m_fClosedAngle, d[4].m_fAngle, d[4].m_fPrevAngle,
                 d[5].m_fOpenAngle, d[5].m_fClosedAngle, d[5].m_fAngle, d[5].m_fPrevAngle };
             int grip[Tracks::kWheels];
