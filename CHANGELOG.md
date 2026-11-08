@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A crouched knife hit on someone who doesn't detect the Dragonborn is Skyrim's sneak attack: three times the damage, with Skyrim's own message.
 - Protocol v38: `kProxyStealthKill` on the lock-on target's proxy, and the `kShotStealthGrab` and `kShotStealthStab` shots with the victim in `ShotEvent.target`.
 - Skyrim's junk notifications are gone while CJ has the player: items added and removed, spells learned, "you feel...", bounty added and the like. What matters (no fast travel with enemies near, a lock that needs a key) shows in San Andreas's help box instead. docs/DESIGN.md lists what happens to each kind of message.
+- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves a quest on. Essential people NOMERCY let CJ kill still always come back.
+- `scripts/hit-test.ps1 -Scenario respawns` checks it from the logs with nobody at the keys.
 
 ## [0.1.1] - 2026-10-26
 

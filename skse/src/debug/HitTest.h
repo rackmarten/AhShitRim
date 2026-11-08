@@ -10,6 +10,9 @@
 //  - stealth (v38): hands it over on foot instead, gives CJ the knife, places one of Whiterun's guards 1.6 m ahead with his
 //    back to CJ (and a guard facing him off to the side), then holds the right mouse button and clicks the left
 //    one, for the knife stealth kill; each one's StealthKill::Check verdict is logged every second and the guard's fate at the end,
+//  - respawns (HitTest=respawns): hands CJ the player on foot instead, logs what a kill would do to everyone placed
+//    in the editor nearby, has the player kill three that come back (and one that doesn't), puts the clock 1.1 game
+//    hours on, stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {

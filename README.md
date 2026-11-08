@@ -127,7 +127,7 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 **Parked vehicles.** A Sanchez waits at each of the five stables, a BMX in every village and town, and themed vehicles at fitting spots: a Rhino at Fort Greymoor, a Hunter on Bleak Falls Barrow, a monster truck at the giants' camp in Bleakwind Basin and more ([docs/DESIGN.md](docs/DESIGN.md#vehicles) lists them). One appears once CJ is within 100 m of its spot (never on top of him) and goes again when he goes through a door or when he's 160 m away without having used it. Take one or wreck it and another is there a minute later, once CJ has been away. They count towards the four vehicles that exist at once, but never push one of yours out.
 
-**Nobody important stays dead.** Every named NPC CJ kills (the blacksmiths, the Jarl, Farengar, Delphine, the Greybeards, anyone unique) gets up again an in-game hour later, back where they belong, once their body and their spot are out of CJ's sight. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
+**The dead come back.** Everyone CJ kills who wasn't out to get the player on sight (guards, citizens, merchants, the blacksmiths, the Jarl, Farengar, chickens and cows) gets up again an in-game hour later, back at their spot, as soon as neither their body nor that spot is in view, in cities and outside. Bandits, necromancers, draugr and wild predators stay dead until Skyrim brings them back itself, and so do the deaths a quest needs: a quest's kill target, or a death that moves a quest on. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
 
 **Quests** start and end like San Andreas missions: a quest's name comes up as a mission title, finishing one is MISSION PASSED with San Andreas's tune, and a small quest done (a favour, a delivery) is an odd job, MISSION PASSED without the title. A new game opens with the line AhShitRim is named after: right after Ralof wakes you in the Helgen cart, CJ says "Ah shit, here we go again."
 
@@ -183,7 +183,7 @@ Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no
 
 Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and a plane comes already flying with AIR before its name (AIRAT400). Every code, with its aliases: [docs/CHEATS.md](docs/CHEATS.md).
 
-> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. The named ones come back an hour later like anyone named, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
+> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. They come back an hour later like anyone else CJ kills, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
 
 ## Settings
 

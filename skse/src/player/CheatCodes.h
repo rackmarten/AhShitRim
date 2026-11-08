@@ -44,6 +44,9 @@ namespace AhShitRim::CheatCodes
     // Whether the toggle with San Andreas's index a_cheat is on (v22: AEZAKMI, for the wanted level).
     bool On(Cheats::SaCheat a_cheat);
 
+    // Whether NOMERCY cleared the essential flag of the actor a_id or of its base a_base (Respawns: they come back).
+    bool Spared(std::uint32_t a_id, std::uint32_t a_base);
+
     // A game loads or a new one starts: San Andreas's toggles and BAGUVIX off.
     void OnGameLoad();
 
