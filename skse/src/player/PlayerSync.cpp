@@ -18,6 +18,7 @@
 #include "hud/SkyrimMessages.h"
 #include "input.h"
 #include "knock.h"
+#include "look_sensitivity.h"
 #include "pad.h"
 #include "pad_cheats.h"
 #include "pickups.h"
@@ -114,6 +115,8 @@ namespace AhShitRim::PlayerSync
             bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
             Pad::Mapper    pad;                   // the gamepad (DESIGN.md, Controller), from Skyrim's own gamepad events
             Pad::Look      padLook;               // [Input] PadLookSpeed, PadAimSpeed, PadInvertY
+            RE::Setting*   mouseSensitivity = nullptr;  // Skyrim's look sensitivity, read live: CJ's camera follows it
+            RE::Setting*   padSensitivity = nullptr;
             bool           padOn = true;          // [Input] Pad
             bool           padLast = false;       // the pad was the last thing used: the help box names its buttons
             std::chrono::steady_clock::time_point padTime{};  // the last pad update, for Back's hold in real time
@@ -138,6 +141,13 @@ namespace AhShitRim::PlayerSync
         double NowMs()
         {
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        // Skyrim's look sensitivity now (its Settings, Controls, Look Sensitivity), over its default: the scale for CJ's look counts.
+        double LookScale(RE::Setting* a_setting, bool a_pad)
+        {
+            const float live = a_setting ? a_setting->GetFloat() : 0.0f;
+            return a_pad ? LookSensitivity::Pad(live) : LookSensitivity::Mouse(live);
         }
 
         // A Skyrim menu has the input: the game is paused, or it shows its cursor (dialogue, which
@@ -1456,7 +1466,8 @@ namespace AhShitRim::PlayerSync
             const bool locked = state.gunLock && !inVehicle && state.pad.LeftTrigger() >= Pad::kTriggerHeld;
             if (!locked) {
                 // The right stick looks, but not while the gun lock steers the camera (pushed hard it drops the lock instead).
-                state.input.AddMouseCounts(frame.mouseX, AmmuNation::IsOpen() ? 0.0 : frame.mouseY);
+                const double scale = LookScale(state.padSensitivity, true);
+                state.input.AddMouseCounts(frame.mouseX * scale, AmmuNation::IsOpen() ? 0.0 : frame.mouseY * scale);
             }
             const bool forCj = live && !AmmuNation::IsOpen();
             const bool own = forCj && state.control == Scene::Control::Cj && !Vitals::IsDown();
@@ -1535,7 +1546,8 @@ namespace AhShitRim::PlayerSync
                         if (MenuHasInput() || AmmuNation::IsOpen()) {
                             continue;  // moves the menu's cursor, not San Andreas's camera
                         }
-                        state.input.AddMouse(move->mouseInputX, move->mouseInputY);
+                        const double scale = LookScale(state.mouseSensitivity, false);
+                        state.input.AddMouseCounts(move->mouseInputX * scale, move->mouseInputY * scale);
                         changed = true;
                         continue;
                     }
@@ -1781,6 +1793,13 @@ namespace AhShitRim::PlayerSync
         state.padLook.lookSpeed = Pad::ParseNumber(Ini::Value("Input", "PadLookSpeed"), state.padLook.lookSpeed, 100.0f, 10000.0f);
         state.padLook.aimShare = Pad::ParseNumber(Ini::Value("Input", "PadAimSpeed"), state.padLook.aimShare, 0.05f, 2.0f);
         state.padLook.invertY = Ini::Value("Input", "PadInvertY") == "1";
+        if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton()) {
+            state.mouseSensitivity = prefs->GetSetting(LookSensitivity::kMouseSetting);
+            state.padSensitivity = prefs->GetSetting(LookSensitivity::kPadSetting);
+        }
+        SKSE::log::info("player sync: CJ's look follows Skyrim's look sensitivity: mouse {}, pad {}",
+            state.mouseSensitivity ? std::format("{:.4f} (x{:.2f})", state.mouseSensitivity->GetFloat(), LookScale(state.mouseSensitivity, false)) : "not found, x1",
+            state.padSensitivity ? std::format("{:.4f} (x{:.2f})", state.padSensitivity->GetFloat(), LookScale(state.padSensitivity, true)) : "not found, x1");
         auto*      devices = RE::BSInputDeviceManager::GetSingleton();
         const bool skyrimPad = devices && devices->IsGamepadEnabled();
         SKSE::log::info("player sync: the pad is {} ([Input] Pad), look speed {:.0f}, aiming {:.2f}{}; Skyrim's gamepad setting is {}", state.padOn ? "on" : "off",

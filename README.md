@@ -110,6 +110,8 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | | A or LB |
 | F or Enter | F or Enter | In Ammu-Nation: back, then leave | | Y |
 
+CJ's camera turns at Skyrim's own look sensitivity (Settings, Controls, Look Sensitivity, for the mouse and the pad alike), changed in the menu at any time; San Andreas's own mouse sensitivity applies on top.
+
 On a gamepad (the Pad column): turn on Skyrim's own gamepad setting (Settings, Controls, Gamepad), AhShitRim reads the pad through Skyrim. B opens Skyrim's tween menu (the map, items, magic, skills) and Start its journal, as in Skyrim; Skyrim's menus, dialogue and the map work on the pad as Skyrim's own. In a dialogue A skips a line, in a seat the left stick or A stands up. Back tapped changes the camera distance; held a second it hands the player over, either way (with Skyrim on the player a tap opens the wait menu as usual). The d-pad's up and down do nothing on foot for now. The spawn keys, F11, the swear and the developer keys are keyboard only, and so is the Shout from a vehicle (RB is the handbrake there). `[Input]` in `AhShitRim.ini` has `Pad` (`0` turns the pad off for CJ), `PadLookSpeed` (1400, the right stick's camera speed), `PadAimSpeed` (0.55, its share while LT aims) and `PadInvertY` (`1` inverts it).
 
 Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu.
