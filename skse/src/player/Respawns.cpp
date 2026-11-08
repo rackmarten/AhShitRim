@@ -28,7 +28,8 @@ namespace AhShitRim::Respawns
             Revive::QuestWatch         watch;
             float                      clock = 0.0f;  // seconds the game ran, for the quest window
             float                      sinceCheck = 0.0f;
-            bool                       viewChecked = false;  // the frustum compared with the engine's projection since the load
+            bool                       viewChecked = false;  // the frustum compared with the engine's projection since the load, CJ's camera
+            std::vector<std::uint32_t> held;  // the hour is up but they're in view, logged once
         } state;
 
         float Now()
@@ -329,9 +330,17 @@ namespace AhShitRim::Respawns
             }
             Home       home;
             const bool hasHome = HomeOf(actor, home);
-            if (!Revive::Ready(a_death.at, a_now, BodyInView(actor, a_player, a_view), hasHome && HomeInView(home, a_player, a_view))) {
+            const bool bodyInView = BodyInView(actor, a_player, a_view);
+            const bool homeInView = hasHome && HomeInView(home, a_player, a_view);
+            if (!Revive::Ready(a_death.at, a_now, bodyInView, homeInView)) {
+                // The hour is up but they're in view: said once, so the log shows why someone is still down.
+                if (Revive::Ready(a_death.at, a_now, false, false) && std::find(state.held.begin(), state.held.end(), a_death.id) == state.held.end()) {
+                    state.held.push_back(a_death.id);
+                    SKSE::log::info("respawns: {} ({:08X}) waits, {} in view", NameOf(actor), a_death.id, bodyInView ? "the body is" : "their spot is");
+                }
                 return false;
             }
+            std::erase(state.held, a_death.id);
             actor->Resurrect(true, false);
             if (hasHome) {
                 MoveTo(actor, home.cell ? home.cell : home.world->persistentCell, home.world, home.position, home.angle);
@@ -466,7 +475,7 @@ namespace AhShitRim::Respawns
         if (!player || !player->Is3DLoaded() || !player->GetParentCell() || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !ViewOf(view)) {
             return;  // no camera to hide from yet
         }
-        if (!state.viewChecked) {
+        if (!state.viewChecked && a_cjHasPlayer) {
             state.viewChecked = true;
             CheckView(player, view);
         }
@@ -495,6 +504,7 @@ namespace AhShitRim::Respawns
         state.stages.clear();
         state.watch.Clear();
         state.viewChecked = false;
+        state.held.clear();
     }
 
     void Save(SKSE::SerializationInterface* a_intfc)

@@ -26,6 +26,7 @@ namespace AhShitRim::HitTest
             Watching,
             Killing,    // respawns: CJ kills a few of the people around
             Waiting,    // their quests' window, then an hour on the clock
+            Looking,    // still there: who gets up out of view, and who waits in view
             Away,       // in an interior, out of their sight
             Returning,  // back outside: are they up at their spots?
             Done,
@@ -314,8 +315,14 @@ namespace AhShitRim::HitTest
                     if (calendar->gameHour->value >= 24.0f) {
                         calendar->gameHour->value -= 24.0f;
                     }
-                    SKSE::log::info("hit test: {:.1f} game hours on", kHours);
+                    SKSE::log::info("hit test: {:.1f} game hours on, staying put", kHours);
                 }
+                state.phase = Phase::Looking;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::Looking:
+            if (state.timer >= 4.0f) {
                 Survey();
                 RunConsole("coc " + state.away);
                 state.phase = Phase::Away;
