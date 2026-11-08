@@ -12,6 +12,7 @@
 #include "texture_decode.h"
 #include "vehicle.h"
 #include "vehicle_damage.h"
+#include "tracks.h"
 #include "vehicle_kinds.h"
 
 #include <plugin.h>
@@ -28,6 +29,7 @@
 #include <CPlane.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
+#include <SurfaceInfos_c.h>
 #include <CPad.h>
 #include <CQuadBike.h>
 #include <CStats.h>
@@ -83,6 +85,16 @@ namespace AhShitRim::Vehicles
             std::uint64_t spawns = 0;
             std::uint64_t drivenLogMs = 0;
             int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
+            tHandlingData* lockHandling = nullptr;  // the Rhino's handling while TurnAboutMiddle has its steering lock
+            float          lockOriginal = 0.0f;     // and the lock it had
+            CVehicle*      heavyFor = nullptr;      // the vehicle Heavy last saw, and its speed up and turn rates then
+            float          heavyUp = 0.0f, heavyPitch = 0.0f, heavyRoll = 0.0f;
+            int            heavySteps = 0;          // steps Heavy cut a hull hit's push in since the last driving line
+            int            heavyModel = 0;          // of which vehicle, and how much of each push it kept
+            float          heavyKeep = 1.0f;
+            float          heavyTaken = 0.0f;       // and the speed up it took off, m/s summed
+            int            trackSteps = 0;          // corner-steps the Rhino's tracks gripped for (TrackGrip) since the last driving line
+            float          trackTaken = 0.0f;       // and the sliding they took off, m/s summed
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -730,6 +742,143 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // The Rhino's tracks on rough ground (protocol/cpp/tracks.h): each corner wheel in the air past San Andreas's grace
+        // grips through the track line on its side nearest it that touches, by San Andreas's own wheel rule
+        // (ProcessCarWheelPair's adhesion, ProcessWheel's sideways grip and its pushes), once a frame after San Andreas's
+        // physics step, for the player's Rhino. Counted for the log.
+        void TrackGrip(CVehicle* a_vehicle)
+        {
+            if (a_vehicle->m_nModelIndex != Tracks::kModelRhino || a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || a_vehicle->m_nStatus != STATUS_PLAYER ||
+                CTimer::m_UserPause || CTimer::m_CodePause || !a_vehicle->m_pHandlingData) {
+                return;
+            }
+            auto*       car = static_cast<CAutomobile*>(a_vehicle);
+            auto*       col = CModelInfo::GetModelInfo(car->m_nModelIndex)->m_pColModel;
+            const auto* data = col ? col->m_pColData : nullptr;
+            if (!data || data->m_nNumLines < 4 + Tracks::kLines) {
+                return;
+            }
+            const auto            const auto&                       d = car->m_doors;                             d = car->m_doors;  // San Andreas keeps the track lines' compressions in the rear doors
+            const std::array<float, Tracks::kLines> lines = { d[4].m_fOpenAngle, d[4].m_fClosedAngle, d[4].m_fAngle, d[4].m_fPrevAngle,
+                d[5].m_fOpenAngle, d[5].m_fClosedAngle, d[5].m_fAngle, d[5].m_fPrevAngle };
+            int grip[Tracks::kWheels];
+            int ground = car->m_nNumContactWheels, gripping = 0;
+            for (int w = 0; w < Tracks::kWheels; w++) {
+                grip[w] = Tracks::GripLine(w, car->m_fWheelsSuspensionCompression[w], car->m_fWheelCounts[w], lines);
+                gripping += grip[w] >= 0;
+            }
+            if (!gripping) {
+                return;
+            }
+            ground += gripping;
+            const auto& handling = *a_vehicle->m_pHandlingData;
+            CColPoint   surface{};
+            surface.m_nSurfaceTypeA = 60;  // SURFACE_WHEELBASE
+            surface.m_nSurfaceTypeB = 1;   // SURFACE_TARMAC, all of Skyrim's ground (chunk_world.cpp)
+            const float  limit = reinterpret_cast<SurfaceInfos_c*>(0xB79538)->GetAdhesiveLimit(&surface);  // g_surfaceInfos
+            const CMatrix& m = *a_vehicle->m_matrix;
+            for (int w = 0; w < Tracks::kWheels; w++) {
+                if (grip[w] < 0) {
+                    continue;
+                }
+                const bool front = w == 0 || w == 2;
+                // Where the line touches, relative to the vehicle's position, as ProcessSuspension works it out.
+                const CColLine& line = data->m_pLines[4 + grip[w]];
+                CVector         local = line.m_vecStart;
+                local.z -= car->m_aSuspensionLineLength[w] * lines[grip[w]];
+                const CVector point = Multiply3x3(m, local);
+                // The wheel's right on the ground, turned as San Andreas turns that wheel.
+                const CVector up = a_vehicle->GetUp();
+                CVector       fwd = a_vehicle->GetForward() - up * a_vehicle->GetForward().Dot(up);
+                fwd.Normalize();
+                CVector right = fwd.Cross(up);
+                right.Normalize();
+                const float steer = front ? a_vehicle->m_fSteerAngle : handling.m_bHbRearwheelSteer ? a_vehicle->m_f2ndSteerAngle : 0.0f;
+                if (steer != 0.0f) {
+                    right = fwd * std::sin(steer) + right * std::cos(steer);
+                }
+                const float adhesion = Tracks::Adhesion(limit, handling.m_fTractionMultiplier, handling.m_fTractionBias,
+                    handling.m_fSuspensionBiasBetweenFrontAndRear, handling.m_fSuspensionForceLevel, front, lines[grip[w]], CTimer::ms_fTimeStep);
+                const float slide = a_vehicle->GetSpeed(point).Dot(right);
+                const float change = Tracks::SideChange(slide, ground, adhesion);
+                if (change == 0.0f) {
+                    continue;
+                }
+                a_vehicle->ApplyMoveForce(right * (a_vehicle->m_fMass * change));
+                const float turnMass = 1.0f / (point.Cross(right).MagnitudeSqr() / a_vehicle->m_fTurnMass + 1.0f / a_vehicle->m_fMass);
+                a_vehicle->ApplyTurnForce(right * (turnMass * change), point);
+                state.trackSteps++;
+                state.trackTaken += std::abs(change) * 50.0f;  // m/s of sliding taken off (San Andreas speeds are metres a 1/50 s step), summed
+            }
+        }
+
+        // The Rhino turns about its middle (protocol/cpp/tracks.h): without the handbrake its rear wheels counter-steer as
+        // its front ones do, both to half San Andreas's turn, so it goes round San Andreas's own circle without its middle
+        // swinging out. The handling's steering lock is the Rhino's (all Rhinos share it), put back once CJ gets out.
+        void TurnAboutMiddle(CVehicle* a_driven, CPlayerPed* a_ped)
+        {
+            const bool rhino = a_driven && a_driven->m_nModelIndex == Tracks::kModelRhino && a_driven->m_pHandlingData &&
+                               a_driven->m_pHandlingData->m_bHbRearwheelSteer && a_driven->m_nStatus == STATUS_PLAYER;
+            if (!rhino) {
+                if (state.lockHandling) {
+                    state.lockHandling->m_fSteeringLock = state.lockOriginal;
+                    Log(std::format("vehicle: the Rhino's steering lock back to {:.1f} degrees", state.lockOriginal));
+                    state.lockHandling = nullptr;
+                }
+                return;
+            }
+            auto* handling = a_driven->m_pHandlingData;
+            if (state.lockHandling != handling) {
+                state.lockHandling = handling;
+                state.lockOriginal = handling->m_fSteeringLock;
+                Log(std::format("vehicle: the Rhino turns about its middle: {:.1f} degrees of lock front and rear without the handbrake, "
+                                "San Andreas's {:.1f} at the front with it",
+                    Tracks::SteeringLock(state.lockOriginal, false), state.lockOriginal));
+            }
+            if (CTimer::m_UserPause || CTimer::m_CodePause) {
+                return;
+            }
+            auto*      pad = a_ped->GetPadFromPlayer();
+            const bool handbrake = pad && pad->GetHandBrake() != 0;
+            handling->m_fSteeringLock = Tracks::SteeringLock(state.lockOriginal, handbrake);
+            a_driven->m_f2ndSteerAngle = Tracks::RearSteer(a_driven->m_fSteerAngle, handbrake, a_driven->m_f2ndSteerAngle);
+        }
+
+        // Heavy over rocks (protocol/cpp/tracks.h): a step in which the hull of the player's vehicle heavier than 8 t hit
+        // Skyrim's ground (San Andreas's damage record for the step names a building) keeps only 8 t / its mass of what
+        // that step added to its speed up and to its pitching and rolling.
+        void Heavy(CVehicle* a_driven)
+        {
+            if (!a_driven || a_driven->m_nVehicleClass != VEHICLE_AUTOMOBILE || a_driven->m_nVehicleSubClass == VEHICLE_HELI ||
+                a_driven->m_nVehicleSubClass == VEHICLE_PLANE || CTimer::m_UserPause || CTimer::m_CodePause) {
+                state.heavyFor = nullptr;
+                return;
+            }
+            CVector&      move = a_driven->m_vecMoveSpeed;
+            CVector&      turn = a_driven->m_vecTurnSpeed;
+            const CVector right = a_driven->GetRight(), forward = a_driven->GetForward();
+            const float   keep = Tracks::HeavyKeep(a_driven->m_fMass);
+            const bool    hullHit = a_driven->m_fDamageIntensity > 0.0f && a_driven->m_pDamageEntity &&
+                                 a_driven->m_pDamageEntity->m_nType == ENTITY_TYPE_BUILDING;
+            if (keep < 1.0f && hullHit && state.heavyFor == a_driven) {
+                const float pitch = turn.Dot(right), roll = turn.Dot(forward);
+                const float up = Tracks::SettleUp(state.heavyUp, move.z, keep);
+                const float newPitch = Tracks::Settle(state.heavyPitch, pitch, keep), newRoll = Tracks::Settle(state.heavyRoll, roll, keep);
+                if (up != move.z || newPitch != pitch || newRoll != roll) {
+                    state.heavySteps++;
+                    state.heavyModel = a_driven->m_nModelIndex;
+                    state.heavyKeep = keep;
+                    state.heavyTaken += (move.z - up) * 50.0f;
+                    move.z = up;
+                    turn += right * (newPitch - pitch) + forward * (newRoll - roll);
+                }
+            }
+            state.heavyFor = a_driven;
+            state.heavyUp = move.z;
+            state.heavyPitch = turn.Dot(right);
+            state.heavyRoll = turn.Dot(forward);
+        }
+
         // BSXSGGC (CHEAT_CARS_FLOAT_AWAY_WHEN_HIT, v20 table): a vehicle the player's vehicle hits loses its gravity and
         // floats up. San Andreas does it in CPhysical::ApplyCollision for every vehicle but a mission vehicle, and every
         // vehicle here is one (Create), so it never happens to them: done here instead, for the vehicles in the slots
@@ -1101,8 +1250,14 @@ namespace AhShitRim::Vehicles
                 Publish(i, vehicle, vehicle == driven, spawnFeet, a_handover, a_frame);
             }
         }
+        TurnAboutMiddle(driven, a_ped);
+        if (!driven) {
+            state.heavyFor = nullptr;
+        }
         if (driven) {
             AirControl(driven, a_ped);
+            TrackGrip(driven);
+            Heavy(driven);
             FloatAway(driven);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
             // A plane's landing gear (R3, v23), as it finishes going up or down.
@@ -1127,6 +1282,18 @@ namespace AhShitRim::Vehicles
                 Log(std::format("vehicle: driving at {:.1f} m/s, {} wheels on the ground, gas {:.2f}, brake {:.2f}{}, gear {}, engine {}, status {}",
                     std::hypot(speed.x, speed.y) * 50.0f, wheels, driven->m_fGasPedal, driven->m_fBreakPedal, driven->bIsHandbrakeOn ? ", handbrake" : "",
                     driven->m_nCurrentGear, driven->bEngineOn ? "on" : "off", static_cast<int>(driven->m_nStatus)));
+                if (state.trackSteps) {
+                    Log(std::format("vehicle: the Rhino's tracks gripped for its corners in the air {} times in 5 s, {:.1f} m/s of sliding taken off",
+                        state.trackSteps, state.trackTaken));
+                }
+                state.trackSteps = 0;
+                state.trackTaken = 0.0f;
+                if (state.heavySteps) {
+                    Log(std::format("vehicle: model {}'s hull hit the ground {} times in 5 s, kept {:.2f} of each push, {:.1f} m/s of speed up taken off",
+                        state.heavyModel, state.heavySteps, state.heavyKeep, state.heavyTaken));
+                }
+                state.heavySteps = 0;
+                state.heavyTaken = 0.0f;
             }
         }
     }

@@ -6,7 +6,9 @@
     (hover, forward flight, missiles), fires the Rhino, flies up on the jetpack and comes down on the parachute,
     rams a parked car with BSXSGGC on and spawns planes flying with AIR, asks for each pickup model, catches the
     jetpack it takes off as a dropped pickup, and walks off a 100 m drop with the parachute (it must skydive).
-    $env:AHSHITRIM_ONLY = 'cheats', 'cliff', 'pickups' or 'radio' runs only those. The radio check: no station on a BMX,
+    $env:AHSHITRIM_ONLY = 'cheats', 'cliff', 'pickups', 'radio' or 'handling' runs only those. The handling check drives the Rhino and
+    a Sandking on flat ground, humps and steep boulders and prints how each turns and rides; it fails if the Rhino doesn't turn
+    about its middle on flat ground ($env:AHSHITRIM_GROUND = 'flat', 'rocks' or 'boulders' for one ground). The radio check: no station on a BMX,
     the station dialed in one vehicle comes on in the next (Radio Sovngarde too), and San Andreas's radio reaches a station dialed.
     Exits non-zero when a check fails. Start San Andreas first (scripts/launch-sa.ps1), and keep Skyrim closed.
 .EXAMPLE

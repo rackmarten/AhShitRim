@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The Rhino drives like a tank on Skyrim's ground. It turns about its middle instead of swinging its middle out round its rear axle like a car (San Andreas's own turn, which a tank with straight tracks showed as strafing), on San Andreas's own turning circle; the handbrake still turns it tighter, as in San Andreas. Over rocks its tracks grip where San Andreas only let its four corner wheels grip, so it no longer slides about with its corners in the air, and when its hull hits a rock it isn't thrown up like a car any more: the Rhino, the Dumper and the other vehicles over 8 tonnes stay heavy.
+
+### Added
+
+- `scripts/fake-vehicles.ps1` with `AHSHITRIM_ONLY=handling` checks how the Rhino turns and rides on flat ground, humps and boulders, next to a Sandking.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.

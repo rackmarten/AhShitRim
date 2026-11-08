@@ -16,14 +16,17 @@
 // The radio (#907): no station on the BMX, and the station dialed in one vehicle comes on in the next, Radio Sovngarde
 // included, with San Andreas's own radio getting to a station dialed after (its retune ends before the 3 s it may take,
 // 2.6 s after the wheel's last step here).
-// AHSHITRIM_ONLY=cheats, =cliff, =pickups or =radio runs only those.
+// AHSHITRIM_ONLY=cheats, =cliff, =pickups, =radio or =handling runs only those (handling: how the Rhino turns and rides, on
+// flat ground, humps and boulders, next to a Sandking; AHSHITRIM_GROUND=flat, rocks or boulders for one).
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <optional>
 #include <set>
 #include <string>
@@ -142,6 +145,60 @@ namespace
         std::printf("dumped %s\n", path.c_str());
     }
 
+    // The handling check's rocks (Skyrim units, relative to the anchor): a hump up to 0.6 m high and 1.6 m round on a
+    // grid every 6 m, each nudged off it, flat within 12 m of the anchor where the vehicle spawns.
+    float RockAt(float a_x, float a_y)
+    {
+        const float x = a_x * Pose::kMetersPerUnit, y = a_y * Pose::kMetersPerUnit;
+        if (std::hypot(x, y) < 12.0f) {
+            return 0.0f;
+        }
+        constexpr float kGrid = 6.0f, kRadius = 1.6f, kHeight = 0.6f;
+        const float     gx = std::round(x / kGrid), gy = std::round(y / kGrid);
+        const auto      hash = static_cast<std::uint32_t>(static_cast<std::int32_t>(gx) * 73856093 ^ static_cast<std::int32_t>(gy) * 19349663);
+        const float     cx = gx * kGrid + static_cast<float>(hash % 100) / 100.0f - 0.5f, cy = gy * kGrid + static_cast<float>((hash / 100) % 100) / 100.0f - 0.5f;
+        const float     d = std::hypot(x - cx, y - cy) / kRadius;
+        const float     scale = 0.5f + static_cast<float>((hash / 10000) % 100) / 200.0f;  // 0.3 to 0.6 m
+        return d < 1.0f ? kHeight * scale * (1.0f - d * d) * Pose::kUnitsPerMeter : 0.0f;
+    }
+
+    // The handling check's boulders in a chunk, as statics' triangles (Skyrim world units): on a grid every 5 m past 12 m
+    // from the anchor, each an eight-sided frustum 0.9 m round at its foot (sunk 0.2 m into the ground) and 0.5 m on top,
+    // 0.35 to 0.7 m above the ground, its sides steep like a tundra rock's.
+    std::vector<float> Boulders(std::int32_t a_chunkX, std::int32_t a_chunkY, const float (&a_anchor)[3])
+    {
+        std::vector<float> out;
+        constexpr float    kGrid = 5.0f, kFoot = 0.9f, kTop = 0.5f, kSunk = 0.2f;
+        const float        m = Pose::kUnitsPerMeter, size = static_cast<float>(Protocol::kCollisionChunkUnits);
+        const float        x0 = (a_chunkX * size - a_anchor[0]) / m, y0 = (a_chunkY * size - a_anchor[1]) / m, span = size / m;
+        for (float gy = std::ceil(y0 / kGrid); gy * kGrid < y0 + span; gy++) {
+            for (float gx = std::ceil(x0 / kGrid); gx * kGrid < x0 + span; gx++) {
+                const float cx = gx * kGrid, cy = gy * kGrid;
+                if (std::hypot(cx, cy) < 12.0f) {
+                    continue;
+                }
+                const auto  hash = static_cast<std::uint32_t>(static_cast<std::int32_t>(gx) * 73856093 ^ static_cast<std::int32_t>(gy) * 19349663);
+                const float height = 0.35f + static_cast<float>(hash % 100) / 100.0f * 0.35f, turn = static_cast<float>((hash / 100) % 100) / 100.0f;
+                const auto  at = [&](float a_radius, float a_angle, float a_z) {
+                    return std::array<float, 3>{ a_anchor[0] + (cx + a_radius * std::cos(a_angle)) * m, a_anchor[1] + (cy + a_radius * std::sin(a_angle)) * m, a_anchor[2] + a_z * m };
+                };
+                const auto tri = [&](const std::array<float, 3>& a, const std::array<float, 3>& b, const std::array<float, 3>& c) {
+                    for (const auto* v : { &a, &b, &c }) {
+                        out.insert(out.end(), v->begin(), v->end());
+                    }
+                };
+                for (int k = 0; k < 8; k++) {
+                    const float a = (k + turn) * 0.785398f, b = (k + 1 + turn) * 0.785398f;
+                    const auto  footA = at(kFoot, a, -kSunk), footB = at(kFoot, b, -kSunk), topA = at(kTop, a, height), topB = at(kTop, b, height);
+                    tri(footA, footB, topB);
+                    tri(footA, topB, topA);
+                    tri(at(0.0f, 0.0f, height), topA, topB);
+                }
+            }
+        }
+        return out;
+    }
+
     int Bits(std::uint64_t a_mask)
     {
         int n = 0;
@@ -197,7 +254,9 @@ int main()
         link.WriteInput(s);
     };
     std::set<std::pair<std::int32_t, std::int32_t>> sent;
-    bool pit = false;  // the cliff check's ground: a plateau 10 m round the anchor, 100 m above the rest
+    bool pit = false;    // the cliff check's ground: a plateau 10 m round the anchor, 100 m above the rest
+    bool rocky = false;     // the handling check's ground: humps past 12 m from the anchor (RockAt)
+    bool boulders = false;  // ... or steep boulders there, as statics' triangles (Boulders)
     const auto stream = [&] {
         Protocol::PlayerState p{};
         const bool  have = link.ReadPlayer(p) && p.handover == handoverId;
@@ -211,6 +270,11 @@ int main()
                 Collision::Heightfield f;
                 f.Reset(cx + dx, cy + dy, 32);
                 std::fill(f.heights.begin(), f.heights.end(), anchor[2]);
+                for (std::uint32_t j = 0; rocky && j < f.Side(); ++j) {
+                    for (std::uint32_t i = 0; i < f.Side(); ++i) {
+                        f.heights[j * f.Side() + i] += RockAt(f.X(i) - anchor[0], f.Y(j) - anchor[1]);
+                    }
+                }
                 for (std::uint32_t j = 0; pit && j < f.Side(); ++j) {
                     for (std::uint32_t i = 0; i < f.Side(); ++i) {
                         if (std::hypot(f.X(i) - anchor[0], f.Y(j) - anchor[1]) > 10.0f * Pose::kUnitsPerMeter) {
@@ -219,7 +283,7 @@ int main()
                     }
                 }
                 std::fill(f.hit.begin(), f.hit.end(), std::uint8_t{ 1 });
-                const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId);
+                const auto payload = Collision::BuildChunkPayload(f, 0x3C, handoverId, boulders ? Boulders(cx + dx, cy + dy, anchor) : std::vector<float>{});
                 if (link.Send(Protocol::MessageType::CollisionChunk, payload.data(), static_cast<std::uint32_t>(payload.size()))) {
                     sent.insert({ cx + dx, cy + dy });
                 }
@@ -547,14 +611,131 @@ int main()
         return bad;
     };
 
+    // AHSHITRIM_ONLY=handling: how the Rhino turns and rides, next to a Sandking, on flat ground, over humps (RockAt) and
+    // over steep boulders (Boulders) like the tundra's; AHSHITRIM_GROUND=flat, rocks or boulders runs one. Prints what each
+    // leg does (San Andreas's log says what the track rules did) and fails if the Rhino can't be driven or, on flat
+    // ground, doesn't turn about its middle.
+    const auto handling = [&] {
+        struct Leg
+        {
+            float yaw = 0.0f, moved = 0.0f, slip = 0.0f, speed = 0.0f, rise = 0.0f, tilt = 0.0f;
+            int   slipSamples = 0;
+        };
+        const auto drive = [&](const char* a_name, std::initializer_list<std::uint32_t> a_keys, double a_seconds) {
+            Leg  leg;
+            bool first = true;
+            float lastHeading = 0.0f, lastX = 0.0f, lastY = 0.0f, lastZ = 0.0f, startX = 0.0f, startY = 0.0f;
+            std::uint64_t lastMs = 0;
+            for (auto key : a_keys) {
+                input.SetKey(key, true);
+            }
+            run(a_seconds, [&] {
+                const auto p = player();
+                Protocol::BodyState body{};
+                find(a_name, body);
+                const float x = (p.offset[0] + p.vehicleOffset[0]) * Pose::kMetersPerUnit, y = (p.offset[1] + p.vehicleOffset[1]) * Pose::kMetersPerUnit;
+                const float z = (p.offset[2] + p.vehicleOffset[2]) * Pose::kMetersPerUnit;
+                const auto  frame = Body::ToMatrix(body.vehicleFrame);
+                leg.tilt = (std::max)(leg.tilt, std::acos(std::clamp(frame.m[2][2], -1.0f, 1.0f)) * 57.3f);
+                const std::uint64_t now = ms();
+                if (!first && now > lastMs) {
+                    const float dt = static_cast<float>(now - lastMs) / 1000.0f;
+                    float       turn = p.vehicleHeading - lastHeading;
+                    turn = std::remainder(turn, 6.2831853f);
+                    leg.yaw += turn;
+                    const float vx = (x - lastX) / dt, vy = (y - lastY) / dt, along = std::hypot(vx, vy);
+                    leg.rise = (std::max)(leg.rise, (z - lastZ) / dt);
+                    if (along > 2.0f) {
+                        // The vehicle's forward and right on the ground, from its frame.
+                        const float fx = frame.m[0][1], fy = frame.m[1][1], fl = std::hypot(fx, fy);
+                        const float side = fl > 0.1f ? std::abs((vx * fy - vy * fx) / fl) / along : 0.0f;
+                        leg.slip += std::asin(std::clamp(side, 0.0f, 1.0f)) * 57.3f;
+                        leg.slipSamples++;
+                    }
+                } else {
+                    startX = x;
+                    startY = y;
+                }
+                first = false;
+                lastMs = now;
+                lastHeading = p.vehicleHeading;
+                lastX = x;
+                lastY = y;
+                lastZ = z;
+                leg.speed = (std::max)(leg.speed, std::hypot(p.velocity[0], p.velocity[1]) * Pose::kMetersPerUnit);
+                leg.moved = std::hypot(x - startX, y - startY);
+                return false;
+            });
+            for (auto key : a_keys) {
+                input.SetKey(key, false);
+            }
+            if (leg.slipSamples) {
+                leg.slip /= static_cast<float>(leg.slipSamples);
+            }
+            return leg;
+        };
+        const auto print = [](const char* a_name, const char* a_what, const Leg& a_leg) {
+            std::printf("handling: %s %s: turned %.0f deg, moved %.1f m, top %.1f m/s, slip %.1f deg, rose up to %.2f m/s, tilted up to %.0f deg\n", a_name, a_what,
+                a_leg.yaw * 57.3f, a_leg.moved, a_leg.speed, a_leg.slip, a_leg.rise, a_leg.tilt);
+        };
+        const auto stop = [&] {
+            input.SetKey(Input::kDikS, true);
+            run(4.0, [&] { return speed() < 0.5f; });
+            input.SetKey(Input::kDikS, false);
+            wait(1.0);
+        };
+        int bad = 0;
+        const char* only = std::getenv("AHSHITRIM_GROUND");  // flat, rocks or boulders; all three by default
+        for (const int kind : { 0, 1, 2 }) {
+            const char* ground = kind == 0 ? "flat" : kind == 1 ? "rocks" : "boulders";
+            if (only && std::string(only) != ground) {
+                continue;
+            }
+            const bool rocks = kind != 0;
+            for (const auto& [model, name] : { std::pair{ std::uint16_t{ 432 }, "RHINO" }, std::pair{ std::uint16_t{ 495 }, "SANDKIN" } }) {
+                rocky = kind == 1;
+                boulders = kind == 2;
+                fresh();
+                Protocol::BodyState body{};
+                if (spawn(model, name, body) < 0 || !board(name)) {
+                    bad++;
+                    continue;
+                }
+                print(name, std::format("{}, D standing", ground).c_str(), drive(name, { Input::kDikD }, 3.0));
+                print(name, std::format("{}, W", ground).c_str(), drive(name, { Input::kDikW }, rocks ? 8.0 : 3.0));
+                const Leg right = drive(name, { Input::kDikW, Input::kDikD }, 4.0);
+                print(name, std::format("{}, W+D", ground).c_str(), right);
+                print(name, std::format("{}, W+D+handbrake", ground).c_str(), drive(name, { Input::kDikW, Input::kDikD, Input::kDikSpace }, 3.0));
+                stop();
+                const Leg left = drive(name, { Input::kDikW, Input::kDikA }, 5.0);
+                print(name, std::format("{}, W+A again", ground).c_str(), left);
+                // The Rhino turns about its middle (protocol/cpp/tracks.h): on flat ground its middle follows its heading
+                // (San Andreas's own turn about the rear axle slid it 14 to 17 degrees off), and it still turns.
+                if (model == 432 && kind == 0) {
+                    const bool ok = right.slip < 8.0f && left.slip < 8.0f && std::abs(right.yaw) > 2.0f && std::abs(left.yaw) > 2.0f;
+                    std::printf("handling: RHINO %s about its middle (slides %.1f and %.1f deg off its heading)\n", ok ? "turns" : "DOES NOT TURN", right.slip, left.slip);
+                    bad += !ok;
+                }
+                stop();
+            }
+        }
+        rocky = false;
+        boulders = false;
+        fresh();
+        return bad;
+    };
+
     int failed = 0;
     publish(true);
     run(5.0, [&] { return player().handover == handoverId && (player().flags & Protocol::kPlayerGrounded); });
     wait(1.5);
     if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && std::string(only) == "cheats") {
         failed += cheats();
-    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio")) {
-        failed += std::string(only) == "cliff" ? cliff() : std::string(only) == "radio" ? radio() : pickupModels() + jetpackDrop();
+    } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio" || std::string(only) == "handling")) {
+        failed += std::string(only) == "cliff"    ? cliff() :
+                  std::string(only) == "radio"    ? radio() :
+                  std::string(only) == "handling" ? handling() :
+                                                    pickupModels() + jetpackDrop();
         publish(false);
         link.Tick(ms());
         std::printf("%s\n", failed ? "SOME CHECKS FAILED" : "all checks passed");
