@@ -30,7 +30,7 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v35: passengers, busts and vehicle proofs")
 {
-    CHECK(kProtocolVersion == 35);
+    CHECK(kProtocolVersion == 36);
     CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
     CHECK(kPlayerGettingInOut == 0x40);
     CHECK(kBodyBulletProof == 0x80);
@@ -50,6 +50,8 @@ TEST_CASE("protocol v33: fist fights and lock-on")
 {
     CHECK(kProxyTarget == 0x4);
     CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
+    CHECK(kProxyStealthKill == 0x8);
+    CHECK((kProxyStealthKill & (kProxyHeavy | kProxyPerson | kProxyTarget)) == 0);
 }
 
 TEST_CASE("protocol v32: the burnout")
@@ -200,7 +202,10 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(ShotEvent, origin) == 16);
     CHECK(offsetof(ShotEvent, direction) == 28);
     CHECK(offsetof(ShotEvent, range) == 40);
+    CHECK(offsetof(ShotEvent, target) == 44);
     CHECK(kShotFlame == 2);
+    CHECK(kShotStealthGrab == 3);
+    CHECK(kShotStealthStab == 4);
     CHECK(static_cast<std::uint16_t>(MessageType::Projectile) == 5);
     CHECK(kProjectileBurst == 0x1);
     CHECK(kProjectilePartMax == 2);

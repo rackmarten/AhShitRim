@@ -4,8 +4,10 @@
 #include "link/LinkService.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
+#include "player/StealthKills.h"
 #include "player/Vitals.h"
 #include "wanted.h"
+#include "weapons.h"
 
 #include <chrono>
 #include <thread>
@@ -40,7 +42,13 @@ namespace AhShitRim::HitTest
             float              combatTimer = 0.0f;
             bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
+            bool               stealth = false;  // the scenario: the knife stealth kill (v36)
+            int                step = 0;         // its steps
+            RE::ObjectRefHandle victim;
         } state;
+
+        constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
+        constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a wolf and a guard facing CJ, off to the sides
 
         void RunConsole(const std::string& a_command)
         {
@@ -136,15 +144,185 @@ namespace AhShitRim::HitTest
                 }
             }
         }
+
+        // ---- The stealth scenario (v36) ----
+
+        bool OnFootPose(Protocol::PlayerState& a_pose)
+        {
+            return LinkService::Get().ReadPlayer(a_pose) && (a_pose.flags & Protocol::kPlayerValid) && !(a_pose.flags & Protocol::kPlayerInVehicle);
+        }
+
+        // CJ's loadout: only the knife, in his hands.
+        void GiveKnife()
+        {
+            Protocol::WeaponCommand command{};
+            command.kind = static_cast<std::uint32_t>(Protocol::WeaponCommandKind::SetLoadout);
+            command.argument = 1;  // the melee slot
+            command.entries[1].type = Weapons::Knife;
+            command.entries[1].ammo = 1;
+            const bool sent = LinkService::Get().Send(Protocol::MessageType::WeaponCommand, &command, sizeof(command));
+            SKSE::log::info("hit test: {} CJ the knife", sent ? "gave" : "couldn't give");
+        }
+
+        RE::Actor* PlaceAt(RE::PlayerCharacter* a_player, std::uint32_t a_base, const RE::NiPoint3& a_at, float a_heading)
+        {
+            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(a_base);
+            auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
+            if (!ref) {
+                SKSE::log::warn("hit test: couldn't place {:08X}", a_base);
+                return nullptr;
+            }
+            ref->SetPosition(a_at);
+            ref->SetAngle(RE::NiPoint3(0.0f, 0.0f, a_heading));
+            state.attackers.push_back(ref->GetHandle());
+            SKSE::log::info("hit test: placed {} ({:08X})", ref->GetName(), ref->GetFormID());
+            return ref->As<RE::Actor>();
+        }
+
+        // A guard just ahead of CJ with his back to him, a wolf to the left and a guard to the right facing CJ.
+        void PlaceVictims(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, float a_heading)
+        {
+            const RE::NiPoint3 ahead(std::sin(a_heading), std::cos(a_heading), 0.0f);
+            const RE::NiPoint3 right(std::cos(a_heading), -std::sin(a_heading), 0.0f);
+            if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead, a_heading)) {
+                state.victim = guard->GetHandle();
+            }
+            PlaceAt(a_player, Wanted::kWolf, a_feet + ahead * kVictimAhead - right * kOthersAside, a_heading);
+            PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead + right * kOthersAside, a_heading + Pose::kPi);
+        }
+
+        // Skyrim's sneak kill moves, by editor id and the event that plays them: what a victim could play.
+        void LogKillMoves()
+        {
+            auto* data = RE::TESDataHandler::GetSingleton();
+            if (!data) {
+                return;
+            }
+            int found = 0;
+            for (auto* idle : data->GetFormArray<RE::TESIdleForm>()) {
+                const char* id = idle ? idle->GetFormEditorID() : nullptr;
+                std::string lower = id ? id : "";
+                std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (lower.find("killmove") == std::string::npos || lower.find("sneak") == std::string::npos || found >= 60) {
+                    continue;
+                }
+                found++;
+                SKSE::log::info("hit test: kill move idle {} ({:08X}), event '{}', file '{}', parent {}", id, idle->GetFormID(), idle->animEventName.c_str(),
+                    idle->animFileName.c_str(), idle->parentIdle ? idle->parentIdle->GetFormEditorID() : "none");
+            }
+            SKSE::log::info("hit test: {} sneak kill move idles", found);
+        }
+
+        // What StealthKill::Check makes of each one placed, from where the player (CJ) stands.
+        void LogVerdicts(RE::PlayerCharacter* a_player)
+        {
+            const auto feet = a_player->GetPosition();
+            for (const auto& handle : state.attackers) {
+                auto  ref = handle.get();
+                auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                if (!actor) {
+                    continue;
+                }
+                const auto target = StealthKills::TargetOf(actor, a_player);
+                SKSE::log::info("hit test: {} ({:08X}) {}: {} at {:.2f} m, {}, detection {}, health {:.0f}", actor->GetName(), actor->GetFormID(),
+                    actor->IsDead() ? "dead" : "alive", StealthKill::Why(StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target)),
+                    StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), StealthKill::Behind({ feet.x, feet.y, feet.z }, target.feet, target.heading) ? "back to CJ" : "facing him",
+                    actor->RequestDetectionLevel(a_player), actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+            }
+        }
+
+        // From Arriving on: CJ on foot with the knife, the three placed, then the right button held and the left one
+        // clicked as a player would, the verdicts and the victim logged as it goes.
+        void Stealth(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            Protocol::PlayerState pose{};
+            const bool onFoot = OnFootPose(pose);
+            state.logTimer += a_delta;
+            if (state.step >= 3 && state.logTimer >= 1.0f) {
+                state.logTimer = 0.0f;
+                LogVerdicts(a_player);
+            }
+            switch (state.step) {
+            case 0:  // hand over on foot
+                if (state.timer >= 6.0f) {
+                    if (!PlayerSync::DebugOwned()) {
+                        PlayerSync::DebugToggle();
+                    }
+                    SKSE::log::info("hit test: handing the player over on foot");
+                    state.step = 1;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 1:  // the knife
+                if (onFoot && state.timer >= 4.0f) {
+                    LogKillMoves();
+                    GiveKnife();
+                    state.step = 2;
+                    state.timer = 0.0f;
+                } else if (state.timer > 40.0f) {
+                    SKSE::log::info("hit test: CJ never came on foot, stopping");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 2:  // in his hands, then the three
+                if (onFoot && pose.weaponType == Weapons::Knife && state.timer >= 2.0f) {
+                    SKSE::log::info("hit test: CJ holds the knife, placing a guard {:.1f} m ahead with his back to him", kVictimAhead * Pose::kMetersPerUnit);
+                    PlaceVictims(a_player, a_player->GetPosition(), pose.heading);
+                    state.step = 3;
+                    state.timer = 0.0f;
+                } else if (state.timer > 20.0f) {
+                    SKSE::log::info("hit test: CJ never held the knife (weapon {}), stopping", pose.weaponType);
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 3:  // the right button
+                if (state.timer >= 3.0f) {
+                    SKSE::log::info("hit test: the right mouse button held");
+                    PlayerSync::DebugButtons(true, false);
+                    state.step = 4;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 4:  // the left one, clicked
+                if (state.timer >= 1.5f) {
+                    SKSE::log::info("hit test: the left mouse button clicked");
+                    PlayerSync::DebugButtons(true, true);
+                    state.step = 5;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 5:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugButtons(true, false);
+                    state.step = 6;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 6:  // let go, and watch
+                if (state.timer >= 3.0f) {
+                    PlayerSync::DebugButtons(false, false);
+                }
+                if (state.timer >= state.seconds) {
+                    auto  ref = state.victim.get();
+                    auto* victim = ref ? ref->As<RE::Actor>() : nullptr;
+                    SKSE::log::info("hit test: done after {:.0f} s, the guard behind is {}", state.timer, victim && victim->IsDead() ? "dead" : "alive");
+                    state.phase = Phase::Done;
+                }
+                break;
+            default: break;
+            }
+        }
     }
 
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth") {
             return;
         }
         state.bust = scenario == "bust";
+        state.stealth = scenario == "stealth";
+        state.seconds = state.stealth ? 12.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
         }
@@ -187,7 +365,9 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.timer >= 6.0f) {
+            if (state.stealth) {
+                Stealth(a_player, a_delta);
+            } else if (state.timer >= 6.0f) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
                 state.phase = Phase::Handing;

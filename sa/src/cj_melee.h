@@ -11,7 +11,11 @@ class CVector;
 // - while he holds the right mouse button with fists or a melee weapon, or swings one at someone hostile in
 //   front, Skyrim flags the one he locks on to (kProxyTarget), and from the next frame his on-foot task
 //   (CTaskSimplePlayerOnFoot::ProcessPed) turns him to face it as he stands and fights, before his blows are
-//   struck. Running, he goes where he is steered.
+//   struck. Running, he goes where he is steered,
+// - v36, the knife stealth kill (the rules in protocol/cpp/stealth_kill.h): while Skyrim also flags that target
+//   kProxyStealthKill and he holds the knife and the right button, not sprinting, he raises it (KILL_PARTIAL), and
+//   the left button then grabs instead of swinging: KILL_KNIFE_PLAYER in place of his on-foot control, held a metre
+//   behind the victim and facing it, AE_WEAPON_STEALTH_KILL, the grab and then the stab sent to Skyrim as shots.
 // Game thread only.
 namespace AhShitRim::CjMelee
 {

@@ -41,6 +41,7 @@
 #include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
+#include "player/StealthKills.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
@@ -1055,9 +1056,11 @@ namespace AhShitRim::PlayerSync
                 aim.aim = state.input.Aiming();
                 aim.fire = state.input.Firing();
                 aim.heading = pose.heading;
+                aim.weapon = pose.weaponType;
             }
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target.id, target.stealth);
+            StealthKills::Update(a_player, a_delta);
             // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
             const bool honking = valid && (pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput() && state.input.HornHeld();
             CarHits::Horn(a_player, honking, cjFeet + RE::NiPoint3(pose.vehicleOffset[0], pose.vehicleOffset[1], pose.vehicleOffset[2]),
@@ -1552,6 +1555,12 @@ namespace AhShitRim::PlayerSync
         } else if (player) {
             TakeOver(player);
         }
+    }
+
+    void DebugButtons(bool a_aim, bool a_fire)
+    {
+        state.input.SetAim(a_aim);
+        state.input.SetFire(a_fire);
     }
 
     void DebugType(const char* a_code)

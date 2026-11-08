@@ -2,6 +2,8 @@
 
 #include "hud/SaHud.h"
 #include "melee.h"
+#include "player/StealthKills.h"
+#include "weapons.h"
 
 #include <vector>
 
@@ -24,7 +26,29 @@ namespace AhShitRim::LockOn
             Mode        mode = Mode::None;
             RE::FormID  logged = 0;
             RE::FormID  marked = 0;  // the gun's indicator
+            RE::FormID  judged = 0;  // whose stealth kill verdict was logged last
+            StealthKill::Verdict verdict = StealthKill::Verdict::Yes;
+            int         loggedVerdicts = 0;
         } state;
+
+        constexpr int kLoggedVerdicts = 40;  // stealth kill verdicts logged as they change, then quiet
+
+        // v36: whether CJ, holding the knife locked on to a_target, may raise it for the stealth kill.
+        bool StealthKillable(RE::PlayerCharacter* a_player, RE::Actor* a_target, const RE::NiPoint3& a_cjFeet, std::uint8_t a_weapon)
+        {
+            const Pose::Vec3 cj{ a_cjFeet.x, a_cjFeet.y, a_cjFeet.z };
+            const auto       target = StealthKills::TargetOf(a_target, a_player);
+            const auto       verdict = StealthKill::Check(cj, a_weapon, target);
+            if ((a_target->GetFormID() != state.judged || verdict != state.verdict) && state.loggedVerdicts < kLoggedVerdicts) {
+                state.loggedVerdicts++;
+                SKSE::log::info("lock-on: stealth kill on {} ({:08X}): {} ({:.2f} m, {}, detection {})", a_target->GetDisplayFullName(), a_target->GetFormID(),
+                    StealthKill::Why(verdict), StealthKill::Distance(cj, target.feet), StealthKill::Behind(cj, target.feet, target.heading) ? "back to CJ" : "facing him",
+                    a_target->RequestDetectionLevel(a_player));
+            }
+            state.judged = a_target->GetFormID();
+            state.verdict = verdict;
+            return verdict == StealthKill::Verdict::Yes;
+        }
 
         RE::NiPoint3 Middle(RE::Actor* a_actor)
         {
@@ -107,7 +131,7 @@ namespace AhShitRim::LockOn
         }
     }
 
-    RE::FormID Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cjFeet, const Aim& a_aim, float a_seconds)
+    Target Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cjFeet, const Aim& a_aim, float a_seconds)
     {
         const RE::NiPoint3 cj = a_cjFeet + RE::NiPoint3(0.0f, 0.0f, kCjMiddle);
         if (a_aim.gun && a_aim.aim) {
@@ -126,7 +150,8 @@ namespace AhShitRim::LockOn
         }
         if (state.mode == Mode::None) {
             state.logged = 0;
-            return 0;
+            state.judged = 0;
+            return {};
         }
         std::vector<RE::Actor*>       actors;
         std::vector<Melee::Candidate> candidates;
@@ -153,7 +178,11 @@ namespace AhShitRim::LockOn
         if (state.mode == Mode::Swing && wanted == Mode::None && !target) {
             state.mode = Mode::None;  // the combo is over
         }
-        return target;
+        const bool knifeLock = locked && state.mode == Mode::MeleeLock && a_aim.weapon == Weapons::Knife;
+        if (!knifeLock) {
+            state.judged = 0;
+        }
+        return { target, knifeLock && StealthKillable(a_player, locked, a_cjFeet, a_aim.weapon) };
     }
 
     void Clear()
