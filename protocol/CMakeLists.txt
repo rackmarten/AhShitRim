@@ -33,6 +33,7 @@ add_executable(protocol_tests
     tests/cpp/test_parachute.cpp
     tests/cpp/test_input.cpp
     tests/cpp/test_pad.cpp
+    tests/cpp/test_pad_cheats.cpp
     tests/cpp/test_gun_lock.cpp
     tests/cpp/test_pose.cpp
     tests/cpp/test_collision.cpp

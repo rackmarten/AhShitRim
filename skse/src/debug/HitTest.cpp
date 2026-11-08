@@ -343,12 +343,35 @@ namespace AhShitRim::HitTest
                         }
                     }
                     state.attackers.clear();
+                    tries = PlayerSync::DebugPadCheats();
+                    SKSE::log::info("hit test: pad: entering HESOYAM and AEZAKMI as their console sequences");
+                    state.step = 30;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 30:  // HESOYAM, then AEZAKMI (B, its Circle, tapped: no tween menu), a press every 0.15 s
+            {
+                static constexpr std::uint32_t kCodes[] = { Pad::kRightShoulder, Pad::kRightTrigger, Pad::kLeftShoulder, Pad::kA, Pad::kLeft, Pad::kDown, Pad::kRight,
+                    Pad::kUp, Pad::kLeft, Pad::kDown, Pad::kRight, Pad::kUp, Pad::kB, Pad::kRight, Pad::kB, Pad::kRight, Pad::kLeft, Pad::kX, Pad::kY, Pad::kUp };
+                static std::size_t pressed = 0;
+                const auto         at = static_cast<std::size_t>(state.timer / 0.15f);
+                while (pressed < std::size(kCodes) && pressed <= at) {
+                    PlayerSync::DebugPad(kCodes[pressed], 1.0f);
+                    PlayerSync::DebugPad(kCodes[pressed], 0.0f);
+                    pressed++;
+                }
+                if (pressed >= std::size(kCodes) && state.timer >= 4.0f) {
+                    auto*      ui = RE::UI::GetSingleton();
+                    const bool tween = ui && ui->IsMenuOpen(RE::TweenMenu::MENU_NAME);
+                    const int  done = PlayerSync::DebugPadCheats() - tries;
+                    PadCheck(done == 2 && !tween, std::format("the console sequences finish {} cheats (2 wanted), B's taps open {}:", done, tween ? "the tween menu" : "nothing"));
                     SKSE::log::info("hit test: pad: CJ into a Sandking where he stands");
                     PlayerSync::TakeOverInVehicle(kSandking);
                     state.step = 11;
                     state.timer = 0.0f;
                 }
                 break;
+            }
             case 11:  // RT accelerates
                 if (valid && (pose.flags & Protocol::kPlayerInVehicle) && state.timer >= 4.0f) {
                     before = pose;

@@ -38,6 +38,9 @@ namespace AhShitRim::CheatCodes
     // A key went down while CJ has the player and no menu has the input.
     void Key(std::uint32_t a_dik, const World& a_world);
 
+    // A cheat finished some other way than typing it: San Andreas's console sequence on the pad (protocol/cpp/pad_cheats.h).
+    void Finish(const Cheats::Cheat& a_cheat, const World& a_world);
+
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();
 

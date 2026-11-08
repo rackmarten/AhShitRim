@@ -163,7 +163,7 @@ While CJ has the player, crime works like San Andreas's: stars only, one wanted 
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for a toggle) with San Andreas's beep. San Andreas's alternative spellings work too (ROCKETMAN, FULLCLIP...). Some favourites:
+Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for a toggle) with San Andreas's beep. San Andreas's alternative spellings work too (ROCKETMAN, FULLCLIP...). On a gamepad, enter San Andreas's console button sequences instead, the PlayStation 2's buttons by position: L1 is LB, L2 LT, R1 RB, R2 RT, Cross A, Circle B, Square X, Triangle Y (HESOYAM: RB, RT, LB, A, left, down, right, up, left, down, right, up). The buttons keep doing what they do while you enter one, as on the console, but B and RB need a short hold to open Skyrim's tween menu or shout, so their taps are only part of a code. AhShitRim's own codes, the vehicle names and VKYPQCF have no console sequence and stay on the keyboard. Some favourites:
 
 | Code | What |
 |---|---|
