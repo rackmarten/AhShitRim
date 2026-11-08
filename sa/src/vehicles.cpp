@@ -13,6 +13,7 @@
 #include "vehicle.h"
 #include "vehicle_damage.h"
 #include "vehicle_kinds.h"
+#include "vehicle_lights.h"
 
 #include <plugin.h>
 
@@ -20,6 +21,7 @@
 #include <CBike.h>
 #include <CBmx.h>
 #include <CCamera.h>
+#include <CClock.h>
 #include <CColPoint.h>
 #include <CHeli.h>
 #include <CModelInfo.h>
@@ -36,6 +38,7 @@
 #include <CTaskSimplePlayerOnFoot.h>
 #include <CTimer.h>
 #include <CVehicleModelInfo.h>
+#include <CWeather.h>
 #include <CWorld.h>
 #include <NodeName.h>
 #include <common.h>
@@ -83,6 +86,8 @@ namespace AhShitRim::Vehicles
             std::uint64_t spawns = 0;
             std::uint64_t drivenLogMs = 0;
             int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
+            std::uint8_t  sky = 0;          // v36: Skyrim's sky (InputState.sky) and time of day, for the lights
+            std::uint16_t minuteOfDay = 0;
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -602,6 +607,53 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // ---- The lights (v36, protocol/cpp/vehicle_lights.h) ----
+
+        constexpr unsigned char kNoLightOverride = 0;  // m_nOverrideLights: NO_CAR_LIGHT_OVERRIDE
+        constexpr unsigned char kForceLightsOff = 1;   // FORCE_CAR_LIGHTS_OFF
+        constexpr unsigned char kForceLightsOn = 2;    // FORCE_CAR_LIGHTS_ON
+
+        bool IsZero(const CVector& a_v) { return a_v.x == 0.0f && a_v.y == 0.0f && a_v.z == 0.0f; }
+
+        void Pack(const CVector& a_dummy, std::int16_t (&a_out)[3])
+        {
+            a_out[0] = VehicleLights::Pack(a_dummy.x * Pose::kUnitsPerMeter);
+            a_out[1] = VehicleLights::Pack(a_dummy.y * Pose::kUnitsPerMeter);
+            a_out[2] = VehicleLights::Pack(a_dummy.z * Pose::kUnitsPerMeter);
+        }
+
+        // Its headlights and tail lights: the model's main light dummies (m_avDummyPos[0] and [1], DUMMY_LIGHT_FRONT_MAIN and
+        // DUMMY_LIGHT_REAR_MAIN, x right, y forward, z up) and which lamps burn, by San Andreas's own GetVehicleLightsStatus on
+        // the clock and weather Update set, the way DoVehicleLights switches them.
+        void PublishLights(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            auto* info = InfoOf(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pVehicleStruct) {
+                return;
+            }
+            const CVector& front = info->m_pVehicleStruct->m_avDummyPos[0];
+            const CVector& rear = info->m_pVehicleStruct->m_avDummyPos[1];
+            Pack(front, a_out.lights.front);
+            Pack(rear, a_out.lights.rear);
+            VehicleLights::Lamps lamps;
+            lamps.engineOn = a_vehicle->bEngineOn;
+            lamps.wrecked = Wrecked(a_vehicle);
+            lamps.wanted = a_vehicle->GetVehicleLightsStatus();
+            lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
+            lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
+            lamps.twin = a_vehicle->m_nVehicleClass == VEHICLE_AUTOMOBILE;  // a bike has one lamp of each
+            lamps.hasFront = !IsZero(front);
+            lamps.hasRear = !IsZero(rear);
+            if (lamps.twin) {
+                auto&         damage = static_cast<CAutomobile*>(a_vehicle)->m_damageManager;
+                const eLights order[4] = { LIGHT_FRONT_RIGHT, LIGHT_FRONT_LEFT, LIGHT_REAR_RIGHT, LIGHT_REAR_LEFT };
+                for (int i = 0; i < 4; i++) {
+                    lamps.smashed[i] = damage.GetLightStatus(order[i]) != 0;  // VEHICLE_LIGHT_SMASHED
+                }
+            }
+            a_out.lights.lit = VehicleLights::Lit(lamps);
+        }
+
         // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
         // frame (what CarHits sweeps against Skyrim's actors), in Skyrim units.
         void PublishShape(CVehicle* a_vehicle, Protocol::BodyState& a_out)
@@ -669,6 +721,7 @@ namespace AhShitRim::Vehicles
             }
             PublishSeats(a_vehicle, s);
             PublishShape(a_vehicle, s);
+            PublishLights(a_vehicle, s);
             for (const auto& extra : slot.extras) {
                 auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
                 const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));
@@ -1076,14 +1129,43 @@ namespace AhShitRim::Vehicles
         }
     }
 
+    void SetSky(std::uint8_t a_sky, std::uint16_t a_minuteOfDay)
+    {
+        if (a_sky != state.sky) {
+            Log(std::format("vehicle: Skyrim's sky for the lights: {}{}{}", (a_sky & Protocol::kSkyClock) ? "its clock" : "San Andreas's own clock",
+                (a_sky & Protocol::kSkyWet) ? ", wet" : "", (a_sky & Protocol::kSkyDark) ? ", an interior (lights on)" : ""));
+        }
+        state.sky = a_sky;
+        state.minuteOfDay = a_minuteOfDay;
+    }
+
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame)
     {
         CVehicle*     driven = Driven(a_ped);
         const CVector spawnFeet = a_spawn - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + a_lift);
+        // The lights (v36) go by Skyrim's time of day and sky: San Andreas's clock follows Skyrim's, and its fog and wet
+        // roads are Skyrim's while the vehicles are posed (PreRender switches the lights, the ZR-350's pop-ups too) and
+        // published, its own put back after for the handling. An interior is San Andreas's tunnel: lights forced on.
+        const bool  sky = (state.sky & Protocol::kSkyClock) != 0;
+        const float foggyness = CWeather::Foggyness, wetRoads = CWeather::WetRoads;
+        if (sky) {
+            const auto clock = VehicleLights::ClockOf(state.minuteOfDay);
+            CClock::ms_nGameClockHours = clock.hours;
+            CClock::ms_nGameClockMinutes = clock.minutes;
+            CWeather::Foggyness = 0.0f;
+            CWeather::WetRoads = VehicleLights::WetRoadsOf(state.sky);
+        }
         for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
             auto* vehicle = Live(i);
             if (!vehicle) {
                 continue;
+            }
+            // Skyrim's ground carries no lighting (its triangles' m_nLight is 0), which GetVehicleLightsStatus reads as a dark
+            // tunnel under the wheels: lit as day while the lights are worked out, the interior flag standing in for the tunnel.
+            const float brightness = vehicle->m_fContactSurfaceBrightness;
+            if (sky) {
+                vehicle->m_nOverrideLights = (state.sky & Protocol::kSkyDark) != 0 ? kForceLightsOn : kNoLightOverride;
+                vehicle->m_fContactSurfaceBrightness = 1.0f;
             }
             Pose(vehicle);
             Slot& slot = state.slots[i];
@@ -1100,7 +1182,10 @@ namespace AhShitRim::Vehicles
             if (slot.model) {
                 Publish(i, vehicle, vehicle == driven, spawnFeet, a_handover, a_frame);
             }
+            vehicle->m_fContactSurfaceBrightness = brightness;
         }
+        CWeather::Foggyness = foggyness;
+        CWeather::WetRoads = wetRoads;
         if (driven) {
             AirControl(driven, a_ped);
             FloatAway(driven);

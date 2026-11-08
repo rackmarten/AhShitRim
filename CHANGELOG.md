@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Headlights and tail lights (protocol v36). San Andreas switches its vehicles' lights by its own rule (`CVehicle::GetVehicleLightsStatus`: from 21:00 to 6:00, from 20:xx and until 6:xx by each vehicle's own minute, on wet roads), now on Skyrim's clock and sky: Skyrim sends its time of day, its rain or snow, and whether the player is in an interior (San Andreas's tunnels, lights forced on, the ZR-350's pop-ups up), and San Andreas's clock follows Skyrim's. Each vehicle slot says where the model's headlight and tail light dummies are and which lamps burn (engine on, not wrecked, not smashed), and Skyrim lights the scene there: a warm white point light on the road 5 m ahead of the headlights and a red glow behind the tail lights. Game-free tests for the clock, the sky and the lamp rule.
+- Oil burns GTA style: a bullet of CJ's that lands in a pool of Skyrim's oil (an activator with the `TrapExplosiveGas` script, the oil on the floor of Bleak Falls Barrow and a fallen lamp's spill) sets it alight, sent to it as his fire is, as well as his fire and blasts already did. Game-free tests for what lights oil and when a bullet lands in a pool.
+
 ### Changed
 
 - The camera works like San Andreas's. On foot V (or Home) steps through San Andreas's three chase distances, close, middle and far; it used to do nothing there. There is still no first person on foot, as in San Andreas. In a vehicle, the first-person step of V now sits in front of the vehicle, past a car's bonnet, a bike's handlebars or an aircraft's nose, instead of inside the model Skyrim draws (San Andreas puts that view at the driver's head and simply doesn't draw the car; Skyrim drew it), and CJ isn't drawn in it. The Seasparrow and the Rustler show the rocket-sight crosshair in that view as the Hunter and the Hydra do, to aim their guns by.

@@ -42,6 +42,7 @@
 #include "player/Shots.h"
 #include "player/Shouting.h"
 #include "player/VehicleFx.h"
+#include "player/Headlights.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
 #include "standing.h"
@@ -219,6 +220,7 @@ namespace AhShitRim::PlayerSync
                     Scene::Face(input, feet.x, feet.y, at.x, at.y);
                 }
             }
+            Headlights::Sky(input);  // v36: San Andreas's clock and sky for its vehicles' lights
             link.WriteInput(input);
         }
 
@@ -465,6 +467,7 @@ namespace AhShitRim::PlayerSync
                         state.vehicles[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
+                        Headlights::Show(i, nullptr, {});
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -477,11 +480,14 @@ namespace AhShitRim::PlayerSync
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    Headlights::Show(i, &pose, feet);  // v36
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
                         driven = pose;
                         drivenFeet = feet;
                         anyDriven = true;
                     }
+                } else {
+                    Headlights::Show(i, nullptr, {});
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
@@ -537,6 +543,7 @@ namespace AhShitRim::PlayerSync
             Projectiles::Clear();
             WorldPickups::Clear();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear(!a_loading);
             CarHits::Clear();
@@ -629,6 +636,7 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear();
             CarHits::Clear();

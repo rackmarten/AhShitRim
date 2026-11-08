@@ -21,6 +21,10 @@ class CVehicle;
 // Game thread only.
 namespace AhShitRim::Vehicles
 {
+    // Skyrim's sky and time of day (InputState.sky, minuteOfDay, v36): San Andreas's clock follows Skyrim's, and its
+    // vehicles' lights switch on Skyrim's night, rain and interiors by San Andreas's own rule (protocol/cpp/vehicle_lights.h).
+    void SetSky(std::uint8_t a_sky, std::uint16_t a_minuteOfDay);
+
     // A spawn request: a_model (a San Andreas vehicle model id) in front of CJ. Refused (logged) while
     // CJ is in a vehicle or when nothing in front of him will do. a_airborne (AIR + a plane's name,
     // Protocol::kSpawnAirborne): a plane comes AirSpawn::kHeight above CJ instead, facing where the camera

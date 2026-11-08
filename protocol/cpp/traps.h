@@ -12,6 +12,9 @@
 // a bow for a bullet, a sword, a mace or bare hands for a blow, a torch for his fire and blasts. A destructible
 // object also takes damage, a bullet's or a blow's as Skyrim's health (Damage::ToSkyrim) and enough from fire
 // or a blast to destroy a web outright, as Skyrim's fire spells do.
+//
+// Oil burns GTA style: besides fire and blasts, a bullet landing in a pool of oil (an object carrying the
+// TrapExplosiveGas script: the oil on the floor, a fallen lamp's spill) lights it, sent to it as fire. Blows don't.
 
 #pragma once
 
@@ -100,6 +103,34 @@ namespace AhShitRim::Traps
     {
         return a_destructible && (a_layer == kLayerProps || a_layer == kLayerTrap || a_layer == kLayerClutter);
     }
+
+    // ---- Oil ----
+
+    // The script Skyrim's oil pools carry (its parent type counts too): it ignites on a hit from Torch01.
+    inline constexpr const char* kOilScript = "TrapExplosiveGas";
+
+    // What sets oil alight: CJ's fire and blasts, as Skyrim's fire spells do, and his bullets, as in San Andreas.
+    constexpr bool IgnitesOil(Hit a_hit) { return a_hit != Hit::Blow; }
+
+    // Whether a bullet that stopped at a_at (on the floor, or on the oil itself) landed in the pool whose bound
+    // (its 3D's world bound) is a_center and a_radius: within it across, plus a little, and near its height (a
+    // flat pool's bound reaches as far up as across, so a wall above the pool doesn't count).
+    inline constexpr float kOilMargin = 10.0f;  // Skyrim units, about 15 cm
+    inline constexpr float kOilHeight = 40.0f;  // about 60 cm above or below the pool's middle
+
+    inline bool InOil(const Damage::Vec3& a_at, const Damage::Vec3& a_center, float a_radius)
+    {
+        const float dx = a_at.x - a_center.x, dy = a_at.y - a_center.y, dz = a_at.z - a_center.z;
+        if (!std::isfinite(dx + dy + dz) || !(a_radius >= 0.0f)) {
+            return false;
+        }
+        const float reach = a_radius + kOilMargin;
+        return dx * dx + dy * dy <= reach * reach && std::fabs(dz) <= kOilHeight;
+    }
+
+    // The oil pools near the player are looked for this often (each bullet then tests only those), this far out.
+    inline constexpr double kOilScanEvery = 2.0;    // seconds
+    inline constexpr float  kOilScanRadius = 6000.0f;  // Skyrim units, about 85 m
 
     // After damage, the chunks round the object are read again once its destroyed model is in.
     inline constexpr float kRereadAfter = 1.0f;  // seconds
