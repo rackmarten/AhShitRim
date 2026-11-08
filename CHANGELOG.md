@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- CJ's armour no longer drains while you play. San Andreas's hunger (after 48 game hours without eating, his stomach rumbles every game hour and it takes 2 points of health, armour first) ran on Skyrim's fast days and nothing in Skyrim feeds him, so every few minutes a burst of ticks ate 14 points of armour. CJ is never hungry now.
 - Getting out of a vehicle looks like San Andreas again. CJ moves out through the door along the get-out animation and ends up standing beside the car, instead of playing the animation in his seat, sitting back in the car and then appearing outside. His followers stand up and step out beside their doors with him, down onto the ground, instead of sitting through it and then appearing outside half a metre up. `AHSHITRIM_ONLY=exit scripts/fake-vehicles.ps1` and `scripts/hit-test.ps1 -Scenario riders` trace both getting out every frame.
 - The Rhino drives like a tank on Skyrim's ground. It turns about its middle instead of swinging its middle out round its rear axle like a car (San Andreas's own turn, which a tank with straight tracks showed as strafing), on San Andreas's own turning circle; the handbrake still turns it tighter, as in San Andreas. Over rocks its tracks grip where San Andreas only let its four corner wheels grip, so it no longer slides about with its corners in the air, and when its hull hits a rock it isn't thrown up like a car any more: the Rhino, the Dumper and the other vehicles over 8 tonnes stay heavy.
 

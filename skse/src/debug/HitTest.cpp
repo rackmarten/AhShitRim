@@ -2,6 +2,7 @@
 
 #include "Ini.h"
 #include "car_exit.h"
+#include "health.h"
 #include "input.h"
 #include "passengers.h"
 #include "link/LinkService.h"
@@ -44,6 +45,7 @@ namespace AhShitRim::HitTest
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
             CrewOut,    // F10 out and back: the crew comes again
             CrewMoved,  // the player moved as fast travel moves it: the followers come behind
+            Standing,   // armour: CJ stands still with full armour, its level logged
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
             Done,
@@ -73,6 +75,7 @@ namespace AhShitRim::HitTest
             bool               crew = false;     // the scenario: the Grove Street crew (v39)
             RE::ActorHandle    hurt;             // the follower CJ shot
             bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
+            bool                armour = false;   // the scenario: CJ stands still with armour and none of it may go
             bool                crewRider = false;  // riders with a recruited homie of the crew (v39) as the follower
             RE::ObjectRefHandle follower;
             std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
@@ -957,7 +960,7 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour") {
             return;
         }
         state.crew = scenario == "crew";
@@ -970,6 +973,7 @@ namespace AhShitRim::HitTest
         state.pad = scenario == "pad";
         state.riders = scenario == "riders" || scenario == "ridecrew";
         state.crewRider = scenario == "ridecrew";
+        state.armour = scenario == "armour";
         if (state.crewRider) {
             Homies::DebugThanes(1);
         }
@@ -1030,6 +1034,15 @@ namespace AhShitRim::HitTest
                 }
                 state.phase = Phase::CrewSpots;
                 state.timer = 0.0f;
+            } else if (state.timer >= 6.0f && state.armour) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot, to stand still with armour", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                Vitals::SetArmor(Health::kSaFullHealth);
+                RunConsole("set timescale to 3600");  // an hour of game time a second: San Andreas's hunger (48 hours without food) comes within a minute
+                state.phase = Phase::Standing;
+                state.timer = state.logTimer = 0.0f;
             } else if (state.timer >= 6.0f && state.respawns) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot", a_player->GetParentCell()->GetFormID());
                 if (!PlayerSync::DebugOwned()) {
@@ -1214,6 +1227,20 @@ namespace AhShitRim::HitTest
             if (state.timer >= 8.0f) {
                 Survey();
                 SKSE::log::info("hit test: done after the respawn run");
+                state.phase = Phase::Done;
+            }
+            break;
+        case Phase::Standing:
+            state.logTimer += a_delta;
+            if (state.logTimer >= 10.0f) {
+                state.logTimer = 0.0f;
+                SKSE::log::info("hit test: {:.0f} s: armour {:.1f}, player health {:.0f}", state.timer, Vitals::Armor(),
+                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+            }
+            if (state.timer >= state.seconds) {
+                SKSE::log::info("hit test: done after {:.0f} s standing still, armour {:.1f} of {:.0f} ({})", state.timer, Vitals::Armor(), Health::kSaFullHealth,
+                    Vitals::Armor() >= Health::kSaFullHealth ? "kept" : "DRAINED");
+                RunConsole("set timescale to 20");
                 state.phase = Phase::Done;
             }
             break;
