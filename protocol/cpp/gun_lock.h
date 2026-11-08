@@ -64,8 +64,11 @@ namespace AhShitRim::GunLock
         return best;
     }
 
+    inline constexpr float kShiftReach = 0.5f;  // screen widths past either edge the d-pad's shift still finds someone
+
     // The next target to one side of a_current (a_side -1 left, 1 right): the nearest across the screen on that side,
-    // in range and sight anywhere in front. a_current when there is none.
+    // in range and sight, on screen or up to kShiftReach past its edge (the lock has turned the camera off the others).
+    // a_current when there is none.
     inline std::size_t Shift(std::span<const Candidate> a_all, std::size_t a_current, int a_side)
     {
         if (a_current >= a_all.size() || a_side == 0) {
@@ -76,7 +79,7 @@ namespace AhShitRim::GunLock
         float       bestGap = 0.0f;
         for (std::size_t i = 0; i < a_all.size(); i++) {
             const auto& c = a_all[i];
-            if (i == a_current || !c.screen.visible || !c.inSight || c.screen.distance > kRange || c.screen.x < 0.0f || c.screen.x > 1.0f) {
+            if (i == a_current || !c.screen.visible || !c.inSight || c.screen.distance > kRange || c.screen.x < -kShiftReach || c.screen.x > 1.0f + kShiftReach) {
                 continue;
             }
             const float gap = (c.screen.x - from) * static_cast<float>(a_side);

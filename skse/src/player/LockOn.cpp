@@ -178,7 +178,8 @@ namespace AhShitRim::LockOn
                 c.screen.y = 1.0f - c.screen.y;  // Skyrim's screen points go up
                 c.screen.distance = RunOver::Length(candidates[i].offset);
                 // Line of sight only for those on screen and in range (it's a ray test each).
-                const bool onScreen = c.screen.visible && c.screen.x >= 0.0f && c.screen.x <= 1.0f && c.screen.y >= 0.0f && c.screen.y <= 1.0f;
+                const bool onScreen = c.screen.visible && c.screen.x >= -GunLock::kShiftReach && c.screen.x <= 1.0f + GunLock::kShiftReach && c.screen.y >= 0.0f &&
+                                      c.screen.y <= 1.0f;  // or just past the side edges, for the d-pad's shift
                 bool       unused = false;
                 c.inSight = onScreen && c.screen.distance <= GunLock::kRange && a_player->HasLineOfSight(actors[i], unused);
                 if (c.id == state.gunLocked) {
