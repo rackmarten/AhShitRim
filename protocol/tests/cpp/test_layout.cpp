@@ -30,7 +30,6 @@ TEST_CASE("the frozen header layout")
 
 TEST_CASE("protocol v36: vehicle lights")
 {
-    CHECK(kProtocolVersion == 36);
     CHECK(offsetof(InputState, sky) == 115);  // the reserved byte before
     CHECK(offsetof(InputState, minuteOfDay) == 124);
     CHECK(sizeof(InputState) == 128);
@@ -377,4 +376,15 @@ TEST_CASE("the v31 slot and ring layout")
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);
     CHECK(sizeof(CollisionChunkHeader) == 40);
+}
+
+TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicles")
+{
+    CHECK(kProtocolVersion == 37);
+    CHECK(offsetof(InputState, world) == 126);  // a byte reserved since v36, clear of sky (115)
+    CHECK(offsetof(InputState, sky) == 115);
+    CHECK(sizeof(InputState) == 128);
+    CHECK(kWorldNone == 0);
+    CHECK(kWorldTamriel == 1);
+    CHECK(kWorldWhiterun == 2);
 }

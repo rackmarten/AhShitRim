@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 36;
+    inline constexpr std::uint32_t kProtocolVersion = 37;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -188,12 +188,16 @@ namespace AhShitRim::Protocol
         std::uint16_t shopBuyCount;      // v29: counts gold spent in barter or Ammu-Nation; buying
         std::uint16_t shopLeaveCount;    // v29: counts shops closed after buying in them; leaving
         std::uint16_t minuteOfDay;       // v36, with kSkyClock: Skyrim's time of day in minutes (0..1439), San Andreas's clock
-        std::uint16_t reserved3;
+        std::uint8_t  world;             // v37 (a reserved byte before): kWorld*, the worldspace the player is in now (parked vehicles' spots, protocol/cpp/parked.h)
+        std::uint8_t  reserved3;
     };
 
     inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
     inline constexpr std::uint8_t kCueMissionPassed = 1;  // InputState.cue (v24): San Andreas's mission passed tune (PLAY_MISSION_PASSED_TUNE 1)
     inline constexpr std::uint8_t kCueIntroLine = 2;      // CJ's "Ah shit, here we go again." (the intro's voice-over, mission audio)
+    inline constexpr std::uint8_t kWorldNone = 0;      // InputState.world (v37): an interior, or a worldspace no spot table uses
+    inline constexpr std::uint8_t kWorldTamriel = 1;   // Skyrim's own land (Tamriel, 0x3C)
+    inline constexpr std::uint8_t kWorldWhiterun = 2;  // WhiterunWorld, the city behind its gate (0x1A26F)
 
     inline constexpr std::uint8_t kSkyClock = 0x1;  // InputState.sky (v36): minuteOfDay holds Skyrim's time of day
     inline constexpr std::uint8_t kSkyWet = 0x2;    // it rains or snows in Skyrim: San Andreas's wet roads, which turn its lights on
@@ -742,6 +746,7 @@ namespace AhShitRim::Protocol
     static_assert(sizeof(InputState) == 128);
     static_assert(offsetof(InputState, sky) == 115);
     static_assert(offsetof(InputState, minuteOfDay) == 124);
+    static_assert(offsetof(InputState, world) == 126);
     static_assert(offsetof(InputState, mouseX) == 8);
     static_assert(offsetof(InputState, mouseY) == 16);
     static_assert(offsetof(InputState, moveX) == 24);
