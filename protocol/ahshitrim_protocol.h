@@ -716,7 +716,8 @@ namespace AhShitRim::Protocol
         std::uint32_t indexCount;
         std::uint32_t flags;     // kSkinMesh*
         std::uint8_t  color[4];  // RGBA, multiplies the texture
-        std::uint32_t reserved;
+        std::uint32_t litTexture;  // a lamp's mesh (kSkinMeshLamp): 1 + the texture it shows while its lamp burns (the lights-on
+                                   // texture), 0 for none. A reserved field before; an older Skyrim ignores it
     };
 
     // Bind pose, Skyrim axes and units; triangles wind counterclockwise seen from outside.

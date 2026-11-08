@@ -31,6 +31,7 @@ namespace
         plain.texture = -1;
         plain.flags = 0;
         plain.color[0] = 10;
+        plain.litTexture = 0;  // a lamp, lit with texture 0
         model.meshes.push_back(plain);
         return model;
     }
@@ -70,6 +71,8 @@ TEST_CASE("a model goes through serialize, chunks, the assembler and parse uncha
     CHECK(model->meshes[0].Index(1) == 1);
     CHECK(model->meshes[1].texture == -1);
     CHECK(model->meshes[1].color[0] == 10);
+    CHECK(model->meshes[0].litTexture == -1);
+    CHECK(model->meshes[1].litTexture == 0);
 }
 
 TEST_CASE("a big model is cut into chunks of at most kModelChunkMax and put back together")

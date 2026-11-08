@@ -45,6 +45,7 @@ namespace AhShitRim::SkinModel
         std::int32_t                      texture = -1;
         std::uint32_t                     flags = 0;  // Protocol::kSkinMesh*
         std::uint8_t                      color[4] = { 255, 255, 255, 255 };
+        std::int32_t                      litTexture = -1;  // a lamp's mesh: the texture shown while it burns, -1 none
         std::vector<Protocol::SkinVertex> vertices;
         std::vector<std::uint16_t>        indices;
     };
@@ -96,6 +97,7 @@ namespace AhShitRim::SkinModel
             m.indexCount = static_cast<std::uint32_t>(mesh.indices.size());
             m.flags = mesh.flags;
             std::memcpy(m.color, mesh.color, sizeof(m.color));
+            m.litTexture = mesh.litTexture >= 0 ? static_cast<std::uint32_t>(mesh.litTexture) + 1 : 0;
             Detail::Put(out, m);
             Detail::PutBytes(out, mesh.vertices.data(), mesh.vertices.size() * sizeof(Protocol::SkinVertex));
             Detail::PutBytes(out, mesh.indices.data(), mesh.indices.size() * sizeof(std::uint16_t));
@@ -139,6 +141,7 @@ namespace AhShitRim::SkinModel
         std::uint32_t       vertexCount;
         const std::uint8_t* indices;   // indexCount little-endian uint16
         std::uint32_t       indexCount;
+        std::int32_t        litTexture = -1;  // a lamp's mesh: the texture shown while it burns, -1 none
 
         Protocol::SkinVertex Vertex(std::uint32_t a_i) const
         {
@@ -215,6 +218,7 @@ namespace AhShitRim::SkinModel
             }
             Mesh out{ mesh.texture, mesh.flags, { mesh.color[0], mesh.color[1], mesh.color[2], mesh.color[3] }, a_blob + at,
                 mesh.vertexCount, a_blob + at + vertexBytes, mesh.indexCount };
+            out.litTexture = mesh.litTexture >= 1 && mesh.litTexture <= header.textureCount ? static_cast<std::int32_t>(mesh.litTexture) - 1 : -1;
             at += vertexBytes + indexBytes;
             for (std::uint32_t k = 0; k < out.vertexCount; k++) {
                 const auto v = out.Vertex(k);

@@ -320,6 +320,25 @@ namespace AhShitRim::Vehicles
             slot.extras.clear();
             slot.atomics.clear();
             slot.spinners.clear();
+            // A texture's index in the model, read once; -1 (white) when it can't be read.
+            const auto textureOf = [&](RwTexture* a_texture) -> std::int32_t {
+                const auto found = byRaster.find(a_texture->raster);
+                if (found != byRaster.end()) {
+                    return found->second;
+                }
+                std::string  why;
+                auto         read = RwTextures::Read(a_texture, why);
+                std::int32_t index = -1;
+                if (read.rgba.empty()) {
+                    Log(std::format("vehicle: texture {} of the {} left white: {}", static_cast<const char*>(a_texture->name), slot.name, why));
+                } else {
+                    textureLog += std::format(" {} {}x{}", static_cast<const char*>(a_texture->name), read.width, read.height);
+                    index = static_cast<std::int32_t>(model.textures.size());
+                    model.textures.push_back(std::move(read));
+                }
+                byRaster[a_texture->raster] = index;
+                return index;
+            };
             for (RpAtomic* atomic : atomics) {
                 RpGeometry* geometry = atomic->geometry;
                 if (!Usable(atomic)) {
@@ -353,22 +372,11 @@ namespace AhShitRim::Vehicles
                         out.flags |= VehicleLights::MeshFlagsOf(VehicleLights::LampOfMaterial(material->color.red, material->color.green, material->color.blue));
                     }
                     if (texture && texture->raster) {
-                        const auto found = byRaster.find(texture->raster);
-                        if (found != byRaster.end()) {
-                            out.texture = found->second;
-                        } else {
-                            std::string why;
-                            auto        read = RwTextures::Read(texture, why);
-                            if (read.rgba.empty()) {
-                                Log(std::format("vehicle: texture {} of the {} left white: {}", static_cast<const char*>(texture->name), slot.name, why));
-                                out.texture = -1;
-                            } else {
-                                textureLog += std::format(" {} {}x{}", static_cast<const char*>(texture->name), read.width, read.height);
-                                out.texture = static_cast<std::int32_t>(model.textures.size());
-                                model.textures.push_back(std::move(read));
-                            }
-                            byRaster[texture->raster] = out.texture;
-                        }
+                        out.texture = textureOf(texture);
+                    }
+                    // A lamp shows San Andreas's lights-on texture while it burns, as SetEditableMaterialsCB swaps it in.
+                    if (VehicleLights::LampOfMesh(out.flags) != 0 && CVehicleModelInfo::ms_pLightsOnTexture && CVehicleModelInfo::ms_pLightsOnTexture->raster) {
+                        out.litTexture = textureOf(CVehicleModelInfo::ms_pLightsOnTexture);
                     }
                     // A spinning rotor's or propeller's disc: San Andreas fades it in by the material's alpha when it draws it
                     // (SetComponentAtomicAlpha), so it is see-through, never solid.

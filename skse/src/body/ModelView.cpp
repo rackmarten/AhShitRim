@@ -41,6 +41,9 @@ namespace AhShitRim::ModelView
             std::vector<std::uint8_t>     vertices;          // packed, UVs filled in once
             RE::BSLightingShaderProperty* lampShader = nullptr;  // a vehicle lamp's mesh: its shader, glowing while the lamp burns
             std::uint8_t                  lamp = 0;          // and that lamp's kLight bit
+            RE::NiSourceTexture*          offTexture = nullptr;  // its texture unlit, and while it burns (San Andreas's lights-on
+            RE::NiSourceTexture*          onTexture = nullptr;   // texture, whose lamps are bright where the unlit one's are dark)
+            bool                          lit = false;
         };
 
         // A received model, built once: never destroyed (the game's destructors expect geometry it
@@ -472,12 +475,24 @@ namespace AhShitRim::ModelView
                 if (!MakeShape(*built, m, diffuse, !single, shape)) {
                     continue;
                 }
+                if (shape.lampShader && mesh.litTexture >= 0 && mesh.litTexture < static_cast<std::int32_t>(textures.size())) {
+                    shape.offTexture = diffuse;
+                    shape.onTexture = textures[mesh.litTexture];
+                }
                 twins += meshTwins;
                 oneSided += single ? 1 : 0;
                 built->node->AttachChild(shape.shape.get(), true);
                 vertices += mesh.vertexCount;
                 triangles += mesh.indexCount / 3;
                 built->shapes.push_back(std::move(shape));
+            }
+            if (built->model.kind == Protocol::kSkinModelVehicle) {
+                int lamps = 0, litTextures = 0;
+                for (const auto& shape : built->shapes) {
+                    lamps += shape.lampShader ? 1 : 0;
+                    litTextures += shape.onTexture ? 1 : 0;
+                }
+                SKSE::log::info("model view: {} has {} lamp shapes, {} with San Andreas's lights-on texture", built->model.name, lamps, litTextures);
             }
             built->node->SetAppCulled(true);
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -612,7 +627,13 @@ namespace AhShitRim::ModelView
         const std::uint8_t lit = (a_pose.flags & Protocol::kBodyWrecked) == 0 ? a_pose.lights.lit : 0;
         for (auto& shape : built->shapes) {
             if (shape.lampShader) {
-                shape.lampShader->emissiveMult = (shape.lamp & lit) != 0 ? state.lampGlow : 0.0f;
+                const bool on = (shape.lamp & lit) != 0;
+                shape.lampShader->emissiveMult = on ? state.lampGlow : 0.0f;
+                if (on != shape.lit && shape.onTexture && shape.offTexture) {
+                    static_cast<RE::BSLightingShaderMaterialBase*>(shape.lampShader->material)->diffuseTexture =
+                        RE::NiPointer<RE::NiSourceTexture>(on ? shape.onTexture : shape.offTexture);
+                }
+                shape.lit = on;
             }
         }
 
