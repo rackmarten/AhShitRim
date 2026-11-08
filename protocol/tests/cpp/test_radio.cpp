@@ -144,6 +144,83 @@ TEST_CASE("San Andreas's radio is off on the stations Skyrim plays and on off")
     CHECK_FALSE(SkyrimPlays(kRadioOff));
 }
 
+TEST_CASE("bicycles have no radio; cars, bikes and emergency vehicles do")
+{
+    using AhShitRim::VehicleKinds::Kind;
+    using AhShitRim::VehicleKinds::KindOf;
+    for (const std::uint16_t bicycle : { 481, 509, 510 }) {  // BMX, Bike, Mountain Bike
+        CHECK_FALSE(HasRadio(KindOf(bicycle), kSaRadioCivilian));
+    }
+    CHECK(HasRadio(KindOf(477), kSaRadioCivilian));   // ZR-350
+    CHECK(HasRadio(KindOf(495), kSaRadioCivilian));   // Sandking
+    CHECK(HasRadio(KindOf(522), kSaRadioCivilian));   // NRG-500
+    CHECK(HasRadio(KindOf(596), kSaRadioEmergency));  // Police LS: Emergency AA, tunable
+    CHECK_FALSE(HasRadio(KindOf(477), -1));           // San Andreas gives it none
+    CHECK_FALSE(HasRadio(KindOf(370), kSaRadioCivilian));  // the jetpack is no vehicle
+    CHECK_FALSE(HasRadio(KindOf(371), kSaRadioCivilian));  // nor the parachute
+}
+
+TEST_CASE("the last station carries over into every vehicle, off and Skyrim's stations included")
+{
+    CHECK(StartStation(-1, 6) == 6);                    // nothing listened to yet (kRadioNone): the vehicle's own
+    CHECK(StartStation(kEmergency, 6) == 6);            // Emergency AA (a police car's own) never carries over
+    CHECK(StartStation(2, 6) == 2);                     // K-Rose in the last car, K-Rose in this one
+    CHECK(StartStation(kSovngarde, 6) == kSovngarde);   // San Andreas's radio starts off, Skyrim plays it
+    CHECK(SaStation(StartStation(kSovngarde, 6)) == kSaRadioOff);
+    CHECK(StartStation(kSweetroll, 0) == kSweetroll);   // in a police car too
+    CHECK(StartStation(kRadioOff, 6) == kRadioOff);     // turned off stays off
+    CHECK(SaStation(StartStation(kRadioOff, 6)) == kSaRadioOff);
+}
+
+TEST_CASE("getting in, San Andreas's stale station id never replaces the dial")
+{
+    // 0.1.0's carry-over: Radio X's 7 read before the radio ran became the dial, in every vehicle
+    CHECK(Follow(kSovngarde, 7, false).station == kSovngarde);
+    CHECK(Follow(kSovngarde, 7, false).dial == kSovngarde);
+    CHECK(Follow(2, 7, false).dial == 2);
+    CHECK(Follow(kRadioOff, 7, false).station == kRadioOff);
+    CHECK(Follow(-1, 7, false).station == -1);  // nothing listened to yet: no name until San Andreas's own comes on
+    CHECK(Follow(-1, 7, false).dial == -1);
+    // running
+    CHECK(Follow(-1, 3, true).station == 3);  // the first vehicle's own station
+    CHECK(Follow(-1, 3, true).dial == 3);
+    CHECK(Follow(2, 2, true).station == 2);
+    CHECK(Follow(kSovngarde, kSaRadioOff, true).station == kSovngarde);  // San Andreas off, Skyrim plays it
+    CHECK(Follow(kSweetroll, kSaRadioOff, true).dial == kSweetroll);
+    CHECK(Follow(2, kSaRadioOff, true).station == kRadioOff);  // turned off
+    CHECK(Follow(-1, kSaRadioOff, true).dial == kRadioOff);
+    CHECK(Follow(kRadioOff, kEmergency, true).station == kEmergency);  // San Andreas's own choice still shows
+}
+
+TEST_CASE("getting in, the carried-over station is retuned to once if San Andreas's radio comes on elsewhere")
+{
+    Boarding b;
+    b.Start(2, 1000);  // K-Rose carried over
+    CHECK(b.Pending());
+    CHECK(b.Step(false, 8, 1030) == -1);  // not running yet, a stale id
+    CHECK(b.Pending());
+    CHECK(b.Step(true, 2, 1100) == -1);  // came on on K-Rose: nothing to do
+    CHECK_FALSE(b.Pending());
+
+    b.Start(2, 2000);
+    CHECK(b.Step(true, kEmergency, 2100) == 2);  // a police car's Emergency AA: retuned once
+    CHECK_FALSE(b.Pending());
+    CHECK(b.Step(true, kEmergency, 2200) == -1);
+
+    b.Start(kSovngarde, 3000);
+    CHECK(b.Step(true, 5, 3100) == kSaRadioOff);  // San Andreas's own retune to its last station: off, Skyrim plays
+    b.Start(kSovngarde, 4000);
+    CHECK(b.Step(true, kSaRadioOff, 4100) == -1);  // off already
+
+    b.Start(-1, 5000);  // nothing carried over: the vehicle's own
+    CHECK_FALSE(b.Pending());
+    CHECK(b.Step(true, 5, 5100) == -1);
+
+    b.Start(2, 6000);
+    CHECK(b.Step(false, 8, 6000 + kBoardingMs + 1) == -1);  // never came on: given up
+    CHECK_FALSE(b.Pending());
+}
+
 TEST_CASE("station names and which ones silence Skyrim's music")
 {
     CHECK(StationName(6) == "Radio Los Santos");

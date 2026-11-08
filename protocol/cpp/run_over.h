@@ -1,8 +1,9 @@
 // CJ's vehicle against Skyrim's actors (protocol v28). Skyrim sends the actors near the vehicle as capsules
 // (ActorProxy, sized by race); San Andreas sweeps the vehicle's collision box against them every frame, pushes
-// the vehicle back by what it hit (a person a little, a giant or a mammoth like a wall) and sends each hard
-// hit back as an ImpactEvent, which Skyrim turns into damage by speed and a throw. Header-only and free of
-// game types, so the protocol tests cover it.
+// the vehicle back by what it hit (a person a little, a giant or a mammoth like a wall to anything lighter than it)
+// and sends each hard hit back as an ImpactEvent, which Skyrim turns into damage by speed and a throw. Running over
+// anyone but a person is no crime, and the horn makes the people and animals in the vehicle's way dive aside (0.1.1).
+// Header-only and free of game types, so the protocol tests cover it.
 //
 // Skyrim's half works in its units (70 to the metre) relative to the handover's anchor; San Andreas's in
 // metres in its own world. Both put X east, Y north and Z up.
@@ -45,7 +46,7 @@ namespace AhShitRim::RunOver
         Small,    // chickens, hares, foxes, skeevers, mudcrabs, dogs
         Beast,    // anything else: wolves, bears, trolls, sabre cats, draugr, spiders
         Horse,    // lying along its heading
-        Giant,    // heavy: stops a car
+        Giant,    // heavy: stops a vehicle lighter than it
         Mammoth,  // heavy, lying along its heading
         Dragon,   // heavy, lying along its heading (a landed one)
     };
@@ -79,6 +80,10 @@ namespace AhShitRim::RunOver
     }
 
     constexpr bool Heavy(Build a_build) { return a_build == Build::Giant || a_build == Build::Mammoth || a_build == Build::Dragon; }
+
+    // Whether running it over is a crime (0.1.1): only a person. An animal or a creature (a chicken, a cow, someone's
+    // horse, a giant) is never one, whoever owns it (Wanted::Pardon undoes Skyrim's bounty for it).
+    constexpr bool CrimeToHit(Build a_build) { return a_build == Build::Person; }
 
     // An actor's capsule in its own frame, Skyrim units: upright from its feet, or lying along its heading.
     struct Shape
@@ -302,6 +307,15 @@ namespace AhShitRim::RunOver
         return kHeavyCrashPerSpeed * (std::max)(0.0f, a_closing - kDamageFrom);
     }
 
+    // Whether a heavy actor (kProxyHeavy: a giant, a mammoth, a landed dragon) is a wall to the vehicle hitting it: only
+    // to one lighter than it, by San Andreas's handling mass (0.1.1). A car stops at a giant; the Rhino (25 t) throws it
+    // as a car throws a person, takes no crash damage, and hurts it by its weight (ImpactDamage).
+    inline bool IsWall(bool a_heavy, float a_vehicleMass, float a_actorMass)
+    {
+        const float vehicle = std::isfinite(a_vehicleMass) && a_vehicleMass > 0.0f ? a_vehicleMass : kCarMass;
+        return a_heavy && !(vehicle > a_actorMass);
+    }
+
     struct Response
     {
         float closing = 0.0f;  // m/s along the normal, before the hit
@@ -341,6 +355,14 @@ namespace AhShitRim::RunOver
             return 0.0f;
         }
         return std::clamp(0.8f * a_speed, 2.0f, 20.0f);
+    }
+
+    // The knock a hit gives in Skyrim: none from a wall (a_wall: IsWall), nor for the other big ones Skyrim doesn't throw
+    // (a_normal false: Damage::Class isn't Normal, the giant frostbite spiders); a heavy one a heavier vehicle threw
+    // (a_heavy) flies as a person does.
+    inline float KnockFor(float a_speed, bool a_wall, bool a_heavy, bool a_normal)
+    {
+        return a_wall || !(a_heavy || a_normal) ? 0.0f : KnockOf(a_speed);
     }
 
     // One actor isn't hit again within kHitGap of its last hit, while the vehicle is still in it.
@@ -396,6 +418,100 @@ namespace AhShitRim::RunOver
 
     private:
         bool   _said = false;
+        double _at = 0.0;
+    };
+
+    // ---- The horn (0.1.1, PerkeleRim's) ----
+
+    // While CJ sounds the horn in a vehicle, the people and animals in its way dive aside out of its line, so they stop
+    // strolling under its wheels: on the press, then every kHornEvery while it's held. In its way: within kHornRange
+    // and kHornHeight of it, and either closer than kHornNear or ahead of it (a_way, flat) no further than kHornLane off
+    // its line. a_dx, a_dy, a_dz: the actor minus the vehicle, Skyrim units. The heavy ones (Heavy) don't move for it.
+    inline constexpr float  kHornRange = 800.0f;   // about 11 m
+    inline constexpr float  kHornNear = 350.0f;    // 5 m
+    inline constexpr float  kHornLane = 500.0f;    // 7 m either side
+    inline constexpr float  kHornHeight = 4.0f * kMeter;  // a helicopter honking overhead scares nobody
+    inline constexpr double kHornEvery = 1.0;      // seconds
+    inline constexpr float  kHornSlow = 1.0f * kMeter;  // units a second: slower than this, its way is where its nose points
+
+    inline bool InHornPath(float a_dx, float a_dy, float a_dz, float a_wayX, float a_wayY)
+    {
+        const float distance = std::hypot(a_dx, a_dy);
+        if (!(distance <= kHornRange) || !(std::abs(a_dz) <= kHornHeight)) {
+            return false;
+        }
+        const float way = std::hypot(a_wayX, a_wayY);
+        if (distance < kHornNear || !(way > 1e-4f)) {
+            return true;
+        }
+        const float ahead = (a_dx * a_wayX + a_dy * a_wayY) / way;
+        const float aside = std::abs(a_dx * a_wayY - a_dy * a_wayX) / way;
+        return ahead > 0.0f && aside <= kHornLane;
+    }
+
+    // The vehicle's way for the horn: its flat velocity (units a second), or where its nose points (a_heading, Skyrim
+    // radians) when it's slower than kHornSlow.
+    inline std::array<float, 2> HornWay(float a_velocityX, float a_velocityY, float a_heading)
+    {
+        if (std::hypot(a_velocityX, a_velocityY) >= kHornSlow) {
+            return { a_velocityX, a_velocityY };
+        }
+        return { std::sin(a_heading), std::cos(a_heading) };
+    }
+
+    // An actor the horn reaches dives aside: knocked down lightly (kHornDiveKnock) and its ragdoll thrown square to the
+    // vehicle's way, towards the side it already stands on, plus kHornDiveLift upwards. It lands kHornDiveShare of the
+    // way to kHornClear past the lane (at least kHornDodgeMin), flying about kHornDiveSeconds. Returns that move, flat,
+    // in units; a_dx, a_dy as for InHornPath. No way: away from the vehicle.
+    inline constexpr float kHornDiveSeconds = 0.6f;
+    inline constexpr float kHornDiveLift = 3.0f;   // metres a second, upwards
+    inline constexpr float kHornDiveKnock = 1.0f;  // KnockExplosion's magnitude, the least there is
+    inline constexpr float kHornDiveShare = 1.0f / 3.0f;
+    inline constexpr float kHornClear = 100.0f;
+    inline constexpr float kHornDodgeMin = 50.0f;
+
+    inline std::array<float, 2> HornDodge(float a_dx, float a_dy, float a_wayX, float a_wayY)
+    {
+        const float way = std::hypot(a_wayX, a_wayY);
+        float       sideX, sideY, aside;
+        if (!(way > 1e-4f)) {
+            const float distance = std::hypot(a_dx, a_dy);
+            sideX = distance > 1e-4f ? a_dx / distance : 1.0f;
+            sideY = distance > 1e-4f ? a_dy / distance : 0.0f;
+            aside = distance;
+        } else {
+            // Right of the way is (y, -x); the actor's side by the sign of its cross product.
+            const float cross = a_dx * a_wayY - a_dy * a_wayX;
+            const float sign = cross >= 0.0f ? 1.0f : -1.0f;
+            sideX = sign * a_wayY / way;
+            sideY = -sign * a_wayX / way;
+            aside = std::abs(cross) / way;
+        }
+        const float move = (std::max)(kHornDodgeMin, (kHornLane + kHornClear - aside) * kHornDiveShare);
+        return { sideX * move, sideY * move };
+    }
+
+    // When the horn scares the way clear: on its press, then every kHornEvery while it's held.
+    class HornPulse
+    {
+    public:
+        // A frame at a_now (seconds) with the horn a_held. Returns whether to scare the way now.
+        bool Step(bool a_held, double a_now)
+        {
+            if (!a_held) {
+                _held = false;
+                return false;
+            }
+            if (_held && a_now >= _at && a_now - _at < kHornEvery) {
+                return false;
+            }
+            _held = true;
+            _at = a_now;
+            return true;
+        }
+
+    private:
+        bool   _held = false;
         double _at = 0.0;
     };
 }
