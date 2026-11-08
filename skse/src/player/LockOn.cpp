@@ -199,6 +199,14 @@ namespace AhShitRim::LockOn
                 const auto shifted = GunLock::Shift(all, current, a_aim.shift);
                 if (shifted != current) {
                     state.grace.Reset();
+                } else {
+                    int shown = 0, seen = 0;
+                    for (const auto& c : all) {
+                        shown += c.screen.visible ? 1 : 0;
+                        seen += c.inSight ? 1 : 0;
+                    }
+                    SKSE::log::info("lock-on: nobody to shift the gun lock to on the {} ({} around, {} in front, {} in sight)", a_aim.shift > 0 ? "right" : "left",
+                        all.size(), shown, seen);
                 }
                 current = shifted;
             }
