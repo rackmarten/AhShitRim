@@ -21,7 +21,7 @@ namespace AhShitRim::Riders
 
     // Every frame San Andreas has the player, after the vehicles are drawn: a_vehicle is the one CJ is in as
     // drawn (nullptr while he is on foot), a_feet where it is in Skyrim's world, a_gettingInOut San Andreas's
-    // enter or leave task running (PlayerState kPlayerGettingInOut), a_delta the frame's seconds.
+    // enter or leave task running (PlayerState kPlayerGettingInOut) or CJ already out of it, a_delta the frame's seconds.
     void Update(RE::PlayerCharacter* a_player, const Protocol::BodyState* a_vehicle, const RE::NiPoint3& a_feet, bool a_gettingInOut, float a_delta);
 
     // Back to Skyrim's own player, or a re-anchor (fast travel takes the followers along by itself): the
