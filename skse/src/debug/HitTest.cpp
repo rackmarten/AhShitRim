@@ -197,11 +197,11 @@ namespace AhShitRim::HitTest
             return true;
         }
 
-        void Report(const char* a_who, const std::vector<CarExit::Sample>& a_trace)
+        void Report(const char* a_who, const std::vector<CarExit::Sample>& a_trace, bool a_judge)
         {
             const auto t = CarExit::Check(a_trace);
-            SKSE::log::info("hit test: {} got out: {} frames, biggest step {:.2f} m, back towards the middle {:.2f} m, out {:.2f} -> {:.2f} m ({:.2f} when let go): {}",
-                a_who, t.samples, t.maxStep, t.maxBack, t.startOut, t.endOut, t.outAtRelease, CarExit::Smooth(t) ? "smooth" : "NOT SMOOTH");
+            SKSE::log::info("hit test: {} got out: {} frames, biggest step {:.2f} m, back towards the middle {:.2f} m, out {:.2f} -> {:.2f} m ({:.2f} when let go){}",
+                a_who, t.samples, t.maxStep, t.maxBack, t.startOut, t.endOut, t.outAtRelease, !a_judge ? "" : CarExit::Smooth(t) ? ": smooth" : ": NOT SMOOTH");
         }
 
         // Every frame from F until both have been out a second: the follower's feet and CJ's.
@@ -222,8 +222,10 @@ namespace AhShitRim::HitTest
                 at.z, riding ? "in" : "out", cj.x, cj.y, cj.z, cjIn ? "in" : "out");
             state.outFor = !riding && !cjIn ? state.outFor + a_delta : 0.0f;
             if (state.outFor >= 1.0f || state.timer > 10.0f) {
-                Report("the follower", state.riderTrace);
-                Report("CJ (the player's feet)", state.cjTrace);
+                Report("the follower", state.riderTrace, true);
+                // San Andreas's line-up moves CJ's position to the door as the get-out begins and his animation keeps his
+                // body in the seat, so his feet jump where his body doesn't: logged, not judged (fake_vehicles judges his body).
+                Report("CJ (the player's position)", state.cjTrace, false);
                 SKSE::log::info("hit test: done after the riders run");
                 state.phase = Phase::Done;
             }
