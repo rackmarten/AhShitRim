@@ -10,7 +10,8 @@
     came back. Or (pad) it injects gamepad events as Skyrim sends them and checks each action from San Andreas's pose
     ("hit test: pad: ... ok"). Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
     traces both getting out. Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
-    bullet, a Molotov and a rocket, and logs whether each burns. Then it prints what the logs say, closes both
+    bullet, a Molotov and a rocket, and logs whether each burns. Or (drive) CJ drives the Sandking for -Seconds, his body,
+    its model and the camera traced in the vehicle every frame as Skyrim draws them. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
@@ -27,9 +28,10 @@
     scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
     scripts/hit-test.ps1 -Scenario ridecrew # the same with a recruited homie of the Grove Street crew, at the Whiterun stables
+    scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil', 'drive')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = '',
     [int] $TimeoutSeconds = 300,

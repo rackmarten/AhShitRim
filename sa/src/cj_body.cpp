@@ -516,7 +516,19 @@ namespace AhShitRim::CjBody
         }
     }
 
-    std::uint32_t NowMs() { return Clock(); }
+    namespace
+    {
+        std::uint32_t g_frameMs = 0;
+        bool          g_frameLatched = false;
+    }
+
+    void BeginFrame()
+    {
+        g_frameMs = Clock();
+        g_frameLatched = true;
+    }
+
+    std::uint32_t NowMs() { return g_frameLatched ? g_frameMs : Clock(); }
 
     bool BoneWorld(CPlayerPed* a_ped, int a_boneId, RwMatrixTag& a_out)
     {
@@ -675,7 +687,7 @@ namespace AhShitRim::CjBody
         body.handover = a_handover;
         body.model = state.model;
         body.boneCount = state.boneCount;
-        body.timeMs = Clock();
+        body.timeMs = NowMs();
         for (std::uint32_t i = 0; i < state.boneCount; i++) {
             const auto world = Body::SkinToWorld(ToFrame(skinToBone[i]), ToFrame(matrices[i]), atomicFrame, local);
             body.bones[i] = Body::ToBone(world, Vec(feet));

@@ -378,7 +378,7 @@ namespace AhShitRim::Protocol
         std::uint32_t handover;          // InputState.handover this belongs to
         std::uint32_t model;             // ModelChunkHeader.model the bones belong to
         std::uint32_t boneCount;         // bones in use, the model's SkinModelHeader.boneCount
-        std::uint32_t timeMs;            // San Andreas's real-time clock, for Skyrim's interpolation
+        std::uint32_t timeMs;            // San Andreas's real-time clock, for Skyrim's interpolation: one reading a frame, the same in every slot
         float         feet[3];           // CJ's feet
         float         cameraPosition[3];
         float         cameraForward[3];  // unit vector
