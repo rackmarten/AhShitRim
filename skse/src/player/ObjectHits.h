@@ -21,9 +21,6 @@ namespace AhShitRim::ObjectHits
     // A bullet of a_weapon stopped at a_at (on anything, the land too): oil it landed in catches fire, GTA style.
     void BulletLanded(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, std::uint8_t a_weapon);
 
-    // The oil pools within Traps::kOilScanRadius of the player, looked for now (the hit test).
-    std::vector<RE::TESObjectREFR*> OilNear(RE::PlayerCharacter* a_player);
-
     // The flamethrower's cone from a_origin along a_dir (a unit vector) reaching a_range.
     void FireCone(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range);
 

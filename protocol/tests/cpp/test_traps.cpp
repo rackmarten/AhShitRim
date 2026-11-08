@@ -67,7 +67,7 @@ TEST_CASE("traps: oil burns GTA style, from bullets as well as fire and blasts")
     CHECK(IgnitesOil(Hit::Blast));
     CHECK_FALSE(IgnitesOil(Hit::Blow));
 
-    // Lit with GasExplode's 5 only, once: more skipped its burning stages (a bullet's 20 left it at 80 of 100).
+    // Lit with GasExplode's 5 only, once: more would only cut its fire short.
     CHECK(OilDamage(Hit::Bullet, false) == kOilLights);
     CHECK(OilDamage(Hit::Fire, false) == kOilLights);
     CHECK(OilDamage(Hit::Blast, false) == kOilLights);

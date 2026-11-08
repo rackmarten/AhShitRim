@@ -33,8 +33,9 @@ namespace AhShitRim::ObjectHits
             return a_hit == Traps::Hit::Bullet ? "bullet" : a_hit == Traps::Hit::Blow ? "blow" : a_hit == Traps::Hit::Fire ? "fire" : "blast";
         }
 
-        // Oil (traps.h, OilDamage): lit as TrapExplosiveGas's GasExplode lights it, the player its cause, and never
-        // damaged past that, which would skip its burning stages.
+        // Oil (traps.h, OilDamage): lit directly as TrapExplosiveGas's GasExplode lights it, the player its cause, not
+        // through the pool's script answering the hit. Its first stage ignores damage from outside, so CJ's damage
+        // (DamageObject's second argument false) never reached it.
         void LightOil(RE::PlayerCharacter* a_player, RE::TESObjectREFR* a_ref, Traps::Hit a_hit, std::uint8_t a_weapon)
         {
             const auto id = a_ref->GetFormID();
@@ -47,7 +48,7 @@ namespace AhShitRim::ObjectHits
             if (auto* cause = a_player->GetActorCause()) {
                 a_ref->SetActorCause(cause);
             }
-            a_ref->DamageObject(damage, false);
+            a_ref->DamageObject(damage, true);  // true: past its first stage's "ignore external damage", as the script's own call
             SKSE::log::info("object hits: the oil {:08X} lit by CJ's {} of weapon {}", id, NameOf(a_hit), a_weapon);
         }
 
@@ -78,16 +79,16 @@ namespace AhShitRim::ObjectHits
                 return;
             }
             const bool destructible = Destructible(a_ref);
-            if (BaseOf(base) == Traps::Base::Activator && HasScript(a_ref, Traps::kOilScript)) {
-                LightOil(a_player, a_ref, a_hit, a_weapon);
-                return;
-            }
             if (!Traps::Told(BaseOf(base), destructible)) {
                 return;
             }
             RE::TESHitEvent event(a_ref, a_player, Traps::SourceOf(a_hit, a_weapon), 0, RE::TESHitEvent::Flag::kNone);
             if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
                 events->SendEvent(&event);
+            }
+            if (BaseOf(base) == Traps::Base::Activator && HasScript(a_ref, Traps::kOilScript)) {
+                LightOil(a_player, a_ref, a_hit, a_weapon);  // and no damage of CJ's own
+                return;
             }
             const float damage = destructible ? Traps::ObjectDamage(a_hit, a_skyrimDamage) : 0.0f;
             if (damage > 0.0f) {
@@ -219,19 +220,6 @@ namespace AhShitRim::ObjectHits
                 Land(a_player, ref.get(), Traps::Hit::Bullet, a_weapon, 0.0f);
             }
         }
-    }
-
-    std::vector<RE::TESObjectREFR*> OilNear(RE::PlayerCharacter* a_player)
-    {
-        state.oilScanned = NowSeconds();
-        ScanOil(a_player);
-        std::vector<RE::TESObjectREFR*> out;
-        for (const auto& handle : state.oil) {
-            if (const auto ref = handle.get()) {
-                out.push_back(ref.get());
-            }
-        }
-        return out;
     }
 
     void FireCone(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range)

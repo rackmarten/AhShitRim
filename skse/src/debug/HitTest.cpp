@@ -38,6 +38,9 @@ namespace AhShitRim::HitTest
             Phase              phase = Phase::Off;
             bool               bust = false;  // the scenario: bust, else hits
             bool               oil = false;   // or oil
+            bool               oilMoved = false;
+            bool               oilReset = false;  // the pools placed
+            std::string        oilAt = "0009B0E6";  // the reference the player is moved to first (HitTestOilAt): by the floor PlaceOil puts the pools on
             std::string        start = "Riverwood";
             float              seconds = 90.0f;
             float              timer = 0.0f;
@@ -63,23 +66,46 @@ namespace AhShitRim::HitTest
             return health ? health->health : 100.0f;
         }
 
-        // Up to three of the pools round the player: a bullet lands in the first, a Molotov bursts on the second, a rocket
-        // on the third, each through what CJ's own shots and projectiles call (ObjectHits).
+        // Three fresh oil pools (Skyrim's TrapOilPool01) placed on the floor where the save's own may be burnt out already:
+        // at three of a row of pools in BleakFallsBarrow01, 3 m apart. A bullet lands in the first, a Molotov bursts on the
+        // second, a rocket on the third, each through what CJ's own shots and projectiles call (ObjectHits).
+        constexpr std::uint32_t kOilPool = 0x000862CC;
+        constexpr std::uint32_t kOilSpots[3] = { 0x0009B0E6, 0x0009B0E0, 0x0009B0DE };
+
+        void PlaceOil()
+        {
+            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(kOilPool);
+            for (const auto spot : kOilSpots) {
+                auto* at = RE::TESForm::LookupByID<RE::TESObjectREFR>(spot);
+                auto  made = base && at ? at->PlaceObjectAtMe(base, false) : nullptr;
+                if (!made) {
+                    SKSE::log::warn("hit test: couldn't place oil at {:08X}", spot);
+                    continue;
+                }
+                state.pools.push_back({ made->GetHandle() });
+                SKSE::log::info("hit test: placed the oil {:08X} at ({:.0f}, {:.0f}, {:.0f})", made->GetFormID(), made->GetPositionX(), made->GetPositionY(), made->GetPositionZ());
+            }
+        }
+
         void LightOil(RE::PlayerCharacter* a_player)
         {
-            const auto pools = ObjectHits::OilNear(a_player);
-            SKSE::log::info("hit test: {} oil pools near the player", pools.size());
             const char* by[] = { "a bullet", "a Molotov", "a rocket" };
-            for (std::size_t i = 0; i < pools.size() && i < 3; i++) {
-                auto*      ref = pools[i];
-                const auto at = ref->Get3D() ? ref->Get3D()->worldBound.center : ref->GetPosition();
-                SKSE::log::info("hit test: {} on the oil {:08X} at ({:.0f}, {:.0f}, {:.0f}), health {:.0f}", by[i], ref->GetFormID(), at.x, at.y, at.z, HealthOf(ref));
+            for (std::size_t i = 0; i < state.pools.size() && i < 3; i++) {
+                auto  ref = state.pools[i].ref.get();
+                auto* root = ref ? ref->Get3D() : nullptr;
+                state.pools[i].by = by[i];
+                if (!root) {
+                    SKSE::log::info("hit test: the oil for {} has no 3D", by[i]);
+                    continue;
+                }
+                const auto at = root->worldBound.center;
+                SKSE::log::info("hit test: {} on the oil {:08X} at ({:.0f}, {:.0f}, {:.0f}), health {:.0f}", by[i], ref->GetFormID(), at.x, at.y, at.z, HealthOf(ref.get()));
                 if (i == 0) {
                     ObjectHits::BulletLanded(a_player, at, Weapons::Pistol);
                 } else {
-                    ObjectHits::Around(a_player, at, 100.0f, i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);
+                    ObjectHits::Around(a_player, at, 5.0f,  // just the pool, not its neighbours
+                         i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);
                 }
-                state.pools.push_back({ ref->GetHandle(), by[i] });
             }
         }
 
@@ -205,6 +231,9 @@ namespace AhShitRim::HitTest
         }
         state.bust = scenario == "bust";
         state.oil = scenario == "oil";
+        if (const auto at = Ini::Value("Debug", "HitTestOilAt"); !at.empty()) {
+            state.oilAt = at;
+        }
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
         }
@@ -247,7 +276,14 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.oil && state.timer >= 6.0f) {
+            if (state.oil && state.timer >= 4.0f && !state.oilMoved) {
+                state.oilMoved = true;
+                RunConsole("tgm");  // the player stands in the fire
+                RunConsole("player.moveto " + state.oilAt);
+            } else if (state.oil && state.timer >= 6.0f && !state.oilReset) {
+                state.oilReset = true;
+                PlaceOil();
+            } else if (state.oil && state.timer >= 10.0f) {
                 SKSE::log::info("hit test: in {:08X}, lighting the oil", a_player->GetParentCell()->GetFormID());
                 LightOil(a_player);
                 state.phase = state.pools.empty() ? Phase::Done : Phase::Oil;

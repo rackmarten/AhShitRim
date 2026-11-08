@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Oil didn't catch fire from anything of CJ's: it took his bullet's and fire's damage on top, which skipped its burning stages (a pool goes by its health: it bursts into flame at 94% and burns down by itself), so it vanished unlit. It's now lit the way Skyrim's own oil script lights it, with 5 damage, once.
+- Oil didn't reliably catch fire from CJ's bullets, Molotovs or rockets. A pool's first stage ignores damage from outside, so the damage his hits sent it never landed, and it lit only if its script took the hit as fire. It's now lit directly, the way Skyrim's own oil script lights it (5 damage, once, past that guard), after which it bursts into flame and burns down by itself. `scripts/hit-test.ps1 -Scenario oil` checks it: three fresh pools in Bleak Falls Barrow, lit by a bullet, a Molotov and a rocket, all burn.
 - San Andreas's thunder rumbled in Skyrim's sunshine: its own random weather went on raining (its rainy weathers always thunder). Its weather stays dry now while Skyrim sends its sky; Skyrim's own weather plays its rain and storms.
 
 ## [0.1.1] - 2026-10-26
