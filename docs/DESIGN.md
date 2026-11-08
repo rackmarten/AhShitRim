@@ -280,6 +280,132 @@ San Andreas plays its own sounds, with its own audio engine; Skyrim only sets ho
 - **Sweetroll FM**: on 13 Skyrim plays AhShitRim's own CC0 tracks (`music/CREDITS.md`, picked from pages that state CC0) the same way, from loose files in `Data\Music\AhShitRim\SweetrollFM\` (`kSweetrollTracks` in `radio.h`). No mood: a shuffle plays every track once before any repeats and never one twice in a row, starting on a random one when tuned in. At data load Skyrim checks which tracks are installed and plays only those; with none (a dev build before `scripts/encode-music.ps1` ran) tuning in shows the name, stays silent and logs it once. `scripts/deploy-local.ps1` copies `music/sweetrollfm/*.xwm` and the credits there, and the release package ships them in the same place. Skyrim plays only `.wav` and `.xwm`, so the script encodes the sources (mp3, ogg) with ffmpeg, bringing each to -13 LUFS (a limiter keeps the peaks under -1.5 dBFS), so no track is louder than the next and the station is as loud as San Andreas's own (their songs measure about -12.5 LUFS), and `xWMAEncode` (96 kbps), which the Skyrim Special Edition Creation Kit installs to Skyrim's `Tools\Audio` and the DirectX SDK (June 2010) ships too. The encoded tracks are committed, so only a change to the list needs the encoder.
 - **The stations' volume** (`Radio::StationVolume`): Skyrim plays Radio Sovngarde and Sweetroll FM as loud as San Andreas's own stations at the same sliders. San Andreas turns its radio down under its music volume (`CAERadioTrackManager::UpdateRadioVolumes`): 4 dB, and `20 log10(effects / music) - 9` dB more where that is below 0, so with music set above about effects / 2.8 its radio follows the effects slider. The station player applies the same rule to master x music, plus `kStationMakeupDb` (14.3 dB) for the two games' different mixing, measured in game: at effects 0.53 and music 0.31, a track at plain music volume came out 6 dB under San Andreas's stations. The volume stops at 1, Skyrim's most.
 
+### Controller
+
+> Status: a proposal for 0.2, nothing of it is built. The open questions are in its PR; the maps below are the recommendation, with the alternatives where it was a close call.
+
+Goal: the whole loop on a gamepad alone: walk, fight, aim and shoot, get into and drive a car and a bike, change the station, shout, talk, type a cheat.
+
+**How input reaches CJ today.** Skyrim's input sink (`skse/src/player/PlayerSync.cpp`, `InputSink`) reads keyboard and mouse events only; gamepad events (`INPUT_DEVICE::kGamepad`, `ThumbstickEvent`) are skipped. Keys become actions in `Input::Builder` (`protocol/cpp/input.h`, modern or classic layout), which fills the input slot (`InputState`, PROTOCOL.md): `moveX`/`moveY`, the `kButton*` bits, the mouse totals, the wheel's counters. San Andreas writes that into pad 0 right after `CPad::UpdatePads` (`Input::ToPad`, `sa/src/runner.cpp` `ApplyInput`), so it already plays CJ from a virtual PS2 pad in mode 0, with the mouse in `CPad::NewMouseControllerState` and `CCamera::m_bUseMouse3rdPerson` on. Skyrim keeps some keys for itself: Escape, Tab and `~` (`MenuOpenHook`), F10, F5/F9 (`QuickSaveLoadHook`), and its Shout key, whose handler isn't blocked. E activates through `Activation::Activate`, X and the middle button count insults and swears, and every letter goes into the cheat string (`CheatCodes::TypeCheat`, `Cheats::Typist`). Skyrim's own player handlers (movement, look, sprint, jump, sneak, attack, activate, favorites) refuse while CJ has the player, whatever the device.
+
+#### Which pad API
+
+**Recommended: Skyrim's own gamepad input**, the events SKSE already sees. The sink gains the gamepad: buttons as `ButtonEvent`s with XInput's masks as their id codes (the triggers as id codes 0x9 and 0xA with a 0..1 value), the sticks as `ThumbstickEvent`s (-1..1). Why:
+
+- Skyrim's menus, dialogue, the map and the journal already work on the pad, and with Skyrim's pad on they're what the player uses anyway. No other source gives "talk" for free.
+- One source for everything: no double handling of a button by Skyrim and by us.
+- Skyrim's own functions are read by their user events (`QUserEvent`: shout, tween menu, journal), so a player's remapped Skyrim pad still works for those.
+- The cost: the player turns on Skyrim's gamepad (Settings, Controls, Gamepad; `bGamepadEnable`). If XInput sees a pad but Skyrim sends no pad events, the help box says so once.
+
+Alternatives:
+
+- **XInput read by the SKSE plugin**: independent of Skyrim's setting, raw values, its own dead zones. But with Skyrim's pad on, Skyrim still acts on the same buttons (menus open under CJ); with it off, dialogue and menus don't work on the pad. Used only for vibration (below), not for input.
+- **San Andreas's own pad code**: out. It runs hidden and unfocused (no DirectInput data in the background), its PC pad support is DirectInput with an XInput pad's triggers on one axis, and pad 0 is overwritten from the slot every frame anyway.
+
+Skyrim SE supports XInput pads; a PlayStation or Switch pad works through Steam Input or a mapper, as it does for Skyrim. Buttons are named the Xbox way below and in the README.
+
+#### The maps
+
+One pad layout for 0.2, "modern": the triggers aim and fire on foot and drive in vehicles (as later games and San Andreas's own remasters do), with San Andreas's console layout wherever it doesn't fight that, and Skyrim's own pad buttons for what stays Skyrim's (the Shout, its menus). The keyboard's modern and classic layouts don't change. The SA column is the pad 0 control the action ends up on.
+
+On foot:
+
+| Pad | Action | SA |
+|---|---|---|
+| Left stick | Move; a light push walks, as San Andreas's analog walk | left stick |
+| L3 (click) | Crouch (Skyrim sneaks) | L3 |
+| Right stick | Look around (fed as mouse counts, below) | mouse |
+| R3 (click) | Insult, with the finger (X on the keyboard) | (ours) |
+| A | Sprint, mash it for the faster sprint | Cross |
+| X | Jump, climb | Square |
+| Y | Get into the nearest vehicle | Triangle |
+| B | Skyrim's tween menu (map, items, magic, skills), as Tab | (Skyrim's) |
+| LB | Activate, as E: open, talk, loot, sit, swap for a weapon pickup | (ours; San Andreas's L1 is its action and pickup button on foot) |
+| RB | Shout, Skyrim's own Shout button (hold for more words) | (Skyrim's) |
+| LT | Aim; with a gun, lock-on (below); with fists or a melee weapon, the melee lock as the right mouse button | R1 |
+| RT | Fire, attack; open the parachute | Circle |
+| D-pad left / right | Previous / next weapon; while the lock holds a target, the target to that side | L2 / R2 (one press per step, as the wheel) |
+| D-pad up / down | Kept free for the Grove Street crew: San Andreas's group controls (up: follow me, down: wait) | DPadUp / DPadDown |
+| Back (tap) | Camera distance, as V | Select |
+| Back (hold 1 s) | Hand the player back to Skyrim, as F10 | |
+| L3 + R3 together | Cheat code entry (below) | |
+| Start | Skyrim's journal and pause menu, as Escape | (Skyrim's) |
+
+The jetpack and the parachute read the same pad 0 controls as today (left stick steers, Circle opens the chute), so they follow the on-foot map with no work of their own.
+
+In a vehicle (cars, bikes, bicycles, quads):
+
+| Pad | Action | SA |
+|---|---|---|
+| RT | Accelerate (analog, increment 2) | Cross |
+| LT | Brake, then reverse; with RT, the burnout | Square |
+| Left stick | Steer; up / down lean a bike (wheelies, stoppies) | left stick X / Y |
+| Right stick | Look around (mouse counts: the Rhino's turret follows the camera as with the mouse) | mouse |
+| A | The vehicle's weapon, nitro, drive-by fire | Circle |
+| LB | The second weapon; a bicycle's bunny hop | L1 |
+| RB | Handbrake | R1 |
+| X | Look behind | L2 + R2 |
+| Y | Get out | Triangle |
+| L3 | Horn; hydraulics up and down; a police helicopter's searchlight | L3 |
+| R3 | Sub-mission key: hydraulics' jump; held, the right stick bounces the car | R3 |
+| D-pad up / down | Next / previous station | San Andreas's own (`NextStationJustUp` is DPadUp) |
+| D-pad left / right | Look left / right (drive-bys) | L2 / R2 |
+| B, Back, Start | As on foot (tween menu, camera distance, Skyrim's menu) | |
+
+Skyrim's Shout is RB, which is the handbrake here, so in a vehicle the Shout handler ignores the pad (Z still shouts from a vehicle on the keyboard).
+
+Aircraft (planes, helicopters, the Hydra) take the vehicle map with these differences, all San Andreas's own pad meanings:
+
+| Pad | Action | SA |
+|---|---|---|
+| RT / LT | Throttle up / down; a helicopter climbs and sinks | Cross / Square |
+| Left stick | Roll and pitch | left stick |
+| D-pad left / right | Rudder | L2 / R2 |
+| RB | Held: the heat-seeker lock (Hydra, Hunter), as Space today | R1 |
+| A / LB | Weapons: Hunter rockets and Hydra flares / Hunter machine gun, Hydra missiles, Rustler and Seasparrow guns | Circle / L1 |
+| R3 | Landing gear, the crop duster's and Stuntplane's smoke | R3 |
+| Right stick | Look around; in the Hydra its up / down moves the nozzles (as San Andreas's right stick, the numpad's 8 and 2 today) | mouse; right stick Y |
+
+Menus and dialogue: Skyrim's own pad controls, untouched (the left stick or d-pad picks, A chooses, B backs out). In a dialogue A skips the speaker's line, as `BlockHook` already lets through. A seat or a scene: the left stick or A stands up, Skyrim's own. Ammu-Nation (ours): left stick or d-pad up / down browse, A chooses a category and buys, B goes back and then leaves.
+
+While Skyrim has the player its pad is entirely Skyrim's, except Back: a tap opens the wait menu as Skyrim does (opened by us on release, since the press is held back to time it), held 1 s it hands the player to CJ.
+
+The right stick turns the camera as mouse counts added to the slot's `mouseX`/`mouseY`, so San Andreas stays in its mouse camera with everything built on it (free aim, the crosshair, the scopes, the Rhino's turret, the aircraft cameras). The count rate is a curve over the stick past a dead zone (`counts/s = speed * |x|^2`), slower while LT aims and slower again through a scope; `[Input] PadLookSpeed`, `PadAimSpeed`, `PadInvertY`. Switching San Andreas to its own pad camera (`m_bUseMouse3rdPerson` off) would give its PS2 auto-aim, but that targets San Andreas's peds, of which its world has none, and would change every tested aiming path.
+
+Help box texts that name a key ("E: Open Breezehome", the dev pick, Ammu-Nation's hints) name the pad button instead while the last input came from the pad.
+
+#### Aiming and lock-on
+
+San Andreas's world has no one to lock on to, so on the pad the lock is Skyrim's, as the melee lock already is (`LockOn.cpp`). Recommended: **a hard lock on LT, as San Andreas's R1 on a console**. LT pulled with a gun over the shoulder picks a target as `Melee::NearCrosshair` does today, widened: someone fighting the player first, then the nearest to the crosshair, within the weapon's range, in sight. Every frame Skyrim steers San Andreas's camera onto the target's chest by adding mouse counts in proportion to how far it is from the aim point on screen (a closed loop, so San Andreas's own mouse sensitivity doesn't matter), capped per frame. The marker shows the locked target. The d-pad shifts the lock left or right (San Andreas's L2 / R2 while targeting); the right stick pushed hard for a moment drops to free aim; the target dying or leaving range or sight moves the lock to the next one, or to free aim. The scoped and first-person weapons (sniper rifle, rocket launchers, M4, camera) stay free aim with the slower scope speed. The mouse never locks.
+
+Alternatives: aim assist only (the stick slows near a target and the camera pulls toward it a little; less San Andreas, more modern), or free aim with no help (cheapest, but shooting with a stick and no help is hard). Target switching on a right stick flick instead of the d-pad is the modern habit; the d-pad is San Andreas's.
+
+#### Cheats on the pad
+
+Recommended: **an on-screen code entry**, opened by clicking both sticks (L3 + R3 within 100 ms; each one's own action waits that long). A box in San Andreas's text style shows the letters and the top row's digits; the d-pad or left stick moves, A types the letter, X types the last finished code again, B closes. Each letter goes through `TypeCheat` as its key's scan code would, so everything typed today works unchanged: San Andreas's codes and their alternatives, ours (NOMERCY, MINIGUN, PAINT, LOWRIDER) and the vehicle names, which also stand in for the spawn keys (SANDKING, ZR350, SANCHEZ). CJ stands still while it is open (the axes and buttons zero, as for a menu); the game doesn't pause, as typing a code doesn't.
+
+Alternatives: San Andreas's console button sequences (authentic, but only its own codes, none of ours or the vehicle names, the buttons act on CJ while they're pressed, and the sequences would have to be checked against the console versions one by one), or keyboard only (no work, but the public ask was the pad).
+
+#### Vibration
+
+San Andreas already decides when the pad shakes: `CPad::StartShake` and its distance and train variants set pad 0's `ShakeDur` and `ShakeFreq` (explosions, crashes, heavy guns), gated on `FrontEndMenuManager.m_PrefsUseVibration`, which San Andreas turns on. It reads them each frame and sends them in the pose slot (a layout change: a protocol bump); Skyrim plays them on the pad with its own controller shake (the function behind Papyrus' `Game.ShakeController`), so Skyrim's own rumble and its vibration setting still apply. XInput's `XInputSetState` is the fallback if Skyrim's rumble overwrites ours every frame. `[Input] PadVibration` turns it off.
+
+#### Keyboard only for 0.2
+
+The dev keys (`;`, `'`, `=`, `/`), F11 (the pad's own capture button, Steam's or the Game Bar's, does screenshots), the swear (middle mouse on foot), the spawn keys (the code entry's vehicle names cover them), the Shout from a vehicle (Z), the Hydra's left and right nozzle keys, and the keyboard's classic layout (the pad has one layout).
+
+#### Increments
+
+Each builds and plays on its own, in this order. Game-free logic goes in `protocol/cpp/pad.h` with doctest cases: the button and stick map per context, the stick curve, the Back tap and hold timer, the L3 + R3 chord, the lock-on steering, the code entry's grid.
+
+1. **The pad map** (no protocol change; about one session with tuning in game): the sink reads the pad, `Input::Builder` gets the on-foot, vehicle and aircraft maps, the right stick as mouse counts, `MenuOpenHook` lets the pad's tween menu and journal through and holds Back, the Shout handler ignores the pad in a vehicle, Back's tap and hold (camera distance, the handover both ways), Ammu-Nation on the pad, the help box's pad names, the "turn on Skyrim's gamepad" hint, the README's controller column. Throttle and brake are on or off here (a trigger past 30%), the lean is the stick past half. With the melee lock and free aim, this already plays the acceptance loop but for shooting comfortably.
+2. **Analog driving** (a protocol bump; a few hours): `InputState` gains the triggers' throttle and brake and the stick's lean as values, which San Andreas writes as the analog `ButtonCross`, `ButtonSquare` and `LeftStickY` it reads in mode 0. Takes the next free bytes after the camera, headlights and parked vehicles PRs, which already claim byte 115 and grow the slot to 128.
+3. **Gun lock-on** (about one session, most of it feel): the LT lock above, on Skyrim's side only.
+4. **Cheat code entry** (a few hours): the box, the chord, typing through `TypeCheat`.
+5. **Vibration** (a few hours, plus the risk of Skyrim's rumble API): the pose slot's shake and Skyrim playing it.
+
+1, 3 and 4 are the controller support promised for 0.2; 2 is small and makes driving feel right, so it belongs with them; 5 can slip past 0.2 without breaking the promise. In total about three to four sessions. The crew (d-pad up and down) and the camera distances (Back, as V after the camera PR) plug into this map as they land.
+
 ## 4. Milestone 1: on the ground
 
 | Step | What |
