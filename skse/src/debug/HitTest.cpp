@@ -541,8 +541,7 @@ namespace AhShitRim::HitTest
                         break;
                     }
                     PadCheck(onFoot, "five rounds in and out of the Sandking with Y, Skyrim still going:");
-                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
-                    state.step = 16;
+                    state.step = 60;
                     state.timer = 0.0f;
                 }
                 break;
@@ -550,11 +549,11 @@ namespace AhShitRim::HitTest
                 if (state.timer >= 1.5f) {
                     PlayerSync::DebugPad(Pad::kBack, 0.0f);
                     PadCheck(!PlayerSync::DebugOwned(), "Back held 1.5 s hands the player back to Skyrim:");
-                    state.step = 60;
-                    state.timer = 0.0f;
+                    SKSE::log::info("hit test: done");
+                    state.phase = Phase::Done;
                 }
                 break;
-            case 60:  // last, since it may freeze: the other guard back, set on the player, and disabled from inside its update
+            case 60:  // the other guard back, set on CJ, locked on with LT, then disabled and deleted from inside the player's update
                 for (const auto& handle : state.attackers) {
                     auto  ref = handle.get();
                     auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
@@ -565,21 +564,33 @@ namespace AhShitRim::HitTest
                         disabled = guard->GetFormID();
                     }
                 }
+                PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
                 state.step = 61;
                 state.timer = 0.0f;
                 break;
             case 61:
                 if (state.timer >= 3.0f) {
+                    // As the run that froze did it: Disable and SetDelete, called directly, LT let go in the same frame.
                     auto* guard = RE::TESForm::LookupByID<RE::Actor>(disabled);
-                    SKSE::log::info("hit test: pad: disabling {:08X} directly from the player's update, nobody locked on, {} (the call that froze Skyrim once)",
-                        disabled, guard && guard->IsInCombat() ? "in combat" : "not in combat");
+                    SKSE::log::info("hit test: pad: disabling and deleting {:08X} directly from the player's update, the lock on {:08X}, {} (the call that froze Skyrim once)",
+                        disabled, LockOn::DebugGunTarget(), guard && guard->IsInCombat() ? "in combat" : "not in combat");
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
                     if (guard) {
                         guard->Disable();
+                        guard->SetDelete(true);
                     }
-                    SKSE::log::info("hit test: pad: the direct Disable returned");
+                    SKSE::log::info("hit test: pad: the direct Disable and SetDelete returned");
                     state.attackers.clear();
-                    SKSE::log::info("hit test: done");
-                    state.phase = Phase::Done;
+                    state.step = 62;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 62:
+                if (state.timer >= 2.0f) {
+                    PadCheck(LockOn::DebugGunTarget() != disabled, std::format("2 s later Skyrim keeps going, the lock on {:08X}:", LockOn::DebugGunTarget()));
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    state.step = 16;
+                    state.timer = 0.0f;
                 }
                 break;
             default: break;
