@@ -162,6 +162,14 @@ namespace AhShitRim::CjBody
 
         float PitchOf(const CVector& a_v) { return std::atan2(a_v.z, std::hypot(a_v.x, a_v.y)) * 180.0f / Pose::kPi; }
 
+        // The top of the gun in a hand: the weapon's Z axis (the models' flash parts sit 0.08 to 0.12 m up it, over the
+        // grip), the left hand's weapon turned over about X (RenderWeaponPedsForPC).
+        CVector GunTop(const RwMatrix& a_hand, bool a_left)
+        {
+            const CVector z(a_hand.at.x, a_hand.at.y, a_hand.at.z);
+            return a_left ? z * -1.0f : z;
+        }
+
         // Once per weapon and way of holding it, held a second (the animation blended in): how the pose came
         // out, so a run of fake_weapons shows it.
         bool FirstAimPose(int a_type, int a_skill, bool a_aiming)
@@ -230,6 +238,8 @@ namespace AhShitRim::CjBody
             const auto       parents = ParentsOf(a_hierarchy);
             const bool       logPose = FirstAimPose(type, a_ped->GetWeaponSkill(type), aiming);
             std::string      poseLog;
+            int              hands[2] = { -1, -1 };
+            CVector          barrels[2];
             for (int arm = 0; arm < (info->m_nFlags.bTwinPistol ? 2 : 1); ++arm) {
                 const int upper = arm == 0 ? rightUpper : leftUpper;
                 const int fore = IndexOf(a_hierarchy, arm == 0 ? kBoneRightForeArm : kBoneLeftForeArm);
@@ -260,6 +270,24 @@ namespace AhShitRim::CjBody
                         180.0f - Degrees(shoulder - elbow, Pos(a_matrices[hand]) - elbow), Degrees(axis, barrel));
                 }
                 Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), axis, barrel);
+                hands[arm] = hand;
+                barrels[arm] = barrel;
+            }
+            // Twin guns lean in toward each other: the right gun takes the left one's roll mirrored (Aim::TwinRoll),
+            // turned about its barrel.
+            if (hands[0] >= 0 && hands[1] >= 0) {
+                const float   leftRoll = Aim::RollOf(Vec(barrels[1]), Vec(GunTop(a_matrices[hands[1]], true)));
+                const CVector top = GunTop(a_matrices[hands[0]], false);
+                const CVector across = top - barrels[0] * (top.x * barrels[0].x + top.y * barrels[0].y + top.z * barrels[0].z);
+                Turn(a_hierarchy, parents, a_matrices, hands[0], Pos(a_matrices[hands[0]]), across, Vector(Aim::RolledTop(Vec(barrels[0]), Aim::TwinRoll(leftRoll))));
+            }
+            if (logPose) {
+                for (int arm = 0; arm < 2; ++arm) {
+                    if (hands[arm] >= 0) {
+                        poseLog += std::format("{} gun's top rolled {:.0f} degrees right; ", arm == 0 ? "right" : "left",
+                            Aim::RollOf(Vec(barrels[arm]), Vec(GunTop(a_matrices[hands[arm]], arm == 1))) * 180.0f / Pose::kPi);
+                    }
+                }
             }
             // His head to the crosshair, as San Andreas's look IK turns it (only aiming: from the hip it looks
             // where the animation has it).

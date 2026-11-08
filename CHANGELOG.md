@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - CJ aims pistols, Uzis and sawn-offs (one gun or two) the way San Andreas poses them: the arm straight out to the aim instead of bent down at the elbow, and with the right mouse button held his head turns to the crosshair as well, up, down and to the sides.
+- With two guns, the guns lean in toward each other, as in San Andreas; the right one used to lean outward.
+
+### Fixed
+
+- The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).
 
 ## [0.1.1] - 2026-10-26
 
