@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 38;
+    inline constexpr std::uint32_t kProtocolVersion = 39;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -57,6 +57,9 @@ namespace AhShitRim::Protocol
     // A vehicle slot's passenger seats (v28): a car's front passenger seat and its two back seats, a bike's pillion.
     inline constexpr std::uint32_t kSeatMax = 3;
 
+    // Grove Street homies San Andreas plays at once (v39): 7 following CJ, up to 15 standing at a hold's spots, 2 dying.
+    inline constexpr std::uint32_t kCrewMax = 24;
+
     // Section layout (byte offsets from the start of the mapping): the header, the latest-value
     // slots, the ring from Skyrim to San Andreas, then the ring back.
     inline constexpr std::uint32_t kOffsetHeader = 0;
@@ -72,7 +75,9 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kRingToSanAndreasCapacity = 4194304;  // 4 MiB: collision chunks
     inline constexpr std::uint32_t kOffsetRingToSkyrim = 4212992;        // v5
     inline constexpr std::uint32_t kRingToSkyrimCapacity = 4194304;      // 4 MiB: CJ's, the vehicles', the weapons' and the gear's models, the shots
-    inline constexpr std::uint32_t kMappingSize = 8407360;               // 4212992 + 64 + 4 MiB
+    inline constexpr std::uint32_t kOffsetCrewInput = 8407360;           // v39: after the rings (4212992 + 64 + 4 MiB), so nothing before moves
+    inline constexpr std::uint32_t kOffsetCrewSlots = 8408576;           // v39: kCrewMax CrewSlots
+    inline constexpr std::uint32_t kMappingSize = 8509952;               // v39: 8408576 + 24 * 4224
 
     // A model goes over in ModelChunk messages of at most this many bytes, and is at most
     // kModelSizeMax whole (protocol/cpp/skin_model.h).
@@ -435,6 +440,68 @@ namespace AhShitRim::Protocol
         std::uint8_t  pad[40];  // the ring follows on a 64-byte boundary
     };
 
+    // ---- The Grove Street crew (v39) ----
+    //
+    // Skyrim owns each homie (an actor with its 3D hidden: where he is, his health, his fights); San Andreas plays him as
+    // a puppet (a Families ped placed every frame where Skyrim says) and sends his posed skeleton and the gun in his hand
+    // back, as it does CJ's. Member i of CrewInput and CrewSlot i are the same homie.
+
+    inline constexpr std::uint8_t kCrewPresent = 0x1;   // CrewMember.flags: the slot is in use
+    inline constexpr std::uint8_t kCrewAiming = 0x2;    // he points his gun at aim
+    inline constexpr std::uint8_t kCrewFiring = 0x4;    // and fires it (a burst while it's set)
+    inline constexpr std::uint8_t kCrewDead = 0x8;      // Skyrim's actor died: San Andreas plays his fall and holds it
+    inline constexpr std::uint8_t kCrewSeated = 0x10;   // he sits in CJ's vehicle, in seat
+    inline constexpr std::uint8_t kCrewFollower = 0x20;  // he follows CJ (else he stands at a spot)
+
+    struct CrewMember
+    {
+        std::uint32_t id;           // the Skyrim actor's form id; 0 for a free slot
+        std::uint16_t model;        // San Andreas's ped model (fam1 to fam3: 105 to 107)
+        std::uint8_t  weapon;       // San Andreas's eWeaponType in his hand
+        std::uint8_t  flags;        // kCrew*
+        float         feet[3];      // his feet, relative to InputState.anchor, Skyrim units
+        float         heading;      // the way he faces, Skyrim radians
+        float         aim[3];       // what he aims at, relative to the anchor, Skyrim units
+        std::uint8_t  seat;         // with kCrewSeated: the passenger seat (BodyState.seats' order) of the vehicle CJ drives
+        std::uint8_t  reserved0[3];
+        std::uint32_t reserved1[2];
+    };
+
+    // Skyrim -> San Andreas, every Skyrim frame while CJ has the player.
+    struct CrewInput
+    {
+        std::uint32_t frame;     // Skyrim frame counter
+        std::uint32_t handover;  // InputState.handover the positions belong to
+        std::uint32_t reserved[2];
+        CrewMember    members[kCrewMax];
+    };
+
+    struct CrewInputSlot
+    {
+        std::uint32_t seq;
+        std::uint32_t reserved;
+        CrewInput     value;
+        std::uint8_t  pad[40];  // the crew slots follow on a 64-byte boundary
+    };
+
+    // San Andreas -> Skyrim, every San Andreas frame: homie i's skeleton (BodyState as CJ's: bones relative to feet,
+    // feet relative to the anchor, kBodyValid set) and the gun in his right hand (a weapon slot's BodyState, flags 0 when
+    // he holds none). id is the member's id it was posed for, so a slot handed to another homie draws nothing stale.
+    struct CrewBody
+    {
+        std::uint32_t id;
+        std::uint32_t reserved;
+        BodyState     body;
+        BodyState     weapon;
+    };
+
+    struct CrewSlot
+    {
+        std::uint32_t seq;
+        std::uint32_t reserved;
+        CrewBody      value;
+    };
+
     // ---- Rings (single producer, single consumer) ----
     //
     // One each way: Skyrim to San Andreas (collision chunks), San Andreas to Skyrim (CJ's model,
@@ -531,7 +598,9 @@ namespace AhShitRim::Protocol
         float         direction[3];  // unit vector; melee: the way CJ faces
         float         range;         // Skyrim units: how far a bullet reaches; melee: the blow's radius
         std::uint32_t target;        // v38, kShotStealthGrab and kShotStealthStab: the victim's form id (its proxy's id); 0 otherwise
-        std::uint32_t reserved[4];
+        std::uint8_t  shooter;       // v39: 0 CJ, 1 to kCrewMax a homie (his crew slot plus one)
+        std::uint8_t  reserved0[3];
+        std::uint32_t reserved[3];
     };
 
     inline constexpr std::uint8_t  kProjectileBurst = 0x1;  // ProjectileEvent.flags: San Andreas had no room to throw it, it goes off where it is
@@ -787,6 +856,7 @@ namespace AhShitRim::Protocol
     static_assert(offsetof(ShotEvent, origin) == 16);
     static_assert(offsetof(ShotEvent, direction) == 28);
     static_assert(offsetof(ShotEvent, range) == 40);
+    static_assert(offsetof(ShotEvent, shooter) == 48);
     static_assert(sizeof(ProjectileEvent) == 128);
     static_assert(offsetof(ProjectileEvent, model) == 8);
     static_assert(offsetof(ProjectileEvent, origin) == 16);
@@ -897,7 +967,19 @@ namespace AhShitRim::Protocol
     static_assert(kOffsetRingToSanAndreas == kOffsetProxySlot + sizeof(ProxySlot));
     static_assert(kOffsetRingToSanAndreas % 64 == 0);
     static_assert(kOffsetRingToSkyrim == kOffsetRingToSanAndreas + sizeof(RingHeader) + kRingToSanAndreasCapacity);
-    static_assert(kMappingSize == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);
+    static_assert(kOffsetCrewInput == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);
+    static_assert(kOffsetCrewInput % 64 == 0);
+    static_assert(sizeof(CrewMember) == 48);
+    static_assert(offsetof(CrewMember, feet) == 8);
+    static_assert(offsetof(CrewMember, aim) == 24);
+    static_assert(offsetof(CrewMember, seat) == 36);
+    static_assert(sizeof(CrewInput) == 16 + kCrewMax * 48);
+    static_assert(sizeof(CrewInputSlot) == 1216);
+    static_assert(kOffsetCrewSlots == kOffsetCrewInput + sizeof(CrewInputSlot));
+    static_assert(sizeof(CrewBody) == 8 + 2 * sizeof(BodyState));
+    static_assert(sizeof(CrewSlot) == 4224);
+    static_assert(sizeof(CrewSlot) % 64 == 0);
+    static_assert(kMappingSize == kOffsetCrewSlots + kCrewMax * sizeof(CrewSlot));
     static_assert((kRingToSanAndreasCapacity & (kRingToSanAndreasCapacity - 1)) == 0);
     static_assert((kRingToSkyrimCapacity & (kRingToSkyrimCapacity - 1)) == 0);
 }
