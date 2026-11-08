@@ -6,6 +6,7 @@
 
 #include "body.h"
 #include "skin_model.h"
+#include "vehicle_lights.h"
 
 namespace AhShitRim::ModelView
 {
@@ -38,6 +39,8 @@ namespace AhShitRim::ModelView
             W32::ID3D11Buffer*            buffer = nullptr;  // dynamic: rewritten every frame
             std::uint32_t                 mesh = 0;          // index into Built::model.meshes
             std::vector<std::uint8_t>     vertices;          // packed, UVs filled in once
+            RE::BSLightingShaderProperty* lampShader = nullptr;  // a vehicle lamp's mesh: its shader, glowing while the lamp burns
+            std::uint8_t                  lamp = 0;          // and that lamp's kLight bit
         };
 
         // A received model, built once: never destroyed (the game's destructors expect geometry it
@@ -72,6 +75,7 @@ namespace AhShitRim::ModelView
             bool                                         mapFailLogged = false;
             std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
+            float                                        lampGlow = VehicleLights::Tuning{}.lampGlow;
         } state;
 
         Built* Find(std::uint32_t a_id)
@@ -386,6 +390,20 @@ namespace AhShitRim::ModelView
             bound.center = vehicle ? RE::NiPoint3() : kBodyBoundCenter;
             bound.radius = vehicle ? kVehicleBoundRadius : kBodyBoundRadius;
             auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f, a_twoSided);
+            // A vehicle lamp's mesh glows by itself while the lamp burns, as San Andreas draws it at full ambient then: its own
+            // emissive, which Skyrim's shader adds to the light on it before the texture, so the lamp keeps its colours.
+            if (const auto lamp = vehicle ? VehicleLights::LampOfMesh(mesh.flags) : std::uint8_t{ 0 }; lamp != 0) {
+                shader->flags.set(RE::BSShaderProperty::EShaderPropertyFlag::kOwnEmit);
+                if (!shader->emissiveColor) {
+                    shader->emissiveColor = static_cast<RE::NiColor*>(RE::malloc(sizeof(RE::NiColor)));  // never freed, as the shapes
+                }
+                if (shader->emissiveColor) {
+                    *shader->emissiveColor = RE::NiColor(1.0f, 1.0f, 1.0f);
+                }
+                shader->emissiveMult = 0.0f;
+                a_out.lampShader = shader;
+                a_out.lamp = lamp;
+            }
             geometry.shaderProperty.reset(shader);
             shader->SetupGeometry(shape.get());
             shader->FinishSetupGeometry(shape.get());
@@ -590,6 +608,14 @@ namespace AhShitRim::ModelView
             }
         }
 
+        // The lamps burning glow (v36), on a wreck none.
+        const std::uint8_t lit = (a_pose.flags & Protocol::kBodyWrecked) == 0 ? a_pose.lights.lit : 0;
+        for (auto& shape : built->shapes) {
+            if (shape.lampShader) {
+                shape.lampShader->emissiveMult = (shape.lamp & lit) != 0 ? state.lampGlow : 0.0f;
+            }
+        }
+
         built->node->local.translate = a_origin;
         built->node->local.rotate = RE::NiMatrix3();
         built->node->local.scale = a_scale;
@@ -602,6 +628,11 @@ namespace AhShitRim::ModelView
             SKSE::log::info("model view: {} {:08X} shown", built->model.name, built->id);
         }
         return true;
+    }
+
+    void SetLampGlow(float a_glow)
+    {
+        state.lampGlow = std::isfinite(a_glow) && a_glow >= 0.0f ? a_glow : state.lampGlow;
     }
 
     void EndFrame()

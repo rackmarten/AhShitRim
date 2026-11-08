@@ -9,7 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Headlights and tail lights (protocol v36). San Andreas switches its vehicles' lights by its own rule (`CVehicle::GetVehicleLightsStatus`: from 21:00 to 6:00, from 20:xx and until 6:xx by each vehicle's own minute, on wet roads), now on Skyrim's clock and sky: Skyrim sends its time of day, its rain or snow, and whether the player is in an interior (San Andreas's tunnels, lights forced on, the ZR-350's pop-ups up), and San Andreas's clock follows Skyrim's. Each vehicle slot says where the model's headlight and tail light dummies are and which lamps burn (engine on, not wrecked, not smashed), and Skyrim lights the scene there: a warm white point light on the road 5 m ahead of the headlights and a red glow behind the tail lights. Game-free tests for the clock, the sky and the lamp rule.
-- Oil burns GTA style: a bullet of CJ's that lands in a pool of Skyrim's oil (an activator with the `TrapExplosiveGas` script, the oil on the floor of Bleak Falls Barrow and a fallen lamp's spill) sets it alight, sent to it as his fire is, as well as his fire and blasts already did. Game-free tests for what lights oil and when a bullet lands in a pool.
+- Oil burns GTA style: a bullet of CJ's that lands in a pool of Skyrim's oil (an activator with the `TrapExplosiveGas` script, the oil on the floor of Bleak Falls Barrow and a fallen lamp's spill) sets it alight, as do his Molotovs, fire and blasts. Game-free tests for what lights oil and when a bullet lands in a pool.
+- Headlights light the road clearly (about 2.5 times as bright, one light per lamp from where it is, 6 m ahead of it), the tail lights glow from each lamp rather than the car's middle, the lamps' own meshes light up while they burn (San Andreas's lamp materials, `kSkinMeshLamp` mesh flags), and the brake lights come on while braking, by day too (`BodyLights.state`, `kLightBraking`). The values are in `AhShitRim.ini`'s `[Headlights]`.
+
+### Fixed
+
+- Oil didn't catch fire from anything of CJ's: it took his bullet's and fire's damage on top, which skipped its burning stages (a pool goes by its health: it bursts into flame at 94% and burns down by itself), so it vanished unlit. It's now lit the way Skyrim's own oil script lights it, with 5 damage, once.
+- San Andreas's thunder rumbled in Skyrim's sunshine: its own random weather went on raining (its rainy weathers always thunder). Its weather stays dry now while Skyrim sends its sky; Skyrim's own weather plays its rain and storms.
 
 ## [0.1.1] - 2026-10-26
 
