@@ -2,12 +2,15 @@
 
 #include "Ini.h"
 #include "link/LinkService.h"
+#include "player/ObjectHits.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/Vitals.h"
 #include "wanted.h"
 
+#include <algorithm>
 #include <chrono>
+#include <format>
 #include <thread>
 
 namespace AhShitRim::HitTest
@@ -23,6 +26,7 @@ namespace AhShitRim::HitTest
             Arriving,
             Handing,   // CJ comes, in the Sandking
             Watching,
+            Oil,       // the oil scenario: the pools lit, watched burning
             Done,
         };
 
@@ -33,6 +37,7 @@ namespace AhShitRim::HitTest
         {
             Phase              phase = Phase::Off;
             bool               bust = false;  // the scenario: bust, else hits
+            bool               oil = false;   // or oil
             std::string        start = "Riverwood";
             float              seconds = 90.0f;
             float              timer = 0.0f;
@@ -40,7 +45,61 @@ namespace AhShitRim::HitTest
             float              combatTimer = 0.0f;
             bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
+
+            struct Pool
+            {
+                RE::ObjectRefHandle ref;
+                const char*         by = "";
+                float               lowest = 100.0f;  // its health at the lowest seen, of 100
+                bool                burned = false;   // seen burning: below 94% and above 7% (its fire's stages)
+                bool                gone = false;     // burnt out and disabled
+            };
+            std::vector<Pool> pools;
         } state;
+
+        float HealthOf(RE::TESObjectREFR* a_ref)
+        {
+            const auto* health = a_ref->extraList.GetByType<RE::ExtraObjectHealth>();
+            return health ? health->health : 100.0f;
+        }
+
+        // Up to three of the pools round the player: a bullet lands in the first, a Molotov bursts on the second, a rocket
+        // on the third, each through what CJ's own shots and projectiles call (ObjectHits).
+        void LightOil(RE::PlayerCharacter* a_player)
+        {
+            const auto pools = ObjectHits::OilNear(a_player);
+            SKSE::log::info("hit test: {} oil pools near the player", pools.size());
+            const char* by[] = { "a bullet", "a Molotov", "a rocket" };
+            for (std::size_t i = 0; i < pools.size() && i < 3; i++) {
+                auto*      ref = pools[i];
+                const auto at = ref->Get3D() ? ref->Get3D()->worldBound.center : ref->GetPosition();
+                SKSE::log::info("hit test: {} on the oil {:08X} at ({:.0f}, {:.0f}, {:.0f}), health {:.0f}", by[i], ref->GetFormID(), at.x, at.y, at.z, HealthOf(ref));
+                if (i == 0) {
+                    ObjectHits::BulletLanded(a_player, at, Weapons::Pistol);
+                } else {
+                    ObjectHits::Around(a_player, at, 100.0f, i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);
+                }
+                state.pools.push_back({ ref->GetHandle(), by[i] });
+            }
+        }
+
+        // True once every pool burnt out.
+        bool WatchOil()
+        {
+            bool all = true;
+            for (auto& pool : state.pools) {
+                const auto ref = pool.ref.get();
+                if (!ref || ref->IsDisabled()) {
+                    pool.gone = true;
+                    continue;
+                }
+                const float health = HealthOf(ref.get());
+                pool.lowest = (std::min)(pool.lowest, health);
+                pool.burned = pool.burned || (health < 94.0f && health > 7.0f);
+                all = false;
+            }
+            return all;
+        }
 
         void RunConsole(const std::string& a_command)
         {
@@ -141,10 +200,11 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "oil") {
             return;
         }
         state.bust = scenario == "bust";
+        state.oil = scenario == "oil";
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
         }
@@ -187,7 +247,15 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.timer >= 6.0f) {
+            if (state.oil && state.timer >= 6.0f) {
+                SKSE::log::info("hit test: in {:08X}, lighting the oil", a_player->GetParentCell()->GetFormID());
+                LightOil(a_player);
+                state.phase = state.pools.empty() ? Phase::Done : Phase::Oil;
+                if (state.pools.empty()) {
+                    SKSE::log::info("hit test: done, no oil here");
+                }
+                state.timer = state.logTimer = 0.0f;
+            } else if (!state.oil && state.timer >= 6.0f) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
                 state.phase = Phase::Handing;
@@ -227,6 +295,28 @@ namespace AhShitRim::HitTest
                 state.phase = Phase::Done;
             }
             break;
+        case Phase::Oil: {
+            const bool out = WatchOil();
+            state.logTimer += a_delta;
+            if (state.logTimer >= 2.0f || out || state.timer >= state.seconds) {
+                state.logTimer = 0.0f;
+                for (const auto& pool : state.pools) {
+                    const auto ref = pool.ref.get();
+                    SKSE::log::info("hit test: {:.0f} s: the oil {:08X} ({}): {}, lowest health {:.0f}", state.timer, ref ? ref->GetFormID() : 0, pool.by,
+                        pool.gone ? "burnt out" : ref ? std::format("health {:.0f}", HealthOf(ref.get())) : "gone", pool.lowest);
+                }
+            }
+            if (out || state.timer >= state.seconds) {
+                int burned = 0;
+                for (const auto& pool : state.pools) {
+                    burned += pool.burned ? 1 : 0;
+                    SKSE::log::info("hit test: the oil lit by {} {}", pool.by, pool.burned ? (pool.gone ? "burned and burnt out" : "burned") : "never burned");
+                }
+                SKSE::log::info("hit test: done after {:.0f} s, {} of {} pools burned", state.timer, burned, state.pools.size());
+                state.phase = Phase::Done;
+            }
+            break;
+        }
         default: break;
         }
     }

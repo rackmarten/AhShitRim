@@ -67,6 +67,15 @@ TEST_CASE("traps: oil burns GTA style, from bullets as well as fire and blasts")
     CHECK(IgnitesOil(Hit::Blast));
     CHECK_FALSE(IgnitesOil(Hit::Blow));
 
+    // Lit with GasExplode's 5 only, once: more skipped its burning stages (a bullet's 20 left it at 80 of 100).
+    CHECK(OilDamage(Hit::Bullet, false) == kOilLights);
+    CHECK(OilDamage(Hit::Fire, false) == kOilLights);
+    CHECK(OilDamage(Hit::Blast, false) == kOilLights);
+    CHECK(OilDamage(Hit::Blow, false) == 0.0f);
+    CHECK(OilDamage(Hit::Fire, true) == 0.0f);
+    CHECK(100.0f - kOilLights < 99.0f);  // past its first stage, so it goes on burning down by itself
+    CHECK(100.0f - kOilLights > 94.0f);  // short of its fire, which its own self-damage brings
+
     // A pool 2 m across (bound radius 70) on the floor at z 100.
     const Damage::Vec3 pool{ 1000.0f, 2000.0f, 100.0f };
     CHECK(InOil({ 1000.0f, 2000.0f, 100.0f }, pool, 70.0f));     // the middle

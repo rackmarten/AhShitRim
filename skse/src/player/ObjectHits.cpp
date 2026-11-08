@@ -3,6 +3,7 @@
 #include "collision/CollisionSampler.h"
 #include "explosives.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <format>
@@ -22,7 +23,33 @@ namespace AhShitRim::ObjectHits
             double                           lastCone = 0.0;
             std::vector<RE::ObjectRefHandle> oil;  // the oil pools round the player, looked for every Traps::kOilScanEvery
             double                           oilScanned = -1e9;
+            std::vector<std::uint32_t>       alight;  // the pools CJ has lit, by form id: lit once
         } state;
+
+        bool HasScript(RE::TESObjectREFR* a_ref, const char* a_name);
+
+        const char* NameOf(Traps::Hit a_hit)
+        {
+            return a_hit == Traps::Hit::Bullet ? "bullet" : a_hit == Traps::Hit::Blow ? "blow" : a_hit == Traps::Hit::Fire ? "fire" : "blast";
+        }
+
+        // Oil (traps.h, OilDamage): lit as TrapExplosiveGas's GasExplode lights it, the player its cause, and never
+        // damaged past that, which would skip its burning stages.
+        void LightOil(RE::PlayerCharacter* a_player, RE::TESObjectREFR* a_ref, Traps::Hit a_hit, std::uint8_t a_weapon)
+        {
+            const auto id = a_ref->GetFormID();
+            const bool alight = std::find(state.alight.begin(), state.alight.end(), id) != state.alight.end();
+            const float damage = Traps::OilDamage(a_hit, alight);
+            if (damage <= 0.0f) {
+                return;
+            }
+            state.alight.push_back(id);
+            if (auto* cause = a_player->GetActorCause()) {
+                a_ref->SetActorCause(cause);
+            }
+            a_ref->DamageObject(damage, false);
+            SKSE::log::info("object hits: the oil {:08X} lit by CJ's {} of weapon {}", id, NameOf(a_hit), a_weapon);
+        }
 
         double NowSeconds()
         {
@@ -51,6 +78,10 @@ namespace AhShitRim::ObjectHits
                 return;
             }
             const bool destructible = Destructible(a_ref);
+            if (BaseOf(base) == Traps::Base::Activator && HasScript(a_ref, Traps::kOilScript)) {
+                LightOil(a_player, a_ref, a_hit, a_weapon);
+                return;
+            }
             if (!Traps::Told(BaseOf(base), destructible)) {
                 return;
             }
@@ -66,7 +97,7 @@ namespace AhShitRim::ObjectHits
             if (state.logged < kLogged) {
                 state.logged++;
                 SKSE::log::info("object hits: {} ({:08X}, {}) hit by CJ's {} of weapon {}{}", a_ref->GetDisplayFullName(), a_ref->GetFormID(),
-                    RE::FormTypeToString(base->GetFormType()), a_hit == Traps::Hit::Bullet ? "bullet" : a_hit == Traps::Hit::Blow ? "blow" : a_hit == Traps::Hit::Fire ? "fire" : "blast",
+                    RE::FormTypeToString(base->GetFormType()), NameOf(a_hit),
                     a_weapon, damage > 0.0f ? std::format(", {:.0f} damage to it", damage) : "");
             }
         }
@@ -183,11 +214,24 @@ namespace AhShitRim::ObjectHits
             if (Traps::InOil({ a_at.x, a_at.y, a_at.z }, { bound.center.x, bound.center.y, bound.center.z }, bound.radius) &&
                 state.scorched.Takes(ref->GetFormID(), now)) {
                 if (state.logged < kLogged) {
-                    SKSE::log::info("object hits: CJ's bullet of weapon {} landed in the oil {:08X}, sent to it as fire", a_weapon, ref->GetFormID());
+                    SKSE::log::info("object hits: CJ's bullet of weapon {} landed in the oil {:08X}", a_weapon, ref->GetFormID());
                 }
-                Land(a_player, ref.get(), Traps::Hit::Fire, a_weapon, 0.0f);
+                Land(a_player, ref.get(), Traps::Hit::Bullet, a_weapon, 0.0f);
             }
         }
+    }
+
+    std::vector<RE::TESObjectREFR*> OilNear(RE::PlayerCharacter* a_player)
+    {
+        state.oilScanned = NowSeconds();
+        ScanOil(a_player);
+        std::vector<RE::TESObjectREFR*> out;
+        for (const auto& handle : state.oil) {
+            if (const auto ref = handle.get()) {
+                out.push_back(ref.get());
+            }
+        }
+        return out;
     }
 
     void FireCone(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_dir, float a_range)
@@ -216,5 +260,6 @@ namespace AhShitRim::ObjectHits
         state.scorched.Clear();
         state.oil.clear();
         state.oilScanned = -1e9;
+        state.alight.clear();
     }
 }
