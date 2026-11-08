@@ -8,22 +8,30 @@
 //    combo.
 // San Andreas's triangle marks one actor at a time over its head, coloured by its health: the melee lock's target,
 // or while CJ aims a gun the enemy nearest the crosshair (an indicator only: guns are free aim). Followers, children
-// and riders are never locked on to. Main thread only.
+// and riders are never locked on to. With the knife, the lock also says whether its target can be stealth killed
+// (v38, StealthKills). Main thread only.
 namespace AhShitRim::LockOn
 {
     struct Aim
     {
-        bool  melee = false;      // fists or a melee weapon in hand
-        bool  gun = false;        // a bullet gun aimed over the shoulder (San Andreas's aim camera, not a scope)
-        bool  aim = false;        // the right mouse button
-        bool  fire = false;       // the left one
-        float heading = 0.0f;     // CJ's facing, Skyrim radians
+        bool         melee = false;   // fists or a melee weapon in hand
+        bool         gun = false;     // a bullet gun aimed over the shoulder (San Andreas's aim camera, not a scope)
+        bool         aim = false;     // the right mouse button
+        bool         fire = false;    // the left one
+        float        heading = 0.0f;  // CJ's facing, Skyrim radians
+        std::uint8_t weapon = 0;      // San Andreas's weapon type in his hands
+    };
+
+    struct Target
+    {
+        RE::FormID id = 0;           // the actor San Andreas should turn him to, 0 for none
+        bool       stealth = false;  // v38: a knife lock on someone who can be stealth killed (StealthKill::Check)
     };
 
     // Every frame San Andreas has the player. a_cjFeet: where CJ stands; a_aim: what he holds and presses, all
     // false when he isn't on foot or something else holds him. The actor San Andreas should turn him to (a melee
-    // lock or a swing's target), 0 for none.
-    RE::FormID Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cjFeet, const Aim& a_aim, float a_seconds);
+    // lock or a swing's target), and whether a knife lock on it is a stealth kill.
+    Target Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cjFeet, const Aim& a_aim, float a_seconds);
 
     // Back to Skyrim's own player, or a re-anchor.
     void Clear();

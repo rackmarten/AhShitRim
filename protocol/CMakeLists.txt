@@ -88,6 +88,7 @@ add_executable(protocol_tests
     tests/cpp/test_passengers.cpp
     tests/cpp/test_vehicle_hits.cpp
     tests/cpp/test_melee.cpp
+    tests/cpp/test_stealth_kill.cpp
     tests/cpp/test_standing.cpp
     tests/cpp/test_radar_map.cpp
     tests/cpp/test_radar.cpp

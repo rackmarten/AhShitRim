@@ -68,6 +68,8 @@ TEST_CASE("protocol v33: fist fights and lock-on")
 {
     CHECK(kProxyTarget == 0x4);
     CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
+    CHECK(kProxyStealthKill == 0x8);
+    CHECK((kProxyStealthKill & (kProxyHeavy | kProxyPerson | kProxyTarget)) == 0);
 }
 
 TEST_CASE("protocol v32: the burnout")
@@ -216,7 +218,10 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(ShotEvent, origin) == 16);
     CHECK(offsetof(ShotEvent, direction) == 28);
     CHECK(offsetof(ShotEvent, range) == 40);
+    CHECK(offsetof(ShotEvent, target) == 44);
     CHECK(kShotFlame == 2);
+    CHECK(kShotStealthGrab == 3);
+    CHECK(kShotStealthStab == 4);
     CHECK(static_cast<std::uint16_t>(MessageType::Projectile) == 5);
     CHECK(kProjectileBurst == 0x1);
     CHECK(kProjectilePartMax == 2);
@@ -380,11 +385,23 @@ TEST_CASE("the v31 slot and ring layout")
 
 TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicles")
 {
-    CHECK(kProtocolVersion == 37);
     CHECK(offsetof(InputState, world) == 126);  // a byte reserved since v36, clear of sky (115)
     CHECK(offsetof(InputState, sky) == 115);
     CHECK(sizeof(InputState) == 128);
     CHECK(kWorldNone == 0);
     CHECK(kWorldTamriel == 1);
     CHECK(kWorldWhiterun == 2);
+}
+
+TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v35 side by side")
+{
+    CHECK(kProtocolVersion == 38);
+    CHECK(kProxyStealthKill == 0x8);
+    CHECK(offsetof(ShotEvent, target) == 44);
+    CHECK(sizeof(ShotEvent) == 64);
+    // v36's sky (115) and minuteOfDay (124), v37's world (126): no two share a byte
+    CHECK(offsetof(InputState, sky) == 115);
+    CHECK(offsetof(InputState, minuteOfDay) == 124);
+    CHECK(offsetof(InputState, world) == 126);
+    CHECK(sizeof(InputState) == 128);
 }

@@ -34,6 +34,8 @@ namespace AhShitRim::PlayerSync
     bool DebugOwned();
     void DebugToggle();
     void DebugType(const char* a_code);
+    // The hit test's stealth scenario (debug, v38): the mouse's aim and fire buttons held as if pressed.
+    void DebugButtons(bool a_aim, bool a_fire);
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

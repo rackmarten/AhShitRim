@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 37;
+    inline constexpr std::uint32_t kProtocolVersion = 38;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -399,6 +399,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v28): a giant, mammoth or dragon, which stops a vehicle lighter than it like a wall (0.1.1)
     inline constexpr std::uint8_t kProxyPerson = 0x2;  // a person (a humanoid race)
     inline constexpr std::uint8_t kProxyTarget = 0x4;  // v33, on foot: the one CJ locks on to with fists or a melee weapon (the right mouse button, or a swing's nearest hostile), whom San Andreas turns him to face
+    inline constexpr std::uint8_t kProxyStealthKill = 0x8;  // v38, with kProxyTarget: CJ holds the knife behind an unaware person (protocol/cpp/stealth_kill.h), San Andreas may raise it for the stealth kill
 
     // One of Skyrim's actors near CJ (v28): a capsule San Andreas tests his vehicle against, or on foot CJ himself.
     // Its segment ends and velocity are Skyrim's, relative to InputState.anchor.
@@ -510,6 +511,8 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint8_t kShotBullet = 0;  // ShotEvent.kind (v13): a bullet, or a shotgun's shot
     inline constexpr std::uint8_t kShotMelee = 1;   // a blow at a melee weapon's (or the fists') hit frame
     inline constexpr std::uint8_t kShotFlame = 2;   // v15: one puff of the flamethrower; range is how far it reaches
+    inline constexpr std::uint8_t kShotStealthGrab = 3;  // v38: CJ grabs target for the knife stealth kill (KILL_KNIFE_PLAYER starts); Skyrim holds it still
+    inline constexpr std::uint8_t kShotStealthStab = 4;  // v38: the stealth kill's stab frame: Skyrim kills target
     inline constexpr std::uint8_t kShotSpread = 0x1;  // ShotEvent.flags: a shotgun's shot, which Skyrim fans out into its pellets (Damage::Pellets)
     inline constexpr std::uint8_t kShotFirstPerson = 0x2;  // fired from San Andreas's first-person camera (the scopes)
     inline constexpr std::uint8_t kShotVehicleGun = 0x4;   // v26: fired by the vehicle CJ drives (the Hunter's guns): Skyrim puts San Andreas's gunflash at origin
@@ -527,7 +530,8 @@ namespace AhShitRim::Protocol
         float         origin[3];     // where it starts (melee: the blow's centre), relative to InputState.anchor, Skyrim units
         float         direction[3];  // unit vector; melee: the way CJ faces
         float         range;         // Skyrim units: how far a bullet reaches; melee: the blow's radius
-        std::uint32_t reserved[5];
+        std::uint32_t target;        // v38, kShotStealthGrab and kShotStealthStab: the victim's form id (its proxy's id); 0 otherwise
+        std::uint32_t reserved[4];
     };
 
     inline constexpr std::uint8_t  kProjectileBurst = 0x1;  // ProjectileEvent.flags: San Andreas had no room to throw it, it goes off where it is
