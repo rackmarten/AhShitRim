@@ -6,7 +6,7 @@
     a giant and two guards on him (hits) or gives him two stars (bust); stealth hands CJ over on foot with the knife, puts a
     guard with his back to him and clicks the mouse buttons for a stealth kill.
     Or (respawns) it hands CJ over on foot, has
-    him kill a few of the people around, presses / and waits an hour in Skyrim's wait menu, steps into an interior and back out, and logs who
+    him kill a few of the people around, presses / for Skyrim's wait menu (before and after the kills), puts the clock an hour on, steps into an interior and back out, and logs who
     came back. Or (pad) it injects gamepad events as Skyrim sends them and checks each action from San Andreas's pose
     ("hit test: pad: ... ok"). Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
     traces both getting out. Then it prints what the logs say, closes both
