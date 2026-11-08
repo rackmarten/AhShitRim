@@ -306,7 +306,7 @@ San Andreas plays its own sounds, with its own audio engine; Skyrim only sets ho
 
 ### Controller
 
-> Status: a proposal for 0.2, nothing of it is built. The open questions are in its PR; the maps below are the recommendation, with the alternatives where it was a close call.
+> Status: decided for 0.2 (the operator's answers to the proposal, 2026-11-08), built in increments 1 to 4 below. Where it was a close call the alternative is kept here.
 
 Goal: the whole loop on a gamepad alone: walk, fight, aim and shoot, get into and drive a car and a bike, change the station, shout, talk, type a cheat.
 
@@ -314,7 +314,7 @@ Goal: the whole loop on a gamepad alone: walk, fight, aim and shoot, get into an
 
 #### Which pad API
 
-**Recommended: Skyrim's own gamepad input**, the events SKSE already sees. The sink gains the gamepad: buttons as `ButtonEvent`s with XInput's masks as their id codes (the triggers as id codes 0x9 and 0xA with a 0..1 value), the sticks as `ThumbstickEvent`s (-1..1). Why:
+**Skyrim's own gamepad input**, the events SKSE already sees. The sink gains the gamepad: buttons as `ButtonEvent`s with XInput's masks as their id codes (the triggers as id codes 0x9 and 0xA with a 0..1 value), the sticks as `ThumbstickEvent`s (-1..1). Why:
 
 - Skyrim's menus, dialogue, the map and the journal already work on the pad, and with Skyrim's pad on they're what the player uses anyway. No other source gives "talk" for free.
 - One source for everything: no double handling of a button by Skyrim and by us.
@@ -343,16 +343,15 @@ On foot:
 | A | Sprint, mash it for the faster sprint | Cross |
 | X | Jump, climb | Square |
 | Y | Get into the nearest vehicle | Triangle |
-| B | Skyrim's tween menu (map, items, magic, skills), as Tab | (Skyrim's) |
+| B (hold 0.3 s) | Skyrim's tween menu (map, items, magic, skills), as Tab; a tap is only Circle in a cheat sequence | (Skyrim's) |
 | LB | Activate, as E: open, talk, loot, sit, swap for a weapon pickup | (ours; San Andreas's L1 is its action and pickup button on foot) |
-| RB | Shout, Skyrim's own Shout button (hold for more words) | (Skyrim's) |
+| RB (hold 0.3 s) | Shout, Skyrim's own Shout button (hold on for more words); a tap is only R1 in a cheat sequence | (Skyrim's) |
 | LT | Aim; with a gun, lock-on (below); with fists or a melee weapon, the melee lock as the right mouse button | R1 |
 | RT | Fire, attack; open the parachute | Circle |
-| D-pad left / right | Previous / next weapon; while the lock holds a target, the target to that side | L2 / R2 (one press per step, as the wheel) |
+| D-pad left / right | Previous / next weapon; while LT holds a lock, the target to that side | L2 / R2 (one press per step, as the wheel) |
 | D-pad up / down | Kept free for the Grove Street crew: San Andreas's group controls (up: follow me, down: wait) | DPadUp / DPadDown |
 | Back (tap) | Camera distance, as V | Select |
 | Back (hold 1 s) | Hand the player back to Skyrim, as F10 | |
-| L3 + R3 together | Cheat code entry (below) | |
 | Start | Skyrim's journal and pause menu, as Escape | (Skyrim's) |
 
 The jetpack and the parachute read the same pad 0 controls as today (left stick steers, Circle opens the chute), so they follow the on-foot map with no work of their own.
@@ -400,15 +399,20 @@ Help box texts that name a key ("E: Open Breezehome", the dev pick, Ammu-Nation'
 
 #### Aiming and lock-on
 
-San Andreas's world has no one to lock on to, so on the pad the lock is Skyrim's, as the melee lock already is (`LockOn.cpp`). Recommended: **a hard lock on LT, as San Andreas's R1 on a console**. LT pulled with a gun over the shoulder picks a target as `Melee::NearCrosshair` does today, widened: someone fighting the player first, then the nearest to the crosshair, within the weapon's range, in sight. Every frame Skyrim steers San Andreas's camera onto the target's chest by adding mouse counts in proportion to how far it is from the aim point on screen (a closed loop, so San Andreas's own mouse sensitivity doesn't matter), capped per frame. The marker shows the locked target. The d-pad shifts the lock left or right (San Andreas's L2 / R2 while targeting); the right stick pushed hard for a moment drops to free aim; the target dying or leaving range or sight moves the lock to the next one, or to free aim. The scoped and first-person weapons (sniper rifle, rocket launchers, M4, camera) stay free aim with the slower scope speed. The mouse never locks.
+San Andreas's world has no one to lock on to, so on the pad the lock is Skyrim's, as the melee lock already is (`LockOn.cpp`): **a hard lock on LT, as San Andreas's R1 on a console**. LT pulled with a gun over the shoulder picks a target as `Melee::NearCrosshair` does today, widened: someone fighting the player first, then the nearest to the crosshair, within the weapon's range, in sight. Every frame Skyrim steers San Andreas's camera onto the target's chest by adding mouse counts in proportion to how far it is from the aim point on screen (a closed loop, so San Andreas's own mouse sensitivity doesn't matter), capped per frame. The marker shows the locked target. The d-pad shifts the lock left or right (San Andreas's L2 / R2 while targeting); the right stick pushed hard for a moment drops to free aim; the target dying or leaving range or sight moves the lock to the next one, or to free aim. The scoped and first-person weapons (sniper rifle, rocket launchers, M4, camera) stay free aim with the slower scope speed. The mouse never locks.
 
-Alternatives: aim assist only (the stick slows near a target and the camera pulls toward it a little; less San Andreas, more modern), or free aim with no help (cheapest, but shooting with a stick and no help is hard). Target switching on a right stick flick instead of the d-pad is the modern habit; the d-pad is San Andreas's.
+Alternatives, not taken: aim assist only (the stick slows near a target and the camera pulls toward it a little), free aim with no help, or target switching on a right stick flick (the modern habit) instead of San Andreas's d-pad.
 
 #### Cheats on the pad
 
-Recommended: **an on-screen code entry**, opened by clicking both sticks (L3 + R3 within 100 ms; each one's own action waits that long). A box in San Andreas's text style shows the letters and the top row's digits; the d-pad or left stick moves, A types the letter, X types the last finished code again, B closes. Each letter goes through `TypeCheat` as its key's scan code would, so everything typed today works unchanged: San Andreas's codes and their alternatives, ours (NOMERCY, MINIGUN, PAINT, LOWRIDER) and the vehicle names, which also stand in for the spawn keys (SANDKING, ZR350, SANCHEZ). CJ stands still while it is open (the axes and buttons zero, as for a menu); the game doesn't pause, as typing a code doesn't.
+**San Andreas's own console button sequences** (the operator's call: cheat codes are muscle memory). Keyboard typing stays as it is. The PS2's buttons map by position, as San Andreas's later console versions do: L1 LB, L2 LT, R1 RB, R2 RT, Cross A, Circle B, Square X, Triangle Y, and the d-pad. HESOYAM is RB, RT, LB, A, left, down, right, up, left, down, right, up.
 
-Alternatives: San Andreas's console button sequences (authentic, but only its own codes, none of ours or the vehicle names, the buttons act on CJ while they're pressed, and the sequences would have to be checked against the console versions one by one), or keyboard only (no work, but the public ask was the pad).
+- **Where**: whenever CJ has the player and no Skyrim menu or Ammu-Nation has the input, on foot or in a vehicle, as the console took them at any time. Every pad button press (a trigger past half counts as a press) goes into a list of the newest presses, and a sequence that the list ends with finishes its cheat, which then goes the way a typed one does (`CheatCodes`), with "Cheat activated". No sequence in the table ends another one, which the doctests check.
+- **The buttons still act**, as on the console: A sprints, X jumps, RT fires, the d-pad switches weapons on foot and tunes the radio in a vehicle while a code goes in. Two exceptions, since they would break off a code: while CJ has the player B opens the tween menu and RB starts the Shout only once held 0.3 s, so a tap of either is only Circle or R1 in a sequence. LB activates on its press (San Andreas's L1 is its action button on foot too); walking off from anything that can be activated keeps a code from opening a door halfway.
+- **Which codes**: every San Andreas code in `kCheats` that has a console sequence. The sequences come from gtabase.com's and igrandtheftauto.com's PS2 lists, checked against gtaboom.com's and gta-sanandreas.com's: they agree on every one but two. For the jetpack the pages give 10, 12 and 16 presses, and the two longer ones end with the 10-press one (left, right, L1, L2, R1, R2, up, down, left, right), which is the one in the table, so all three work. For two more wanted stars two sources give R1, R1, Circle, R2, then left, right three times, one gives right, left three times; both are in the table.
+- **Keyboard only**: AhShitRim's own codes (NOMERCY, MINIGUN, PAINT, LOWRIDER) and the vehicle names, which have no console sequence of their own and need letters, and VKYPQCF (maximum stamina), which the console never had.
+
+Alternative, not taken: an on-screen code entry (a letter grid opened with L3 + R3) that types any code, ours included.
 
 #### Vibration
 
@@ -416,19 +420,19 @@ San Andreas already decides when the pad shakes: `CPad::StartShake` and its dist
 
 #### Keyboard only for 0.2
 
-The dev keys (`;`, `'`, `=`, `/`), F11 (the pad's own capture button, Steam's or the Game Bar's, does screenshots), the swear (middle mouse on foot), the spawn keys (the code entry's vehicle names cover them), the Shout from a vehicle (Z), the Hydra's left and right nozzle keys, and the keyboard's classic layout (the pad has one layout).
+The dev keys (`;`, `'`, `=`, `/`), F11 (the pad's own capture button, Steam's or the Game Bar's, does screenshots), the swear (middle mouse on foot), the spawn keys, AhShitRim's own cheat codes and the vehicle names, the Shout from a vehicle (Z), the Hydra's left and right nozzle keys, and the keyboard's classic layout (the pad has one layout).
 
 #### Increments
 
-Each builds and plays on its own, in this order. Game-free logic goes in `protocol/cpp/pad.h` with doctest cases: the button and stick map per context, the stick curve, the Back tap and hold timer, the L3 + R3 chord, the lock-on steering, the code entry's grid.
+Each builds and plays on its own, in this order. Game-free logic goes in `protocol/cpp/pad.h` with doctest cases: the button and stick map per context, the stick curve, the Back tap and hold timer, the lock-on steering, the cheat sequences.
 
 1. **The pad map** (no protocol change; about one session with tuning in game): the sink reads the pad, `Input::Builder` gets the on-foot, vehicle and aircraft maps, the right stick as mouse counts, `MenuOpenHook` lets the pad's tween menu and journal through and holds Back, the Shout handler ignores the pad in a vehicle, Back's tap and hold (camera distance, the handover both ways), Ammu-Nation on the pad, the help box's pad names, the "turn on Skyrim's gamepad" hint, the README's controller column. Throttle and brake are on or off here (a trigger past 30%), the lean is the stick past half. With the melee lock and free aim, this already plays the acceptance loop but for shooting comfortably.
 2. **Analog driving** (a protocol bump; a few hours): `InputState` gains the triggers' throttle and brake and the stick's lean as values, which San Andreas writes as the analog `ButtonCross`, `ButtonSquare` and `LeftStickY` it reads in mode 0. Takes the next free bytes after the camera, headlights and parked vehicles PRs, which already claim byte 115 and grow the slot to 128.
 3. **Gun lock-on** (about one session, most of it feel): the LT lock above, on Skyrim's side only.
-4. **Cheat code entry** (a few hours): the box, the chord, typing through `TypeCheat`.
+4. **Cheat sequences** (a few hours): the sequence table and its matcher (`protocol/cpp/cheats.h`), B's and RB's hold before their Skyrim actions, finished codes through `CheatCodes`.
 5. **Vibration** (a few hours, plus the risk of Skyrim's rumble API): the pose slot's shake and Skyrim playing it.
 
-1, 3 and 4 are the controller support promised for 0.2; 2 is small and makes driving feel right, so it belongs with them; 5 can slip past 0.2 without breaking the promise. In total about three to four sessions. The crew (d-pad up and down) and the camera distances (Back, as V after the camera PR) plug into this map as they land.
+1 to 4 are in 0.2; 5 can slip past it. In total about three to four sessions. The crew (d-pad up and down) and the camera distances (Back, as V after the camera PR) plug into this map as they land.
 
 ## 4. Milestone 1: on the ground
 
