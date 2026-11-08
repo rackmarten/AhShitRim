@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The camera works like San Andreas's. On foot V (or Home) steps through San Andreas's three chase distances, close, middle and far; it used to do nothing there. There is still no first person on foot, as in San Andreas. In a vehicle, the first-person step of V now sits in front of the vehicle, past a car's bonnet, a bike's handlebars or an aircraft's nose, instead of inside the model Skyrim draws (San Andreas puts that view at the driver's head and simply doesn't draw the car; Skyrim drew it), and CJ isn't drawn in it. The Seasparrow and the Rustler show the rocket-sight crosshair in that view as the Hunter and the Hydra do, to aim their guns by.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.
