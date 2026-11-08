@@ -7,6 +7,8 @@
 #include "player/Conversation.h"
 #include "player/Homies.h"
 #include "player/Looting.h"
+#include "player/PlayerSync.h"
+#include "pad.h"
 #include "reactions.h"
 #include "weapons.h"
 
@@ -218,7 +220,7 @@ namespace AhShitRim::Activation
                 text = "";
             }
             const char* name = a_ref->GetDisplayFullName();
-            return Activate::Prompt(text.c_str() ? text.c_str() : "", name ? name : "");
+            return Activate::Prompt(text.c_str() ? text.c_str() : "", name ? name : "", PlayerSync::PadInUse() ? Pad::kActivateName : "E");
         }
     }
 

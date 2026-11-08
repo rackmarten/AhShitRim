@@ -2,7 +2,9 @@
 
 #include "Ini.h"
 #include "link/LinkService.h"
+#include "pad.h"
 #include "player/Homies.h"
+#include "player/LockOn.h"
 #include "player/PlayerSync.h"
 #include "player/Shots.h"
 #include "player/Police.h"
@@ -58,6 +60,7 @@ namespace AhShitRim::HitTest
             bool               newGame = false;  // a new game at the start instead of the most recent save
             std::vector<RE::ObjectRefHandle> attackers;
             bool               stealth = false;  // the scenario: the knife stealth kill (v38)
+            bool               pad = false;      // the scenario: the gamepad's actions (DESIGN.md, Controller)
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
@@ -160,6 +163,473 @@ namespace AhShitRim::HitTest
                 if (actor && !actor->IsDead() && actor->Is3DLoaded() && actor->GetActorRuntimeData().currentCombatTarget.get().get() != a_player) {
                     actor->StartCombat(a_player);
                 }
+            }
+        }
+
+        // ---- The pad scenario (DESIGN.md, Controller) ----
+
+        float Meters(const float (&a_from)[3], const float (&a_to)[3])
+        {
+            const float dx = a_to[0] - a_from[0], dy = a_to[1] - a_from[1];
+            return std::sqrt(dx * dx + dy * dy) * Pose::kMetersPerUnit;
+        }
+
+        // The heading from a_at with the most room ahead, for the drive: 16 headings, two rays each (0.6 m and 1.2 m up, 40 m
+        // long, Skyrim's line of sight layer), the one whose nearer hit is farthest. a_clear: that hit, metres.
+        float ClearHeading(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, float& a_clear)
+        {
+            constexpr float kLength = 40.0f * Pose::kUnitsPerMeter;
+            auto*           cell = a_player->GetParentCell();
+            auto*           bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto*           world = bhk ? bhk->GetWorld1() : nullptr;
+            float           best = a_player->GetAngleZ();
+            a_clear = 0.0f;
+            if (!world) {
+                return best;
+            }
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            for (int i = 0; i < 16; i++) {
+                const float h = static_cast<float>(i) * Pose::kPi / 8.0f;
+                const float dx = std::sin(h), dy = std::cos(h);
+                float       clear = kLength;
+                for (const float up : { 0.6f, 1.2f }) {
+                    const RE::NiPoint3 from = a_at + RE::NiPoint3(dx * 70.0f, dy * 70.0f, up * Pose::kUnitsPerMeter);
+                    const RE::NiPoint3 to = from + RE::NiPoint3(dx * kLength, dy * kLength, 0.0f);
+                    input.from = RE::hkVector4(from.x * scale, from.y * scale, from.z * scale, 0.0f);
+                    input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+                    RE::hkpWorldRayCastOutput output;
+                    world->CastRay(input, output);
+                    if (output.HasHit()) {
+                        clear = (std::min)(clear, kLength * output.hitFraction);
+                    }
+                }
+                if (clear > a_clear * Pose::kUnitsPerMeter) {
+                    a_clear = clear * Pose::kMetersPerUnit;
+                    best = h;
+                }
+            }
+            return best;
+        }
+
+        void PadCheck(bool a_ok, const std::string& a_what) { SKSE::log::info("hit test: pad: {} {}", a_what, a_ok ? "ok" : "FAILED"); }
+
+        void PadNext()
+        {
+            state.step++;
+            state.timer = 0.0f;
+        }
+
+        // From Arriving on: the pad's events injected as Skyrim would send them (PlayerSync::DebugPad, DebugStick), each
+        // action's effect read back from San Andreas's pose and logged: "hit test: pad: ... ok" or "... FAILED".
+        void PadSteps()
+        {
+            static Protocol::PlayerState before{};
+            static float                 peak = 0.0f;  // the drive's top speed, km/h
+            static int                   tries = 0;    // d-pad presses looking for a gun
+            static RE::FormID            firstLock = 0;
+            static RE::NiPoint3          start;        // where the coc put the player: the drive starts there
+            static int                   rounds = 0;   // in and out of the car with Y
+            static RE::FormID            disabled = 0;  // the locked guard disabled on purpose
+            Protocol::PlayerState        pose{};
+            const bool                   valid = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid);
+            const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
+            switch (state.step) {
+            case 0:  // Back held a second, with Skyrim on the player
+                if (state.timer >= 6.0f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        start = player->GetPosition();
+                    }
+                    SKSE::log::info("hit test: pad: holding Back with Skyrim on the player");
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 1:
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kBack, 0.0f);
+                    PadCheck(PlayerSync::DebugOwned(), "Back held 1.5 s hands the player to CJ:");
+                    PadNext();
+                }
+                break;
+            case 2:  // the left stick forward
+                if (onFoot && state.timer >= 5.0f) {
+                    before = pose;
+                    PlayerSync::DebugStick(false, 0.0f, 1.0f);
+                    PadNext();
+                } else if (state.timer > 40.0f) {
+                    PadCheck(false, "CJ came on foot:");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 3:
+                if (state.timer >= 2.0f) {
+                    const float moved = Meters(before.offset, pose.offset);
+                    PadCheck(moved > 1.5f, std::format("the left stick forward 2 s walks CJ {:.1f} m:", moved));
+                    PlayerSync::DebugStick(false, 0.0f, 0.0f);
+                    before = pose;
+                    PlayerSync::DebugStick(true, 1.0f, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 4:  // the right stick right
+                if (state.timer >= 1.0f) {
+                    PlayerSync::DebugStick(true, 0.0f, 0.0f);
+                    float turned = (pose.viewHeading - before.viewHeading) * 57.29578f;
+                    while (turned > 180.0f) {
+                        turned -= 360.0f;
+                    }
+                    while (turned < -180.0f) {
+                        turned += 360.0f;
+                    }
+                    PadCheck(std::fabs(turned) > 20.0f, std::format("the right stick 1 s turns the camera {:.0f} degrees:", turned));
+                    PlayerSync::DebugType("LXGIWYL");
+                    PadNext();
+                }
+                break;
+            case 5:  // the d-pad's right: the next weapon
+                if (state.timer >= 3.0f) {
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 6:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kRight, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 7:
+                if (state.timer >= 1.5f) {
+                    if (tries == 0) {
+                        PadCheck(pose.weaponType != before.weaponType, std::format("the d-pad's right switches weapon {} to {}:", before.weaponType, pose.weaponType));
+                    }
+                    // On to a gun (the pistols to the sniper rifle) for LT and RT: the set's melee weapons have no aim camera or bullets.
+                    if ((pose.weaponType < 22 || pose.weaponType > 34) && ++tries < 10) {
+                        PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                        state.step = 6;
+                        state.timer = 0.0f;
+                        break;
+                    }
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
+                    PadNext();
+                }
+                break;
+            case 8:  // LT aims, RT fires
+                if (state.timer >= 1.0f) {
+                    PadCheck((pose.weaponFlags & Protocol::kWeaponAiming) != 0, std::format("LT aims (weapon {}):", pose.weaponType));
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 9:
+                if (state.timer >= 0.6f) {
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 10:
+                if (state.timer >= 1.0f) {
+                    const int fired = static_cast<std::uint16_t>(pose.shots - before.shots);
+                    PadCheck(fired > 0, std::format("RT fires {} shots:", fired));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    // The gun lock: two guards ahead, one each side of the camera, set on CJ.
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        const float view = pose.viewHeading;
+                        for (const float side : { -0.22f, 0.22f }) {
+                            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
+                            auto  ref = base ? player->PlaceObjectAtMe(base, false) : nullptr;
+                            if (!ref) {
+                                continue;
+                            }
+                            const float h = view + side;  // the pose's view heading is Skyrim's convention (Pose::HeadingOf)
+                            ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * 700.0f, std::cos(h) * 700.0f, 0.0f));
+                            state.attackers.push_back(ref->GetHandle());
+                        }
+                        SKSE::log::info("hit test: pad: {} guards placed 10 m ahead, either side of the camera", state.attackers.size());
+                    }
+                    state.step = 20;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 20:  // LT with the pistol: the lock turns the camera by itself
+                if (state.timer >= 3.0f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        SetOn(player);
+                    }
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
+                    PadNext();
+                }
+                break;
+            case 21:
+                if (state.timer >= 2.0f) {
+                    float turned = (pose.viewHeading - before.viewHeading) * 57.29578f;
+                    while (turned > 180.0f) {
+                        turned -= 360.0f;
+                    }
+                    while (turned < -180.0f) {
+                        turned += 360.0f;
+                    }
+                    before = pose;
+                    firstLock = LockOn::DebugGunTarget();
+                    tries = 0;  // the shift's side, tried once more the other way
+                    PadCheck(LockOn::DebugGunTarget() != 0 && std::fabs(turned) > 3.0f,
+                        std::format("LT locks on to {:08X} and the camera turns {:.0f} degrees onto it, the right stick untouched:", LockOn::DebugGunTarget(), turned));
+                    PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 22:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kRight, 0.0f);
+                    PlayerSync::DebugPad(Pad::kLeft, 0.0f);
+                }
+                // The lock may have taken the right-hand guard: then the shift is to the left.
+                if (state.timer >= 1.0f && LockOn::DebugGunTarget() == firstLock && !tries) {
+                    tries = 1;
+                    PlayerSync::DebugPad(Pad::kLeft, 1.0f);
+                    state.timer = 0.0f;
+                    break;
+                }
+                if (state.timer >= 1.5f) {
+                    const auto first = firstLock;
+                    PadCheck(LockOn::DebugGunTarget() != 0 && LockOn::DebugGunTarget() != first && pose.weaponType == before.weaponType,
+                        std::format("the d-pad's right shifts the lock {:08X} -> {:08X}, the weapon stays {}:", first, LockOn::DebugGunTarget(), pose.weaponType));
+                    // The locked guard disabled while LT still holds it, as a script, a respawn or a cell change would: through
+                    // SKSE's task queue, outside the player's update (the lock keeps form ids only and looks its actors up again
+                    // every frame).
+                    disabled = LockOn::DebugGunTarget();
+                    SKSE::log::info("hit test: pad: disabling the locked guard {:08X} through SKSE's task queue, LT still held", disabled);
+                    SKSE::GetTaskInterface()->AddTask([id = disabled]() {
+                        auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                        SKSE::log::info("hit test: pad: task: disabling {:08X}", id);
+                        if (actor) {
+                            actor->Disable();
+                        }
+                        SKSE::log::info("hit test: pad: task: {:08X} disabled", id);
+                    });
+                    state.step = 23;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 23:
+                if (state.timer >= 2.0f) {
+                    auto* actor = RE::TESForm::LookupByID<RE::Actor>(disabled);
+                    PadCheck(actor && actor->IsDisabled() && LockOn::DebugGunTarget() != disabled,
+                        std::format("the locked guard disabled ({}): the lock is on {:08X} now, and Skyrim keeps going:", actor && actor->IsDisabled() ? "it is" : "it isn't",
+                            LockOn::DebugGunTarget()));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    // The other one out of the way until the end, where it's disabled from inside the player's update instead.
+                    for (const auto& handle : state.attackers) {
+                        auto  ref = handle.get();
+                        auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
+                        if (guard && !guard->IsDisabled()) {
+                            guard->StopCombat();
+                            ref->SetPosition(ref->GetPosition() + RE::NiPoint3(6000.0f, 6000.0f, 0.0f));
+                        }
+                    }
+                    tries = PlayerSync::DebugPadCheats();
+                    SKSE::log::info("hit test: pad: entering HESOYAM and AEZAKMI as their console sequences");
+                    state.step = 30;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 30:  // HESOYAM, then AEZAKMI (B, its Circle, tapped: no tween menu), a press every 0.15 s
+            {
+                static constexpr std::uint32_t kCodes[] = { Pad::kRightShoulder, Pad::kRightTrigger, Pad::kLeftShoulder, Pad::kA, Pad::kLeft, Pad::kDown, Pad::kRight,
+                    Pad::kUp, Pad::kLeft, Pad::kDown, Pad::kRight, Pad::kUp, Pad::kB, Pad::kRight, Pad::kB, Pad::kRight, Pad::kLeft, Pad::kX, Pad::kY, Pad::kUp };
+                static std::size_t pressed = 0;
+                const auto         at = static_cast<std::size_t>(state.timer / 0.15f);
+                while (pressed < std::size(kCodes) && pressed <= at) {
+                    PlayerSync::DebugPad(kCodes[pressed], 1.0f);
+                    PlayerSync::DebugPad(kCodes[pressed], 0.0f);
+                    pressed++;
+                }
+                if (pressed >= std::size(kCodes) && state.timer >= 4.0f) {
+                    auto*      ui = RE::UI::GetSingleton();
+                    const bool tween = ui && ui->IsMenuOpen(RE::TweenMenu::MENU_NAME);
+                    const int  done = PlayerSync::DebugPadCheats() - tries;
+                    PadCheck(done == 2 && !tween, std::format("the console sequences finish {} cheats (2 wanted), B's taps open {}:", done, tween ? "the tween menu" : "nothing"));
+                    state.step = 40;
+                    state.timer = 0.0f;
+                }
+                break;
+            }
+            case 40:  // the drive starts back where the coc put the player, facing the most room (wedged in Riverwood otherwise)
+                if (PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                state.step = 41;
+                state.timer = 0.0f;
+                break;
+            case 41:
+                if (state.timer >= 1.5f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        float      clear = 0.0f;
+                        const auto heading = ClearHeading(player, start, clear);
+                        player->SetPosition(start, true);
+                        player->data.angle.z = heading;
+                        SKSE::log::info("hit test: pad: the drive starts at the coc spot, heading {:.2f}, {:.0f} m clear ahead", heading, clear);
+                    }
+                    state.step = 42;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 42:
+                if (state.timer >= 1.5f) {
+                    SKSE::log::info("hit test: pad: CJ into a Sandking there");
+                    PlayerSync::TakeOverInVehicle(kSandking);
+                    state.step = 11;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 11:  // RT accelerates
+                if (valid && (pose.flags & Protocol::kPlayerInVehicle) && state.timer >= 4.0f) {
+                    before = pose;
+                    peak = 0.0f;
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 1.0f);
+                    PadNext();
+                } else if (state.timer > 30.0f) {
+                    PadCheck(false, "CJ got into the Sandking:");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 12:
+                peak = (std::max)(peak, std::sqrt(pose.velocity[0] * pose.velocity[0] + pose.velocity[1] * pose.velocity[1]) * Pose::kMetersPerUnit * 3.6f);
+                if (state.timer >= 3.0f) {
+                    const float moved = Meters(before.offset, pose.offset);
+                    PadCheck(peak > 15.0f && moved > 3.0f, std::format("RT 3 s drives the Sandking {:.0f} m, at up to {:.0f} km/h:", moved, peak));
+                    PlayerSync::DebugPad(Pad::kRightTrigger, 0.0f);
+                    PlayerSync::DebugPad(Pad::kRightShoulder, 1.0f);  // RB, the handbrake, to stop
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kUp, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 13:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kUp, 0.0f);
+                    PadNext();
+                }
+                break;
+            case 14:  // the d-pad's up: the next station
+                if (state.timer >= 2.0f) {
+                    PadCheck(pose.radioStation != before.radioStation, std::format("the d-pad's up tunes the radio from {} to {}:", before.radioStation, pose.radioStation));
+                    PlayerSync::DebugPad(Pad::kRightShoulder, 0.0f);
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 15:  // Y gets out
+                if (state.timer >= 0.4f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((onFoot && state.timer >= 0.4f) || state.timer > 10.0f) {
+                    PadCheck(onFoot, "Y gets CJ out:");
+                    rounds = 0;
+                    state.step = 50;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 50:  // in and out with Y five times, watching that Skyrim keeps going (a stall here once stopped its log)
+                // San Andreas ignores Y while CJ is still climbing in or out (its enter and leave tasks): wait for those.
+                if (state.timer >= 1.5f && !(pose.flags & Protocol::kPlayerGettingInOut)) {
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 51:
+                if (state.timer >= 0.3f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((valid && (pose.flags & Protocol::kPlayerInVehicle) && state.timer >= 0.3f) || state.timer > 8.0f) {
+                    if (!(valid && (pose.flags & Protocol::kPlayerInVehicle))) {
+                        PadCheck(false, std::format("round {}: Y gets CJ into the Sandking:", rounds + 1));
+                    }
+                    state.step = 52;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 52:
+                if (state.timer >= 1.5f && !(pose.flags & Protocol::kPlayerGettingInOut)) {
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 53:
+                if (state.timer >= 0.3f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((onFoot && state.timer >= 0.3f) || state.timer > 8.0f) {
+                    rounds++;
+                    SKSE::log::info("hit test: pad: round {}: CJ {} with Y", rounds, onFoot ? "got in and out" : "didn't get out");
+                    if (rounds < 5) {
+                        state.step = 50;
+                        state.timer = 0.0f;
+                        break;
+                    }
+                    PadCheck(onFoot, "five rounds in and out of the Sandking with Y, Skyrim still going:");
+                    state.step = 60;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 16:  // Back held: Skyrim has the player again
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kBack, 0.0f);
+                    PadCheck(!PlayerSync::DebugOwned(), "Back held 1.5 s hands the player back to Skyrim:");
+                    SKSE::log::info("hit test: done");
+                    state.phase = Phase::Done;
+                }
+                break;
+            case 60:  // the other guard back, set on CJ, locked on with LT, then disabled from inside the player's update
+                for (const auto& handle : state.attackers) {
+                    auto  ref = handle.get();
+                    auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (guard && player && !guard->IsDisabled()) {
+                        const float h = pose.viewHeading;  // in front of the camera, for the lock
+                        ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * 600.0f, std::cos(h) * 600.0f, 0.0f));
+                        guard->StartCombat(player);
+                        disabled = guard->GetFormID();
+                    }
+                }
+                PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
+                state.step = 61;
+                state.timer = 0.0f;
+                break;
+            case 61:
+                if (state.timer >= 3.0f) {
+                    // Disabled directly while locked. Not SetDelete in the same frame: an actor disabled and deleted at once from inside
+                    // the player's update froze Skyrim the frame after, lock or no lock (two runs: Disable and SetDelete froze with
+                    // nobody locked on; Disable alone, from here or SKSE's task queue, locked or not, didn't). The plugin's own code
+                    // never does that (Police disables an actor and deletes only what isn't one, a sweep later).
+                    auto* guard = RE::TESForm::LookupByID<RE::Actor>(disabled);
+                    SKSE::log::info("hit test: pad: disabling {:08X} directly from the player's update, the lock on {:08X}, {}", disabled, LockOn::DebugGunTarget(),
+                        guard && guard->IsInCombat() ? "in combat" : "not in combat");
+                    if (guard) {
+                        guard->Disable();
+                    }
+                    SKSE::log::info("hit test: pad: the direct Disable returned");
+                    state.attackers.clear();
+                    state.step = 62;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 62:
+                if (state.timer >= 2.0f) {
+                    PadCheck(LockOn::DebugGunTarget() != disabled, std::format("2 s later Skyrim keeps going, the lock on {:08X}:", LockOn::DebugGunTarget()));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    state.step = 16;
+                    state.timer = 0.0f;
+                }
+                break;
+            default: break;
             }
         }
 
@@ -380,7 +850,7 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad") {
             return;
         }
         state.crew = scenario == "crew";
@@ -390,6 +860,7 @@ namespace AhShitRim::HitTest
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
+        state.pad = scenario == "pad";
         state.seconds = state.stealth ? 12.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
@@ -436,7 +907,9 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.stealth) {
+            if (state.pad) {
+                PadSteps();
+            } else if (state.stealth) {
                 Stealth(a_player, a_delta);
             } else if (state.timer >= 6.0f && state.crew) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot for the crew", a_player->GetParentCell()->GetFormID());

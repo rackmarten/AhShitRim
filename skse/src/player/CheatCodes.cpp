@@ -262,6 +262,8 @@ namespace AhShitRim::CheatCodes
         }
     }
 
+    void Finish(const Cheat& a_cheat, const World& a_world) { Apply(a_cheat, a_world); }
+
     void Update()
     {
         const bool up = LinkService::Get().IsUp();

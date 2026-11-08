@@ -7,7 +7,8 @@
     guard with his back to him and clicks the mouse buttons for a stealth kill.
     Or (respawns) it hands CJ over on foot, has
     him kill a few of the people around, puts the clock an hour on, steps into an interior and back out, and logs who
-    came back. Then it prints what the logs say, closes both
+    came back. Or (pad) it injects gamepad events as Skyrim sends them and checks each action from San Andreas's pose
+    ("hit test: pad: ... ok"). Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
@@ -17,9 +18,10 @@
     scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
+    scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,

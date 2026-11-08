@@ -30,12 +30,20 @@ namespace AhShitRim::PlayerSync
     // once the game is up), and a new game or a load starting over.
     void Snapshot(Cosave::Record& a_out);
 
+    // Whether the gamepad was the last thing used (DESIGN.md, Controller): the help box names its buttons ("LB: Open").
+    bool PadInUse();
+
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool DebugOwned();
     void DebugToggle();
     void DebugType(const char* a_code);
     // The hit test's stealth scenario (debug, v38): the mouse's aim and fire buttons held as if pressed.
     void DebugButtons(bool a_aim, bool a_fire);
+    // The hit test's pad scenario (debug): a gamepad button (a Skyrim gamepad id code, Pad::k*) or stick as Skyrim's
+    // gamepad events would set them.
+    void DebugPad(std::uint32_t a_id, float a_value);
+    void DebugStick(bool a_right, float a_x, float a_y);
+    int  DebugPadCheats();  // console cheat sequences finished on the pad so far
 
     void Restore(const Cosave::Record& a_record);
     void Revert();
