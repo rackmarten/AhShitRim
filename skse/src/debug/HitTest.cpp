@@ -554,7 +554,7 @@ namespace AhShitRim::HitTest
                     state.phase = Phase::Done;
                 }
                 break;
-            case 60:  // the other guard back, set on CJ, locked on with LT, then disabled and deleted from inside the player's update
+            case 60:  // the other guard back, set on CJ, locked on with LT, then disabled from inside the player's update
                 for (const auto& handle : state.attackers) {
                     auto  ref = handle.get();
                     auto* guard = ref ? ref->As<RE::Actor>() : nullptr;
@@ -572,16 +572,17 @@ namespace AhShitRim::HitTest
                 break;
             case 61:
                 if (state.timer >= 3.0f) {
-                    // As the run that froze did it: Disable and SetDelete, called directly, LT let go in the same frame.
+                    // Disabled directly while locked. Not SetDelete in the same frame: an actor disabled and deleted at once from inside
+                    // the player's update froze Skyrim the frame after, lock or no lock (two runs: Disable and SetDelete froze with
+                    // nobody locked on; Disable alone, from here or SKSE's task queue, locked or not, didn't). The plugin's own code
+                    // never does that (Police disables an actor and deletes only what isn't one, a sweep later).
                     auto* guard = RE::TESForm::LookupByID<RE::Actor>(disabled);
-                    SKSE::log::info("hit test: pad: disabling and deleting {:08X} directly from the player's update, the lock on {:08X}, {} (the call that froze Skyrim once)",
-                        disabled, LockOn::DebugGunTarget(), guard && guard->IsInCombat() ? "in combat" : "not in combat");
-                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    SKSE::log::info("hit test: pad: disabling {:08X} directly from the player's update, the lock on {:08X}, {}", disabled, LockOn::DebugGunTarget(),
+                        guard && guard->IsInCombat() ? "in combat" : "not in combat");
                     if (guard) {
                         guard->Disable();
-                        guard->SetDelete(true);
                     }
-                    SKSE::log::info("hit test: pad: the direct Disable and SetDelete returned");
+                    SKSE::log::info("hit test: pad: the direct Disable returned");
                     state.attackers.clear();
                     state.step = 62;
                     state.timer = 0.0f;
@@ -590,6 +591,7 @@ namespace AhShitRim::HitTest
             case 62:
                 if (state.timer >= 2.0f) {
                     PadCheck(LockOn::DebugGunTarget() != disabled, std::format("2 s later Skyrim keeps going, the lock on {:08X}:", LockOn::DebugGunTarget()));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
                     PlayerSync::DebugPad(Pad::kBack, 1.0f);
                     state.step = 16;
                     state.timer = 0.0f;
