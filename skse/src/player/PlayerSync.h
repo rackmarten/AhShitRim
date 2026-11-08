@@ -54,6 +54,8 @@ namespace AhShitRim::PlayerSync
     // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San
     // Andreas's camera in the world; false on a frame he wasn't drawn.
     bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
+    // The hit test's respawns scenario (debug): / pressed, Skyrim's wait menu as the key opens it.
+    void DebugWait();
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

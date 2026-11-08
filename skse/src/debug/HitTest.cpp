@@ -40,7 +40,8 @@ namespace AhShitRim::HitTest
             Handing,   // CJ comes, in the Sandking
             Watching,
             Killing,    // respawns: CJ kills a few of the people around
-            Waiting,    // their quests' window, then an hour on the clock
+            Waiting,    // their quests' window, then / for Skyrim's wait menu
+            WaitMenu,   // an hour waited in it (or, refused, an hour on the clock)
             Looking,    // still there: who gets up out of view, and who waits in view
             Away,       // in an interior, out of their sight
             Returning,  // back outside: are they up at their spots?
@@ -79,6 +80,8 @@ namespace AhShitRim::HitTest
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
+            float              waitFrom = 0.0f;  // respawns: the game days passed when / was pressed
+            bool               waitAsked = false;  // the wait menu was told to wait
             bool               crew = false;     // the scenario: the Grove Street crew (v39)
             RE::ActorHandle    hurt;             // the follower CJ shot
             bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
@@ -161,6 +164,22 @@ namespace AhShitRim::HitTest
                 if (state.phase == Phase::MainMenu && a_event && a_event->opening && a_event->menuName == RE::MainMenu::MENU_NAME) {
                     state.phase = Phase::Loading;
                     TryLoad(1);
+                }
+                if (state.phase == Phase::WaitMenu && a_event && a_event->menuName == RE::SleepWaitMenu::MENU_NAME) {
+                    SKSE::log::info("hit test: Skyrim's wait menu {}", a_event->opening ? "opened" : "closed");
+                    if (a_event->opening && !state.waitAsked) {
+                        state.waitAsked = true;
+                        // As its Wait button does: the menu's OK with the slider's hours.
+                        SKSE::GetTaskInterface()->AddUITask([] {
+                            auto* ui = RE::UI::GetSingleton();
+                            auto menu = ui ? ui->GetMenu(RE::SleepWaitMenu::MENU_NAME) : nullptr;
+                            if (menu && menu->fxDelegate && menu->uiMovie) {
+                                const RE::GFxValue hours{ 1.0 };
+                                menu->fxDelegate->Callback(menu->uiMovie.get(), "OK", &hours, 1);
+                                SKSE::log::info("hit test: waiting an hour in it");
+                            }
+                        });
+                    }
                 }
                 return RE::BSEventNotifyControl::kContinue;
             }
@@ -1478,14 +1497,35 @@ namespace AhShitRim::HitTest
             break;
         case Phase::Waiting:
             if (state.timer >= 5.0f) {
-                if (auto* calendar = RE::Calendar::GetSingleton(); calendar && calendar->gameDaysPassed && calendar->gameHour) {
-                    constexpr float kHours = 1.1f;
-                    calendar->gameDaysPassed->value += kHours / 24.0f;
-                    calendar->gameHour->value += kHours;
-                    if (calendar->gameHour->value >= 24.0f) {
-                        calendar->gameHour->value -= 24.0f;
+                auto* calendar = RE::Calendar::GetSingleton();
+                state.waitFrom = calendar && calendar->gameDaysPassed ? calendar->gameDaysPassed->value : 0.0f;
+                state.waitAsked = false;
+                SKSE::log::info("hit test: pressing / for Skyrim's wait menu");
+                state.phase = Phase::WaitMenu;
+                state.timer = 0.0f;
+                PlayerSync::DebugWait();
+            }
+            break;
+        case Phase::WaitMenu:
+            if (ui && ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME)) {
+                break;
+            }
+            if (state.waitAsked || state.timer >= 6.0f) {
+                auto* calendar = RE::Calendar::GetSingleton();
+                if (calendar && calendar->gameDaysPassed && calendar->gameHour) {
+                    const float waited = (calendar->gameDaysPassed->value - state.waitFrom) * 24.0f;
+                    if (waited >= 0.95f) {
+                        SKSE::log::info("hit test: waited {:.2f} game hours through / and Skyrim's wait menu, staying put", waited);
+                    } else {
+                        constexpr float kHours = 1.1f;
+                        calendar->gameDaysPassed->value += kHours / 24.0f;
+                        calendar->gameHour->value += kHours;
+                        if (calendar->gameHour->value >= 24.0f) {
+                            calendar->gameHour->value -= 24.0f;
+                        }
+                        SKSE::log::info("hit test: the wait menu {} ({:.2f} game hours waited): {:.1f} game hours on the clock instead, staying put",
+                            state.waitAsked ? "didn't wait" : "never opened", waited, kHours);
                     }
-                    SKSE::log::info("hit test: {:.1f} game hours on, staying put", kHours);
                 }
                 state.phase = Phase::Looking;
                 state.timer = 0.0f;

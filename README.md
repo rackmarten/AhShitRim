@@ -92,6 +92,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | Q / E | Q / E | E: activate what the crosshair is on (or else what CJ faces), through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop; standing on a weapon pickup while CJ carries another gun of its kind, it swaps his for it | Look left / right (both together: look behind); an aircraft's rudder | LB (activate); in a vehicle the d-pad's left / right |
 | Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Rhino's turret, the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car | R3 held with the right stick (hydraulics); in the Hydra the right stick's up / down |
 | Numpad 5, 2 or numpad + | Same | | San Andreas's sub-mission key: a plane's landing gear up and down, the crop duster's and Stuntplane's smoke, the hydraulics' jump with the numpad's arrows | R3 |
+| / | / | Skyrim's wait menu (T, Skyrim's own wait key, is a letter of the cheat codes while CJ has the player) | Nothing: get out first | |
 | Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air and shouts one of his own lines instead of the dragon words | Skyrim's shout and CJ's line, no gesture | RB (on foot) |
 | ] | ] | Spawn a Sandking | |  |
 | [ | [ | Spawn a ZR-350 | |  |
@@ -114,9 +115,9 @@ CJ's camera turns at Skyrim's own look sensitivity (Settings, Controls, Look Sen
 
 On a gamepad (the Pad column): turn on Skyrim's own gamepad setting (Settings, Controls, Gamepad), AhShitRim reads the pad through Skyrim. B opens Skyrim's tween menu (the map, items, magic, skills) and Start its journal, as in Skyrim; Skyrim's menus, dialogue and the map work on the pad as Skyrim's own. In a dialogue A skips a line, in a seat the left stick or A stands up. Back tapped changes the camera distance; held a second it hands the player over, either way (with Skyrim on the player a tap opens the wait menu as usual). The d-pad's up and down do nothing on foot for now. The spawn keys, F11, the swear and the developer keys are keyboard only, and so is the Shout from a vehicle (RB is the handbrake there). `[Input]` in `AhShitRim.ini` has `Pad` (`0` turns the pad off for CJ), `PadLookSpeed` (1400, the right stick's camera speed), `PadAimSpeed` (0.55, its share while LT aims) and `PadInvertY` (`1` inverts it).
 
-Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu.
+Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu. T doesn't open the wait menu either, for the same reason: `/` does, on foot.
 
-The build also has a few developer keys, off Skyrim's default binds: `;` picks a vehicle from a list (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute) and `'` spawns it, `=` hands out San Andreas's weapon sets, and `/` shows each of San Andreas's text styles. `[Debug] VehicleKeys=0` and `WeaponKey=0` in `AhShitRim.ini` turn the first three off.
+The build also has a few developer keys, off Skyrim's default binds: `;` picks a vehicle from a list (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute) and `'` spawns it and `=` hands out San Andreas's weapon sets. `[Debug] VehicleKeys=0` and `WeaponKey=0` in `AhShitRim.ini` turn them off.
 
 ## Playing as CJ
 
