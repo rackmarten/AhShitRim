@@ -9,6 +9,7 @@
 #include "pad.h"
 #include "player/Homies.h"
 #include "player/LockOn.h"
+#include "player/ObjectHits.h"
 #include "player/PlayerSync.h"
 #include "player/Shots.h"
 #include "player/Police.h"
@@ -19,7 +20,9 @@
 #include "wanted.h"
 #include "weapons.h"
 
+#include <algorithm>
 #include <chrono>
+#include <format>
 #include <thread>
 
 namespace AhShitRim::HitTest
@@ -48,6 +51,7 @@ namespace AhShitRim::HitTest
             Standing,   // armour: CJ stands still with full armour, its level logged
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
+            Oil,        // oil: the pools lit, watched burning
             Done,
         };
 
@@ -81,6 +85,20 @@ namespace AhShitRim::HitTest
             std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
             std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
             float               outFor = 0.0f;     // seconds since both were out
+            bool               oil = false;   // the scenario: oil lit by a bullet, a Molotov and a rocket
+            bool               oilMoved = false;
+            bool               oilReset = false;  // the pools placed
+            std::string        oilAt = "0009B0E6";  // the reference the player is moved to first (HitTestOilAt): by the floor PlaceOil puts the pools on
+
+            struct Pool
+            {
+                RE::ObjectRefHandle ref;
+                const char*         by = "";
+                float               lowest = 100.0f;  // its health at the lowest seen, of 100
+                bool                burned = false;   // seen burning: below 94% and above 7% (its fire's stages)
+                bool                gone = false;     // burnt out and disabled
+            };
+            std::vector<Pool> pools;
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -955,12 +973,79 @@ namespace AhShitRim::HitTest
                     home && actor && !actor->IsDead() ? std::format(", {:.0f} units from the editor spot", actor->GetPosition().GetDistance(at)) : "");
             }
         }
+
+        float HealthOf(RE::TESObjectREFR* a_ref)
+        {
+            const auto* health = a_ref->extraList.GetByType<RE::ExtraObjectHealth>();
+            return health ? health->health : 100.0f;
+        }
+
+        // Three fresh oil pools (Skyrim's TrapOilPool01) placed on the floor where the save's own may be burnt out already:
+        // at three of a row of pools in BleakFallsBarrow01, 3 m apart. A bullet lands in the first, a Molotov bursts on the
+        // second, a rocket on the third, each through what CJ's own shots and projectiles call (ObjectHits).
+        constexpr std::uint32_t kOilPool = 0x000862CC;
+        constexpr std::uint32_t kOilSpots[3] = { 0x0009B0E6, 0x0009B0E0, 0x0009B0DE };
+
+        void PlaceOil()
+        {
+            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(kOilPool);
+            for (const auto spot : kOilSpots) {
+                auto* at = RE::TESForm::LookupByID<RE::TESObjectREFR>(spot);
+                auto  made = base && at ? at->PlaceObjectAtMe(base, false) : nullptr;
+                if (!made) {
+                    SKSE::log::warn("hit test: couldn't place oil at {:08X}", spot);
+                    continue;
+                }
+                state.pools.push_back({ made->GetHandle() });
+                SKSE::log::info("hit test: placed the oil {:08X} at ({:.0f}, {:.0f}, {:.0f})", made->GetFormID(), made->GetPositionX(), made->GetPositionY(), made->GetPositionZ());
+            }
+        }
+
+        void LightOil(RE::PlayerCharacter* a_player)
+        {
+            const char* by[] = { "a bullet", "a Molotov", "a rocket" };
+            for (std::size_t i = 0; i < state.pools.size() && i < 3; i++) {
+                auto  ref = state.pools[i].ref.get();
+                auto* root = ref ? ref->Get3D() : nullptr;
+                state.pools[i].by = by[i];
+                if (!root) {
+                    SKSE::log::info("hit test: the oil for {} has no 3D", by[i]);
+                    continue;
+                }
+                const auto at = root->worldBound.center;
+                SKSE::log::info("hit test: {} on the oil {:08X} at ({:.0f}, {:.0f}, {:.0f}), health {:.0f}", by[i], ref->GetFormID(), at.x, at.y, at.z, HealthOf(ref.get()));
+                if (i == 0) {
+                    ObjectHits::BulletLanded(a_player, at, Weapons::Pistol);
+                } else {
+                    ObjectHits::Around(a_player, at, 5.0f,  // just the pool, not its neighbours
+                         i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);
+                }
+            }
+        }
+
+        // True once every pool burnt out.
+        bool WatchOil()
+        {
+            bool all = true;
+            for (auto& pool : state.pools) {
+                const auto ref = pool.ref.get();
+                if (!ref || ref->IsDisabled()) {
+                    pool.gone = true;
+                    continue;
+                }
+                const float health = HealthOf(ref.get());
+                pool.lowest = (std::min)(pool.lowest, health);
+                pool.burned = pool.burned || (health < 94.0f && health > 7.0f);
+                all = false;
+            }
+            return all;
+        }
     }
 
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil") {
             return;
         }
         state.crew = scenario == "crew";
@@ -974,6 +1059,10 @@ namespace AhShitRim::HitTest
         state.riders = scenario == "riders" || scenario == "ridecrew";
         state.crewRider = scenario == "ridecrew";
         state.armour = scenario == "armour";
+        state.oil = scenario == "oil";
+        if (const auto at = Ini::Value("Debug", "HitTestOilAt"); !at.empty()) {
+            state.oilAt = at;
+        }
         if (state.crewRider) {
             Homies::DebugThanes(1);
         }
@@ -1023,7 +1112,24 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.pad) {
+            if (state.oil) {
+                if (state.oil && state.timer >= 4.0f && !state.oilMoved) {
+                    state.oilMoved = true;
+                    RunConsole("tgm");  // the player stands in the fire
+                    RunConsole("player.moveto " + state.oilAt);
+                } else if (state.oil && state.timer >= 6.0f && !state.oilReset) {
+                    state.oilReset = true;
+                    PlaceOil();
+                } else if (state.oil && state.timer >= 10.0f) {
+                    SKSE::log::info("hit test: in {:08X}, lighting the oil", a_player->GetParentCell()->GetFormID());
+                    LightOil(a_player);
+                    state.phase = state.pools.empty() ? Phase::Done : Phase::Oil;
+                    if (state.pools.empty()) {
+                        SKSE::log::info("hit test: done, no oil here");
+                    }
+                    state.timer = state.logTimer = 0.0f;
+                }
+            } else if (state.pad) {
                 PadSteps();
             } else if (state.stealth) {
                 Stealth(a_player, a_delta);
@@ -1270,6 +1376,28 @@ namespace AhShitRim::HitTest
             }
             TraceLeaving(a_player, a_delta);
             break;
+        case Phase::Oil: {
+            const bool out = WatchOil();
+            state.logTimer += a_delta;
+            if (state.logTimer >= 2.0f || out || state.timer >= state.seconds) {
+                state.logTimer = 0.0f;
+                for (const auto& pool : state.pools) {
+                    const auto ref = pool.ref.get();
+                    SKSE::log::info("hit test: {:.0f} s: the oil {:08X} ({}): {}, lowest health {:.0f}", state.timer, ref ? ref->GetFormID() : 0, pool.by,
+                        pool.gone ? "burnt out" : ref ? std::format("health {:.0f}", HealthOf(ref.get())) : "gone", pool.lowest);
+                }
+            }
+            if (out || state.timer >= state.seconds) {
+                int burned = 0;
+                for (const auto& pool : state.pools) {
+                    burned += pool.burned ? 1 : 0;
+                    SKSE::log::info("hit test: the oil lit by {} {}", pool.by, pool.burned ? (pool.gone ? "burned and burnt out" : "burned") : "never burned");
+                }
+                SKSE::log::info("hit test: done after {:.0f} s, {} of {} pools burned", state.timer, burned, state.pools.size());
+                state.phase = Phase::Done;
+            }
+            break;
+        }
         default: break;
         }
     }

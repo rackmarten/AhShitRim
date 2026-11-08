@@ -358,6 +358,7 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint8_t kLightFrontLeft = 0x2;   // its mirror, front's x negated (a car's left one)
     inline constexpr std::uint8_t kLightRearRight = 0x4;   // the tail light at rear (the right one of a pair)
     inline constexpr std::uint8_t kLightRearLeft = 0x8;    // its mirror
+    inline constexpr std::uint8_t kLightBraking = 0x1;     // BodyLights.state: the driver brakes, the tail lights burn brighter (on by day too)
 
     // v36, vehicle slots: its headlights and tail lights, which San Andreas switches (protocol/cpp/vehicle_lights.h).
     // Where the model's light dummies are and which lamps burn now; Skyrim lights the scene from them.
@@ -365,8 +366,9 @@ namespace AhShitRim::Protocol
     {
         std::int16_t front[3];  // the main headlight dummy (m_avDummyPos[0]) in the vehicle's frame (vehicleFrame), Skyrim units; zero for none
         std::int16_t rear[3];   // the main tail light dummy (m_avDummyPos[1]), likewise
-        std::uint8_t lit;       // kLight*: the lamps burning now
-        std::uint8_t reserved[3];
+        std::uint8_t lit;       // kLight*: the lamps burning now (drawn lit, and lighting the scene)
+        std::uint8_t state;     // kLightBraking (a reserved byte before; no layout change)
+        std::uint8_t reserved[2];
     };
 
     struct BodyState
@@ -763,6 +765,10 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint32_t kSkinMeshCutout = 0x1;  // alpha tested
     inline constexpr std::uint32_t kSkinMeshBlend = 0x2;   // alpha blended
     inline constexpr std::uint32_t kSkinMeshAdditive = 0x4;  // with kSkinMeshBlend: added onto what's behind (Skyrim's own sprites only)
+    // A vehicle lamp's mesh (one of the lights texture's materials): its BodyLights kLight* bit, shifted. Skyrim draws it
+    // lit while that lamp burns. Added in v36's lights without a bump: an older Skyrim leaves these bits alone.
+    inline constexpr std::uint32_t kSkinMeshLampShift = 4;
+    inline constexpr std::uint32_t kSkinMeshLamp = 0xF0;
     inline constexpr std::uint32_t kSkinModelBody = 0;     // SkinModelHeader.kind: a ped (CJ)
     inline constexpr std::uint32_t kSkinModelVehicle = 1;  // v6: a vehicle, its parts as bones
     inline constexpr std::uint32_t kSkinModelWeapon = 2;   // v12: a weapon in CJ's hand, its parts as bones, bounded like CJ

@@ -106,6 +106,7 @@ namespace AhShitRim::Vehicles
             float          heavyTaken = 0.0f;       // and the speed up it took off, m/s summed
             int            trackSteps = 0;          // corner-steps the Rhino's tracks gripped for (TrackGrip) since the last driving line
             float          trackTaken = 0.0f;       // and the sliding they took off, m/s summed
+            bool          weatherForced = false;  // San Andreas's weather is kept dry for Skyrim's sky (SetSky)
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -390,6 +391,10 @@ namespace AhShitRim::Vehicles
                     out.color[1] = rgb.g;
                     out.color[2] = rgb.b;
                     out.color[3] = material->color.alpha;
+                    // A lamp (the lights texture in a lamp's placeholder colour): Skyrim draws it lit while that lamp burns.
+                    if (texture && texture == CVehicleModelInfo::ms_pLightsTexture) {
+                        out.flags |= VehicleLights::MeshFlagsOf(VehicleLights::LampOfMaterial(material->color.red, material->color.green, material->color.blue));
+                    }
                     if (texture && texture->raster) {
                         const auto found = byRaster.find(texture->raster);
                         if (found != byRaster.end()) {
@@ -652,6 +657,8 @@ namespace AhShitRim::Vehicles
 
         // ---- The lights (v36, protocol/cpp/vehicle_lights.h) ----
 
+        constexpr short kDryWeather = 14;  // WEATHER_SUNNY_COUNTRYSIDE: no rain, so no thunder (SetSky)
+
         constexpr unsigned char kNoLightOverride = 0;  // m_nOverrideLights: NO_CAR_LIGHT_OVERRIDE
         constexpr unsigned char kForceLightsOff = 1;   // FORCE_CAR_LIGHTS_OFF
         constexpr unsigned char kForceLightsOn = 2;    // FORCE_CAR_LIGHTS_ON
@@ -684,6 +691,7 @@ namespace AhShitRim::Vehicles
             lamps.wanted = a_vehicle->GetVehicleLightsStatus();
             lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
             lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
+            lamps.braking = a_vehicle->m_pDriver && a_vehicle->m_fBreakPedal > 0.0f && !a_vehicle->bIsHandbrakeOn;
             lamps.twin = a_vehicle->m_nVehicleClass == VEHICLE_AUTOMOBILE;  // a bike has one lamp of each
             lamps.hasFront = !IsZero(front);
             lamps.hasRear = !IsZero(rear);
@@ -695,6 +703,7 @@ namespace AhShitRim::Vehicles
                 }
             }
             a_out.lights.lit = VehicleLights::Lit(lamps);
+            a_out.lights.state = VehicleLights::StateOf(lamps);
         }
 
         // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
@@ -1320,6 +1329,24 @@ namespace AhShitRim::Vehicles
         }
         state.sky = a_sky;
         state.minuteOfDay = a_minuteOfDay;
+        // San Andreas's weather stays dry while Skyrim sends its sky. Its rainy weathers always thunder (CWeather::Update
+        // plays AE_THUNDER through the weather audio entity, which Audio leaves on) whatever Skyrim's sky is, and Skyrim's
+        // own weather already plays its rain and its storms' thunder. (Its rain loops are off: Audio hooks the entity's Service.)
+        if ((a_sky & Protocol::kSkyClock) != 0) {
+            if (CWeather::ForcedWeatherType != kDryWeather || CWeather::NewWeatherType != kDryWeather || CWeather::OldWeatherType != kDryWeather) {
+                CWeather::ForceWeatherNow(kDryWeather);
+                CWeather::WhenToPlayLightningSound = 0;
+                CWeather::LightningBurst = false;
+                CWeather::LightningFlash = false;
+                if (!state.weatherForced) {
+                    Log("vehicle: San Andreas's weather kept dry (no thunder of its own), Skyrim's sky plays its rain and storms");
+                }
+                state.weatherForced = true;
+            }
+        } else if (state.weatherForced) {
+            state.weatherForced = false;
+            CWeather::ReleaseWeather();
+        }
     }
 
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame)
