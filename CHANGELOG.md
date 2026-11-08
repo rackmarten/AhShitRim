@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- CJ aims pistols, Uzis and sawn-offs (one gun or two) the way San Andreas poses them: the arm straight out to the aim instead of bent down at the elbow, and with the right mouse button held his head turns to the crosshair as well, up, down and to the sides.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.
