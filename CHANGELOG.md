@@ -14,12 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Twice the pickups: 93 spots instead of 45, with armour three or four times in every hold, hearts in ten villages and 33 weapons, mostly pistols and sub-machine guns, a few shotguns and rifles, and the heavy ones (a flamethrower and a heat-seeking rocket launcher join the rocket launcher and the minigun) rare and tucked away. The road from Helgen to Riverwood has armour and guns at Helgen, the Guardian Stones and Embershard Mine
 - Knife stealth kills, as San Andreas plays them: behind an unaware person (not fighting CJ, not seeing the Dragonborn, not running, back turned, within 2.5 m), holding the right mouse button with the knife raises it, and the left button grabs and stabs them with San Andreas's own animation and sound. The victim dies through Skyrim's own hit (kill credit, crime when someone sees it) and slumps into a ragdoll, and CJ may say a stealth kill line. Never on creatures, children or essential characters.
 - Stealth kill victims play Skyrim's own sneak kill move from behind, in step with CJ's stab, and fall back to the ragdoll on uneven ground or when Skyrim can't play it. `[Weapons] StealthKillMove=0` in `AhShitRim.ini` turns it off.
+- San Andreas's zone names: entering or discovering a location shows its name bottom right in San Andreas's light blue zone name style, fading in and out as San Andreas's does, instead of Skyrim's location text. Getting into a vehicle shows its San Andreas name the same way, in green.
 
 ### Changed
 
 - The camera works like San Andreas's. On foot V (or Home) steps through San Andreas's three chase distances, close, middle and far; it used to do nothing there. There is still no first person on foot, as in San Andreas. In a vehicle, the first-person step of V now sits in front of the vehicle, past a car's bonnet, a bike's handlebars or an aircraft's nose, instead of inside the model Skyrim draws (San Andreas puts that view at the driver's head and simply doesn't draw the car; Skyrim drew it), and CJ isn't drawn in it. The Seasparrow and the Rustler show the rocket-sight crosshair in that view as the Hunter and the Hydra do, to aim their guns by.
 - A crouched knife hit on someone who doesn't detect the Dragonborn is Skyrim's sneak attack: three times the damage, with Skyrim's own message.
 - Protocol v38: `kProxyStealthKill` on the lock-on target's proxy, and the `kShotStealthGrab` and `kShotStealthStab` shots with the victim in `ShotEvent.target`.
+- Skyrim's junk notifications are gone while CJ has the player: items added and removed, spells learned, "you feel...", bounty added and the like. What matters (no fast travel with enemies near, a lock that needs a key) shows in San Andreas's help box instead. docs/DESIGN.md lists what happens to each kind of message.
 
 ## [0.1.1] - 2026-10-26
 

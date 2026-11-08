@@ -15,6 +15,7 @@
 #include "cosave.h"
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "input.h"
 #include "knock.h"
 #include "pickups.h"
@@ -1202,6 +1203,7 @@ namespace AhShitRim::PlayerSync
                 if (Overlay::ScreenshotSaved()) {
                     SaHud::ShowHelp("Screenshot saved", 3.0f);
                 }
+                SkyrimMessages::Update(state.owned);
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr, Missions::CuePlaying());
             }
@@ -1518,6 +1520,7 @@ namespace AhShitRim::PlayerSync
         static InputSink inputSink;
         static MenuSink  menuSink;
         Conversation::OnDataLoaded();
+        SkyrimMessages::OnDataLoaded();
         const auto layout = Ini::Value("Input", "KeyLayout");
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,

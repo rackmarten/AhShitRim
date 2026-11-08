@@ -42,6 +42,9 @@ namespace AhShitRim::SaHud
     void MarkHead(const RE::NiPoint3& a_headTop, std::uint32_t a_colour);  // the lock-on's triangle over a head (RGBA, red in the low byte), as long as it's called every frame
     bool AimCrosshair(float& a_x, float& a_y, float& a_aspect);           // where the gun's crosshair was last drawn (fractions of the screen, its width over height); false when it wasn't
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
+    // The zone name bottom right, light blue Gothic, fading in and out as San Andreas's (protocol/cpp/hud_names.h): Skyrim's
+    // location on entering it. The vehicle CJ is in comes up the same way by itself, in green, by San Andreas's name for it.
+    void ShowZoneName(std::string a_name);
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();
     void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left, with San Andreas's beep when it starts showing
