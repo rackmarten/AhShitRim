@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Knife stealth kills, as San Andreas plays them: behind an unaware person (not fighting CJ, not seeing the Dragonborn, not running, back turned, within 2.5 m), holding the right mouse button with the knife raises it, and the left button grabs and stabs them with San Andreas's own animation and sound. The victim dies through Skyrim's own hit (kill credit, crime when someone sees it) and slumps into a ragdoll, and CJ may say a stealth kill line. Never on creatures, children or essential characters.
 - Stealth kill victims play Skyrim's own sneak kill move from behind, in step with CJ's stab, and fall back to the ragdoll on uneven ground or when Skyrim can't play it. `[Weapons] StealthKillMove=0` in `AhShitRim.ini` turns it off.
 - San Andreas's zone names: entering or discovering a location shows its name bottom right in San Andreas's light blue zone name style, fading in and out as San Andreas's does, instead of Skyrim's location text. Getting into a vehicle shows its San Andreas name the same way, in green.
+- `scripts/fake-vehicles.ps1` with `AHSHITRIM_ONLY=handling` checks how the Rhino turns and rides on flat ground, humps and boulders, next to a Sandking.
 
 ### Changed
 
@@ -25,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves a quest on. Essential people NOMERCY let CJ kill still always come back.
 - `scripts/hit-test.ps1 -Scenario respawns` checks it from the logs with nobody at the keys.
 - CJ aims pistols, Uzis and sawn-offs (one gun or two) the way San Andreas poses them: the arm straight out to the aim instead of bent down at the elbow, and with the right mouse button held his head turns to the crosshair as well, up, down and to the sides.
+
+### Fixed
+
+- The Rhino drives like a tank on Skyrim's ground. It turns about its middle instead of swinging its middle out round its rear axle like a car (San Andreas's own turn, which a tank with straight tracks showed as strafing), on San Andreas's own turning circle; the handbrake still turns it tighter, as in San Andreas. Over rocks its tracks grip where San Andreas only let its four corner wheels grip, so it no longer slides about with its corners in the air, and when its hull hits a rock it isn't thrown up like a car any more: the Rhino, the Dumper and the other vehicles over 8 tonnes stay heavy.
 
 ## [0.1.1] - 2026-10-26
 
