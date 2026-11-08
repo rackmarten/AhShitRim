@@ -8,12 +8,14 @@
 // speaker over CJ's shoulder; each topic the player picks has CJ answer with one of his own lines of
 // its category (the topic table, else a rule on the topic's text) and cuts back to the two-shot. CJ
 // greets when it opens and says goodbye when it closes. Skyrim's subtitles, in or out of a dialogue,
-// are drawn in San Andreas's subtitle style instead of Skyrim's, whatever Skyrim's subtitle settings,
-// up and down when Skyrim's HUD would show and hide them. The topic list stays Skyrim's dialogue menu;
+// are drawn in San Andreas's subtitle style instead of Skyrim's, whatever Skyrim's subtitle settings
+// (on in memory meanwhile, Dialogue::SubtitleForcing), up and down when Skyrim's HUD would show and
+// hide them. Skyrim's skill increase messages are hidden meanwhile. The topic list stays Skyrim's dialogue menu;
 // Skyrim's activate key and the left mouse button skip the speaker's line.
 namespace AhShitRim::Conversation
 {
-    void Install();  // hooks the HUD's messages for its subtitles; call at SKSE load
+    void Install();       // hooks the HUD's messages for its subtitles; call at SKSE load
+    void OnDataLoaded();  // follows Skyrim's journal opening, for its subtitle settings
 
     bool DialogueOpen();  // Skyrim's dialogue menu is open with someone
 

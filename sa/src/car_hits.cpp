@@ -87,19 +87,19 @@ namespace AhShitRim::CarHits
         }
 
         void Send(CVehicle* a_vehicle, const Protocol::ActorProxy& a_proxy, const RunOver::Touch& a_touch, const RunOver::Response& a_hit,
-            const Pose::Vec3& a_spawnFeet, unsigned a_handover, bool a_heavy)
+            const Pose::Vec3& a_spawnFeet, unsigned a_handover, bool a_wall)
         {
             Protocol::ImpactEvent impact{};
             impact.handover = a_handover;
             impact.id = a_proxy.id;
             impact.speed = a_hit.closing;
-            impact.flags = static_cast<std::uint8_t>((a_heavy ? Protocol::kImpactHeavy : 0) | (a_vehicle->m_nVehicleClass == VEHICLE_BIKE ? Protocol::kImpactBike : 0));
+            impact.flags = static_cast<std::uint8_t>((a_wall ? Protocol::kImpactHeavy : 0) | (a_vehicle->m_nVehicleClass == VEHICLE_BIKE ? Protocol::kImpactBike : 0));
             impact.vehicleModel = static_cast<std::uint16_t>(a_vehicle->m_nModelIndex);
             const auto at = Body::Scale(Body::Sub(a_touch.point, a_spawnFeet), Pose::kUnitsPerMeter);
             impact.at[0] = at.x;
             impact.at[1] = at.y;
             impact.at[2] = at.z;
-            if (!a_heavy) {
+            if (!a_wall) {
                 impact.push[0] = a_hit.actorVelocity.x * Pose::kUnitsPerMeter;
                 impact.push[1] = a_hit.actorVelocity.y * Pose::kUnitsPerMeter;
                 impact.push[2] = a_hit.actorVelocity.z * Pose::kUnitsPerMeter;
@@ -112,7 +112,7 @@ namespace AhShitRim::CarHits
             }
             if (state.logged < kLoggedHits) {
                 state.logged++;
-                Log(std::format("car hits: hit {:08X}{} at {:.1f} m/s (mass {:.0f} kg against {:.0f}), damage {:.0f}{}", a_proxy.id, a_heavy ? " (heavy)" : "",
+                Log(std::format("car hits: hit {:08X}{} at {:.1f} m/s (mass {:.0f} kg against {:.0f}), damage {:.0f}{}", a_proxy.id, a_wall ? " (a wall)" : "",
                     a_hit.closing, a_vehicle->m_fMass, a_proxy.mass, impact.damage, state.dropped ? std::format(", {} dropped so far", state.dropped) : ""));
             }
         }
@@ -151,23 +151,24 @@ namespace AhShitRim::CarHits
             if (!touch) {
                 continue;
             }
-            const bool       heavy = (proxy.flags & Protocol::kProxyHeavy) != 0;
+            // A giant, a mammoth or a dragon stops anything lighter than it; the Rhino throws them.
+            const bool       wall = RunOver::IsWall((proxy.flags & Protocol::kProxyHeavy) != 0, vehicle->m_fMass, proxy.mass);
             const Pose::Vec3 velocity = Body::Scale(Vec(vehicle->m_vecMoveSpeed), 50.0f);  // San Andreas's speeds are metres a 1/50 s step
             const Pose::Vec3 actor = Body::Scale({ proxy.velocity[0], proxy.velocity[1], proxy.velocity[2] }, Pose::kMetersPerUnit);
-            const auto       hit = RunOver::Respond(vehicle->m_fMass, velocity, actor, proxy.mass, heavy, touch->normal);
+            const auto       hit = RunOver::Respond(vehicle->m_fMass, velocity, actor, proxy.mass, wall, touch->normal);
             if (!(hit.closing > 0.0f)) {
                 continue;
             }
             const bool hard = hit.closing >= RunOver::kMinImpact;
             const bool lands = hard && state.hits.Lands(proxy.id, time);
-            if (!heavy && !lands) {
+            if (!wall && !lands) {
                 continue;  // a nudge, or someone it is still going through: the vehicle drives on
             }
             // The push, as an impulse where they touched (it turns the vehicle too). San Andreas's ApplyForce takes
             // the impulse in kilograms times metres a step and the point relative to the vehicle's position.
             const Pose::Vec3 impulse = Body::Scale(hit.vehicleChange, vehicle->m_fMass / 50.0f);
             vehicle->ApplyForce(Cv(impulse), Cv(Body::Sub(touch->point, now.pos)), true);
-            if (heavy) {
+            if (wall) {
                 // A wall: back where it first touched this frame, so it doesn't end up inside a mammoth.
                 if (touch->along < 1.0f) {
                     const CVector back = Cv(Body::Add(from.pos, Body::Scale(Body::Sub(now.pos, from.pos), touch->along)));
@@ -181,7 +182,7 @@ namespace AhShitRim::CarHits
                 }
             }
             if (lands) {
-                Send(vehicle, proxy, *touch, hit, spawnFeet, a_handover, heavy);
+                Send(vehicle, proxy, *touch, hit, spawnFeet, a_handover, wall);
                 SayCrash(a_ped, time, "hit someone with his vehicle");
             }
         }

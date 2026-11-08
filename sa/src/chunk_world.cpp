@@ -145,6 +145,15 @@ namespace AhShitRim::ChunkWorld
             col->RemoveCollisionVolumes();
             col->AllocateData(0, 0, 0, vertices, triangles, false);
             auto* data = col->m_pColData;
+            // AllocateData mallocs the header without clearing it: its flags and shadow fields hold whatever the
+            // block held before. A leftover 0x2 bit (face groups; plugin-sdk calls it bNotEmpty) had the camera's
+            // collision (CCollision::SphereCastVsEntity) read face groups out of the vertices, and San Andreas crashed
+            // on a triangle past the chunk's (issue #87, at 0x415DAE).
+            *reinterpret_cast<unsigned char*>(&data->m_nFlags) = 0;
+            data->m_nNumShadowTriangles = 0;
+            data->m_nNumShadowVertices = 0;
+            data->m_pShadowVertices = nullptr;
+            data->m_pShadowTriangles = nullptr;
             for (int v = 0; v < vertices; ++v) {
                 data->m_pVertices[v].x = a_mesh.vertices[v * 3];
                 data->m_pVertices[v].y = a_mesh.vertices[v * 3 + 1];

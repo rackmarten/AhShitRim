@@ -4,6 +4,7 @@
 #include "hud_sounds.h"
 
 class CPlayerPed;
+class CVehicle;
 
 // San Andreas's own sound while Skyrim has handed the player over (protocol v10): CJ, his vehicles,
 // his weapons and his speech, played by San Andreas's audio engine where its camera is (which
@@ -17,7 +18,8 @@ class CPlayerPed;
 // - Skyrim sends San Andreas's HUD sounds (v30, FrontendSound messages, protocol/cpp/hud_sounds.h): the help box's
 //   beep, pickups, a purchase; played as San Andreas plays them, on the effects volume.
 // - The mouse wheel in Skyrim dials the radio (Radio::Dial). After San Andreas's stations come Radio
-//   Sovngarde and Sweetroll FM: San Andreas's radio is off there, and Skyrim plays them.
+//   Sovngarde and Sweetroll FM: San Andreas's radio is off there, and Skyrim plays them. The last station
+//   carries over into every vehicle with a radio (Radio::StartStation, Radio::Boarding); bicycles have none (Radio::HasRadio).
 // - Sound cues (v24, InputState.cue, protocol/cpp/missions.h), whoever has the player: the mission passed
 //   tune and CJ's intro line, by San Andreas's own routines and ids.
 // Game thread only.
@@ -25,8 +27,11 @@ namespace AhShitRim::Audio
 {
     void Install();  // hooks; at ASI load
 
-    // From the pad update, with each input read: the wheel's radio steps, a new sound cue.
-    void OnInput(const Protocol::InputState& a_input, bool a_inVehicle);
+    // Whether CJ's vehicle has a radio (Radio::HasRadio): not a bicycle, nor nullptr (on foot).
+    bool HasRadio(const CVehicle* a_vehicle);
+
+    // From the pad update, with each input read: the wheel's radio steps (a_radio: CJ's vehicle has one), a new sound cue.
+    void OnInput(const Protocol::InputState& a_input, bool a_radio);
 
     // One of San Andreas's HUD sounds, as it plays them (CAudioEngine::ReportFrontendAudioEvent).
     void Play(HudSounds::Sound a_sound);
@@ -37,8 +42,9 @@ namespace AhShitRim::Audio
     // Once a frame after the simulation: volumes, pausing, the cue playing.
     void Update(bool a_owned, bool a_paused);
 
-    // The radio in CJ's pose: station and retuning.
-    void Fill(Protocol::PlayerState& a_pose, bool a_inVehicle);
+    // The radio in CJ's pose: station and retuning, none unless CJ's vehicle has a radio (nullptr on foot). Getting
+    // in, the vehicle comes on on the station carried over (Radio::Boarding).
+    void Fill(Protocol::PlayerState& a_pose, CVehicle* a_vehicle);
 
     // A station plays (San Andreas's, or one of Skyrim's; not off): as of the last Fill.
     bool RadioPlays();

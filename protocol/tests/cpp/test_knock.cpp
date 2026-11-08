@@ -125,3 +125,47 @@ TEST_CASE("after a knock-down, whoever fought the player is set on it again, for
     CHECK_FALSE(rejoin.Active());
     CHECK(kRejoinSeconds >= 5.0f);  // long enough for the AI to give up on a target it lost
 }
+
+TEST_CASE("a skeleton left behind after a knock-down is reset, a few times at most, never while it's on its body")
+{
+    Skeleton s;
+    CHECK_FALSE(s.Tick(0.1f, 30.0f));  // the head on the body
+    CHECK_FALSE(s.Tick(0.1f, -1.0f));  // no 3D
+    CHECK_FALSE(s.Tick(0.1f, std::numeric_limits<float>::quiet_NaN()));
+    int   resets = 0;
+    float first = -1.0f;
+    for (int i = 1; i <= 200; i++) {
+        if (s.Tick(0.1f, 900.0f)) {  // left where it fell
+            resets++;
+            if (first < 0.0f) {
+                first = 0.1f * static_cast<float>(i);
+            }
+        }
+    }
+    CHECK(first == doctest::Approx(kStaleFor).epsilon(0.25));
+    CHECK(resets == kStaleTries);  // then left alone, not every frame
+    CHECK_FALSE(s.Tick(0.1f, 20.0f));  // back on its body: starts over
+    CHECK(s.Tries() == 0);
+    bool again = false;
+    for (int i = 0; i < 10; i++) {
+        again = s.Tick(0.1f, 900.0f) || again;
+    }
+    CHECK(again);  // the next knock-down's skeleton is watched afresh
+}
+
+TEST_CASE("a skeleton reset is tried again only after a gap")
+{
+    Skeleton s;
+    for (int i = 0; i < 6; i++) {
+        s.Tick(0.1f, 500.0f);
+    }
+    REQUIRE(s.Tries() == 1);
+    for (int i = 0; i < 18; i++) {  // 1.8 s, short of kStaleRetry
+        CHECK_FALSE(s.Tick(0.1f, 500.0f));
+    }
+    bool second = false;
+    for (int i = 0; i < 4 && !second; i++) {
+        second = s.Tick(0.1f, 500.0f);
+    }
+    CHECK(second);
+}

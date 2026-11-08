@@ -370,7 +370,7 @@ namespace AhShitRim::Protocol
         std::uint8_t  pad[16];  // v26, v28, v31: 2112 bytes, keeping the later slots on 64-byte boundaries
     };
 
-    inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v28): a giant, mammoth or dragon, which stops a car like a wall
+    inline constexpr std::uint8_t kProxyHeavy = 0x1;   // ActorProxy.flags (v28): a giant, mammoth or dragon, which stops a vehicle lighter than it like a wall (0.1.1)
     inline constexpr std::uint8_t kProxyPerson = 0x2;  // a person (a humanoid race)
     inline constexpr std::uint8_t kProxyTarget = 0x4;  // v33, on foot: the one CJ locks on to with fists or a melee weapon (the right mouse button, or a swing's nearest hostile), whom San Andreas turns him to face
 
@@ -615,7 +615,7 @@ namespace AhShitRim::Protocol
         std::uint32_t reserved;
     };
 
-    inline constexpr std::uint8_t kImpactHeavy = 0x1;  // ImpactEvent.flags (v28): it hit a heavy one (kProxyHeavy), which stopped it
+    inline constexpr std::uint8_t kImpactHeavy = 0x1;  // ImpactEvent.flags (v28): it hit a heavy one (kProxyHeavy) that stopped it (RunOver::IsWall)
     inline constexpr std::uint8_t kImpactBike = 0x2;   // CJ was on a bike or a bicycle
 
     // Payload of an Impact message (v28): CJ's vehicle hit a proxy hard enough to hurt.
@@ -628,7 +628,7 @@ namespace AhShitRim::Protocol
         std::uint8_t  reserved0;
         std::uint16_t vehicleModel;  // San Andreas's model id of CJ's vehicle
         float         at[3];         // where they touched, relative to InputState.anchor, Skyrim units
-        float         push[3];       // the velocity the hit gives the actor, Skyrim units a second (zero for a heavy one)
+        float         push[3];       // the velocity the hit gives the actor, Skyrim units a second (zero for a wall, kImpactHeavy)
         float         damage;        // San Andreas's damage for it, its health points (RunOver::ImpactDamage)
         std::uint32_t reserved1;
     };
