@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- San Andreas's zone names: entering or discovering a location shows its name bottom right in San Andreas's light blue zone name style, fading in and out as San Andreas's does, instead of Skyrim's location text. Getting into a vehicle shows its San Andreas name the same way, in green.
+
+### Changed
+
+- Skyrim's junk notifications are gone while CJ has the player: items added and removed, spells learned, "you feel...", bounty added and the like. What matters (no fast travel with enemies near, a lock that needs a key) shows in San Andreas's help box instead. docs/DESIGN.md lists what happens to each kind of message.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.

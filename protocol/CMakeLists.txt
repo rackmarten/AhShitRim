@@ -75,6 +75,9 @@ add_executable(protocol_tests
     tests/cpp/test_thuum.cpp
     tests/cpp/test_situations.cpp
     tests/cpp/test_hud_sounds.cpp
+    tests/cpp/test_hud_messages.cpp
+    tests/cpp/test_hud_names.cpp
+    tests/cpp/test_gxt.cpp
     tests/cpp/test_wanted.cpp
     tests/cpp/test_lock_marker.cpp
     tests/cpp/test_knock.cpp
