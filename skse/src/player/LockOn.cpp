@@ -46,8 +46,10 @@ namespace AhShitRim::LockOn
             const auto       verdict = StealthKill::Check(cj, a_weapon, target);
             if ((a_target->GetFormID() != state.judged || verdict != state.verdict) && state.loggedVerdicts < kLoggedVerdicts) {
                 state.loggedVerdicts++;
+                const auto why = verdict == StealthKill::Verdict::NotStanding ? std::format("{}: {}", StealthKill::Why(verdict), StealthKills::OffItsFeet(a_target)) :
+                                                                                 std::string(StealthKill::Why(verdict));
                 SKSE::log::info("lock-on: stealth kill on {} ({:08X}): {} ({:.2f} m, {}, detection {})", a_target->GetDisplayFullName(), a_target->GetFormID(),
-                    StealthKill::Why(verdict), StealthKill::Distance(cj, target.feet), StealthKill::Behind(cj, target.feet, target.heading) ? "back to CJ" : "facing him",
+                    why, StealthKill::Distance(cj, target.feet), StealthKill::Behind(cj, target.feet, target.heading) ? "back to CJ" : "facing him",
                     a_target->RequestDetectionLevel(a_player));
             }
             state.judged = a_target->GetFormID();

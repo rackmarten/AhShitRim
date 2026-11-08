@@ -20,6 +20,8 @@ namespace AhShitRim::StealthKills
 
     // While the player plays a kill move on the victim: PlayerSync leaves it where the move puts it.
     bool HoldsPlayer(RE::PlayerCharacter* a_player);
+    // Why a_actor isn't on its feet for a stealth kill, empty when it is.
+    std::string OffItsFeet(RE::Actor* a_actor);
 
     // What StealthKill::Check needs to know of a_actor, as a_player stands to it.
     StealthKill::Target TargetOf(RE::Actor* a_actor, RE::PlayerCharacter* a_player);

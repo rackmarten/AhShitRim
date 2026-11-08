@@ -21,6 +21,8 @@
     scripts/hit-test.ps1 -Scenario oil
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
+    scripts/hit-test.ps1 -Scenario stealth -StealthMeters 0.7   # the guard closer in
+    scripts/hit-test.ps1 -Scenario stealth -Near 000DC9E4   # moved to that ref first, its stealth verdict logged
     scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
     scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
@@ -31,7 +33,9 @@ param(
     [int] $Seconds = 90,
     [string] $Start = '',
     [int] $TimeoutSeconds = 300,
-    [switch] $NewGame
+    [switch] $NewGame,
+    [double] $StealthMeters = 1.6,
+    [string] $Near = ''
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -63,7 +67,8 @@ for ($attempt = 1; ; $attempt++) {
         Start-Sleep -Seconds 2
     }
 }
-Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)")
+Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)",
+    "HitTestStealthMeters=$($StealthMeters.ToString([Globalization.CultureInfo]::InvariantCulture))", "HitTestNear=$Near")
 
 try {
     $started = Get-Date
@@ -85,7 +90,7 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit|object hits: .*oil' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit|object hits: .*oil|CJ re-anchored' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
     Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: |health: ' | ForEach-Object { $_.Line }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }

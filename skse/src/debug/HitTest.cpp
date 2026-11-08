@@ -104,9 +104,11 @@ namespace AhShitRim::HitTest
             float              moveY = 0.0f;
             float              walkLog = 0.0f;   // CrewWalk: when a follower was last logged
             RE::NiPoint3       followerWas;
+            float               victimAhead = 1.6f * Pose::kUnitsPerMeter;  // the guard with his back to CJ ([Debug] HitTestStealthMeters)
+            RE::FormID          nearRef = 0;      // [Debug] HitTestNear: a ref the player is moved to first, its stealth verdict logged
+            bool                movedNear = false;
         } state;
 
-        constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
         constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a guard facing CJ, off to the side
 
         void RunConsole(const std::string& a_command)
@@ -806,10 +808,10 @@ namespace AhShitRim::HitTest
         {
             const RE::NiPoint3 ahead(std::sin(a_heading), std::cos(a_heading), 0.0f);
             const RE::NiPoint3 right(std::cos(a_heading), -std::sin(a_heading), 0.0f);
-            if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead, a_heading)) {
+            if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * state.victimAhead, a_heading)) {
                 state.victim = guard->GetHandle();
             }
-            PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead + right * kOthersAside, a_heading + Pose::kPi);
+            PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * state.victimAhead + right * kOthersAside, a_heading + Pose::kPi);
         }
 
         // Skyrim's sneak kill moves, by editor id and the event that plays them: what a victim could play.
@@ -850,6 +852,34 @@ namespace AhShitRim::HitTest
                     StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), StealthKill::Behind({ feet.x, feet.y, feet.z }, target.feet, target.heading) ? "back to CJ" : "facing him",
                     actor->RequestDetectionLevel(a_player), actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
             }
+            if (auto* nearby = state.nearRef ? RE::TESForm::LookupByID<RE::Actor>(state.nearRef) : nullptr; nearby && nearby->Is3DLoaded()) {
+                const auto target = StealthKills::TargetOf(nearby, a_player);
+                const auto off = StealthKills::OffItsFeet(nearby);
+                SKSE::log::info("hit test: near {} ({:08X}): {}{}{} at {:.2f} m, detection {}", nearby->GetName(), nearby->GetFormID(),
+                    StealthKill::Why(StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target)), off.empty() ? "" : ", ", off,
+                    StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), nearby->RequestDetectionLevel(a_player));
+            }
+        }
+
+        // Every actor about that a stealth kill would call off its feet, and why (Skyrim's sit, knock and ragdoll states).
+        void LogOffTheirFeet(RE::PlayerCharacter* a_player)
+        {
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            int about = 0;
+            for (auto& handle : lists->highActorHandles) {
+                auto actor = handle.get();
+                if (!actor || actor.get() == a_player || actor->IsDead()) {
+                    continue;
+                }
+                about++;
+                if (const auto off = StealthKills::OffItsFeet(actor.get()); !off.empty()) {
+                    SKSE::log::info("hit test: {} ({:08X}) is off its feet: {}", actor->GetName(), actor->GetFormID(), off);
+                }
+            }
+            SKSE::log::info("hit test: {} actors about", about);
         }
 
         // From Arriving on: CJ on foot with the knife, the three placed, then the right button held and the left one
@@ -865,6 +895,15 @@ namespace AhShitRim::HitTest
             }
             switch (state.step) {
             case 0:  // hand over on foot
+                if (state.nearRef && !state.movedNear && state.timer >= 1.0f) {
+                    RunConsole(std::format("player.moveto {:08X}", state.nearRef));
+                    state.movedNear = true;
+                    state.timer = 0.0f;
+                }
+                if (state.nearRef && state.logTimer >= 1.0f) {
+                    state.logTimer = 0.0f;
+                    LogVerdicts(a_player);
+                }
                 if (state.timer >= 6.0f) {
                     if (!PlayerSync::DebugOwned()) {
                         PlayerSync::DebugToggle();
@@ -887,8 +926,9 @@ namespace AhShitRim::HitTest
                 break;
             case 2:  // in his hands, then the three
                 if (onFoot && pose.weaponType == Weapons::Knife && state.timer >= 2.0f) {
-                    SKSE::log::info("hit test: CJ holds the knife, placing a guard {:.1f} m ahead with his back to him", kVictimAhead * Pose::kMetersPerUnit);
+                    SKSE::log::info("hit test: CJ holds the knife, placing a guard {:.1f} m ahead with his back to him", state.victimAhead * Pose::kMetersPerUnit);
                     PlaceVictims(a_player, a_player->GetPosition(), pose.heading);
+                    LogOffTheirFeet(a_player);
                     state.step = 3;
                     state.timer = 0.0f;
                 } else if (state.timer > 20.0f) {
@@ -1095,6 +1135,15 @@ namespace AhShitRim::HitTest
             }
         }
         state.newGame = Ini::Value("Debug", "HitTestNewGame") == "1";
+        try {
+            if (const auto meters = Ini::Value("Debug", "HitTestStealthMeters"); !meters.empty()) {
+                state.victimAhead = std::stof(meters) * Pose::kUnitsPerMeter;
+            }
+            if (const auto nearId = Ini::Value("Debug", "HitTestNear"); !nearId.empty()) {
+                state.nearRef = static_cast<RE::FormID>(std::stoul(nearId, nullptr, 16));
+            }
+        } catch (...) {
+        }
         state.phase = Phase::MainMenu;
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
