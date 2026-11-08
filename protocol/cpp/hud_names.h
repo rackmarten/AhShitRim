@@ -173,6 +173,8 @@ namespace AhShitRim::HudNames
                 }
                 break;
             case Phase::Switch:
+                // Its clock runs on through the switch and isn't reset after it, as m_ZoneNameTimer isn't in
+                // CHud::DrawAreaName (the vehicle name's is): a switched-to zone is up for less time than a fresh one.
                 zone.fade -= dt;
                 if (zone.fade < 0.0f) {
                     zone.fade = 0.0f;
