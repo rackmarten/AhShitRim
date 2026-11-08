@@ -3,6 +3,7 @@
 #include "Ini.h"
 #include "car_exit.h"
 #include "health.h"
+#include "hud/Overlay.h"
 #include "input.h"
 #include "passengers.h"
 #include "link/LinkService.h"
@@ -23,6 +24,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <thread>
 
@@ -108,6 +110,8 @@ namespace AhShitRim::HitTest
             float              moveX = 0.0f;     // CrewWalk: CJ's stick
             float              moveY = 0.0f;
             float              walkLog = 0.0f;   // CrewWalk: when a follower was last logged
+            float              shotTimer = 0.0f;  // CrewFight: seconds to the next F11 screenshot (the crew's crash trigger in play)
+            int                shots = 0;
             RE::NiPoint3       followerWas;
             float               victimAhead = 1.6f * Pose::kUnitsPerMeter;  // the guard with his back to CJ ([Debug] HitTestStealthMeters)
             RE::FormID          nearRef = 0;      // [Debug] HitTestNear: a ref the player is moved to first, its stealth verdict logged
@@ -1390,6 +1394,13 @@ namespace AhShitRim::HitTest
             break;
         case Phase::CrewFight:
             SetOn(a_player);
+            state.shotTimer += a_delta;
+            if (state.shots < 6 && state.shotTimer >= 1.0f) {  // F11 a few times while the crew runs
+                state.shotTimer = 0.0f;
+                state.shots++;
+                SKSE::log::info("hit test: crew: F11 screenshot {}", state.shots);
+                Overlay::Screenshot((std::filesystem::temp_directory_path() / "ahshitrim-hit-test-shots").string());
+            }
             state.logTimer += a_delta;
             if (state.logTimer >= 2.0f) {
                 state.logTimer = 0.0f;
