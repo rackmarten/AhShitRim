@@ -164,6 +164,46 @@ namespace AhShitRim::HitTest
             return std::sqrt(dx * dx + dy * dy) * Pose::kMetersPerUnit;
         }
 
+        // The heading from a_at with the most room ahead, for the drive: 16 headings, two rays each (0.6 m and 1.2 m up, 40 m
+        // long, Skyrim's line of sight layer), the one whose nearer hit is farthest. a_clear: that hit, metres.
+        float ClearHeading(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, float& a_clear)
+        {
+            constexpr float kLength = 40.0f * Pose::kUnitsPerMeter;
+            auto*           cell = a_player->GetParentCell();
+            auto*           bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto*           world = bhk ? bhk->GetWorld1() : nullptr;
+            float           best = a_player->GetAngleZ();
+            a_clear = 0.0f;
+            if (!world) {
+                return best;
+            }
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            for (int i = 0; i < 16; i++) {
+                const float h = static_cast<float>(i) * Pose::kPi / 8.0f;
+                const float dx = std::sin(h), dy = std::cos(h);
+                float       clear = kLength;
+                for (const float up : { 0.6f, 1.2f }) {
+                    const RE::NiPoint3 from = a_at + RE::NiPoint3(dx * 70.0f, dy * 70.0f, up * Pose::kUnitsPerMeter);
+                    const RE::NiPoint3 to = from + RE::NiPoint3(dx * kLength, dy * kLength, 0.0f);
+                    input.from = RE::hkVector4(from.x * scale, from.y * scale, from.z * scale, 0.0f);
+                    input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+                    RE::hkpWorldRayCastOutput output;
+                    world->CastRay(input, output);
+                    if (output.HasHit()) {
+                        clear = (std::min)(clear, kLength * output.hitFraction);
+                    }
+                }
+                if (clear > a_clear * Pose::kUnitsPerMeter) {
+                    a_clear = clear * Pose::kMetersPerUnit;
+                    best = h;
+                }
+            }
+            return best;
+        }
+
         void PadCheck(bool a_ok, const std::string& a_what) { SKSE::log::info("hit test: pad: {} {}", a_what, a_ok ? "ok" : "FAILED"); }
 
         void PadNext()
@@ -179,12 +219,17 @@ namespace AhShitRim::HitTest
             static Protocol::PlayerState before{};
             static float                 peak = 0.0f;  // the drive's top speed, km/h
             static int                   tries = 0;    // d-pad presses looking for a gun
+            static RE::NiPoint3          start;        // where the coc put the player: the drive starts there
+            static int                   rounds = 0;   // in and out of the car with Y
             Protocol::PlayerState        pose{};
             const bool                   valid = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerValid);
             const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
             switch (state.step) {
             case 0:  // Back held a second, with Skyrim on the player
                 if (state.timer >= 6.0f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        start = player->GetPosition();
+                    }
                     SKSE::log::info("hit test: pad: holding Back with Skyrim on the player");
                     PlayerSync::DebugPad(Pad::kBack, 1.0f);
                     PadNext();
@@ -280,9 +325,36 @@ namespace AhShitRim::HitTest
                     const int fired = static_cast<std::uint16_t>(pose.shots - before.shots);
                     PadCheck(fired > 0, std::format("RT fires {} shots:", fired));
                     PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
-                    SKSE::log::info("hit test: pad: CJ into a Sandking where he stands");
+                    state.step = 40;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 40:  // the drive starts back where the coc put the player, facing the most room (wedged in Riverwood otherwise)
+                if (PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                state.step = 41;
+                state.timer = 0.0f;
+                break;
+            case 41:
+                if (state.timer >= 1.5f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        float      clear = 0.0f;
+                        const auto heading = ClearHeading(player, start, clear);
+                        player->SetPosition(start, true);
+                        player->data.angle.z = heading;
+                        SKSE::log::info("hit test: pad: the drive starts at the coc spot, heading {:.2f}, {:.0f} m clear ahead", heading, clear);
+                    }
+                    state.step = 42;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 42:
+                if (state.timer >= 1.5f) {
+                    SKSE::log::info("hit test: pad: CJ into a Sandking there");
                     PlayerSync::TakeOverInVehicle(kSandking);
-                    PadNext();
+                    state.step = 11;
+                    state.timer = 0.0f;
                 }
                 break;
             case 11:  // RT accelerates
@@ -328,8 +400,51 @@ namespace AhShitRim::HitTest
                 }
                 if ((onFoot && state.timer >= 0.4f) || state.timer > 10.0f) {
                     PadCheck(onFoot, "Y gets CJ out:");
-                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    rounds = 0;
+                    state.step = 50;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 50:  // in and out with Y five times, watching that Skyrim keeps going (a stall here once stopped its log)
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
                     PadNext();
+                }
+                break;
+            case 51:
+                if (state.timer >= 0.3f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((valid && (pose.flags & Protocol::kPlayerInVehicle) && state.timer >= 0.3f) || state.timer > 8.0f) {
+                    if (!(valid && (pose.flags & Protocol::kPlayerInVehicle))) {
+                        PadCheck(false, std::format("round {}: Y gets CJ into the Sandking:", rounds + 1));
+                    }
+                    state.step = 52;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 52:
+                if (state.timer >= 1.5f) {
+                    PlayerSync::DebugPad(Pad::kY, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 53:
+                if (state.timer >= 0.3f) {
+                    PlayerSync::DebugPad(Pad::kY, 0.0f);
+                }
+                if ((onFoot && state.timer >= 0.3f) || state.timer > 8.0f) {
+                    rounds++;
+                    SKSE::log::info("hit test: pad: round {}: CJ {} with Y", rounds, onFoot ? "got in and out" : "didn't get out");
+                    if (rounds < 5) {
+                        state.step = 50;
+                        state.timer = 0.0f;
+                        break;
+                    }
+                    PadCheck(onFoot, "five rounds in and out of the Sandking with Y, Skyrim still going:");
+                    PlayerSync::DebugPad(Pad::kBack, 1.0f);
+                    state.step = 16;
+                    state.timer = 0.0f;
                 }
                 break;
             case 16:  // Back held: Skyrim has the player again
