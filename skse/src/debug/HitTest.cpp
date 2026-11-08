@@ -37,6 +37,7 @@ namespace AhShitRim::HitTest
             CrewFight,  // wolves come, the crew shoots
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
             CrewOut,    // F10 out and back: the crew comes again
+            CrewMoved,  // the player moved as fast travel moves it: the followers come behind
             Done,
         };
 
@@ -87,7 +88,7 @@ namespace AhShitRim::HitTest
                 SKSE::GetTaskInterface()->AddTask([a_try] {
                     auto* saves = RE::BGSSaveLoadManager::GetSingleton();
                     if (state.newGame) {
-                        RunConsole("coc " + state.start);  // from the main menu: a new game there
+                        RunConsole(state.start.starts_with("cow ") ? state.start : "coc " + state.start);  // from the main menu: a new game there
                     } else if (saves && saves->PopulateSaveList() && saves->LoadMostRecentSaveGame()) {
                         SKSE::log::info("hit test: loading the most recent save");
                     } else if (a_try < 10) {
@@ -384,7 +385,7 @@ namespace AhShitRim::HitTest
         }
         state.crew = scenario == "crew";
         if (state.crew) {
-            Homies::DebugThanes(1);  // Thane of Whiterun; hit-test.ps1 starts it inside Whiterun's gate
+            Homies::DebugThanes(1);  // Thane of Whiterun; hit-test.ps1 starts it at the Whiterun stables
         }
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
@@ -425,7 +426,7 @@ namespace AhShitRim::HitTest
         case Phase::MainMenu:
         case Phase::Loading:
             if (state.timer >= 4.0f) {
-                RunConsole("coc " + state.start);
+                RunConsole(state.start.starts_with("cow ") ? state.start : "coc " + state.start);
                 state.phase = Phase::Going;
                 state.timer = 0.0f;
             }
@@ -559,7 +560,15 @@ namespace AhShitRim::HitTest
                 PlayerSync::DebugToggle();
                 state.timer = 0.0f;
             } else if (state.timer >= 8.0f && PlayerSync::DebugOwned()) {
-                SKSE::log::info("hit test: crew: {} following after F10 out and back", Homies::DebugCount(true));
+                SKSE::log::info("hit test: crew: {} following after F10 out and back; the player moves on, as fast travel moves it", Homies::DebugCount(true));
+                RunConsole("cow Tamriel 5 -3");
+                state.phase = Phase::CrewMoved;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewMoved:
+            if (state.timer >= 12.0f) {
+                SKSE::log::info("hit test: crew: {} following after the move ({} about)", Homies::DebugCount(true), Homies::DebugCount(false));
                 SKSE::log::info("hit test: done after the crew run");
                 state.phase = Phase::Done;
             }
@@ -605,7 +614,7 @@ namespace AhShitRim::HitTest
             if (state.timer >= 10.0f) {
                 SKSE::log::info("hit test: in {:08X}, out of their sight", a_player->GetParentCell()->GetFormID());
                 Survey();
-                RunConsole("coc " + state.start);
+                RunConsole(state.start.starts_with("cow ") ? state.start : "coc " + state.start);
                 state.phase = Phase::Returning;
                 state.timer = 0.0f;
             }

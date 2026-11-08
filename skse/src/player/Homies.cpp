@@ -473,6 +473,11 @@ namespace AhShitRim::Homies
                 }
             }
             FindGates(a_player, found);
+            static std::size_t lastFound = SIZE_MAX;
+            if (found.size() != lastFound) {
+                lastFound = found.size();
+                SKSE::log::info("homies: {} spot(s) near the player at ({:.0f},{:.0f},{:.0f}) in {:08X}", found.size(), feet.x, feet.y, feet.z, world->GetFormID());
+            }
             // The hold's share, split among its spots of each kind.
             for (auto& s : found) {
                 bool walled = s.kind != SpotKind::Town;
