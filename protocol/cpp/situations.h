@@ -109,12 +109,15 @@ namespace AhShitRim::Situations
         float Quiet(float a_now) const { return a_now - _lastLine; }
 
         // a_trigger fired: whether CJ says its line now. a_roll is uniform in [0, 1); a_speaking: a line of
-        // his still plays, which a trigger never cuts off. Speaking counts as a line heard.
+        // his still plays, which a trigger never cuts off (but the stealth kill's). Speaking counts as a line heard.
         bool Speak(Trigger a_trigger, float a_now, float a_roll, bool a_speaking = false)
         {
             const auto& info = InfoOf(a_trigger);
             auto&       last = _last[static_cast<std::size_t>(a_trigger)];
-            if (a_speaking || Quiet(a_now) < kGap || a_now - last < info.repeat || !(a_roll < info.chance)) {
+            // The stealth kill is the one that cuts in: the stab itself lands as a blow, and the fight line it may
+            // get would otherwise always keep the kill's own line quiet.
+            const bool cutsIn = a_trigger == Trigger::StealthKill;
+            if ((!cutsIn && (a_speaking || Quiet(a_now) < kGap)) || a_now - last < info.repeat || !(a_roll < info.chance)) {
                 return false;
             }
             last = a_now;

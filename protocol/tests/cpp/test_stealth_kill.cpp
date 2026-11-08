@@ -210,3 +210,23 @@ TEST_CASE("stealth kill: the stab lands as San Andreas's victim would start dyin
     CHECK(KillSeconds(30.0f) == doctest::Approx(kKillMax));
     CHECK(KillSeconds(0.0f) > kStabDefault);
 }
+
+TEST_CASE("stealth kill: sitting or leaning is on its feet, as San Andreas sees it; sleeping isn't")
+{
+    CHECK(Upright(0));
+    for (std::uint32_t sit = 1; sit <= 4; ++sit) {  // want to sit, waiting for the anim, sitting, want to stand
+        CHECK(Upright(sit));
+        CHECK(Seated(sit));
+    }
+    CHECK_FALSE(Seated(0));
+    for (std::uint32_t sleep = 5; sleep <= 8; ++sleep) {  // want to sleep, waiting for the anim, sleeping, want to wake
+        CHECK_FALSE(Upright(sleep));
+        CHECK_FALSE(Seated(sleep));
+    }
+    Target seated;
+    seated.person = true;
+    seated.standing = Upright(3);
+    seated.seated = Seated(3);
+    seated.feet = { 0.0f, M(1.0f), 0.0f };
+    CHECK(Check({ 0.0f, 0.0f, 0.0f }, Weapons::Knife, seated) == Verdict::Yes);
+}

@@ -13,6 +13,9 @@
 // Main thread only.
 namespace AhShitRim::StealthKills
 {
+    // Why a_actor isn't on its feet for a stealth kill, empty when it is.
+    std::string OffItsFeet(RE::Actor* a_actor);
+
     // What StealthKill::Check needs to know of a_actor, as a_player stands to it.
     StealthKill::Target TargetOf(RE::Actor* a_actor, RE::PlayerCharacter* a_player);
 

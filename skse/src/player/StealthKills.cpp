@@ -82,6 +82,30 @@ namespace AhShitRim::StealthKills
         }
     }
 
+    std::string OffItsFeet(RE::Actor* a_actor)
+    {
+        if (a_actor->IsInRagdollState()) {
+            return "ragdolled";
+        }
+        if (a_actor->IsInKillMove()) {
+            return "in a kill move";
+        }
+        auto* actorState = a_actor->AsActorState();
+        if (!actorState) {
+            return {};
+        }
+        if (const auto knock = actorState->GetKnockState(); knock != RE::KNOCK_STATE_ENUM::kNormal) {
+            return std::format("knocked down (knock state {})", static_cast<int>(knock));
+        }
+        if (actorState->IsBleedingOut()) {
+            return "bleeding out";
+        }
+        if (const auto sit = actorState->GetSitSleepState(); !StealthKill::Upright(static_cast<std::uint32_t>(sit))) {
+            return std::format("lying down to sleep (sit state {})", static_cast<int>(sit));
+        }
+        return {};
+    }
+
     StealthKill::Target TargetOf(RE::Actor* a_actor, RE::PlayerCharacter* a_player)
     {
         StealthKill::Target t;
@@ -93,9 +117,8 @@ namespace AhShitRim::StealthKills
         t.dead = a_actor->IsDead();
         t.mounted = a_actor->IsOnMount();
         auto* actorState = a_actor->AsActorState();
-        t.standing = !a_actor->IsInRagdollState() && !a_actor->IsInKillMove() &&
-                     (!actorState || (actorState->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && !actorState->IsBleedingOut() &&
-                                         actorState->GetSitSleepState() == RE::SIT_SLEEP_STATE::kNormal));
+        t.standing = OffItsFeet(a_actor).empty();
+        t.seated = actorState && StealthKill::Seated(static_cast<std::uint32_t>(actorState->GetSitSleepState()));
         t.sneaking = a_actor->IsSneaking();
         t.running = actorState && (actorState->IsRunning() || actorState->IsSprinting());
         t.fighting = a_actor->GetActorRuntimeData().currentCombatTarget.get().get() == a_player || (a_actor->IsInCombat() && a_actor->IsHostileToActor(a_player));

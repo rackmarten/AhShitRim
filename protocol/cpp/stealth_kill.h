@@ -63,7 +63,8 @@ namespace AhShitRim::StealthKill
         bool  essential = false;  // essential or a quest's protected alias that can't die
         bool  dead = false;
         bool  mounted = false;
-        bool  standing = true;    // on its feet: not sitting, sleeping, knocked down, ragdolled or bleeding out (SA: head above its feet)
+        bool  standing = true;    // on its feet: not lying in bed, knocked down, ragdolled or bleeding out (SA: head above its feet)
+        bool  seated = false;     // sitting or leaning on furniture: on its feet as SA sees it
         bool  sneaking = false;   // SA: not ducking
         bool  running = false;    // running or sprinting (SA: move state under PEDMOVE_RUN)
         bool  fighting = false;   // in combat with the player, or the player its combat target (SA: not attacking CJ)
@@ -125,6 +126,12 @@ namespace AhShitRim::StealthKill
         const float dx = a_target.x - a_cj.x, dy = a_target.y - a_cj.y;
         return dx * std::sin(a_heading) + dy * std::cos(a_heading) > 0.0f;
     }
+
+    // Skyrim's SIT_SLEEP_STATE (kNormal 0, sitting 1 to 4, sleeping 5 to 8) against SA's TestForStealthKill,
+    // which only asks that the head is above the feet: sitting or leaning on furniture (where Skyrim's guards and
+    // townspeople spend much of the day) still counts as on its feet; lying down to sleep doesn't.
+    constexpr bool Upright(std::uint32_t a_sitSleepState) { return a_sitSleepState <= 4; }
+    constexpr bool Seated(std::uint32_t a_sitSleepState) { return a_sitSleepState >= 1 && a_sitSleepState <= 4; }
 
     // Who can't be killed at all, whatever CJ does: the full test, as San Andreas makes it at the stab
     // (TestForStealthKill(target, true): on foot, alive, on its feet), with Skyrim's exclusions.
