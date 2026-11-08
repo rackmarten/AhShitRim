@@ -11,8 +11,9 @@
 //    back to CJ (and a guard facing him off to the side), then holds the right mouse button and clicks the left
 //    one, for the knife stealth kill; each one's StealthKill::Check verdict is logged every second and the guard's fate at the end,
 //  - respawns (HitTest=respawns): hands CJ the player on foot instead, logs what a kill would do to everyone placed
-//    in the editor nearby, has the player kill three that come back (and one that doesn't), presses / and waits
-//    an hour in Skyrim's wait menu (1.1 game hours on the clock if Skyrim refuses it), stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
+//    in the editor nearby, has the player kill three that come back (and one that doesn't), presses / before and
+//    after the kills (Skyrim's wait menu opens and is closed again, or Skyrim refuses it with enemies near), puts the clock
+//    1.1 game hours on, stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
 //  - riders (HitTest=riders): places one of Whiterun's guards beside the player as a follower, hands CJ over in the Sandking
 //    (the follower takes its passenger seat), presses F after 3 s and logs the follower's feet and the player's in the
 //    vehicle's frame every frame until both have been out a second, then whether the follower got out smoothly (protocol/cpp/car_exit.h),
