@@ -91,8 +91,13 @@ namespace AhShitRim::PlayerSync
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
             std::bitset<256> debugKeys;  // held by the hit test (DebugKey), not by the keyboard
+            Protocol::BodyState drawnPose{};  // the hit test's: CJ as DrawCj drew him (DebugDrawn)
+            bool                drawnThisFrame = false;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            Body::Follow       vehicleFollow[Protocol::kVehicleMax];  // each drawn at CJ's moment (bodyTime)
+            double             bodyTime = 0.0;    // the moment on San Andreas's clock CJ was drawn at this frame
+            bool               haveBodyTime = false;
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
@@ -440,12 +445,18 @@ namespace AhShitRim::PlayerSync
         void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu, bool a_hideBody)
         {
             const double        now = NowMs();
+            state.drawnThisFrame = false;
+            state.haveBodyTime = false;
             Protocol::BodyState body{};
             if (LinkService::Get().ReadBody(body) && (body.flags & Protocol::kBodyValid) != 0 && body.handover == state.handover &&
                 body.boneCount <= Protocol::kBodyBoneMax && Body::Finite(body)) {
                 state.body.Push(body, now);
             }
             Protocol::BodyState pose{};
+            if (state.body.Count() > 0) {
+                state.bodyTime = state.body.TimeAt(now);
+                state.haveBodyTime = true;
+            }
             // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
             if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
                 (!a_hideBody && !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2])))) {
@@ -456,6 +467,8 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             PoseCamera(pose, a_fromHeading, a_fromPitch, a_menu);
             state.drawn++;
+            state.drawnPose = pose;
+            state.drawnThisFrame = true;
             if (!state.cjLogged) {
                 state.cjLogged = true;
                 SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", pose.model,
@@ -477,6 +490,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehicleFollow[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         Headlights::Show(i, nullptr, {});
@@ -486,8 +500,11 @@ namespace AhShitRim::PlayerSync
                         state.vehicles[i].Push(vehicle, now);
                     }
                 }
+                // At CJ's moment, so he sits where the vehicle is drawn (Body::Follow).
                 Protocol::BodyState pose{};
-                if (state.vehicles[i].Sample(now, pose)) {
+                const bool          sampled = state.haveBodyTime ? state.vehicleFollow[i].Sample(state.body, state.bodyTime, state.vehicles[i], now, pose) :
+                                                                   state.vehicles[i].Sample(now, pose);
+                if (sampled) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
@@ -1603,6 +1620,15 @@ namespace AhShitRim::PlayerSync
             state.debugKeys.set(a_dik, a_down);
             state.input.SetKey(a_dik, a_down);
         }
+    }
+
+    bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera)
+    {
+        const auto& p = state.drawnPose;
+        a_pose = p;
+        a_feet = state.anchor + RE::NiPoint3(p.feet[0], p.feet[1], p.feet[2]);
+        a_camera = state.anchor + RE::NiPoint3(p.cameraPosition[0], p.cameraPosition[1], p.cameraPosition[2]);
+        return state.drawnThisFrame;
     }
 
     void DebugType(const char* a_code)

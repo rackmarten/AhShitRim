@@ -479,6 +479,7 @@ namespace AhShitRim::Runner
             Vitals::Begin(player, state.owned && !state.paused && !state.wasted && ChunkWorld::Ready() && !Scenes::Following());
             // Hidden, nothing is drawn: Idle simulates and returns before rendering.
             g_idle(Window::Visible() ? a_render : nullptr);
+            CjBody::BeginFrame();  // one stamp for everything published this frame
             Vitals::End(player);
             if (!state.inGame) {
                 return;

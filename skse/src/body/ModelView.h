@@ -32,5 +32,8 @@ namespace AhShitRim::ModelView
 
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
+    // The hit test (debug): where model a_model's node is in the world after Skyrim's scene update, and its parent's
+    // world position (its cell's node); false while it isn't shown.
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent);
     void HideAll();
 }

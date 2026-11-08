@@ -20,6 +20,11 @@ namespace AhShitRim::Cosave
     struct Record;
 }
 
+namespace AhShitRim::Protocol
+{
+    struct BodyState;
+}
+
 namespace AhShitRim::PlayerSync
 {
     void Install();       // hooks; call at SKSE load
@@ -38,6 +43,9 @@ namespace AhShitRim::PlayerSync
     void DebugButtons(bool a_aim, bool a_fire);
     // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
     void DebugKey(std::uint32_t a_dik, bool a_down);
+    // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San
+    // Andreas's camera in the world; false on a frame he wasn't drawn.
+    bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

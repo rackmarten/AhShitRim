@@ -2,6 +2,7 @@
 
 #include "air_spawn.h"
 #include "car_exit.h"
+#include "cj_body.h"
 #include "cj_cheats.h"
 #include "fx_model.h"
 #include "log.h"
@@ -114,18 +115,6 @@ namespace AhShitRim::Vehicles
         {
             return { { a_m.right.x, a_m.right.y, a_m.right.z }, { a_m.up.x, a_m.up.y, a_m.up.z }, { a_m.at.x, a_m.at.y, a_m.at.z },
                 { a_m.pos.x, a_m.pos.y, a_m.pos.z } };
-        }
-
-        std::uint32_t NowMs()
-        {
-            static LARGE_INTEGER frequency{}, start{};
-            if (!frequency.QuadPart) {
-                ::QueryPerformanceFrequency(&frequency);
-                ::QueryPerformanceCounter(&start);
-            }
-            LARGE_INTEGER now;
-            ::QueryPerformanceCounter(&now);
-            return static_cast<std::uint32_t>((now.QuadPart - start.QuadPart) * 1000 / frequency.QuadPart);
         }
 
         CVehicleModelInfo* InfoOf(int a_model)
@@ -749,7 +738,7 @@ namespace AhShitRim::Vehicles
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
-            s.timeMs = NowMs();
+            s.timeMs = CjBody::NowMs();  // CJ's clock and this frame's stamp: Skyrim draws the vehicle at his moment
             const CVector d = at - a_spawnFeet;
             s.feet[0] = d.x * Pose::kUnitsPerMeter;
             s.feet[1] = d.y * Pose::kUnitsPerMeter;

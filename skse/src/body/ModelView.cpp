@@ -616,6 +616,17 @@ namespace AhShitRim::ModelView
         state.frame++;
     }
 
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent)
+    {
+        const auto* built = Find(a_model);
+        if (!built || !built->shown || !built->node) {
+            return false;
+        }
+        a_at = built->node->world.translate;
+        a_parent = built->node->parent ? built->node->parent->world.translate : RE::NiPoint3();
+        return true;
+    }
+
     void HideAll()
     {
         state.frame++;  // nothing was shown this frame

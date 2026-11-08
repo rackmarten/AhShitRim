@@ -90,4 +90,48 @@ namespace AhShitRim::CarExit
         return a_trace.samples >= 2 && a_trace.maxStep <= kMaxStep && a_trace.maxBack <= kMaxBack && way >= kMinOut &&
                a_trace.outAtRelease - a_trace.startOut >= kReleaseShare * way;
     }
+
+    // A drive: one sample per San Andreas frame while CJ drives, in the vehicle's frame. He stays in his seat, so his
+    // middle stays where it sat on the first frame: steering, braking and a bike's lean move it a few centimetres. A
+    // frame his seating was skipped (Reseat false while he isn't getting out) leaves him behind the moving vehicle.
+    struct Ride
+    {
+        std::size_t samples = 0;
+        float       maxOff = 0.0f;   // the farthest his middle got from where it sat on the first frame, metres
+        float       lastOff = 0.0f;  // and on the last frame
+        float       maxStep = 0.0f;  // the farthest it moved in the vehicle's frame in one frame
+        std::size_t worstAt = 0;     // the frame of maxOff
+    };
+
+    inline float Distance(const Vec3& a_a, const Vec3& a_b)
+    {
+        return std::sqrt((a_a.x - a_b.x) * (a_a.x - a_b.x) + (a_a.y - a_b.y) * (a_a.y - a_b.y) + (a_a.z - a_b.z) * (a_a.z - a_b.z));
+    }
+
+    inline Ride CheckRide(std::span<const Sample> a_samples)
+    {
+        Ride r;
+        r.samples = a_samples.size();
+        for (std::size_t i = 0; i < a_samples.size(); i++) {
+            r.lastOff = Distance(a_samples[i].at, a_samples.front().at);
+            if (r.lastOff > r.maxOff) {
+                r.maxOff = r.lastOff;
+                r.worstAt = i;
+            }
+            if (i > 0) {
+                r.maxStep = (std::max)(r.maxStep, Distance(a_samples[i].at, a_samples[i - 1].at));
+            }
+        }
+        return r;
+    }
+
+    inline constexpr float kRideMaxOff = 0.15f;   // metres off the seat in a car: his steering and braking, not a frame left behind
+    inline constexpr float kRideMaxStep = 0.15f;  // metres in one frame: a frame left behind at 20 m/s is 0.67
+
+    // In his seat all the way. On a bike he leans into the turns, half a metre and more off where he sat, but smoothly:
+    // there only a jump counts.
+    inline bool Seated(const Ride& a_ride, bool a_bike = false)
+    {
+        return a_ride.samples >= 2 && a_ride.maxStep <= kRideMaxStep && (a_bike || a_ride.maxOff <= kRideMaxOff);
+    }
 }

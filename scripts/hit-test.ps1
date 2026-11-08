@@ -8,7 +8,8 @@
     Or (respawns) it hands CJ over on foot, has
     him kill a few of the people around, puts the clock an hour on, steps into an interior and back out, and logs who
     came back. Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
-    traces both getting out. Then it prints what the logs say, closes both
+    traces both getting out. Or (drive) CJ drives the Sandking for -Seconds, his body, its model and the camera traced
+    in the vehicle every frame as Skyrim draws them. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
@@ -18,9 +19,10 @@
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
+    scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'riders')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'riders', 'drive')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,

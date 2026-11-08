@@ -5,6 +5,7 @@
 #include "input.h"
 #include "passengers.h"
 #include "link/LinkService.h"
+#include "body/ModelView.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/StealthKills.h"
@@ -37,6 +38,7 @@ namespace AhShitRim::HitTest
             Returning,  // back outside: are they up at their spots?
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
+            Driving,    // drive: CJ drives the Sandking a minute, traced every frame
             Done,
         };
 
@@ -65,6 +67,13 @@ namespace AhShitRim::HitTest
             std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
             std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
             float               outFor = 0.0f;     // seconds since both were out
+            bool                drive = false;     // the scenario: CJ drives, his body traced in the vehicle as Skyrim draws them
+            std::vector<CarExit::Sample> feetTrace, nodeTrace, cameraTrace;  // drive: CJ's drawn feet, his model's node, the camera
+            int                 legs = 0;          // drive: the steering's legs so far
+            int                 cells = 0;         // drive: exterior cells crossed
+            RE::TESObjectCELL*  lastCell = nullptr;
+            float               driven = 0.0f;     // drive: how far the player went, metres
+            RE::NiPoint3        lastAt;
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -227,6 +236,70 @@ namespace AhShitRim::HitTest
                 // body in the seat, so his feet jump where his body doesn't: logged, not judged (fake_vehicles judges his body).
                 Report("CJ (the player's position)", state.cjTrace, false);
                 SKSE::log::info("hit test: done after the riders run");
+                state.phase = Phase::Done;
+            }
+        }
+
+        // ---- The drive scenario ----
+
+        // Every frame for a minute while CJ drives the Sandking (W, and A or D a second every 4 s), from a second in (the
+        // handover settling): in the vehicle's frame as Skyrim drew it, his feet as drawn, his model's node as Skyrim's
+        // scene has it after its update, and Skyrim's camera. His feet and node must not jump in it (CarExit::Seated), nor
+        // the camera: a frame his body is drawn behind the vehicle shows here. How far he drove and the cells
+        // he crossed are logged too: a car stuck on a rock proves nothing.
+        void TraceDriving(RE::PlayerCharacter* a_player)
+        {
+            const int leg = static_cast<int>(state.timer);
+            if (leg != state.legs) {
+                state.legs = leg;
+                PlayerSync::DebugKey(Input::kDikA, leg % 8 == 2);
+                PlayerSync::DebugKey(Input::kDikD, leg % 8 == 6);
+            }
+            auto* cell = a_player->GetParentCell();
+            if (state.lastCell && cell != state.lastCell) {
+                state.cells++;
+            }
+            state.lastCell = cell;
+            if (state.timer > 0.0f && state.lastAt != RE::NiPoint3()) {
+                state.driven += a_player->GetPosition().GetDistance(state.lastAt) * Pose::kMetersPerUnit;
+            }
+            state.lastAt = a_player->GetPosition();
+            Protocol::BodyState pose{};
+            RE::NiPoint3        feet, camera, node, parent;
+            Pose::Vec3          f{}, n{}, c{};
+            const bool          drawn = PlayerSync::DebugDrawn(pose, feet, camera);
+            const bool          shown = drawn && ModelView::DebugWorld(pose.model, node, parent);
+            auto*               cameraRoot = RE::PlayerCamera::GetSingleton() ? RE::PlayerCamera::GetSingleton()->cameraRoot.get() : nullptr;
+            const bool settled = state.timer >= 1.0f;
+            if (drawn && InVehicleFrame(feet, f) && settled) {
+                state.feetTrace.push_back({ f, true });
+            }
+            if (shown && InVehicleFrame(node, n) && settled) {
+                state.nodeTrace.push_back({ n, true });
+            }
+            if (cameraRoot && InVehicleFrame(cameraRoot->world.translate, c) && settled) {
+                state.cameraTrace.push_back({ c, true });
+            }
+            const auto& p = a_player->GetPosition();
+            SKSE::log::info("hit test: driving {:5.0f} ms, feet {:6.2f} {:6.2f} {:6.2f}{}, node {:6.2f} {:6.2f} {:6.2f} (its parent at {:.0f} {:.0f} {:.0f}), camera {:6.2f} {:6.2f} {:6.2f}, player at {:.0f} {:.0f} in {:08X}",
+                state.timer * 1000.0f, f.x, f.y, f.z, drawn ? "" : " (not drawn)", n.x, n.y, n.z, parent.x, parent.y, parent.z, c.x, c.y, c.z, p.x, p.y,
+                a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0);
+            if (state.timer >= state.seconds) {
+                PlayerSync::DebugKey(Input::kDikW, false);
+                PlayerSync::DebugKey(Input::kDikA, false);
+                PlayerSync::DebugKey(Input::kDikD, false);
+                for (const auto& [who, trace] : { std::pair{ "his feet as drawn", &state.feetTrace }, std::pair{ "his model's node", &state.nodeTrace },
+                         std::pair{ "the camera", &state.cameraTrace } }) {
+                    const auto r = CarExit::CheckRide(*trace);
+                    // The camera is San Andreas's chase camera: it swings behind the vehicle as it turns, smoothly. And
+                    // only a jump counts for CJ too: his feet are straight down from his middle in the world, so they
+                    // go round the seat as the vehicle rolls over.
+                    const bool camera = trace == &state.cameraTrace;
+                    SKSE::log::info("hit test: drove {:.0f} s, {}: {} frames, off where it was at most {:.2f} m (frame {}), biggest step {:.2f} m{}", state.timer,
+                        who, r.samples, r.maxOff, r.worstAt, r.maxStep, camera ? (r.maxStep <= 1.0f ? ": smooth" : ": JUMPS") : CarExit::Seated(r, true) ? ": seated" : ": NOT SEATED");
+                }
+                SKSE::log::info("hit test: drove {:.0f} m through {} cells{}", state.driven, state.cells, state.cells < 3 ? ": TOO SHORT A DRIVE TO TELL" : "");
+                SKSE::log::info("hit test: done after the drive");
                 state.phase = Phase::Done;
             }
         }
@@ -448,14 +521,15 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "riders") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "riders" && scenario != "drive") {
             return;
         }
         state.bust = scenario == "bust";
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
         state.riders = scenario == "riders";
-        state.seconds = state.stealth ? 12.0f : state.seconds;
+        state.drive = scenario == "drive";
+        state.seconds = state.stealth ? 12.0f : state.drive ? 60.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
         }
@@ -520,7 +594,20 @@ namespace AhShitRim::HitTest
             }
             break;
         case Phase::Handing:
-            if (InVehicle() && state.riders) {
+            if (InVehicle() && state.drive) {
+                SKSE::log::info("hit test: CJ is in the Sandking, W: he drives for {:.0f} s", state.seconds);
+                PlayerSync::DebugKey(Input::kDikW, true);
+                state.feetTrace.clear();
+                state.nodeTrace.clear();
+                state.cameraTrace.clear();
+                state.legs = 0;
+                state.cells = 0;
+                state.lastCell = nullptr;
+                state.driven = 0.0f;
+                state.lastAt = RE::NiPoint3();
+                state.phase = Phase::Driving;
+                state.timer = 0.0f;
+            } else if (InVehicle() && state.riders) {
                 SKSE::log::info("hit test: CJ is in the Sandking, {} riding with him", Riders::Riding().size());
                 state.phase = Phase::Seated;
                 state.timer = 0.0f;
@@ -625,6 +712,9 @@ namespace AhShitRim::HitTest
                 PlayerSync::DebugKey(Input::kDikF, false);
             }
             TraceLeaving(a_player, a_delta);
+            break;
+        case Phase::Driving:
+            TraceDriving(a_player);
             break;
         default: break;
         }

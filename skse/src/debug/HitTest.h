@@ -16,6 +16,9 @@
 //  - riders (HitTest=riders): places one of Whiterun's guards beside the player as a follower, hands CJ over in the Sandking
 //    (the follower takes its passenger seat), presses F after 3 s and logs the follower's feet and the player's in the
 //    vehicle's frame every frame until both have been out a second, then whether the follower got out smoothly (protocol/cpp/car_exit.h),
+//  - drive (HitTest=drive): hands CJ over in the Sandking and drives it for HitTestSeconds (W, A or D a second every 4 s),
+//    logging every frame CJ's drawn feet, his model's node and Skyrim's camera in the drawn vehicle's frame, then whether
+//    he stayed in his seat (CarExit::Seated),
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {
