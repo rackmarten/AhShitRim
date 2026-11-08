@@ -604,7 +604,14 @@ namespace AhShitRim::SaHud
             }
             const auto model = state.cj.valid ? state.cj.vehicleModel : std::uint16_t{ 0 };
             const auto name = model && !VehicleKinds::IsGear(model) ? state.vehicleNames.find(model) : state.vehicleNames.end();
-            state.names.SetVehicle(name != state.vehicleNames.end() ? name->second : std::string{});
+            const std::string vehicle = name != state.vehicleNames.end() ? name->second : std::string{};
+            if (static std::string logged; vehicle != logged) {
+                logged = vehicle;
+                if (!vehicle.empty()) {
+                    SKSE::log::info("sa hud: San Andreas's vehicle name \"{}\" (model {})", vehicle, model);
+                }
+            }
+            state.names.SetVehicle(vehicle);
             const auto kind = VehicleKinds::KindOf(model);
             const bool cutscene = state.letterbox > 0.0f;
             HudNames::Frame frame;
