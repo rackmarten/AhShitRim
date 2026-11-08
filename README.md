@@ -57,14 +57,16 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **Every land and air vehicle San Andreas has**: cars, bikes, bicycles, quads, monster trucks, the Rhino, helicopters, planes, the jetpack and the parachute, with San Andreas's own physics, radio, sounds and particles. Run people over (honk and they jump aside; a giant stops a car, but the Rhino sends it flying), take your followers along, and watch Skyrim's bandits, wolves and giants wreck your car until it burns.
 - **San Andreas's guns**, switched on the mouse wheel, hurting Skyrim's people and creatures: headshots count, damage scales with the target (the minigun is for dragons), the Dragonborn gets the kill and the bounty, and San Andreas's weapon skills grow. Rockets, grenades, Molotovs, tear gas, the flamethrower and satchel charges all work, and the heat seeker locks on to dragons.
 - **Fist fights** with San Andreas's lock-on: CJ turns to his target, and a small triangle over their head goes from green to red with their health.
+- **Knife stealth kills** as in San Andreas: behind someone who hasn't noticed CJ, hold the right mouse button with the knife and CJ raises it, click the left one and he grabs and stabs them. People only, never children or anyone essential. A crouched knife hit on someone who can't see the Dragonborn is Skyrim's 3x sneak attack.
 - **Ammu-Nation** at the blacksmiths of the hold capitals (Warmaiden's in Whiterun first), and guns as rewards from the main quest and a few bosses.
 - **Looting without menus**: walk over a body, or press E on a chest, and its gold and quest items are yours.
 - **Pickups** spinning around Skyrim: hearts, armour, parachutes, weapons and money, with a heart turning up when you're low.
+- **Parked vehicles** waiting around the world: a Sanchez at every stable, a BMX in every village, a Rhino at a fort, a Hunter on a mountain and more.
 - **Wanted stars**, one level for all of Skyrim, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
-- **San Andreas's HUD** with its **radar**, fonts and text styles, its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
+- **San Andreas's HUD** with its **radar**, fonts and text styles, zone and vehicle names (Skyrim's junk notifications gone), its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
 
 Skyrim's player stays the real player underneath, so quests, dialogue, bounties, kill credit and saves keep working. CJ's weapons, armour, skills, car and wanted level go in the SKSE co-save next to your Skyrim save. Load a save made while CJ had the player and he takes over again a couple of seconds after the loading screen, once the world is in.
 
@@ -102,7 +104,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
 | Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |
-| V or Home | V or Home | | Change the camera distance (San Andreas's camera key) |
+| V or Home | V or Home | Change the camera distance: San Andreas's three chase distances (San Andreas's camera key) | Change the camera distance; one step is the view from the front of the vehicle, with San Andreas's crosshair in the Hunter, Hydra, Seasparrow and Rustler |
 | W / S, arrows up / down | W / S, arrows up / down | In Ammu-Nation: browse | |
 | E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | |
 | F or Enter | F or Enter | In Ammu-Nation: back, then leave | |
@@ -113,7 +115,7 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 ## Playing as CJ
 
-**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half).
+**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half). Headlights and tail lights come on as in San Andreas, by Skyrim's clock: at night (each vehicle from its own minute between 20:00 and 21:00 until one between 6:00 and 7:00), in rain or snow and in interiors, while the engine runs; a smashed lamp stays dark and a wreck has none.
 
 **The Hydra is experimental.** Skyrim streams its land fast enough for it, but only has collision for the ground about a second ahead at that speed, so flying low and fast you can fly through hills. Out over the Sea of Ghosts Skyrim drops to a few frames a second. Fly high, or slow down to land.
 
@@ -123,7 +125,9 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 **Pickups.** Hearts, body armour, parachutes, weapons and wads of gold float and spin at spots across Skyrim. Walk into one to take it; a weapon pickup of a kind CJ already carries swaps his gun only when you press E, as in San Andreas. When CJ is down to a quarter of his health a heart turns up in front of him.
 
-**Nobody important stays dead.** Every named NPC CJ kills (the blacksmiths, the Jarl, Farengar, Delphine, the Greybeards, anyone unique) gets up again an in-game hour later, back where they belong, once their body and their spot are out of CJ's sight. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
+**Parked vehicles.** A Sanchez waits at each of the five stables, a BMX in every village and town, and themed vehicles at fitting spots: a Rhino at Fort Greymoor, a Hunter on Bleak Falls Barrow, a monster truck at the giants' camp in Bleakwind Basin and more ([docs/DESIGN.md](docs/DESIGN.md#vehicles) lists them). One appears once CJ is within 100 m of its spot (never on top of him) and goes again when he goes through a door or when he's 160 m away without having used it. Take one or wreck it and another is there a minute later, once CJ has been away. They count towards the four vehicles that exist at once, but never push one of yours out.
+
+**The dead come back.** Everyone CJ kills who wasn't out to get the player on sight (guards, citizens, merchants, the blacksmiths, the Jarl, Farengar, chickens and cows) gets up again an in-game hour later, back at their spot, as soon as neither their body nor that spot is in view, in cities and outside. Bandits, necromancers, draugr and wild predators stay dead until Skyrim brings them back itself, and so do the deaths a quest needs: a quest's kill target, or a death that moves a quest on. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
 
 **Quests** start and end like San Andreas missions: a quest's name comes up as a mission title, finishing one is MISSION PASSED with San Andreas's tune, and a small quest done (a favour, a delivery) is an odd job, MISSION PASSED without the title. A new game opens with the line AhShitRim is named after: right after Ralof wakes you in the Helgen cart, CJ says "Ah shit, here we go again."
 
@@ -179,7 +183,7 @@ Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no
 
 Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and a plane comes already flying with AIR before its name (AIRAT400). Every code, with its aliases: [docs/CHEATS.md](docs/CHEATS.md).
 
-> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. The named ones come back an hour later like anyone named, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
+> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. They come back an hour later like anyone else CJ kills, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
 
 ## Settings
 
@@ -206,6 +210,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 - So a level 6 bandit takes 6 Colt 45 body shots at Adept and 18 at Master (5 at Master before). `CJDamage=0.25` with `FollowDifficulty=0` gives Master's at any difficulty.
 - CJ's body armour (the blue bar) takes the damage first, as San Andreas's does: weapons, arrows, creatures' bites, claws and clubs, traps (blades, spikes, rocks), blasts, and fire, frost and shock from spells, enchantments, traps and burning oil. A hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health. Poison, disease, drowning and falls go straight to his health.
 - Skyrim's fire (a fire spell, a fire trap, burning oil, a dragon's breath) sets CJ alight in San Andreas, with his scream and the burn, as San Andreas's own fire does.
+- Oil burns GTA style: the oil on Skyrim's floors (and the oil a shot-down lamp spills) catches fire when CJ's bullets land in it, as well as from his flamethrower, Molotovs and explosions.
 - `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
 - BAGUVIX still blocks everything.
 
@@ -213,7 +218,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 
 - **The main quest** beyond Helgen isn't fully played through as CJ yet. If something blocks the way (a scene, a door, a menu), F10 hands the player back to Skyrim.
 - **Helgen**: the intro (the cart and the execution) isn't supported as CJ: play it as Skyrim's own player and press F10 afterwards. CJ's "Ah shit, here we go again." still plays in the cart.
-- **Camera**: San Andreas's third-person camera only, no first person.
+- **Camera**: no first person on foot (San Andreas has none either). A vehicle's first-person view sits just in front of it, so driving into a wall puts the camera in the wall.
 - **CJ and the vehicles** cast no shadow, and CJ always wears his starting clothes.
 - **Vehicle looks**: damage isn't shown (dents, broken windows and lost doors), and lights aren't drawn. The Hydra's flares are invisible (they still work), and its jet exhaust, missile trails, heat haze, a submerged exhaust's bubbles and the rotor dust's sand and water versions aren't drawn. Muzzle flashes are round where San Andreas stretches them along the barrel.
 - **Vehicles are temporary**: they live only while CJ has the player. They're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them. Fast travelling in a vehicle leaves it behind.

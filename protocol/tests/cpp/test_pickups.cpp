@@ -1,5 +1,6 @@
 #include <cmath>
 #include <ostream>
+#include <map>
 #include <set>
 
 #include <doctest/doctest.h>
@@ -184,9 +185,29 @@ TEST_CASE("pickups spin a turn every 2 s, all together")
 TEST_CASE("the spot table")
 {
     std::set<std::uint16_t> ids;
-    int                     parachutes = 0, armour = 0;
+    int                     parachutes = 0, armour = 0, hearts = 0, weapons = 0, heavy = 0;
+    std::map<Hold, int>     armourIn, weaponsIn;
     for (const auto& spot : kSpots) {
         CHECK(ids.insert(spot.id).second);  // ids are unique
+        // Nothing on top of another: at least a metre and a half apart.
+        for (const auto& other : kSpots) {
+            if (&other != &spot && other.world == spot.world) {
+                CHECK(std::hypot(other.at.x - spot.at.x, other.at.y - spot.at.y, other.at.z - spot.at.z) > 1.5f * M);
+            }
+        }
+        if (spot.kind == Kind::Armour) {
+            armourIn[spot.hold]++;
+        }
+        if (spot.kind == Kind::Weapon) {
+            weaponsIn[spot.hold]++;
+            const auto slot = Shop::SlotOf(spot.weapon);
+            if (slot == 7) {  // the heavy slot: rare, slow to come back
+                heavy++;
+                CHECK(spot.respawn == Respawn::Slow);
+            }
+        }
+        hearts += spot.kind == Kind::Health;
+        weapons += spot.kind == Kind::Weapon;
         CHECK(std::isfinite(spot.at.x + spot.at.y + spot.at.z));
         CHECK(spot.kind != Kind::None);
         CHECK(spot.kind != Kind::Jetpack);  // only San Andreas drops one
@@ -208,7 +229,37 @@ TEST_CASE("the spot table")
         armour += spot.kind == Kind::Armour;
     }
     CHECK(parachutes >= 5);
-    CHECK(armour >= 18);  // two or more per hold
+    CHECK(armour >= 30);  // three or more per hold
+    CHECK(hearts >= 10);
+    CHECK(std::size(kSpots) >= 90);  // twice 0.1's 45
+    // Every hold has three or more armour and a weapon or two.
+    CHECK(armourIn.size() == static_cast<std::size_t>(kHolds));
+    CHECK(weaponsIn.size() == static_cast<std::size_t>(kHolds));
+    for (const auto& [hold, n] : armourIn) {
+        CHECK(n >= 3);
+    }
+    // Weapons: handguns and SMGs most, the heavy ones few.
+    CHECK(weapons >= 30);
+    int small = 0;
+    for (const auto& spot : kSpots) {
+        if (spot.kind == Kind::Weapon) {
+            const auto slot = Shop::SlotOf(spot.weapon);
+            small += slot == 2 || slot == 4;  // handguns, SMGs
+        }
+    }
+    CHECK(small * 2 > weapons);
+    CHECK(heavy >= 2);
+    CHECK(heavy * 6 < weapons);
+    // On the road from Helgen to Riverwood: armour and a weapon at the Guardian Stones and at Helgen.
+    int roadArmour = 0, roadWeapons = 0;
+    for (const auto& spot : kSpots) {
+        if (spot.name == "Helgen" || spot.name == "the Guardian Stones" || spot.name == "Embershard Mine") {
+            roadArmour += spot.kind == Kind::Armour;
+            roadWeapons += spot.kind == Kind::Weapon;
+        }
+    }
+    CHECK(roadArmour >= 2);
+    CHECK(roadWeapons >= 3);
     // The ones the 0.1 list asked for by name.
     CHECK(Find(1).name == "the Throat of the World");
     CHECK(Find(1).kind == Kind::Parachute);

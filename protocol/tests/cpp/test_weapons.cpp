@@ -238,10 +238,13 @@ TEST_CASE("the aim looks where the camera does: level is 0 and looking up is neg
     CHECK(AimLookPitch(std::nanf("")) == 0.0f);
 }
 
-TEST_CASE("v23: the Hydra's and the Hunter's first-person camera shows the rocket sight, the frame the lock shows in")
+TEST_CASE("v23: the armed aircraft's first-person camera shows the rocket sight, the frame the lock shows in")
 {
     CHECK(ScopeOf(kCamFirstPerson, 520) == Scope::Rocket);
     CHECK(ScopeOf(kCamFirstPerson, 425) == Scope::Rocket);
+    CHECK(ScopeOf(kCamFirstPerson, 447) == Scope::Rocket);              // #911: the Seasparrow
+    CHECK(ScopeOf(kCamFirstPerson, 476) == Scope::Rocket);              // and the Rustler
+    CHECK(ScopeOf(kCamFirstPerson, 487) == ScopeOf(kCamFirstPerson));   // not an unarmed Maverick
     CHECK(ScopeOf(kCamFirstPerson, 0) == ScopeOf(kCamFirstPerson));     // on foot as before
     CHECK(ScopeOf(kCamFirstPerson, 432) == ScopeOf(kCamFirstPerson));   // not the Rhino
     CHECK(ScopeOf(kCamSniper, 520) == Scope::Sniper);                   // other modes as before

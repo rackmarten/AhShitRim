@@ -15,8 +15,10 @@
 #include "cosave.h"
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "input.h"
 #include "knock.h"
+#include "pickups.h"
 #include "settle.h"
 #include "wanted.h"
 #include "link/LinkService.h"
@@ -41,7 +43,9 @@
 #include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
+#include "player/StealthKills.h"
 #include "player/VehicleFx.h"
+#include "player/Headlights.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
 #include "standing.h"
@@ -203,6 +207,12 @@ namespace AhShitRim::PlayerSync
             input.anchor[0] = state.anchor.x;
             input.anchor[1] = state.anchor.y;
             input.anchor[2] = state.anchor.z;
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                // v37: the world the player is in now, for the parked vehicles' spots (an interior's coordinates are no place in Tamriel).
+                const auto* cell = player->GetParentCell();
+                const auto* worldspace = player->GetWorldspace();
+                input.world = Pickups::WorldByteOf(worldspace ? worldspace->GetFormID() : 0, !cell || cell->IsInteriorCell());
+            }
             input.shoutCount = state.shoutCount;
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
                 const auto feet = player->GetPosition();
@@ -219,6 +229,7 @@ namespace AhShitRim::PlayerSync
                     Scene::Face(input, feet.x, feet.y, at.x, at.y);
                 }
             }
+            Headlights::Sky(input);  // v36: San Andreas's clock and sky for its vehicles' lights
             link.WriteInput(input);
         }
 
@@ -465,6 +476,7 @@ namespace AhShitRim::PlayerSync
                         state.vehicles[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
+                        Headlights::Show(i, nullptr, {});
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -477,11 +489,14 @@ namespace AhShitRim::PlayerSync
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    Headlights::Show(i, &pose, feet);  // v36
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
                         driven = pose;
                         drivenFeet = feet;
                         anyDriven = true;
                     }
+                } else {
+                    Headlights::Show(i, nullptr, {});
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
@@ -537,6 +552,7 @@ namespace AhShitRim::PlayerSync
             Projectiles::Clear();
             WorldPickups::Clear();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear(!a_loading);
             CarHits::Clear();
@@ -629,6 +645,7 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear();
             CarHits::Clear();
@@ -1003,7 +1020,11 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
-            if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            const bool killMove = StealthKills::HoldsPlayer(a_player);  // a stealth kill's kill move moves the player itself
+            if (killMove) {
+                state.lastPlaced = a_player->GetPosition();
+            }
+            if (valid && !scene && !unpinned && !killMove) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -1035,7 +1056,10 @@ namespace AhShitRim::PlayerSync
             }
             Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
-            const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
+            // (#911) A vehicle's first-person view sits out in front of it (Camera::OutOfBox), and CJ isn't drawn in it: San
+            // Andreas puts it at his head (on a bike at his neck), where he would only be in the way.
+            const bool bumper = valid && (pose.flags & Protocol::kPlayerInVehicle) && pose.cameraMode == Weapons::kCamFirstPerson;
+            const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera || bumper;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles(a_player, a_delta);
             DrawGear(a_delta);
@@ -1055,9 +1079,11 @@ namespace AhShitRim::PlayerSync
                 aim.aim = state.input.Aiming();
                 aim.fire = state.input.Firing();
                 aim.heading = pose.heading;
+                aim.weapon = pose.weaponType;
             }
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target.id, target.stealth);
+            StealthKills::Update(a_player, a_delta);
             // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
             const bool honking = valid && (pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput() && state.input.HornHeld();
             CarHits::Horn(a_player, honking, cjFeet + RE::NiPoint3(pose.vehicleOffset[0], pose.vehicleOffset[1], pose.vehicleOffset[2]),
@@ -1177,6 +1203,7 @@ namespace AhShitRim::PlayerSync
                 if (Overlay::ScreenshotSaved()) {
                     SaHud::ShowHelp("Screenshot saved", 3.0f);
                 }
+                SkyrimMessages::Update(state.owned);
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr, Missions::CuePlaying());
             }
@@ -1493,6 +1520,7 @@ namespace AhShitRim::PlayerSync
         static InputSink inputSink;
         static MenuSink  menuSink;
         Conversation::OnDataLoaded();
+        SkyrimMessages::OnDataLoaded();
         const auto layout = Ini::Value("Input", "KeyLayout");
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
@@ -1509,6 +1537,7 @@ namespace AhShitRim::PlayerSync
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();
+        StealthKills::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
@@ -1552,6 +1581,12 @@ namespace AhShitRim::PlayerSync
         } else if (player) {
             TakeOver(player);
         }
+    }
+
+    void DebugButtons(bool a_aim, bool a_fire)
+    {
+        state.input.SetAim(a_aim);
+        state.input.SetFire(a_fire);
     }
 
     void DebugType(const char* a_code)

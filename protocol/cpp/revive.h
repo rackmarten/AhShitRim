@@ -1,10 +1,12 @@
-// Coming back (v22), the game-free half: the unique people CJ kills (Ammu-Nation's blacksmiths, the main
-// quest's people, every named NPC) get up again an in-game hour later, at their editor spot, once neither
-// their body nor that spot is anywhere CJ could see. NOMERCY or not: it lets him kill the essential ones,
-// this brings them back. Only CJ's kills: the player killed them while San Andreas had the player. Skyrim's
-// own player killing someone, or a dragon, stays as Skyrim has it. Header-only and free of game types, so
-// the protocol tests cover it; the SKSE plugin listens for deaths and brings them back
-// (skse/src/player/Respawns.cpp).
+// Coming back (v22, everyone not hostile since 0.2), the game-free half: whoever CJ kills that wasn't hostile
+// to the player on sight (guards, citizens, merchants, the main quest's people, chickens and cows) gets up
+// again an in-game hour later, at their editor spot, once neither their body nor that spot is in view of the
+// camera. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so
+// does a death a quest needed: its kill target, or a death that moved a quest on. NOMERCY or not: it lets
+// him kill the essential ones, this brings them back. Only CJ's kills: the player killed them while San
+// Andreas had the player. Skyrim's own player killing someone, or a dragon, stays as Skyrim has it.
+// Header-only and free of game types, so the protocol tests cover it; the SKSE plugin listens for deaths
+// and brings them back (skse/src/player/Respawns.cpp).
 //
 // The dead waiting are in Skyrim's co-save, a record of their own ("ASRV"): version 1 is a u32 count, then
 // each one's form id, its base's and when it died (f32, Skyrim's game time in days).
@@ -12,6 +14,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -26,28 +29,296 @@ namespace AhShitRim::Revive
     inline constexpr std::uint32_t kTemporary = 0xFF000000;   // form ids from here on are made at runtime: no editor spot to go back to
 
     inline constexpr float kDelayDays = 1.0f / 24.0f;  // an in-game hour (3 real minutes at Skyrim's timescale)
-    inline constexpr float kHomeClear = 12288.0f;      // Skyrim units: an outdoor spot nearer the player than 3 cells may be loaded, in view
+    inline constexpr float kForgetDays = 10.0f;        // someone whose cell stays unloaded this long is Skyrim's: its cell reset brings them back
+    inline constexpr float kQuestWindow = 2.0f;        // real seconds after a death in which a quest it moves on keeps them dead
 
-    // Whether a death brings a_id back later: a unique NPC placed in the editor (not the player, not one made
-    // at runtime) that the player killed while San Andreas had it.
-    constexpr bool Counts(bool a_cjHasPlayer, bool a_byPlayer, bool a_unique, std::uint32_t a_id)
+    // ---- Who comes back ----
+
+    // Skyrim's aggression (the Aggression actor value: 0 unaggressive, 1 aggressive, 2 very aggressive, 3
+    // frenzied) and faction reaction (Actor::GetFactionReaction's FIGHT_REACTION).
+    inline constexpr int kAggressive = 1;
+    inline constexpr int kVeryAggressive = 2;
+    enum class Reaction : int
     {
-        return a_cjHasPlayer && a_byPlayer && a_unique && a_id != kPlayerRef && a_id < kTemporary;
+        Neutral = 0,
+        Enemy = 1,
+        Ally = 2,
+        Friend = 3,
+    };
+
+    // Whether an actor attacks the player on sight, before anyone has done anything: a very aggressive or
+    // frenzied one attacks neutrals too, an aggressive one its enemies (a faction hostile to the player's).
+    // Guards are aggressive but not the player's enemies, chickens unaggressive. Its base aggression, so a
+    // Fury spell or a fight that's started doesn't change the answer.
+    constexpr bool HostileOnSight(int a_aggression, Reaction a_reaction)
+    {
+        return a_aggression >= kVeryAggressive || (a_aggression >= kAggressive && a_reaction == Reaction::Enemy);
     }
 
-    // Whether the editor spot may be in view: an interior while its cell is loaded, an outdoor one while the
-    // player is in the same worldspace and near.
-    constexpr bool HomeInView(bool a_interior, bool a_cellLoaded, bool a_playerInWorld, float a_distance)
+    // What the plugin knows of a death when it happens.
+    struct Kill
     {
-        return a_interior ? a_cellLoaded : a_playerInWorld && a_distance < kHomeClear;
+        bool          cjHasPlayer = false;  // San Andreas had the player
+        bool          byPlayer = false;     // the player killed them
+        std::uint32_t id = 0;
+        int           aggression = 0;  // base
+        Reaction      reaction = Reaction::Neutral;  // to the player
+        bool          spared = false;      // essential, by its base, itself, a quest alias holding it, or before NOMERCY cleared it
+        bool          killTarget = false;  // a running quest's shown objective points at an alias holding them (KillTarget)
+    };
+
+    enum class Verdict
+    {
+        Back,        // comes back an hour later
+        NotCj,       // Skyrim's own player, a dragon, a guard: Skyrim's death
+        NotPlaced,   // the player, or made at runtime: no editor spot to go back to
+        Hostile,     // hostile on sight: stays dead until Skyrim resets the cell
+        KillTarget,  // a quest wants them dead
+    };
+
+    // Whether a death brings them back later. An essential one always does, hostile or a quest's target: a
+    // quest that holds someone essential needs them, and NOMERCY's essentials come back.
+    constexpr Verdict Judge(const Kill& a_kill)
+    {
+        if (!a_kill.cjHasPlayer || !a_kill.byPlayer) {
+            return Verdict::NotCj;
+        }
+        if (a_kill.id == kPlayerRef || a_kill.id >= kTemporary) {
+            return Verdict::NotPlaced;
+        }
+        if (a_kill.spared) {
+            return Verdict::Back;
+        }
+        if (HostileOnSight(a_kill.aggression, a_kill.reaction)) {
+            return Verdict::Hostile;
+        }
+        return a_kill.killTarget ? Verdict::KillTarget : Verdict::Back;
     }
 
-    // Whether someone who died at a_diedAt gets up at a_now: an hour gone, the body and the spot out of
-    // sight. A death later than now (a clock that went back) can't be waited out, so it counts as gone.
-    constexpr bool Ready(float a_diedAt, float a_now, bool a_bodyLoaded, bool a_homeInView)
+    constexpr const char* Why(Verdict a_verdict)
+    {
+        switch (a_verdict) {
+        case Verdict::Back: return "back in a game hour";
+        case Verdict::NotCj: return "not CJ's kill";
+        case Verdict::NotPlaced: return "not placed in the editor";
+        case Verdict::Hostile: return "hostile on sight, stays dead";
+        case Verdict::KillTarget: return "a quest's kill target, stays dead";
+        }
+        return "?";
+    }
+
+    // ---- Quest deaths ----
+
+    // Skyrim's objective states (QUEST_OBJECTIVE_STATE): only a shown one (displayed) is what the quest asks now.
+    inline constexpr std::uint8_t kObjectiveDisplayed = 1;
+
+    // A quest alias holding the dead (the actor's ExtraAliasInstanceArray).
+    struct Holder
+    {
+        std::uint32_t quest = 0;
+        std::uint32_t alias = 0;
+        bool          running = false;
+    };
+
+    // One of a quest's objectives and the aliases its targets point at.
+    struct Objective
+    {
+        std::uint32_t              quest = 0;
+        std::uint8_t               state = 0;
+        std::vector<std::uint32_t> aliases;
+    };
+
+    // The quest whose kill target a_holders make the dead, or 0: a running quest holds them in an alias that one
+    // of its shown objectives points at ("Kill the bandit leader", a bounty's giant). Skyrim's objectives
+    // don't say "kill", so a shown objective on someone the quest doesn't hold essential is taken for one.
+    inline std::uint32_t KillTarget(const std::vector<Holder>& a_holders, const std::vector<Objective>& a_objectives)
+    {
+        for (const auto& holder : a_holders) {
+            if (!holder.running) {
+                continue;
+            }
+            for (const auto& objective : a_objectives) {
+                if (objective.quest == holder.quest && objective.state == kObjectiveDisplayed &&
+                    std::find(objective.aliases.begin(), objective.aliases.end(), holder.alias) != objective.aliases.end()) {
+                    return holder.quest;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Where a quest holding the dead was: its stage and each objective's state.
+    struct QuestMark
+    {
+        std::uint32_t             quest = 0;
+        std::uint16_t             stage = 0;
+        std::vector<std::uint8_t> objectives;
+        bool operator==(const QuestMark&) const = default;
+    };
+
+    constexpr bool Completed(std::uint8_t a_state) { return a_state == 2 || a_state == 3; }  // kCompleted, kCompletedDisplayed
+
+    // The deaths of the last kQuestWindow seconds, each with the quests holding them as they were then: a stage
+    // set in one of those quests while the window is open, or a stage or a completed objective found when it
+    // closes, and the death moved it on, so the dead stay dead. A quest that only stops (a scene or a radiant
+    // quest whose actor died) doesn't count.
+    class QuestWatch
+    {
+    public:
+        struct Watch
+        {
+            std::uint32_t          id = 0;
+            float                  until = 0.0f;  // real seconds
+            std::vector<QuestMark> quests;
+        };
+
+        // a_id died at a_now (real seconds) held by a_quests. Nobody holding them: nothing to watch.
+        void Start(std::uint32_t a_id, float a_now, std::vector<QuestMark> a_quests)
+        {
+            Stop(a_id);
+            if (!a_quests.empty()) {
+                _watches.push_back(Watch{ a_id, a_now + kQuestWindow, std::move(a_quests) });
+            }
+        }
+
+        // A stage was set in a_quest at a_now: whoever it held and died within the window, taken out of the
+        // watch. Their quest death.
+        std::vector<std::uint32_t> Stage(std::uint32_t a_quest, float a_now)
+        {
+            std::vector<std::uint32_t> moved;
+            std::erase_if(_watches, [&](const Watch& a_watch) {
+                if (a_now > a_watch.until) {
+                    return false;  // Due takes it
+                }
+                for (const auto& mark : a_watch.quests) {
+                    if (mark.quest == a_quest) {
+                        moved.push_back(a_watch.id);
+                        return true;
+                    }
+                }
+                return false;
+            });
+            return moved;
+        }
+
+        // The watches whose window closed by a_now, taken out: the plugin compares their quests with now (Moved).
+        std::vector<Watch> Due(float a_now)
+        {
+            std::vector<Watch> due;
+            std::erase_if(_watches, [&](Watch& a_watch) {
+                if (a_now <= a_watch.until) {
+                    return false;
+                }
+                due.push_back(std::move(a_watch));
+                return true;
+            });
+            return due;
+        }
+
+        bool Watching(std::uint32_t a_id) const
+        {
+            return std::any_of(_watches.begin(), _watches.end(), [&](const Watch& a_watch) { return a_watch.id == a_id; });
+        }
+
+        void Stop(std::uint32_t a_id)
+        {
+            std::erase_if(_watches, [&](const Watch& a_watch) { return a_watch.id == a_id; });
+        }
+
+        bool Empty() const { return _watches.empty(); }
+        void Clear() { _watches.clear(); }
+
+    private:
+        std::vector<Watch> _watches;
+    };
+
+    // The quest of a_before that moved on by a_after (the same quests, looked at again), or 0: another stage, or
+    // an objective completed that wasn't. A quest no longer found (stopped, its alias cleared) didn't move.
+    inline std::uint32_t Moved(const std::vector<QuestMark>& a_before, const std::vector<QuestMark>& a_after)
+    {
+        for (const auto& before : a_before) {
+            const auto after = std::find_if(a_after.begin(), a_after.end(), [&](const QuestMark& a_mark) { return a_mark.quest == before.quest; });
+            if (after == a_after.end()) {
+                continue;
+            }
+            if (after->stage != before.stage) {
+                return before.quest;
+            }
+            for (std::size_t i = 0; i < after->objectives.size(); i++) {
+                if (Completed(after->objectives[i]) && (i >= before.objectives.size() || !Completed(before.objectives[i]))) {
+                    return before.quest;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // ---- In view ----
+
+    struct Vec3
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
+    constexpr Vec3  Sub(const Vec3& a_a, const Vec3& a_b) { return { a_a.x - a_b.x, a_a.y - a_b.y, a_a.z - a_b.z }; }
+    constexpr float Dot(const Vec3& a_a, const Vec3& a_b) { return a_a.x * a_b.x + a_a.y * a_b.y + a_a.z * a_b.z; }
+
+    // The camera: where it is, its unit axes, and its frustum's half-width and half-height a unit ahead (the
+    // tangents of half the field of view, Gamebryo's NiFrustum right and top).
+    struct View
+    {
+        Vec3  eye;
+        Vec3  forward;
+        Vec3  up;
+        Vec3  right;
+        float tanRight = 1.0f;
+        float tanTop = 0.6f;
+    };
+
+    inline constexpr float kViewRange = 8192.0f;    // Skyrim units, two cells: farther off, a person is a few pixels and fades out
+    inline constexpr float kPersonRadius = 80.0f;   // a sphere around someone standing or lying there
+    inline constexpr float kPersonMiddle = 60.0f;   // its centre above the feet
+
+    // Whether a sphere at a_point (radius a_radius) is inside a_view's frustum and range. A symmetric frustum,
+    // as Skyrim's is: each side plane goes through the eye.
+    inline bool InFrustum(const View& a_view, const Vec3& a_point, float a_radius)
+    {
+        const Vec3  to = Sub(a_point, a_view.eye);
+        const float ahead = Dot(to, a_view.forward);
+        if (ahead < -a_radius || Dot(to, to) > (kViewRange + a_radius) * (kViewRange + a_radius)) {
+            return false;
+        }
+        const float side = Dot(to, a_view.right);
+        const float high = Dot(to, a_view.up);
+        // the distance outside a side plane: (|side| - tan * ahead) over the plane normal's length
+        const auto outside = [&](float a_off, float a_tan) { return (std::fabs(a_off) - a_tan * ahead) / std::sqrt(1.0f + a_tan * a_tan) > a_radius; };
+        return !outside(side, a_view.tanRight) && !outside(high, a_view.tanTop);
+    }
+
+    // Whether someone at a_point can be seen: in the player's space (the same interior, or the same worldspace
+    // outdoors), in the frustum, and nothing in between (a_clear: the plugin's line of sight).
+    constexpr bool Seen(bool a_sameSpace, bool a_inFrustum, bool a_clear)
+    {
+        return a_sameSpace && a_inFrustum && a_clear;
+    }
+
+    // ---- When ----
+
+    // Whether someone who died at a_diedAt gets up at a_now: an hour gone, neither the body nor the editor spot
+    // in view. A death later than now (a clock that went back) can't be waited out, so it counts as gone.
+    constexpr bool Ready(float a_diedAt, float a_now, bool a_bodyInView, bool a_homeInView)
     {
         const bool hourGone = a_now < a_diedAt || a_now - a_diedAt >= kDelayDays;
-        return hourGone && !a_bodyLoaded && !a_homeInView;
+        return hourGone && !a_bodyInView && !a_homeInView;
+    }
+
+    // Whether someone not in memory (a cell that isn't loaded keeps its people on disk) is left to Skyrim: its
+    // cell reset brings them back after kForgetDays.
+    constexpr bool Forget(float a_diedAt, float a_now)
+    {
+        return a_now >= a_diedAt && a_now - a_diedAt >= kForgetDays;
     }
 
     // One dead and waiting, with its base: the same id with another base after a load is someone else.

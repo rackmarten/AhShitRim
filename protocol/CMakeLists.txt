@@ -48,6 +48,7 @@ add_executable(protocol_tests
     tests/cpp/test_activate.cpp
     tests/cpp/test_anchor.cpp
     tests/cpp/test_scene.cpp
+    tests/cpp/test_camera.cpp
     tests/cpp/test_health.cpp
     tests/cpp/test_voice_lines.cpp
     tests/cpp/test_wasted.cpp
@@ -75,6 +76,9 @@ add_executable(protocol_tests
     tests/cpp/test_thuum.cpp
     tests/cpp/test_situations.cpp
     tests/cpp/test_hud_sounds.cpp
+    tests/cpp/test_hud_messages.cpp
+    tests/cpp/test_hud_names.cpp
+    tests/cpp/test_gxt.cpp
     tests/cpp/test_wanted.cpp
     tests/cpp/test_lock_marker.cpp
     tests/cpp/test_knock.cpp
@@ -82,15 +86,19 @@ add_executable(protocol_tests
     tests/cpp/test_air_spawn.cpp
     tests/cpp/test_missions.cpp
     tests/cpp/test_pickups.cpp
+    tests/cpp/test_parked.cpp
     tests/cpp/test_run_over.cpp
+    tests/cpp/test_tracks.cpp
     tests/cpp/test_passengers.cpp
     tests/cpp/test_vehicle_hits.cpp
     tests/cpp/test_melee.cpp
+    tests/cpp/test_stealth_kill.cpp
     tests/cpp/test_standing.cpp
     tests/cpp/test_radar_map.cpp
     tests/cpp/test_radar.cpp
     tests/cpp/test_settle.cpp
     tests/cpp/test_balance.cpp
+    tests/cpp/test_vehicle_lights.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

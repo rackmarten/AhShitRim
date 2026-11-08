@@ -1,6 +1,7 @@
 #include "cj_body.h"
 
 #include "aim.h"
+#include "camera.h"
 #include "cj_gear.h"
 #include "log.h"
 #include "model_sender.h"
@@ -12,6 +13,7 @@
 #include <plugin.h>
 
 #include <CCamera.h>
+#include <CModelInfo.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
 #include <CTaskSimpleUseGun.h>
@@ -23,6 +25,7 @@
 
 #include <Windows.h>
 
+#include <bitset>
 #include <chrono>
 #include <format>
 #include <map>
@@ -52,10 +55,14 @@ namespace AhShitRim::CjBody
             std::uint32_t boneCount = 0;
             bool          poseLogged = false;
             bool          havePelvis = false;
-            CVector       pelvis;  // his pelvis joint from his position, last posed frame (metres)
+            CVector       pelvis;     // his pelvis joint from his position, last posed frame (metres)
+            std::bitset<512> aimLogged;  // (weapon type x3 + skill) x2 (+1 aiming): its aim pose already logged
+            std::size_t      aimHeld = SIZE_MAX;  // which of those he holds now, and for how many frames
+            unsigned         aimFrames = 0;
         } state;
 
         constexpr int kBonePelvis = 2;  // BONE_PELVIS
+        constexpr int kBoneHead = 5;    // BONE_HEAD
         constexpr int kBoneRightUpperArm = 22, kBoneRightForeArm = 23, kBoneRightHand = 24, kBoneLeftUpperArm = 32, kBoneLeftForeArm = 33, kBoneLeftHand = 34;
         constexpr int kModeAimWeapon = 0x35;  // MODE_AIMWEAPON: free aim in the third person
 
@@ -148,30 +155,70 @@ namespace AhShitRim::CjBody
         CVector Vector(const Pose::Vec3& a_v) { return CVector(a_v.x, a_v.y, a_v.z); }
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
 
+        float Degrees(const CVector& a_a, const CVector& a_b)
+        {
+            const float lengths = a_a.Magnitude() * a_b.Magnitude();
+            const float dot = a_a.x * a_b.x + a_a.y * a_b.y + a_a.z * a_b.z;
+            return lengths < 1e-6f ? 0.0f : std::acos(std::clamp(dot / lengths, -1.0f, 1.0f)) * 180.0f / Pose::kPi;
+        }
+
+        float PitchOf(const CVector& a_v) { return std::atan2(a_v.z, std::hypot(a_v.x, a_v.y)) * 180.0f / Pose::kPi; }
+
+        // Once per weapon and way of holding it, held a second (the animation blended in): how the pose came
+        // out, so a run of fake_weapons shows it.
+        bool FirstAimPose(int a_type, int a_skill, bool a_aiming)
+        {
+            const std::size_t bit = ((static_cast<std::size_t>(a_type) * 3 + static_cast<std::size_t>(a_skill % 3)) * 2 + (a_aiming ? 1 : 0)) % state.aimLogged.size();
+            if (bit != state.aimHeld) {
+                state.aimHeld = bit;
+                state.aimFrames = 0;
+            }
+            if (++state.aimFrames != 30 || state.aimLogged.test(bit)) {
+                return false;
+            }
+            state.aimLogged.set(bit);
+            return true;
+        }
+
         // San Andreas points a one-handed gun with its arm IK (IKChainManager_c), which hidden leaves the arm
         // half raised and the gun pointing at the sky. So while he uses the gun (aiming or firing) the arm is
-        // posed here as San Andreas's pistol stance looks (Aim::ReachAlong): the hand out on the line from the
-        // shoulder to the aim point, the elbow slightly bent below it, then the hand turned so the barrel (its
-        // X axis, the weapon's model sits on the hand as it is) points from the muzzle at the aim point. Aiming,
-        // that is where San Andreas's crosshair aims; from the hip, a point straight ahead of his chest
-        // (Aim::HipAimPoint), which both arms of a twin gun meet at, mirrored, along the line his shots go
-        // (Aim::LineOf). His sides are his chest's too (Aim::ChestFacing): the stance can turn it off his heading.
+        // posed here as San Andreas's IK leaves it (Aim::ReachAlong): straight out on the line from the shoulder
+        // to the aim point, then the hand turned so the barrel (its X axis, the weapon's model sits on the hand as
+        // it is) points from the muzzle at the aim point. Aiming, that is where San Andreas's crosshair aims, and
+        // his head turns to it as San Andreas's look IK turns it (Aim::HeadLook); from the hip, a point straight
+        // ahead of his chest (Aim::HipAimPoint), which both arms of a twin gun meet at, mirrored, along the line
+        // his shots go (Aim::LineOf). His sides are his chest's too (Aim::ChestFacing): the stance can turn it off
+        // his heading.
         void AimArms(CPlayerPed* a_ped, RpHAnimHierarchy* a_hierarchy, RwMatrix* a_matrices)
         {
             const auto& cam = TheCamera.m_aCams[TheCamera.m_nActiveCam];
             const bool  aiming = cam.m_nMode == kModeAimWeapon;
             auto*       task = a_ped->m_pIntelligence ? a_ped->m_pIntelligence->GetTaskUseGun() : nullptr;
             if (a_ped->bIsDucking || (!aiming && !task)) {
+                state.aimHeld = SIZE_MAX;
                 return;  // he isn't using the gun: his arms are the animation's
             }
             const auto  type = a_ped->m_aWeapons[a_ped->m_nSelectedWepSlot].m_eWeaponType;
             const auto* info = CWeaponInfo::GetWeaponInfo(type, a_ped->GetWeaponSkill(type));
-            if (!info || !info->m_nFlags.bAimWithArm) {
+            if (!info) {
                 return;
             }
             CVector source, crosshair;
             if (aiming) {
                 TheCamera.Find3rdPersonCamTargetVector(20.0f, a_ped->GetPosition() + CVector(0.0f, 0.0f, 0.7f), &source, &crosshair);
+            }
+            if (!info->m_nFlags.bAimWithArm) {
+                // A two-handed gun: San Andreas turns his torso (CPedIK::PointGunInDirection), not posed here.
+                // Logged once, how far its barrel (the right hand's X axis) points off the crosshair.
+                const int hand = IndexOf(a_hierarchy, kBoneRightHand);
+                if (aiming && hand >= 0 && FirstAimPose(type, a_ped->GetWeaponSkill(type), aiming)) {
+                    const RwMatrix& h = a_matrices[hand];
+                    const CVector   barrel(h.right.x, h.right.y, h.right.z), wanted = crosshair - Pos(h);
+                    Log(std::format("aim: CJ's two-handed weapon {} aimed: its barrel {:.0f} degrees off the crosshair ({:.0f} degrees above level "
+                                    "for an aim {:.0f} degrees above level)",
+                        static_cast<int>(type), Degrees(barrel, wanted), PitchOf(barrel), PitchOf(wanted)));
+                }
+                return;
             }
             const int        rightUpper = IndexOf(a_hierarchy, kBoneRightUpperArm), leftUpper = IndexOf(a_hierarchy, kBoneLeftUpperArm);
             if (rightUpper < 0 || leftUpper < 0) {
@@ -183,6 +230,8 @@ namespace AhShitRim::CjBody
             const CVector    hip = Vector(Aim::HipAimPoint(rightShoulder, leftShoulder, forward));
             const CVector    offset(info->m_vecFireOffset.x, info->m_vecFireOffset.y, info->m_vecFireOffset.z);
             const auto       parents = ParentsOf(a_hierarchy);
+            const bool       logPose = FirstAimPose(type, a_ped->GetWeaponSkill(type), aiming);
+            std::string      poseLog;
             for (int arm = 0; arm < (info->m_nFlags.bTwinPistol ? 2 : 1); ++arm) {
                 const int upper = arm == 0 ? rightUpper : leftUpper;
                 const int fore = IndexOf(a_hierarchy, arm == 0 ? kBoneRightForeArm : kBoneLeftForeArm);
@@ -204,7 +253,28 @@ namespace AhShitRim::CjBody
                 const RwMatrix& h = a_matrices[hand];
                 const CVector   axis(h.right.x, h.right.y, h.right.z);
                 const CVector   muzzle = Pos(h) + axis * fire.x + CVector(h.up.x, h.up.y, h.up.z) * fire.y + CVector(h.at.x, h.at.y, h.at.z) * fire.z;
-                Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), axis, Vector(Aim::BarrelLine(Vec(muzzle), Vec(target))));
+                const CVector   barrel = Vector(Aim::BarrelLine(Vec(muzzle), Vec(target)));
+                if (logPose) {
+                    const CVector reached = Pos(a_matrices[hand]) - shoulder;
+                    poseLog += std::format("{} arm {:.0f} degrees above level for an aim {:.0f}, elbow bent {:.0f}, wrist turned {:.0f} to put "
+                                           "the barrel on the aim; ",
+                        arm == 0 ? "right" : "left", PitchOf(reached), PitchOf(target - shoulder),
+                        180.0f - Degrees(shoulder - elbow, Pos(a_matrices[hand]) - elbow), Degrees(axis, barrel));
+                }
+                Turn(a_hierarchy, parents, a_matrices, hand, Pos(h), axis, barrel);
+            }
+            // His head to the crosshair, as San Andreas's look IK turns it (only aiming: from the hip it looks
+            // where the animation has it).
+            const int head = IndexOf(a_hierarchy, kBoneHead);
+            Aim::Look look;
+            if (aiming && head >= 0) {
+                const CVector neck = Pos(a_matrices[head]);
+                look = Aim::HeadLook(forward, Vec(crosshair - neck));
+                Turn(a_hierarchy, parents, a_matrices, head, neck, Vector(forward), Vector(Aim::LookLine(forward, look)));
+            }
+            if (logPose) {
+                Log(std::format("aim: CJ's weapon {} (skill {}) {}: {}head turned {:.0f} degrees right and {:.0f} up", static_cast<int>(type), static_cast<int>(a_ped->GetWeaponSkill(type)),
+                    aiming ? "aimed" : "from the hip", poseLog, look.turn * 180.0f / Pose::kPi, look.nod * 180.0f / Pose::kPi));
             }
         }
 
@@ -585,6 +655,25 @@ namespace AhShitRim::CjBody
             source = final.GetPosition();
             front = final.GetForward();
             camUp = final.at;
+        }
+        // (#911) A vehicle's first-person view (MODE_1STPERSON) sits at its front seat, at head height, inside the
+        // vehicle: San Andreas doesn't draw its player's vehicle then, Skyrim does. So it moves out of the col model's
+        // box the way it looks: in front of the bonnet, a bike's handlebars or an aircraft's nose.
+        if (a_ped->bInVehicle && a_ped->m_pVehicle && cam.m_nMode == MODE_1STPERSON) {
+            CVehicle*      vehicle = a_ped->m_pVehicle;
+            const auto*    info = CModelInfo::GetModelInfo(vehicle->m_nModelIndex);
+            if (info && info->m_pColModel) {
+                const CMatrix& m = vehicle->GetMatrix();  // right, up (forward) and at (up) rows
+                const CVector  rel = source - m.pos;
+                const float    seat[3] = { rel.Dot(m.right), rel.Dot(m.up), rel.Dot(m.at) };
+                const float    look[3] = { front.Dot(m.right), front.Dot(m.up), front.Dot(m.at) };
+                const auto&    box = info->m_pColModel->m_boundBox;
+                const float    lo[3] = { box.m_vecMin.x, box.m_vecMin.y, box.m_vecMin.z };
+                const float    hi[3] = { box.m_vecMax.x, box.m_vecMax.y, box.m_vecMax.z };
+                float          out[3];
+                Camera::OutOfBox(seat, look, lo, hi, Camera::kBumperMargin, out);
+                source = m.pos + m.right * out[0] + m.up * out[1] + m.at * out[2];
+            }
         }
         toSkyrim(source, body.cameraPosition);
         const auto forward = Body::Normalize(Vec(front), { 0.0f, 1.0f, 0.0f });

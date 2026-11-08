@@ -319,6 +319,15 @@ namespace AhShitRim::Damage
         return a_type == Weapons::Chainsaw ? kChainsawPerSecond * a_landed : a_damage * kMeleeScale * a_landed;
     }
 
+    // Skyrim's sneak attack (v38), unperked as for a one-handed blade: a knife blow while the player sneaks (CJ
+    // crouches) on someone who doesn't detect the player does kSneakAttack times its damage. Only the knife.
+    inline constexpr float kSneakAttack = 3.0f;
+
+    constexpr float SneakMultiplier(std::uint8_t a_type, bool a_sneaking, bool a_detected)
+    {
+        return a_type == Weapons::Knife && a_sneaking && !a_detected ? kSneakAttack : 1.0f;
+    }
+
     // The chance a landed blow staggers its target (Skyrim's stagger): the heavier the weapon the likelier; the
     // chainsaw always, so whoever it cuts can't fight back.
     constexpr float StaggerChance(std::uint8_t a_type)

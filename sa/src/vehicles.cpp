@@ -6,13 +6,16 @@
 #include "log.h"
 #include "position_guard.h"
 #include "model_sender.h"
+#include "parked.h"
 #include "rw_texture.h"
 #include "skin_build.h"
 #include "skin_model.h"
 #include "texture_decode.h"
 #include "vehicle.h"
 #include "vehicle_damage.h"
+#include "tracks.h"
 #include "vehicle_kinds.h"
+#include "vehicle_lights.h"
 
 #include <plugin.h>
 
@@ -20,6 +23,7 @@
 #include <CBike.h>
 #include <CBmx.h>
 #include <CCamera.h>
+#include <CClock.h>
 #include <CColPoint.h>
 #include <CHeli.h>
 #include <CModelInfo.h>
@@ -28,6 +32,7 @@
 #include <CPlane.h>
 #include <CPlayerPed.h>
 #include <CPools.h>
+#include <SurfaceInfos_c.h>
 #include <CPad.h>
 #include <CQuadBike.h>
 #include <CStats.h>
@@ -36,6 +41,7 @@
 #include <CTaskSimplePlayerOnFoot.h>
 #include <CTimer.h>
 #include <CVehicleModelInfo.h>
+#include <CWeather.h>
 #include <CWorld.h>
 #include <NodeName.h>
 #include <common.h>
@@ -75,6 +81,9 @@ namespace AhShitRim::Vehicles
             std::vector<VehicleKinds::Spinner> spinners;  // a rotor's or a propeller's standing or spinning version
             std::vector<VehicleKinds::ExtraWheel> extras;  // the Rhino's road wheels between its front and back ones
             std::string           name;
+            int                   parked = -1;       // a parked spot's id while its vehicle stands there untouched (protocol/cpp/parked.h)
+            bool                  dropFar = false;  // a parked one, or its wreck: goes once CJ is far and nobody uses it
+            int                   from = -1;        // with dropFar, the spot it was parked at: no other is put out there while it stands
         };
 
         struct State
@@ -83,6 +92,19 @@ namespace AhShitRim::Vehicles
             std::uint64_t spawns = 0;
             std::uint64_t drivenLogMs = 0;
             int           planeGear = -1;  // the driven plane's landing gear, logged as it goes: 1 up, 0 down, -1 none
+            std::uint8_t  sky = 0;          // v36: Skyrim's sky (InputState.sky) and time of day, for the lights
+            std::uint16_t minuteOfDay = 0;
+            Parked::Board parked;          // the parked vehicles' spots, this session
+            tHandlingData* lockHandling = nullptr;  // the Rhino's handling while TurnAboutMiddle has its steering lock
+            float          lockOriginal = 0.0f;     // and the lock it had
+            CVehicle*      heavyFor = nullptr;      // the vehicle Heavy last saw, and its speed up and turn rates then
+            float          heavyUp = 0.0f, heavyPitch = 0.0f, heavyRoll = 0.0f;
+            int            heavySteps = 0;          // steps Heavy cut a hull hit's push in since the last driving line
+            int            heavyModel = 0;          // of which vehicle, and how much of each push it kept
+            float          heavyKeep = 1.0f;
+            float          heavyTaken = 0.0f;       // and the speed up it took off, m/s summed
+            int            trackSteps = 0;          // corner-steps the Rhino's tracks gripped for (TrackGrip) since the last driving line
+            float          trackTaken = 0.0f;       // and the sliding they took off, m/s summed
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -171,20 +193,20 @@ namespace AhShitRim::Vehicles
             return CWorld::GetIsLineOfSightClear(a_from, a_to, true, true, false, true, false, false, false);
         }
 
-        // The first spot in front of CJ that will do, and the ground's height there.
-        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
+        // The first of a_spots that will do, and the ground's height there: its ground within reach of a_feet's height
+        // (CJ's feet, or a parked spot's ground), and nothing between a_from and it.
+        bool FirstSpot(const std::vector<Vehicle::Spot>& a_spots, const CVector& a_feet, const CVector& a_from, const Vehicle::Footprint& a_size,
+            float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
         {
-            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
-            const CVector chest = feet + CVector(0.0f, 0.0f, 1.0f);
             a_tried = 0;
-            for (const auto& spot : Vehicle::Candidates(Vec(feet), Vec(a_ped->GetForward()), a_size)) {
+            for (const auto& spot : a_spots) {
                 a_tried++;
                 const auto      points = Vehicle::SamplePoints(spot, a_size);
                 Vehicle::Ground ground;
                 for (int i = 0; i < Vehicle::kSamples; i++) {
-                    ground.hit[i] = GroundAt(points[i], feet.z, ground.z[i]);
+                    ground.hit[i] = GroundAt(points[i], a_feet.z, ground.z[i]);
                 }
-                const auto z = Vehicle::GroundHeight(ground, feet.z, a_maxUneven);
+                const auto z = Vehicle::GroundHeight(ground, a_feet.z, a_maxUneven);
                 if (!z) {
                     continue;
                 }
@@ -192,14 +214,14 @@ namespace AhShitRim::Vehicles
                 std::array<bool, Vehicle::kEdgeSamples>  edgeHit{};
                 std::array<float, Vehicle::kEdgeSamples> edgeZ{};
                 for (int i = 0; i < Vehicle::kEdgeSamples; i++) {
-                    edgeHit[i] = GroundAt(edges[i], feet.z, edgeZ[i]);
+                    edgeHit[i] = GroundAt(edges[i], a_feet.z, edgeZ[i]);
                 }
                 if (!Vehicle::EdgesHold(edgeHit, edgeZ, *z, a_maxUneven)) {
                     continue;  // a drop-off just past it: it would roll off and hang
                 }
                 const float h = *z + kClearHeight;
                 const auto  at = [&](int i) { return CVector(points[i].x, points[i].y, h); };
-                if (!Clear(chest, CVector(spot.center.x, spot.center.y, h)) || !Clear(at(0), at(3)) || !Clear(at(1), at(2))) {
+                if (!Clear(a_from, CVector(spot.center.x, spot.center.y, h)) || !Clear(at(0), at(3)) || !Clear(at(1), at(2))) {
                     continue;
                 }
                 a_spot = spot;
@@ -207,6 +229,14 @@ namespace AhShitRim::Vehicles
                 return true;
             }
             return false;
+        }
+
+        // The first spot in front of CJ that will do, and the ground's height there.
+        bool FindSpot(CPlayerPed* a_ped, const Vehicle::Footprint& a_size, float a_maxUneven, Vehicle::Spot& a_spot, float& a_groundZ, int& a_tried)
+        {
+            const CVector feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel());
+            const CVector chest = feet + CVector(0.0f, 0.0f, 1.0f);
+            return FirstSpot(Vehicle::Candidates(Vec(feet), Vec(a_ped->GetForward()), a_size), feet, chest, a_size, a_maxUneven, a_spot, a_groundZ, a_tried);
         }
 
         VehicleKinds::Kind KindOf(CVehicleModelInfo* a_info, int a_model)
@@ -233,6 +263,22 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // A new vehicle into the world on a spot, its ground at a_groundZ: dropped onto its wheels, a bike on its side stand.
+        void Park(CVehicle* a_vehicle, CVehicleModelInfo* a_info, const Vehicle::Spot& a_spot, float a_groundZ)
+        {
+            a_vehicle->SetPosn(CVector(a_spot.center.x, a_spot.center.y, a_groundZ - a_info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
+            a_vehicle->SetHeading(a_spot.heading);
+            a_vehicle->m_nStatus = STATUS_ABANDONED;
+            a_vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
+            CWorld::Add(a_vehicle);
+            if (a_vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                static_cast<CBike*>(a_vehicle)->bOnSideStand = true;  // parked leaning on it, as San Andreas parks bikes, rather than falling over
+                static_cast<CBike*>(a_vehicle)->PlaceOnRoadProperly();
+            } else {
+                static_cast<CAutomobile*>(a_vehicle)->PlaceOnRoadProperly();
+            }
+        }
+
         int FreeSlot()
         {
             for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
@@ -240,14 +286,15 @@ namespace AhShitRim::Vehicles
                     return i;
                 }
             }
-            // All taken: the oldest one CJ isn't in goes.
-            auto* ped = FindPlayerPed(0);
-            int   oldest = -1;
+            // All taken: the oldest one CJ isn't in goes, a parked one (or its wreck) before any of his.
+            auto*      ped = FindPlayerPed(0);
+            int        oldest = -1;
+            const auto before = [](const Slot& a, const Slot& b) { return a.dropFar != b.dropFar ? a.dropFar : a.spawned < b.spawned; };
             for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
                 if (ped && (Live(i) == Driven(ped) || Live(i) == ped->m_pVehicle)) {
                     continue;  // in it, or getting in or out of it
                 }
-                if (oldest < 0 || state.slots[i].spawned < state.slots[oldest].spawned) {
+                if (oldest < 0 || before(state.slots[i], state.slots[oldest])) {
                     oldest = i;
                 }
             }
@@ -602,6 +649,53 @@ namespace AhShitRim::Vehicles
             }
         }
 
+        // ---- The lights (v36, protocol/cpp/vehicle_lights.h) ----
+
+        constexpr unsigned char kNoLightOverride = 0;  // m_nOverrideLights: NO_CAR_LIGHT_OVERRIDE
+        constexpr unsigned char kForceLightsOff = 1;   // FORCE_CAR_LIGHTS_OFF
+        constexpr unsigned char kForceLightsOn = 2;    // FORCE_CAR_LIGHTS_ON
+
+        bool IsZero(const CVector& a_v) { return a_v.x == 0.0f && a_v.y == 0.0f && a_v.z == 0.0f; }
+
+        void Pack(const CVector& a_dummy, std::int16_t (&a_out)[3])
+        {
+            a_out[0] = VehicleLights::Pack(a_dummy.x * Pose::kUnitsPerMeter);
+            a_out[1] = VehicleLights::Pack(a_dummy.y * Pose::kUnitsPerMeter);
+            a_out[2] = VehicleLights::Pack(a_dummy.z * Pose::kUnitsPerMeter);
+        }
+
+        // Its headlights and tail lights: the model's main light dummies (m_avDummyPos[0] and [1], DUMMY_LIGHT_FRONT_MAIN and
+        // DUMMY_LIGHT_REAR_MAIN, x right, y forward, z up) and which lamps burn, by San Andreas's own GetVehicleLightsStatus on
+        // the clock and weather Update set, the way DoVehicleLights switches them.
+        void PublishLights(CVehicle* a_vehicle, Protocol::BodyState& a_out)
+        {
+            auto* info = InfoOf(a_vehicle->m_nModelIndex);
+            if (!info || !info->m_pVehicleStruct) {
+                return;
+            }
+            const CVector& front = info->m_pVehicleStruct->m_avDummyPos[0];
+            const CVector& rear = info->m_pVehicleStruct->m_avDummyPos[1];
+            Pack(front, a_out.lights.front);
+            Pack(rear, a_out.lights.rear);
+            VehicleLights::Lamps lamps;
+            lamps.engineOn = a_vehicle->bEngineOn;
+            lamps.wrecked = Wrecked(a_vehicle);
+            lamps.wanted = a_vehicle->GetVehicleLightsStatus();
+            lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
+            lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
+            lamps.twin = a_vehicle->m_nVehicleClass == VEHICLE_AUTOMOBILE;  // a bike has one lamp of each
+            lamps.hasFront = !IsZero(front);
+            lamps.hasRear = !IsZero(rear);
+            if (lamps.twin) {
+                auto&         damage = static_cast<CAutomobile*>(a_vehicle)->m_damageManager;
+                const eLights order[4] = { LIGHT_FRONT_RIGHT, LIGHT_FRONT_LEFT, LIGHT_REAR_RIGHT, LIGHT_REAR_LEFT };
+                for (int i = 0; i < 4; i++) {
+                    lamps.smashed[i] = damage.GetLightStatus(order[i]) != 0;  // VEHICLE_LIGHT_SMASHED
+                }
+            }
+            a_out.lights.lit = VehicleLights::Lit(lamps);
+        }
+
         // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
         // frame (what CarHits sweeps against Skyrim's actors), in Skyrim units.
         void PublishShape(CVehicle* a_vehicle, Protocol::BodyState& a_out)
@@ -669,6 +763,7 @@ namespace AhShitRim::Vehicles
             }
             PublishSeats(a_vehicle, s);
             PublishShape(a_vehicle, s);
+            PublishLights(a_vehicle, s);
             for (const auto& extra : slot.extras) {
                 auto       rows = ToFrame(*RwFrameGetLTM(slot.parts[extra.front]));
                 const auto back = ToFrame(*RwFrameGetLTM(slot.parts[extra.back]));
@@ -728,6 +823,143 @@ namespace AhShitRim::Vehicles
             if (push.pitch != 0.0f) {
                 a_vehicle->ApplyTurnForce(up * (steer.upDown * force * push.pitch), a_vehicle->m_vecCentreOfMass + forward);
             }
+        }
+
+        // The Rhino's tracks on rough ground (protocol/cpp/tracks.h): each corner wheel in the air past San Andreas's grace
+        // grips through the track line on its side nearest it that touches, by San Andreas's own wheel rule
+        // (ProcessCarWheelPair's adhesion, ProcessWheel's sideways grip and its pushes), once a frame after San Andreas's
+        // physics step, for the player's Rhino. Counted for the log.
+        void TrackGrip(CVehicle* a_vehicle)
+        {
+            if (a_vehicle->m_nModelIndex != Tracks::kModelRhino || a_vehicle->m_nVehicleClass != VEHICLE_AUTOMOBILE || a_vehicle->m_nStatus != STATUS_PLAYER ||
+                CTimer::m_UserPause || CTimer::m_CodePause || !a_vehicle->m_pHandlingData) {
+                return;
+            }
+            auto*       car = static_cast<CAutomobile*>(a_vehicle);
+            auto*       col = CModelInfo::GetModelInfo(car->m_nModelIndex)->m_pColModel;
+            const auto* data = col ? col->m_pColData : nullptr;
+            if (!data || data->m_nNumLines < 4 + Tracks::kLines) {
+                return;
+            }
+            const auto& d = car->m_doors;  // San Andreas keeps the track lines' compressions in the rear doors
+            const std::array<float, Tracks::kLines> lines = { d[4].m_fOpenAngle, d[4].m_fClosedAngle, d[4].m_fAngle, d[4].m_fPrevAngle,
+                d[5].m_fOpenAngle, d[5].m_fClosedAngle, d[5].m_fAngle, d[5].m_fPrevAngle };
+            int grip[Tracks::kWheels];
+            int ground = car->m_nNumContactWheels, gripping = 0;
+            for (int w = 0; w < Tracks::kWheels; w++) {
+                grip[w] = Tracks::GripLine(w, car->m_fWheelsSuspensionCompression[w], car->m_fWheelCounts[w], lines);
+                gripping += grip[w] >= 0;
+            }
+            if (!gripping) {
+                return;
+            }
+            ground += gripping;
+            const auto& handling = *a_vehicle->m_pHandlingData;
+            CColPoint   surface{};
+            surface.m_nSurfaceTypeA = 60;  // SURFACE_WHEELBASE
+            surface.m_nSurfaceTypeB = 1;   // SURFACE_TARMAC, all of Skyrim's ground (chunk_world.cpp)
+            const float  limit = reinterpret_cast<SurfaceInfos_c*>(0xB79538)->GetAdhesiveLimit(&surface);  // g_surfaceInfos
+            const CMatrix& m = *a_vehicle->m_matrix;
+            for (int w = 0; w < Tracks::kWheels; w++) {
+                if (grip[w] < 0) {
+                    continue;
+                }
+                const bool front = w == 0 || w == 2;
+                // Where the line touches, relative to the vehicle's position, as ProcessSuspension works it out.
+                const CColLine& line = data->m_pLines[4 + grip[w]];
+                CVector         local = line.m_vecStart;
+                local.z -= car->m_aSuspensionLineLength[w] * lines[grip[w]];
+                const CVector point = Multiply3x3(m, local);
+                // The wheel's right on the ground, turned as San Andreas turns that wheel.
+                const CVector up = a_vehicle->GetUp();
+                CVector       fwd = a_vehicle->GetForward() - up * a_vehicle->GetForward().Dot(up);
+                fwd.Normalize();
+                CVector right = fwd.Cross(up);
+                right.Normalize();
+                const float steer = front ? a_vehicle->m_fSteerAngle : handling.m_bHbRearwheelSteer ? a_vehicle->m_f2ndSteerAngle : 0.0f;
+                if (steer != 0.0f) {
+                    right = fwd * std::sin(steer) + right * std::cos(steer);
+                }
+                const float adhesion = Tracks::Adhesion(limit, handling.m_fTractionMultiplier, handling.m_fTractionBias,
+                    handling.m_fSuspensionBiasBetweenFrontAndRear, handling.m_fSuspensionForceLevel, front, lines[grip[w]], CTimer::ms_fTimeStep);
+                const float slide = a_vehicle->GetSpeed(point).Dot(right);
+                const float change = Tracks::SideChange(slide, ground, adhesion);
+                if (change == 0.0f) {
+                    continue;
+                }
+                a_vehicle->ApplyMoveForce(right * (a_vehicle->m_fMass * change));
+                const float turnMass = 1.0f / (point.Cross(right).MagnitudeSqr() / a_vehicle->m_fTurnMass + 1.0f / a_vehicle->m_fMass);
+                a_vehicle->ApplyTurnForce(right * (turnMass * change), point);
+                state.trackSteps++;
+                state.trackTaken += std::abs(change) * 50.0f;  // m/s of sliding taken off (San Andreas speeds are metres a 1/50 s step), summed
+            }
+        }
+
+        // The Rhino turns about its middle (protocol/cpp/tracks.h): without the handbrake its rear wheels counter-steer as
+        // its front ones do, both to half San Andreas's turn, so it goes round San Andreas's own circle without its middle
+        // swinging out. The handling's steering lock is the Rhino's (all Rhinos share it), put back once CJ gets out.
+        void TurnAboutMiddle(CVehicle* a_driven, CPlayerPed* a_ped)
+        {
+            const bool rhino = a_driven && a_driven->m_nModelIndex == Tracks::kModelRhino && a_driven->m_pHandlingData &&
+                               a_driven->m_pHandlingData->m_bHbRearwheelSteer && a_driven->m_nStatus == STATUS_PLAYER;
+            if (!rhino) {
+                if (state.lockHandling) {
+                    state.lockHandling->m_fSteeringLock = state.lockOriginal;
+                    Log(std::format("vehicle: the Rhino's steering lock back to {:.1f} degrees", state.lockOriginal));
+                    state.lockHandling = nullptr;
+                }
+                return;
+            }
+            auto* handling = a_driven->m_pHandlingData;
+            if (state.lockHandling != handling) {
+                state.lockHandling = handling;
+                state.lockOriginal = handling->m_fSteeringLock;
+                Log(std::format("vehicle: the Rhino turns about its middle: {:.1f} degrees of lock front and rear without the handbrake, "
+                                "San Andreas's {:.1f} at the front with it",
+                    Tracks::SteeringLock(state.lockOriginal, false), state.lockOriginal));
+            }
+            if (CTimer::m_UserPause || CTimer::m_CodePause) {
+                return;
+            }
+            auto*      pad = a_ped->GetPadFromPlayer();
+            const bool handbrake = pad && pad->GetHandBrake() != 0;
+            handling->m_fSteeringLock = Tracks::SteeringLock(state.lockOriginal, handbrake);
+            a_driven->m_f2ndSteerAngle = Tracks::RearSteer(a_driven->m_fSteerAngle, handbrake, a_driven->m_f2ndSteerAngle);
+        }
+
+        // Heavy over rocks (protocol/cpp/tracks.h): a step in which the hull of the player's vehicle heavier than 8 t hit
+        // Skyrim's ground (San Andreas's damage record for the step names a building) keeps only 8 t / its mass of what
+        // that step added to its speed up and to its pitching and rolling.
+        void Heavy(CVehicle* a_driven)
+        {
+            if (!a_driven || a_driven->m_nVehicleClass != VEHICLE_AUTOMOBILE || a_driven->m_nVehicleSubClass == VEHICLE_HELI ||
+                a_driven->m_nVehicleSubClass == VEHICLE_PLANE || CTimer::m_UserPause || CTimer::m_CodePause) {
+                state.heavyFor = nullptr;
+                return;
+            }
+            CVector&      move = a_driven->m_vecMoveSpeed;
+            CVector&      turn = a_driven->m_vecTurnSpeed;
+            const CVector right = a_driven->GetRight(), forward = a_driven->GetForward();
+            const float   keep = Tracks::HeavyKeep(a_driven->m_fMass);
+            const bool    hullHit = a_driven->m_fDamageIntensity > 0.0f && a_driven->m_pDamageEntity &&
+                                 a_driven->m_pDamageEntity->m_nType == ENTITY_TYPE_BUILDING;
+            if (keep < 1.0f && hullHit && state.heavyFor == a_driven) {
+                const float pitch = turn.Dot(right), roll = turn.Dot(forward);
+                const float up = Tracks::SettleUp(state.heavyUp, move.z, keep);
+                const float newPitch = Tracks::Settle(state.heavyPitch, pitch, keep), newRoll = Tracks::Settle(state.heavyRoll, roll, keep);
+                if (up != move.z || newPitch != pitch || newRoll != roll) {
+                    state.heavySteps++;
+                    state.heavyModel = a_driven->m_nModelIndex;
+                    state.heavyKeep = keep;
+                    state.heavyTaken += (move.z - up) * 50.0f;
+                    move.z = up;
+                    turn += right * (newPitch - pitch) + forward * (newRoll - roll);
+                }
+            }
+            state.heavyFor = a_driven;
+            state.heavyUp = move.z;
+            state.heavyPitch = turn.Dot(right);
+            state.heavyRoll = turn.Dot(forward);
         }
 
         // BSXSGGC (CHEAT_CARS_FLOAT_AWAY_WHEN_HIT, v20 table): a vehicle the player's vehicle hits loses its gravity and
@@ -858,17 +1090,7 @@ namespace AhShitRim::Vehicles
             Log(std::format("vehicle: no way to make the {} (type {}), nothing spawned", name, static_cast<int>(info->m_nVehicleType)));
             return;
         }
-        vehicle->SetPosn(CVector(spot.center.x, spot.center.y, groundZ - info->m_pColModel->m_boundBox.m_vecMin.z + kDropHeight));
-        vehicle->SetHeading(spot.heading);
-        vehicle->m_nStatus = STATUS_ABANDONED;
-        vehicle->m_eDoorLock = DOORLOCK_UNLOCKED;
-        CWorld::Add(vehicle);
-        if (vehicle->m_nVehicleClass == VEHICLE_BIKE) {
-            static_cast<CBike*>(vehicle)->bOnSideStand = true;  // parked leaning on it, as San Andreas parks bikes, rather than falling over
-            static_cast<CBike*>(vehicle)->PlaceOnRoadProperly();
-        } else {
-            static_cast<CAutomobile*>(vehicle)->PlaceOnRoadProperly();
-        }
+        Park(vehicle, info, spot, groundZ);
         Slot& slot = state.slots[index];
         slot = Slot{};
         slot.ref = CPools::GetVehicleRef(vehicle);
@@ -1038,6 +1260,7 @@ namespace AhShitRim::Vehicles
     void Clear(CPlayerPed* a_ped)
     {
         GetOut(a_ped);
+        state.parked.Handover();  // the untouched parked ones go with the rest, and wait for CJ again
         int removed = 0;
         for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
             if (Live(i) && Live(i) != Driven(a_ped)) {
@@ -1076,14 +1299,43 @@ namespace AhShitRim::Vehicles
         }
     }
 
+    void SetSky(std::uint8_t a_sky, std::uint16_t a_minuteOfDay)
+    {
+        if (a_sky != state.sky) {
+            Log(std::format("vehicle: Skyrim's sky for the lights: {}{}{}", (a_sky & Protocol::kSkyClock) ? "its clock" : "San Andreas's own clock",
+                (a_sky & Protocol::kSkyWet) ? ", wet" : "", (a_sky & Protocol::kSkyDark) ? ", an interior (lights on)" : ""));
+        }
+        state.sky = a_sky;
+        state.minuteOfDay = a_minuteOfDay;
+    }
+
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame)
     {
         CVehicle*     driven = Driven(a_ped);
         const CVector spawnFeet = a_spawn - CVector(0.0f, 0.0f, a_ped->GetDistanceFromCentreOfMassToBaseOfModel() + a_lift);
+        // The lights (v36) go by Skyrim's time of day and sky: San Andreas's clock follows Skyrim's, and its fog and wet
+        // roads are Skyrim's while the vehicles are posed (PreRender switches the lights, the ZR-350's pop-ups too) and
+        // published, its own put back after for the handling. An interior is San Andreas's tunnel: lights forced on.
+        const bool  sky = (state.sky & Protocol::kSkyClock) != 0;
+        const float foggyness = CWeather::Foggyness, wetRoads = CWeather::WetRoads;
+        if (sky) {
+            const auto clock = VehicleLights::ClockOf(state.minuteOfDay);
+            CClock::ms_nGameClockHours = clock.hours;
+            CClock::ms_nGameClockMinutes = clock.minutes;
+            CWeather::Foggyness = 0.0f;
+            CWeather::WetRoads = VehicleLights::WetRoadsOf(state.sky);
+        }
         for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
             auto* vehicle = Live(i);
             if (!vehicle) {
                 continue;
+            }
+            // Skyrim's ground carries no lighting (its triangles' m_nLight is 0), which GetVehicleLightsStatus reads as a dark
+            // tunnel under the wheels: lit as day while the lights are worked out, the interior flag standing in for the tunnel.
+            const float brightness = vehicle->m_fContactSurfaceBrightness;
+            if (sky) {
+                vehicle->m_nOverrideLights = (state.sky & Protocol::kSkyDark) != 0 ? kForceLightsOn : kNoLightOverride;
+                vehicle->m_fContactSurfaceBrightness = 1.0f;
             }
             Pose(vehicle);
             Slot& slot = state.slots[i];
@@ -1100,9 +1352,18 @@ namespace AhShitRim::Vehicles
             if (slot.model) {
                 Publish(i, vehicle, vehicle == driven, spawnFeet, a_handover, a_frame);
             }
+            vehicle->m_fContactSurfaceBrightness = brightness;
+        }
+        CWeather::Foggyness = foggyness;
+        CWeather::WetRoads = wetRoads;
+        TurnAboutMiddle(driven, a_ped);
+        if (!driven) {
+            state.heavyFor = nullptr;
         }
         if (driven) {
             AirControl(driven, a_ped);
+            TrackGrip(driven);
+            Heavy(driven);
             FloatAway(driven);
             a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
             // A plane's landing gear (R3, v23), as it finishes going up or down.
@@ -1127,6 +1388,177 @@ namespace AhShitRim::Vehicles
                 Log(std::format("vehicle: driving at {:.1f} m/s, {} wheels on the ground, gas {:.2f}, brake {:.2f}{}, gear {}, engine {}, status {}",
                     std::hypot(speed.x, speed.y) * 50.0f, wheels, driven->m_fGasPedal, driven->m_fBreakPedal, driven->bIsHandbrakeOn ? ", handbrake" : "",
                     driven->m_nCurrentGear, driven->bEngineOn ? "on" : "off", static_cast<int>(driven->m_nStatus)));
+                if (state.trackSteps) {
+                    Log(std::format("vehicle: the Rhino's tracks gripped for its corners in the air {} times in 5 s, {:.1f} m/s of sliding taken off",
+                        state.trackSteps, state.trackTaken));
+                }
+                state.trackSteps = 0;
+                state.trackTaken = 0.0f;
+                if (state.heavySteps) {
+                    Log(std::format("vehicle: model {}'s hull hit the ground {} times in 5 s, kept {:.2f} of each push, {:.1f} m/s of speed up taken off",
+                        state.heavyModel, state.heavySteps, state.heavyKeep, state.heavyTaken));
+                }
+                state.heavySteps = 0;
+                state.heavyTaken = 0.0f;
+            }
+        }
+    }
+
+    // ---- Parked vehicles (v37) ----
+
+    namespace
+    {
+        // Why a spot's vehicle isn't out yet, logged when it changes.
+        void ParkedWhy(const Parked::Spot& a_spot, const std::string& a_why)
+        {
+            static std::map<std::uint16_t, std::string> last;
+            if (last[a_spot.id] != a_why) {
+                last[a_spot.id] = a_why;
+                if (!a_why.empty()) {
+                    Log(std::format("vehicle: parked spot {} ({}): {}", a_spot.id, a_spot.name, a_why));
+                }
+            }
+        }
+
+        // Puts a spot's vehicle out: in a free slot (a parked one never pushes another out), once its model is in and
+        // the ground under the spot is, on the first place round it that will do (the spawn rule's checks).
+        bool PutOut(const Parked::Spot& a_spot, const Pose::Vec3& a_anchor, const CVector& a_spawnFeet, const CVector& a_feet)
+        {
+            auto* info = InfoOf(a_spot.model);
+            if (!info) {
+                ParkedWhy(a_spot, std::format("{} is not a vehicle model", a_spot.model));
+                return false;
+            }
+            int index = -1;
+            for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && index < 0; i++) {
+                index = Live(i) ? -1 : i;
+            }
+            if (index < 0) {
+                ParkedWhy(a_spot, "every vehicle slot is taken");
+                return false;
+            }
+            if (CStreaming::ms_aInfoForModel[a_spot.model].m_nLoadState != 1 || !info->m_pColModel) {  // LOADSTATE_LOADED
+                CStreaming::RequestModel(a_spot.model, 0x2 | 0x8);  // game required, keep in memory: streamed in, no hitch
+                return false;
+            }
+            const auto at = Parked::ToSanAndreas(a_spot.at, a_anchor, Vec(a_spawnFeet));
+            CColPoint  point;
+            CEntity*   entity = nullptr;
+            if (!CWorld::ProcessVerticalLine(CVector(at.x, at.y, at.z + Parked::kGroundAbove), at.z - Parked::kGroundBelow, point, entity, true, false, false, true,
+                    false, false, nullptr)) {
+                ParkedWhy(a_spot, "no ground there yet");
+                return false;
+            }
+            const CVector ground(at.x, at.y, point.m_vecPoint.z);
+            const auto    name = NameOf(info, a_spot.model);
+            const auto    traits = VehicleKinds::TraitsOf(KindOf(info, a_spot.model));
+            const auto    size = FootprintOf(info);
+            auto          places = Parked::Candidates(Vec(ground), Pose::SanAndreasHeading(a_spot.heading));
+            std::erase_if(places, [&](const Vehicle::Spot& a_place) { return !Parked::ClearOfCj(a_place, size, Vec(a_feet)); });  // never on top of him
+            Vehicle::Spot spot;
+            float         groundZ = 0.0f;
+            int           tried = 0;
+            if (places.empty() || !FirstSpot(places, ground, ground + CVector(0.0f, 0.0f, 1.0f), size, traits.maxUneven, spot, groundZ, tried)) {
+                ParkedWhy(a_spot, std::format("no flat, clear place for the {} ({} tried)", name, tried));
+                return false;
+            }
+            CVehicle* vehicle = Create(info, a_spot.model);
+            if (!vehicle) {
+                ParkedWhy(a_spot, std::format("no way to make the {}", name));
+                return false;
+            }
+            Park(vehicle, info, spot, groundZ);
+            Slot& slot = state.slots[index];
+            slot = Slot{};
+            slot.ref = CPools::GetVehicleRef(vehicle);
+            slot.spawned = ++state.spawns;
+            slot.name = name;
+            slot.parked = a_spot.id;
+            slot.dropFar = true;
+            slot.from = a_spot.id;
+            ParkedWhy(a_spot, "");
+            const CVector& now = vehicle->GetPosition();
+            Log(std::format("vehicle: {} parked at spot {} ({}) in slot {} at ({:.1f},{:.1f},{:.1f}), place {} of {}", name, a_spot.id, a_spot.name, index, now.x,
+                now.y, now.z, tried, places.size()));
+            return true;
+        }
+    }
+
+    void UpdateParked(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, const float (&a_anchor)[3], std::uint8_t a_world, bool a_active)
+    {
+        if (!a_active || CTimer::m_UserPause || CTimer::m_CodePause) {
+            return;
+        }
+        const double     now = CTimer::m_snTimeInMilliseconds / 1000.0;  // game time: a pause doesn't count
+        const float      base = a_ped->GetDistanceFromCentreOfMassToBaseOfModel();
+        const CVector    spawnFeet = a_spawn - CVector(0.0f, 0.0f, base + a_lift);
+        const CVector    feet = a_ped->GetPosition() - CVector(0.0f, 0.0f, base);
+        const Pose::Vec3 anchor{ a_anchor[0], a_anchor[1], a_anchor[2] };
+        const auto       cj = Parked::ToSkyrim(Vec(feet), anchor, Vec(spawnFeet));
+
+        // The ones out: CJ getting in takes one, a wreck stays a wreck, and one nobody uses goes once he is far.
+        for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax); i++) {
+            Slot& slot = state.slots[i];
+            auto* vehicle = slot.dropFar ? Live(i) : nullptr;
+            if (!vehicle) {
+                continue;
+            }
+            if (vehicle == Driven(a_ped) || vehicle == a_ped->m_pVehicle) {  // in it, or getting in
+                if (slot.parked >= 0) {
+                    state.parked.Taken(static_cast<std::uint16_t>(slot.parked), now);
+                    Log(std::format("vehicle: CJ took the {} parked at spot {}; back {:.0f} s on, once he has been {:.0f} m away", slot.name, slot.parked,
+                        Parked::kBackSeconds, Parked::kFarRadius));
+                }
+                slot.parked = -1;
+                slot.dropFar = false;  // his now
+                continue;
+            }
+            if (slot.parked >= 0 && Wrecked(vehicle)) {
+                state.parked.Taken(static_cast<std::uint16_t>(slot.parked), now);
+                Log(std::format("vehicle: the {} parked at spot {} was wrecked", slot.name, slot.parked));
+                slot.parked = -1;  // the wreck stays until CJ is far
+            }
+            const CVector& at = vehicle->GetPosition();
+            if (const float across = std::hypot(at.x - feet.x, at.y - feet.y); Parked::Drops(across, false)) {
+                Log(std::format("vehicle: the {} {} dropped, CJ {:.0f} m off", slot.parked >= 0 ? "parked" : "wrecked", slot.name, across));
+                if (slot.parked >= 0) {
+                    state.parked.Dropped(static_cast<std::uint16_t>(slot.parked));
+                }
+                Remove(i);
+            }
+        }
+
+        // A spot that is out but has no vehicle any more lost it some other way (another vehicle took its slot, a broken
+        // position): taken. Then the spots near CJ, one tried a frame.
+        bool tried = false;
+        for (const auto& spot : Parked::kSpots) {
+            if (state.parked.StatusOf(spot.id) == Parked::Status::Out) {
+                bool there = false;
+                for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && !there; i++) {
+                    there = state.slots[i].parked == spot.id && Live(i);
+                }
+                if (!there) {
+                    state.parked.Taken(spot.id, now);
+                    Log(std::format("vehicle: the vehicle parked at spot {} ({}) is gone", spot.id, spot.name));
+                }
+                continue;
+            }
+            if (!state.parked.Tick(spot, now, Parked::DistanceTo(spot, a_world, cj)) || tried) {
+                continue;
+            }
+            bool wreck = false;  // the last one's wreck still stands there
+            for (int i = 0; i < static_cast<int>(Protocol::kVehicleMax) && !wreck; i++) {
+                wreck = state.slots[i].dropFar && state.slots[i].from == spot.id && Live(i);
+            }
+            if (wreck) {
+                state.parked.Tried(spot.id, now);
+                continue;
+            }
+            tried = true;
+            if (PutOut(spot, anchor, spawnFeet, feet)) {
+                state.parked.Out(spot.id);
+            } else {
+                state.parked.Tried(spot.id, now);
             }
         }
     }

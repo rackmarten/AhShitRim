@@ -12,6 +12,7 @@
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/Projectiles.h"
+#include "player/StealthKills.h"
 #include "run_over.h"
 #include "weapons.h"
 
@@ -174,8 +175,9 @@ namespace AhShitRim::Shots
         }
 
         // a_skyrimDamage, when over 0, is the damage itself (a mega punch's), not worked out from San Andreas's.
+        // a_stealthKill: CJ's knife stealth kill, which CJ may remark on crouched or not.
         void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
-            bool a_blood = true, float a_skyrimDamage = 0.0f)
+            bool a_blood = true, float a_skyrimDamage = 0.0f, bool a_stealthKill = false)
         {
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
@@ -184,7 +186,7 @@ namespace AhShitRim::Shots
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
             // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
-            const bool unseen = a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead();
+            const bool unseen = a_stealthKill || (a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead());
             // Skyrim's hit below may make it a crime; running over an animal isn't one (Wanted::Pardon).
             auto* crimeFaction = actor->GetCrimeFaction();
             Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
@@ -386,6 +388,7 @@ namespace AhShitRim::Shots
                     ObjectHits::Struck(a_player, blocker, Traps::Hit::Bullet, a_shot.weaponType,
                         a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType, a_shot.skill));
                 }
+                ObjectHits::BulletLanded(a_player, at, a_shot.weaponType);  // oil there catches fire
             } else {
                 state.misses++;
             }
@@ -500,6 +503,24 @@ namespace AhShitRim::Shots
             }
         }
 
+        // Skyrim's own "sneak attack for 3.0X damage" message (its game settings), and a log line for the first few.
+        void SneakAttack(RE::Actor* a_actor, float a_multiplier)
+        {
+            static int logged = 0;
+            if (logged < kLoggedHits) {
+                logged++;
+                SKSE::log::info("shots: knife sneak attack on {} ({:08X}), {:.0f}x damage", a_actor->GetName(), a_actor->GetFormID(), a_multiplier);
+            }
+            auto* settings = RE::GameSettingCollection::GetSingleton();
+            auto* main = settings ? settings->GetSetting("sSuccessfulSneakAttackMain") : nullptr;
+            auto* end = settings ? settings->GetSetting("sSuccessfulSneakAttackEnd") : nullptr;
+            const char* before = main ? main->GetString() : nullptr;
+            const char* after = end ? end->GetString() : nullptr;
+            if (before && *before && after) {
+                RE::SendHUDMessage::ShowHUDMessage(std::format("{}{:.1f}{}", before, a_multiplier, after).c_str(), nullptr, true);
+            }
+        }
+
         void Blow(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             state.blows++;
@@ -536,10 +557,18 @@ namespace AhShitRim::Shots
                 victim.actor = actor;
                 victim.at = RE::NiPoint3(point.x, point.y, feet.z + height);
                 victim.normal = -facing;
-                const float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
+                float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
                 if (mega) {
                     MegaBlow(a_player, victim, a_shot, facing, sa);
                 } else {
+                    // v38: Skyrim's sneak attack for a crouched knife blow on someone who doesn't detect the player.
+                    const float sneak = a_shot.weaponType == Weapons::Knife && a_player->IsSneaking()
+                                            ? Damage::SneakMultiplier(a_shot.weaponType, true, actor->RequestDetectionLevel(a_player) > 0)
+                                            : 1.0f;
+                    if (sneak > 1.0f) {
+                        sa *= sneak;
+                        SneakAttack(actor, sneak);
+                    }
                     Hurt(a_player, victim, a_shot, facing, sa);
                 }
                 landedAny = true;
@@ -619,6 +648,8 @@ namespace AhShitRim::Shots
             }
             if (shot.kind == Protocol::kShotMelee) {
                 Blow(a_player, shot, a_anchor);
+            } else if (shot.kind == Protocol::kShotStealthGrab || shot.kind == Protocol::kShotStealthStab) {
+                StealthKills::OnShot(a_player, shot);
             } else if (shot.kind == Protocol::kShotFlame) {
                 Projectiles::Flame(a_player, shot, a_anchor);
             } else {
@@ -631,6 +662,7 @@ namespace AhShitRim::Shots
 
     void Clear()
     {
+        StealthKills::Clear();
         state.queue.clear();
         state.landed.Clear();
         state.hits.Clear();  // hits that never went belong to the game before
@@ -650,6 +682,23 @@ namespace AhShitRim::Shots
         shot.weaponType = a_weapon;
         shot.kind = Protocol::kShotBullet;
         Hurt(a_player, victim, shot, a_dir, a_saDamage, a_blood);
+    }
+
+    void Kill(RE::PlayerCharacter* a_player, RE::Actor* a_actor, std::uint8_t a_weapon, const RE::NiPoint3& a_at, const RE::NiPoint3& a_dir)
+    {
+        if (!a_player || !a_actor || a_actor->IsDead()) {
+            return;
+        }
+        Victim victim;
+        victim.actor = a_actor;
+        victim.at = a_at;
+        victim.normal = -a_dir;
+        Protocol::ShotEvent shot{};
+        shot.weaponType = a_weapon;
+        shot.kind = Protocol::kShotMelee;
+        const float health = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+        Hurt(a_player, victim, shot, a_dir, Damage::SanAndreasDamage(a_weapon), true, MegaPunch::DamageFor(health), true);
+        state.hits.Add(a_weapon);
     }
 
     Damage::Class ClassOf(RE::Actor* a_actor) { return ClassOfRace(a_actor); }
