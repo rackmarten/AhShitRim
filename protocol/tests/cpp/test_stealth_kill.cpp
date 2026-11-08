@@ -1,5 +1,6 @@
 #include <ostream>  // before doctest, so it can print string_view
 #include <string_view>
+#include <iterator>
 
 #include <doctest/doctest.h>
 
@@ -209,4 +210,16 @@ TEST_CASE("stealth kill: the stab lands as San Andreas's victim would start dyin
     CHECK(KillSeconds(2.4f) == doctest::Approx(2.4f));
     CHECK(KillSeconds(30.0f) == doctest::Approx(kKillMax));
     CHECK(KillSeconds(0.0f) > kStabDefault);
+}
+
+TEST_CASE("stealth kill: Skyrim's sneak kill move, on level ground")
+{
+    REQUIRE(std::size(kKillMoves) == 2);
+    CHECK(kKillMoves[0].formId == 0x000F4679u);
+    CHECK(kKillMoves[0].editorId == "pa_1HMSneakKillBackA");
+    CHECK(kKillMoves[1].formId == 0x000F465Au);
+    CHECK(KillMoveFits({ 0.0f, 0.0f, 0.0f }, { 0.0f, M(1.0f), M(0.3f) }));
+    CHECK(KillMoveFits({ 0.0f, 0.0f, M(0.3f) }, { 0.0f, M(1.0f), 0.0f }));
+    CHECK_FALSE(KillMoveFits({ 0.0f, 0.0f, 0.0f }, { 0.0f, M(1.0f), M(0.4f) }));
+    CHECK_FALSE(KillMoveFits({ 0.0f, 0.0f, M(0.4f) }, { 0.0f, M(1.0f), 0.0f }));
 }

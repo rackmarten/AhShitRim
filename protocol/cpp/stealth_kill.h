@@ -239,6 +239,33 @@ namespace AhShitRim::StealthKill
         return cj ? a_cjAnim * kStabShare : kStabDefault;
     }
 
+    // ---- The victim's half: Skyrim's own sneak kill move ----
+
+    // Skyrim.esm's paired idles the player plays on the victim, the first that plays: the one-handed sneak kill from
+    // behind (the dagger's), then the one-handed back stab. The player is hidden (CJ is drawn from San Andreas), so
+    // only the victim's half shows.
+    struct KillMove
+    {
+        std::uint32_t    formId;    // in Skyrim.esm
+        std::string_view editorId;  // for the logs
+    };
+    inline constexpr KillMove kKillMoves[] = {
+        { 0x000F4679, "pa_1HMSneakKillBackA" },    // event pa_KillMoveSneakBackA
+        { 0x000F465A, "pa_1HMKillMoveBackStab" },  // event pa_KillMove1HMBackStab
+    };
+
+    inline constexpr float kKillMoveStep = 0.35f;     // metres of height between CJ and the victim a kill move still plays on (a slope or a stair past it ragdolls)
+    inline constexpr float kKillMoveConfirm = 0.5f;   // s after PlayIdle by which the victim must be in the kill move, else the ragdoll
+    inline constexpr float kKillMoveMax = 8.0f;       // s the player is held for one at most
+
+    // Whether the kill move may play on a victim at a_victim with CJ at a_cj (feet, Skyrim units): level enough
+    // ground between them. Anything else (a race without it, no room) shows as Skyrim not starting it.
+    inline bool KillMoveFits(const Vec3& a_cj, const Vec3& a_victim)
+    {
+        const float dz = std::fabs(a_victim.z - a_cj.z) * Pose::kMetersPerUnit;
+        return std::isfinite(dz) && dz <= kKillMoveStep;
+    }
+
     // How long CJ's kill runs: his anim, at most kKillMax; kStabDefault's anim when it isn't known.
     inline float KillSeconds(float a_cjAnim)
     {

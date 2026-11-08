@@ -1019,7 +1019,11 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
-            if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            const bool killMove = StealthKills::HoldsPlayer(a_player);  // a stealth kill's kill move moves the player itself
+            if (killMove) {
+                state.lastPlaced = a_player->GetPosition();
+            }
+            if (valid && !scene && !unpinned && !killMove) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -1530,6 +1534,7 @@ namespace AhShitRim::PlayerSync
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
         Shots::OnDataLoaded();
+        StealthKills::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
