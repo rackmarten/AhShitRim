@@ -21,9 +21,10 @@
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
     scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
+    scripts/hit-test.ps1 -Scenario ridecrew # the same with a recruited homie of the Grove Street crew, at the Whiterun stables
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
     [string] $Start = 'Riverwood',
     [int] $TimeoutSeconds = 300,
@@ -32,7 +33,7 @@ param(
 
 . "$PSScriptRoot/common.ps1"
 
-if ($Scenario -eq 'crew' -and -not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }  # the Whiterun stables' cell, by the gate
+if ($Scenario -in 'crew', 'ridecrew' -and -not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }  # the Whiterun stables' cell, by the gate
 
 $config = Get-LocalConfig
 $skyrim = Get-RequiredSetting $config 'SkyrimPath'

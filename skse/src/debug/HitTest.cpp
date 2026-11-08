@@ -73,6 +73,7 @@ namespace AhShitRim::HitTest
             bool               crew = false;     // the scenario: the Grove Street crew (v39)
             RE::ActorHandle    hurt;             // the follower CJ shot
             bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
+            bool                crewRider = false;  // riders with a recruited homie of the crew (v39) as the follower
             RE::ObjectRefHandle follower;
             std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
             std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
@@ -649,6 +650,30 @@ namespace AhShitRim::HitTest
         // One of Whiterun's guards beside the player, made a follower, to ride in the Sandking's passenger seat.
         void PlaceFollower(RE::PlayerCharacter* a_player)
         {
+            if (state.crewRider) {
+                // The crew's homie instead: CJ on foot first so the spots fill, then one of them joins (hit-test.ps1 -Scenario ridecrew).
+                if (!PlayerSync::DebugOwned()) {
+                    SKSE::log::info("hit test: riders: handing the player over to CJ on foot for the crew");
+                    PlayerSync::DebugToggle();
+                    state.timer = 6.0f;
+                    return;
+                }
+                if (state.timer < 18.0f) {
+                    return;
+                }
+                const int joined = Homies::DebugRecruit(a_player, 1);
+                auto*     homie = Homies::DebugFollower();
+                SKSE::log::info("hit test: riders: {} homies about, {} joined", Homies::DebugCount(false), joined);
+                if (homie) {
+                    state.follower = homie->GetHandle();
+                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Sandking
+                    SKSE::log::info("hit test: riders: homie {} ({:08X}) is the follower", homie->GetName(), homie->GetFormID());
+                } else if (state.timer >= 30.0f) {
+                    SKSE::log::warn("hit test: could not recruit a homie");
+                    state.phase = Phase::Done;
+                }
+                return;
+            }
             auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
             auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
             auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
@@ -927,7 +952,7 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew") {
             return;
         }
         state.crew = scenario == "crew";
@@ -938,7 +963,11 @@ namespace AhShitRim::HitTest
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
         state.pad = scenario == "pad";
-        state.riders = scenario == "riders";
+        state.riders = scenario == "riders" || scenario == "ridecrew";
+        state.crewRider = scenario == "ridecrew";
+        if (state.crewRider) {
+            Homies::DebugThanes(1);
+        }
         state.seconds = state.stealth ? 12.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
