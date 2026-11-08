@@ -14,7 +14,7 @@
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
-    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move, then CJ walks and runs off with the crew
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
 #>

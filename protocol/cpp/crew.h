@@ -454,13 +454,14 @@ namespace AhShitRim::Crew
             }
             float goal = a_still;
             if (a_moving && !a_aiming && Speed() >= kMinSpeed) {
-                goal = Pose::SanAndreasHeading(Pose::HeadingOf(_vx, _vy));
+                goal = Travel();
             }
             _heading = Scene::TurnToward(_heading, goal, kTurnRate * a_seconds);
             return _heading;
         }
 
         float Speed() const { return std::hypot(_vx, _vy); }
+        float Travel() const { return Pose::SanAndreasHeading(Pose::HeadingOf(_vx, _vy)); }  // the way he goes
 
     private:
         bool       _have = false;

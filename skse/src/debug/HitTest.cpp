@@ -38,6 +38,7 @@ namespace AhShitRim::HitTest
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
             CrewOut,    // F10 out and back: the crew comes again
             CrewMoved,  // the player moved as fast travel moves it: the followers come behind
+            CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
             Done,
         };
 
@@ -63,6 +64,8 @@ namespace AhShitRim::HitTest
             std::vector<RE::FormID>          victims;  // respawns
             bool               crew = false;     // the scenario: the Grove Street crew (v39)
             RE::ActorHandle    hurt;             // the follower CJ shot
+            float              moveX = 0.0f;     // CrewWalk: CJ's stick
+            float              moveY = 0.0f;
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -377,6 +380,16 @@ namespace AhShitRim::HitTest
         }
     }
 
+    bool Drive(float& a_moveX, float& a_moveY)
+    {
+        if (state.phase != Phase::CrewWalk) {
+            return false;
+        }
+        a_moveX = state.moveX;
+        a_moveY = state.moveY;
+        return true;
+    }
+
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
@@ -568,11 +581,30 @@ namespace AhShitRim::HitTest
             break;
         case Phase::CrewMoved:
             if (state.timer >= 12.0f) {
-                SKSE::log::info("hit test: crew: {} following after the move ({} about)", Homies::DebugCount(true), Homies::DebugCount(false));
+                SKSE::log::info("hit test: crew: {} following after the move ({} about); CJ walks", Homies::DebugCount(true), Homies::DebugCount(false));
+                state.phase = Phase::CrewWalk;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewWalk:
+        {
+            // 0-6 s a walk ahead, 6-10 s standing, 10-16 s a run off to the right, 16-20 s standing.
+            const float t = state.timer;
+            const float x = t >= 10.0f && t < 16.0f ? 0.7f : 0.0f;
+            const float y = t < 6.0f ? 0.35f : t >= 10.0f && t < 16.0f ? 1.0f : 0.0f;
+            if (x != state.moveX || y != state.moveY) {
+                SKSE::log::info("hit test: crew: CJ's stick at ({:.2f},{:.2f}), {} following", x, y, Homies::DebugCount(true));
+            }
+            state.moveX = x;
+            state.moveY = y;
+            if (t >= 20.0f) {
+                state.moveX = state.moveY = 0.0f;
+                SKSE::log::info("hit test: crew: {} following after the walk", Homies::DebugCount(true));
                 SKSE::log::info("hit test: done after the crew run");
                 state.phase = Phase::Done;
             }
             break;
+        }
         case Phase::Killing:
             if (!PlayerSync::DebugOwned()) {
                 if (state.timer > 30.0f) {
