@@ -343,7 +343,7 @@ namespace AhShitRim::HitTest
                         auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
                         if (actor) {
                             actor->StopCombat();
-                            actor->SetPosition(actor->GetPosition() + RE::NiPoint3(6000.0f, 6000.0f, 0.0f));
+                            ref->SetPosition(ref->GetPosition() + RE::NiPoint3(6000.0f, 6000.0f, 0.0f));
                         }
                     }
                     state.attackers.clear();
