@@ -66,6 +66,8 @@ namespace AhShitRim::HitTest
             RE::ActorHandle    hurt;             // the follower CJ shot
             float              moveX = 0.0f;     // CrewWalk: CJ's stick
             float              moveY = 0.0f;
+            float              walkLog = 0.0f;   // CrewWalk: when a follower was last logged
+            RE::NiPoint3       followerWas;
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
@@ -597,6 +599,15 @@ namespace AhShitRim::HitTest
             }
             state.moveX = x;
             state.moveY = y;
+            if (t - state.walkLog >= 1.0f) {
+                if (auto* follower = Homies::DebugFollower()) {
+                    const auto at = follower->GetPosition();
+                    SKSE::log::info("hit test: crew: a follower {:.1f} m from the player, {:.1f} m/s", at.GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter,
+                        state.walkLog > 0.0f ? at.GetDistance(state.followerWas) / Pose::kUnitsPerMeter / (t - state.walkLog) : 0.0f);
+                    state.followerWas = at;
+                }
+                state.walkLog = t;
+            }
             if (t >= 20.0f) {
                 state.moveX = state.moveY = 0.0f;
                 SKSE::log::info("hit test: crew: {} following after the walk", Homies::DebugCount(true));
