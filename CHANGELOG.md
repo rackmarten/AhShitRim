@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Knife stealth kills, as San Andreas plays them: behind an unaware person (not fighting CJ, not seeing the Dragonborn, not running, back turned, within 2.5 m), holding the right mouse button with the knife raises it, and the left button grabs and stabs them with San Andreas's own animation and sound. The victim dies through Skyrim's own hit (kill credit, crime when someone sees it) and slumps into a ragdoll, and CJ may say a stealth kill line. Never on creatures, children or essential characters.
-- Stealth kill victims play Skyrim's own sneak kill move from behind, in step with CJ's stab, and fall back to the ragdoll on uneven ground or when Skyrim can't play it. `[Weapons] StealthKillMove=0` in `AhShitRim.ini` turns it off.
+- Knife stealth kills, as San Andreas plays them: behind an unaware person (not fighting CJ, not seeing the Dragonborn, not running, back turned, within 2.5 m, standing or sitting but not in bed), holding the right mouse button with the knife raises it, and the left button grabs and stabs them with San Andreas's own animation and sound. The victim dies through Skyrim's own hit (kill credit, crime when someone sees it) and slumps into a ragdoll, and CJ says his stealth kill line, cutting in over any fight line the stab got. Never on creatures, children or essential characters.
+- Stealth kill victims play Skyrim's own sneak kill move from behind, in step with CJ's stab, held where CJ grabbed them for the whole move as in San Andreas, and fall back to the ragdoll on uneven ground or when Skyrim can't play it. `[Weapons] StealthKillMove=0` in `AhShitRim.ini` turns it off.
 - A crouched knife hit on someone who doesn't detect the Dragonborn is Skyrim's sneak attack: three times the damage, with Skyrim's own message.
 - Protocol v36: `kProxyStealthKill` on the lock-on target's proxy, and the `kShotStealthGrab` and `kShotStealthStab` shots with the victim in `ShotEvent.target`.
 
