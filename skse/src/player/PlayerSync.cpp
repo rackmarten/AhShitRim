@@ -41,6 +41,7 @@
 #include "player/Hitboxes.h"
 #include "player/Projectiles.h"
 #include "player/Riders.h"
+#include "player/Homies.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
 #include "player/StealthKills.h"
@@ -558,6 +559,7 @@ namespace AhShitRim::PlayerSync
             CarHits::Clear();
             LockOn::Clear();
             Riders::Clear();
+            Homies::OnRelease(a_loading);  // v39: the crew goes, its followers come back at the next handover
             Hitboxes::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
@@ -651,6 +653,7 @@ namespace AhShitRim::PlayerSync
             CarHits::Clear();
             LockOn::Clear();
             Riders::Clear();
+            Homies::OnReanchor();  // v39: the followers come again behind CJ
             Hitboxes::Clear();
             Activation::Clear();
             AmmuNation::Close();
@@ -1097,6 +1100,7 @@ namespace AhShitRim::PlayerSync
                 valid ? pose.weaponType : 0, seekerAimed, vehicleModel);
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
             WorldPickups::Update(a_player, state.anchor, state.handover, a_delta, valid ? &pose : nullptr, Vitals::IsWasted() || state.reanchoring);
+            Homies::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, onFoot && !MenuHasInput(), target.id, a_delta);  // v39: the Grove Street crew
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -1186,6 +1190,7 @@ namespace AhShitRim::PlayerSync
                 Arms::Update();
                 CheatCodes::Update();
                 Police::Sweep(a_delta);
+                Homies::Sweep(a_delta);
                 GunRewards::Update();
                 MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
@@ -1357,6 +1362,13 @@ namespace AhShitRim::PlayerSync
                         if (button->IsDown() && !MenuHasInput() && !AmmuNation::IsOpen() && state.control == Scene::Control::Cj && !Vitals::IsDown()) {
                             state.input.AddInsult();
                             changed = true;
+                        }
+                        continue;
+                    }
+                    if ((code == Input::kDikG || code == Input::kDikH) && state.owned && !InVehicle()) {
+                        // v39: San Andreas's group keys, on foot: recruit, regroup, dismiss.
+                        if (button->IsDown() && !MenuHasInput() && !AmmuNation::IsOpen()) {
+                            Homies::OnKey(code == Input::kDikG);
                         }
                         continue;
                     }
@@ -1536,6 +1548,7 @@ namespace AhShitRim::PlayerSync
         Balance::OnDataLoaded();
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
+        Homies::OnDataLoaded();
         Shots::OnDataLoaded();
         StealthKills::OnDataLoaded();
         People::OnDataLoaded();

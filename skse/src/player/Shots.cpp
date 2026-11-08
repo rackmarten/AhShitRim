@@ -12,7 +12,9 @@
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/Projectiles.h"
+#include "player/Homies.h"
 #include "player/StealthKills.h"
+#include "crew.h"
 #include "run_over.h"
 #include "weapons.h"
 
@@ -49,6 +51,7 @@ namespace AhShitRim::Shots
             RE::BGSImpactDataSet*            bladeSet = nullptr;
             RE::BGSImpactDataSet*            bluntSet = nullptr;
             ProcessHitFn                     processHit = nullptr;
+            RE::Actor*                       shooter = nullptr;  // v39: the homie whose shot is being worked out, null for CJ's
             int                              logged = 0;
             int                              loggedBlocks = 0;
             // For the summary.
@@ -182,17 +185,25 @@ namespace AhShitRim::Shots
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * Balance::DealtFactor(a_player, a_shot.weaponType);
+            // v39: the crew. CJ's own hits on a homie have no aggressor and no crime, so he never turns on CJ; a homie's
+            // shot is his own (he is the aggressor, CJ gets no crime or skill for it) and does [Crew] DamageFactor of CJ's.
+            const auto  rule = Crew::RuleFor(Homies::IsHomie(actor), state.shooter != nullptr);
+            const float factor = state.shooter ? Homies::DamageFactor() : Balance::DealtFactor(a_player, a_shot.weaponType);
+            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * factor;
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
             // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
-            const bool unseen = a_stealthKill || (a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead());
+            const bool unseen = rule.crime && (a_stealthKill || (a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead()));
             // Skyrim's hit below may make it a crime; running over an animal isn't one (Wanted::Pardon).
             auto* crimeFaction = actor->GetCrimeFaction();
-            Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
+            if (rule.crime) {
+                Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
+            }
 
-            if (state.processHit) {
-                auto* hit = RE::HitData::Create(a_player, actor, nullptr, false);
+            if (!rule.aggressor && !state.shooter) {
+                actor->DoDamage(damage, nullptr, true);  // a homie hit by CJ: no attacker, nothing for his AI to answer
+            } else if (state.processHit) {
+                auto* hit = RE::HitData::Create(state.shooter ? state.shooter : static_cast<RE::Actor*>(a_player), actor, nullptr, false);
                 if (hit) {
                     hit->hitPosition = a_victim.at;
                     hit->hitDirection = a_dir;
@@ -220,7 +231,7 @@ namespace AhShitRim::Shots
                     RE::free(hit);
                 }
             } else {
-                actor->DoDamage(damage, a_player, true);
+                actor->DoDamage(damage, state.shooter ? state.shooter : static_cast<RE::Actor*>(a_player), true);
             }
 
             state.actorHits++;
@@ -345,7 +356,8 @@ namespace AhShitRim::Shots
                     auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
                     auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
                     const auto  layer = output.rootCollidable->GetCollisionLayer();
-                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
+                    if (ref == a_player || (actor && actor->IsDead()) || (state.shooter && Homies::IsHomie(ref)) ||
+                        (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
                         from = distance + 1.0f;  // through the player's own body, the dead and the clutter (not a lamp or a web)
                         continue;
                     }
@@ -402,8 +414,8 @@ namespace AhShitRim::Shots
             if (!(dir.Unitize() >= 1e-4f) || !(a_shot.range > 0.0f) || !std::isfinite(origin.x + origin.y + origin.z)) {
                 return;
             }
-            if (a_shot.flags & Protocol::kShotVehicleGun) {
-                Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas
+            if ((a_shot.flags & Protocol::kShotVehicleGun) || state.shooter) {
+                Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas; v39: a homie's gun
             }
             bool      hit = false;
             const int pellets = (a_shot.flags & Protocol::kShotSpread) ? Damage::Pellets(a_shot.weaponType) : 1;
@@ -411,8 +423,8 @@ namespace AhShitRim::Shots
                 const auto d = Damage::PelletDirection({ dir.x, dir.y, dir.z }, i, pellets, Damage::SpreadDegrees(a_shot.weaponType));
                 hit |= Ray(a_player, a_shot, origin, RE::NiPoint3(d.x, d.y, d.z));
             }
-            if (hit) {
-                state.hits.Add(a_shot.weaponType);  // a shotgun's blast is one hit, as in San Andreas
+            if (hit && !state.shooter) {
+                state.hits.Add(a_shot.weaponType);  // a shotgun's blast is one hit, as in San Andreas; a homie's hits aren't CJ's skill
             }
         }
 
@@ -652,6 +664,13 @@ namespace AhShitRim::Shots
                 StealthKills::OnShot(a_player, shot);
             } else if (shot.kind == Protocol::kShotFlame) {
                 Projectiles::Flame(a_player, shot, a_anchor);
+            } else if (Crew::FromCrew(shot.shooter)) {
+                // v39: a homie's bullet, from his gun, his to answer for
+                state.shooter = Homies::ActorOf(Crew::SlotOf(shot.shooter));
+                if (state.shooter && !state.shooter->IsDead()) {
+                    Bullet(a_player, shot, a_anchor);
+                }
+                state.shooter = nullptr;
             } else {
                 Bullet(a_player, shot, a_anchor);
             }

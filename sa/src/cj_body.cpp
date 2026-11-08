@@ -3,6 +3,7 @@
 #include "aim.h"
 #include "camera.h"
 #include "cj_gear.h"
+#include "crew_puppets.h"
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
@@ -283,12 +284,15 @@ namespace AhShitRim::CjBody
         // onScreen false skips the bones). Everyone else as before.
         void __fastcall UpdateAnimHook(CEntity* a_entity)
         {
-            if (a_entity && a_entity == FindPlayerPed(0)) {
+            const bool cj = a_entity && a_entity == FindPlayerPed(0);
+            if (cj || CrewPuppets::IsPuppet(a_entity)) {  // v39: the crew's puppets are hidden too
                 a_entity->bOffscreen = false;
                 a_entity->bDontUpdateHierarchy = false;
                 auto* clump = a_entity->m_pRwClump;
                 if (clump && a_entity->m_pRwObject->type == rpCLUMP && RpAnimBlendClumpGetFirstAssociation(clump)) {
-                    CjGear::HoldCjAnim(static_cast<CPlayerPed*>(a_entity));  // a skydive's pose, if he is in one
+                    if (cj) {
+                        CjGear::HoldCjAnim(static_cast<CPlayerPed*>(a_entity));  // a skydive's pose, if he is in one
+                    }
                     RpAnimBlendClumpUpdateAnimations(clump, CTimer::ms_fTimeStep / 50.0f, true);
                 }
                 return;
@@ -535,6 +539,37 @@ namespace AhShitRim::CjBody
             a_out.bones[i] = Body::ToBone(Body::SkinToWorld(ToFrame(skinToBone[i]), ToFrame(matrices[i]), atomicFrame, local), Vec(a_feet));
         }
         return true;
+    }
+
+    Body::RwRows Rows(const RwMatrixTag& a_m) { return ToFrame(a_m); }
+
+    void AimRightArm(RpClump* a_clump, const CVector& a_forward, const CVector& a_target)
+    {
+        RpHAnimHierarchy* hierarchy = a_clump ? GetAnimHierarchyFromSkinClump(a_clump) : nullptr;
+        RwMatrix*         matrices = hierarchy ? RpHAnimHierarchyGetMatrixArray(hierarchy) : nullptr;
+        if (!matrices || (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) != 0) {
+            return;
+        }
+        const int upper = IndexOf(hierarchy, kBoneRightUpperArm), fore = IndexOf(hierarchy, kBoneRightForeArm), hand = IndexOf(hierarchy, kBoneRightHand);
+        const int leftUpper = IndexOf(hierarchy, kBoneLeftUpperArm);
+        if (upper < 0 || fore < 0 || hand < 0 || leftUpper < 0) {
+            return;
+        }
+        const auto       parents = ParentsOf(hierarchy);
+        const Pose::Vec3 rightShoulder = Vec(Pos(matrices[upper])), leftShoulder = Vec(Pos(matrices[leftUpper]));
+        const Pose::Vec3 forward = Aim::ChestFacing(rightShoulder, leftShoulder, Vec(a_forward));
+        const Pose::Vec3 right{ forward.y, -forward.x, 0.0f };
+        const CVector    shoulder = Pos(matrices[upper]);
+        const auto       line = Aim::ArmLine(forward, right, Vec(a_target - shoulder), false);
+        const auto       reach = Aim::ReachAlong(Vec(shoulder), line, (Pos(matrices[fore]) - shoulder).Magnitude(),
+                  (Pos(matrices[hand]) - Pos(matrices[fore])).Magnitude(), right);
+        Turn(hierarchy, parents, matrices, upper, shoulder, Pos(matrices[fore]) - shoulder, Vector(reach.elbow) - shoulder);
+        const CVector elbow = Pos(matrices[fore]);
+        Turn(hierarchy, parents, matrices, fore, elbow, Pos(matrices[hand]) - elbow, Vector(reach.hand) - elbow);
+        const RwMatrix& h = matrices[hand];
+        const CVector   axis(h.right.x, h.right.y, h.right.z);
+        Turn(hierarchy, parents, matrices, hand, Pos(h), axis, a_target - Pos(h));
+        ShoulderBoneRotation(a_clump);
     }
 
     CVector HipFacing(CPlayerPed* a_ped)
