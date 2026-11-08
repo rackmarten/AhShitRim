@@ -10,7 +10,6 @@
 
 #include <plugin.h>
 
-#include <CAnimBlendAssocGroup.h>
 #include <CAnimBlendAssociation.h>
 #include <CAnimBlendHierarchy.h>
 #include <CAnimBlendStaticAssociation.h>
@@ -98,15 +97,18 @@ namespace AhShitRim::CjMelee
         {
             const auto* info = CWeaponInfo::GetWeaponInfo(WEAPONTYPE_KNIFE, 1);
             const int   group = info && info->m_nAnimToPlay > 0 ? static_cast<int>(info->m_nAnimToPlay) : kGroupStealthKnife;
-            CAnimBlock* block = CAnimManager::ms_aAnimAssocGroups[group].m_pAnimBlock;
+            // The group's file by its name. (plugin-sdk's ms_aAnimAssocGroups is the address of San Andreas's pointer
+            // to the groups, not the groups.)
+            const char* name = CAnimManager::GetAnimBlockName(group);
+            const int   index = name && *name ? CAnimManager::GetAnimationBlockIndex(name) : -1;
             if (!state.loggedGroup) {
                 state.loggedGroup = true;
-                Log(std::format("melee: the knife's stealth kill plays from animation group {} ({})", group, block ? CAnimManager::GetAnimBlockName(group) : "no file"));
+                Log(std::format("melee: the knife's stealth kill plays from animation group {} ({}, file {})", group, name ? name : "no file", index));
             }
-            if (!block) {
+            if (index < 0) {
                 return -1;
             }
-            const int index = static_cast<int>(block - CAnimManager::ms_aAnimBlocks);
+            CAnimBlock* block = &CAnimManager::ms_aAnimBlocks[index];
             if (!block->bLoaded) {
                 CStreaming::RequestModel(kIfpBase + index, 0x2 | 0x8);
                 return -1;

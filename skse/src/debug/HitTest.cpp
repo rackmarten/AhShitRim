@@ -48,7 +48,7 @@ namespace AhShitRim::HitTest
         } state;
 
         constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
-        constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a wolf and a guard facing CJ, off to the sides
+        constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a guard facing CJ, off to the side
 
         void RunConsole(const std::string& a_command)
         {
@@ -179,7 +179,8 @@ namespace AhShitRim::HitTest
             return ref->As<RE::Actor>();
         }
 
-        // A guard just ahead of CJ with his back to him, a wolf to the left and a guard to the right facing CJ.
+        // A guard just ahead of CJ with his back to him, and one to the right facing CJ. (A wolf would set on CJ and be
+        // the lock-on's first choice, as a hostile is.)
         void PlaceVictims(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_feet, float a_heading)
         {
             const RE::NiPoint3 ahead(std::sin(a_heading), std::cos(a_heading), 0.0f);
@@ -187,7 +188,6 @@ namespace AhShitRim::HitTest
             if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead, a_heading)) {
                 state.victim = guard->GetHandle();
             }
-            PlaceAt(a_player, Wanted::kWolf, a_feet + ahead * kVictimAhead - right * kOthersAside, a_heading);
             PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead + right * kOthersAside, a_heading + Pose::kPi);
         }
 

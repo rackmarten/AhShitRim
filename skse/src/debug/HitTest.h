@@ -8,7 +8,7 @@
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,
 //  - stealth (v36): hands it over on foot instead, gives CJ the knife, places one of Whiterun's guards 1.6 m ahead with his
-//    back to CJ (a wolf and a guard facing him off to the sides), then holds the right mouse button and clicks the left
+//    back to CJ (and a guard facing him off to the side), then holds the right mouse button and clicks the left
 //    one, for the knife stealth kill; each one's StealthKill::Check verdict is logged every second and the guard's fate at the end,
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
