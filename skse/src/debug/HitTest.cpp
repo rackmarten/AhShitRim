@@ -4,6 +4,7 @@
 #include "link/LinkService.h"
 #include "pad.h"
 #include "player/PlayerSync.h"
+#include "player/LockOn.h"
 #include "player/Police.h"
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
@@ -280,9 +281,72 @@ namespace AhShitRim::HitTest
                     const int fired = static_cast<std::uint16_t>(pose.shots - before.shots);
                     PadCheck(fired > 0, std::format("RT fires {} shots:", fired));
                     PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    // The gun lock: two guards ahead, one each side of the camera, set on CJ.
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        const float view = pose.viewHeading;
+                        for (const float side : { -0.35f, 0.35f }) {
+                            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
+                            auto  ref = base ? player->PlaceObjectAtMe(base, false) : nullptr;
+                            if (!ref) {
+                                continue;
+                            }
+                            const float h = view + side;  // the pose's view heading is Skyrim's convention (Pose::HeadingOf)
+                            ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * 700.0f, std::cos(h) * 700.0f, 0.0f));
+                            state.attackers.push_back(ref->GetHandle());
+                        }
+                        SKSE::log::info("hit test: pad: {} guards placed 10 m ahead, either side of the camera", state.attackers.size());
+                    }
+                    state.step = 20;
+                    state.timer = 0.0f;
+                }
+                break;
+            case 20:  // LT with the pistol: the lock turns the camera by itself
+                if (state.timer >= 3.0f) {
+                    if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                        SetOn(player);
+                    }
+                    before = pose;
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.9f);
+                    PadNext();
+                }
+                break;
+            case 21:
+                if (state.timer >= 2.0f) {
+                    float turned = (pose.viewHeading - before.viewHeading) * 57.29578f;
+                    while (turned > 180.0f) {
+                        turned -= 360.0f;
+                    }
+                    while (turned < -180.0f) {
+                        turned += 360.0f;
+                    }
+                    before = pose;
+                    peak = static_cast<float>(LockOn::DebugGunTarget());
+                    PadCheck(LockOn::DebugGunTarget() != 0 && std::fabs(turned) > 3.0f,
+                        std::format("LT locks on to {:08X} and the camera turns {:.0f} degrees onto it, the right stick untouched:", LockOn::DebugGunTarget(), turned));
+                    PlayerSync::DebugPad(Pad::kRight, 1.0f);
+                    PadNext();
+                }
+                break;
+            case 22:
+                if (state.timer >= 0.2f) {
+                    PlayerSync::DebugPad(Pad::kRight, 0.0f);
+                }
+                if (state.timer >= 1.5f) {
+                    const auto first = static_cast<RE::FormID>(peak);
+                    PadCheck(LockOn::DebugGunTarget() != 0 && LockOn::DebugGunTarget() != first && pose.weaponType == before.weaponType,
+                        std::format("the d-pad's right shifts the lock {:08X} -> {:08X}, the weapon stays {}:", first, LockOn::DebugGunTarget(), pose.weaponType));
+                    PlayerSync::DebugPad(Pad::kLeftTrigger, 0.0f);
+                    for (const auto& handle : state.attackers) {
+                        if (auto ref = handle.get()) {
+                            ref->Disable();
+                            ref->SetDelete(true);
+                        }
+                    }
+                    state.attackers.clear();
                     SKSE::log::info("hit test: pad: CJ into a Sandking where he stands");
                     PlayerSync::TakeOverInVehicle(kSandking);
-                    PadNext();
+                    state.step = 11;
+                    state.timer = 0.0f;
                 }
                 break;
             case 11:  // RT accelerates

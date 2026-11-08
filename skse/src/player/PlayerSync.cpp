@@ -112,6 +112,8 @@ namespace AhShitRim::PlayerSync
             bool           padOn = true;          // [Input] Pad
             bool           padLast = false;       // the pad was the last thing used: the help box names its buttons
             std::chrono::steady_clock::time_point padTime{};  // the last pad update, for Back's hold in real time
+            bool           gunLock = false;       // the pad's gun lock holds someone (LockOn): the d-pad shifts it
+            int            padShift = 0;          // the d-pad's left or right for the gun lock, for LockOn's next frame
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -1090,8 +1092,18 @@ namespace AhShitRim::PlayerSync
                 aim.fire = state.input.Firing();
                 aim.heading = pose.heading;
                 aim.weapon = pose.weaponType;
+                // The pad's LT (not the mouse's button) locks a gun on (DESIGN.md, Controller).
+                aim.padLock = state.padOn && state.pad.LeftTrigger() >= Pad::kTriggerHeld && !state.input.MouseAiming();
+                aim.shift = std::exchange(state.padShift, 0);
+                aim.rightX = state.pad.RightX();
+                aim.rightY = state.pad.RightY();
             }
+            state.padShift = 0;
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
+            state.gunLock = target.gunLock;
+            if (target.gunLock) {
+                state.input.AddMouseCounts(target.mouseX, target.mouseY);  // the camera onto the target, published next frame
+            }
             CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target.id, target.stealth);
             StealthKills::Update(a_player, a_delta);
             // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
@@ -1373,11 +1385,19 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             state.input.SetPad(frame.actions);
-            state.input.AddMouseCounts(frame.mouseX, AmmuNation::IsOpen() ? 0.0 : frame.mouseY);
+            const bool locked = state.gunLock && !inVehicle && state.pad.LeftTrigger() >= Pad::kTriggerHeld;
+            if (!locked) {
+                // The right stick looks, but not while the gun lock steers the camera (pushed hard it drops the lock instead).
+                state.input.AddMouseCounts(frame.mouseX, AmmuNation::IsOpen() ? 0.0 : frame.mouseY);
+            }
             const bool forCj = live && !AmmuNation::IsOpen();
             const bool own = forCj && state.control == Scene::Control::Cj && !Vitals::IsDown();
-            for (int i = 0; i < frame.nextSteps + frame.prevSteps && forCj; ++i) {
-                state.input.AddWheel(i < frame.nextSteps);  // weapons on foot, stations in a vehicle
+            if (locked) {
+                state.padShift = frame.nextSteps - frame.prevSteps;  // the d-pad shifts the lock, as San Andreas's L2 and R2 while targeting
+            } else {
+                for (int i = 0; i < frame.nextSteps + frame.prevSteps && forCj; ++i) {
+                    state.input.AddWheel(i < frame.nextSteps);  // weapons on foot, stations in a vehicle
+                }
             }
             if (frame.insult && own) {
                 state.input.AddInsult();

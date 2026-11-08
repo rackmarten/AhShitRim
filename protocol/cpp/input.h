@@ -361,6 +361,7 @@ namespace AhShitRim::Input
         bool HornHeld() const { return Held(Action::Horn) || (_pad.buttons & Protocol::kButtonHorn) != 0; }
 
         bool Aiming() const { return _aim || (_pad.buttons & Protocol::kButtonAim) != 0; }
+        bool MouseAiming() const { return _aim; }  // the right mouse button, not the pad's LT
         bool Firing() const { return _fire || (_pad.buttons & Protocol::kButtonFire) != 0; }
 
         // A mouse wheel step (v7): up tunes the next radio station in a vehicle, down the one before; on
