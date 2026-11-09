@@ -1046,9 +1046,9 @@ namespace AhShitRim::HitTest
                 }
                 static const char* const segs[] = { "on foot", "getting in", "driving", "getting out" };
                 auto* calendar = RE::Calendar::GetSingleton();
-                SKSE::log::info("hit test: soak: {:.0f} s, {}, game hour {:.1f}, {} following ({} about, nearest {:.1f} m), player health {:.0f}, armour {:.0f}, {} drives, {} wolf pairs, in {:08X}, CJ has the player: {}",
+                SKSE::log::info("hit test: soak: {:.0f} s, {}, game hour {:.1f}, {} following ({} about, nearest {:.1f} m), player health {:.0f}, armour {:.0f}, {} drives, {} wolf pairs, {} regrouped, in {:08X}, CJ has the player: {}",
                     state.timer, segs[state.soakSeg], calendar ? calendar->GetHour() : 0.0f, Homies::DebugCount(true), Homies::DebugCount(false), nearest,
-                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), Vitals::Armor(), state.soakCycles, state.soakWolves,
+                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), Vitals::Armor(), state.soakCycles, state.soakWolves, Homies::DebugRegrouped(),
                     a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0, PlayerSync::DebugOwned() ? "yes" : "NO");
             }
             if (state.timer >= state.seconds) {
