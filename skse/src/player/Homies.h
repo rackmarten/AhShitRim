@@ -62,6 +62,9 @@ namespace AhShitRim::Homies
     RE::Actor* DebugFollower();
     // The ridecrew scenario: every follower.
     std::vector<RE::Actor*> DebugFollowers();
+    int        DebugRegrouped();  // followers put back near CJ so far
+    float      DebugStray(RE::PlayerCharacter* a_player, float a_metres);  // a follower put on the navmesh that far behind; metres, -1 for none
+    bool       DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest);  // the navmesh nearest the player
 
     inline constexpr std::uint32_t kRecordType = 'ASCR';
     inline constexpr std::uint32_t kRecordVersion = 1;

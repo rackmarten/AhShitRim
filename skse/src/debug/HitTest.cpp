@@ -61,6 +61,7 @@ namespace AhShitRim::HitTest
             CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
             Driving,    // drive: CJ drives the Sandking a minute, traced every frame
             Soak,       // soak: crew on foot, a drive, F11, over and over for the whole time
+            CrewStray,  // a follower put 70 m behind, as one left by a car or stuck: he's put back near CJ and comes up
             Done,
         };
 
@@ -132,6 +133,12 @@ namespace AhShitRim::HitTest
             float              walkLog = 0.0f;   // CrewWalk: when a follower was last logged
             float              shotTimer = 0.0f;  // CrewFight: seconds to the next F11 screenshot (the crew's crash trigger in play)
             int                shots = 0;
+            int                walks = 0;
+            int                regroupedBefore = 0;  // Homies::DebugRegrouped() as the second walk started         // CrewWalk: the walks done (the first at the stables, the second after the move)
+            float              walkMax = 0.0f;    // the furthest a follower was while CJ moved, metres
+            float              stood = -1.0f;     // how far he was after CJ's first stand
+            float              followLog = 0.0f;  // the crew phases: seconds since a follower was last logged
+            RE::FormID         followerId = 0;
             RE::NiPoint3       followerWas;
             float               victimAhead = 1.6f * Pose::kUnitsPerMeter;  // the guard with his back to CJ ([Debug] HitTestStealthMeters)
             RE::FormID          nearRef = 0;      // [Debug] HitTestNear: a ref the player is moved to first, its stealth verdict logged
@@ -251,6 +258,38 @@ namespace AhShitRim::HitTest
                 state.attackers.push_back(ref->GetHandle());
                 SKSE::log::info("hit test: placed {} ({:08X}) {:.0f} units ahead", ref->GetName(), ref->GetFormID(), kAhead);
             }
+        }
+
+        // Once a second from the join on: how far a follower is from the player, how fast he goes and what his AI is up
+        // to, so a follower who stays put shows why.
+        void LogFollower(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            if ((state.followLog += a_delta) < 1.0f) {
+                return;
+            }
+            auto* follower = Homies::DebugFollower();
+            if (!follower) {
+                state.followerId = 0;
+                return;
+            }
+            const auto at = follower->GetPosition();
+            const bool same = follower->GetFormID() == state.followerId;
+            auto*      process = follower->GetActorRuntimeData().currentProcess;
+            auto*      package = follower->GetCurrentPackage();
+            const auto feet = a_player->GetPosition();
+            RE::NiPoint3 mesh;
+            const bool   onMesh = Homies::DebugNavmesh(a_player, mesh);
+            SKSE::log::info("hit test: crew: follower {:08X} {:.1f} m from the player, {:.1f} m/s, AI {}, process {}, package {:08X} type {}, 3D {}{}; "
+                            "the player {:.1f} m across and {:+.1f} m up from the nearest navmesh{}",
+                follower->GetFormID(), at.GetDistance(feet) / Pose::kUnitsPerMeter,
+                same ? at.GetDistance(state.followerWas) / Pose::kUnitsPerMeter / state.followLog : 0.0f, follower->IsAIEnabled() ? "on" : "off",
+                process ? static_cast<int>(process->processLevel.get()) : -1, package ? package->GetFormID() : 0u,
+                package ? static_cast<int>(package->packData.packType.get()) : -1, follower->Is3DLoaded() ? "loaded" : "not loaded",
+                follower->IsInCombat() ? ", in combat" : "", std::hypot(feet.x - mesh.x, feet.y - mesh.y) / Pose::kUnitsPerMeter,
+                (feet.z - mesh.z) / Pose::kUnitsPerMeter, onMesh ? "" : " (none found)");
+            state.followerId = follower->GetFormID();
+            state.followerWas = at;
+            state.followLog = 0.0f;
         }
 
         void SetOn(RE::PlayerCharacter* a_player)
@@ -1492,6 +1531,9 @@ namespace AhShitRim::HitTest
             return;
         }
         state.timer += a_delta;
+        if (state.phase >= Phase::CrewFight && state.phase <= Phase::CrewMoved) {
+            LogFollower(a_player, a_delta);
+        }
         switch (state.phase) {
         case Phase::MainMenu:
         case Phase::Loading:
@@ -1703,7 +1745,22 @@ namespace AhShitRim::HitTest
                 PlayerSync::DebugToggle();
                 state.timer = 0.0f;
             } else if (state.timer >= 8.0f && PlayerSync::DebugOwned()) {
-                SKSE::log::info("hit test: crew: {} following after F10 out and back; the player moves on, as fast travel moves it", Homies::DebugCount(true));
+                SKSE::log::info("hit test: crew: {} following after F10 out and back; CJ walks the stables' road", Homies::DebugCount(true));
+                state.phase = Phase::CrewWalk;
+                state.walkMax = 0.0f;
+                state.stood = -1.0f;
+                state.regroupedBefore = Homies::DebugRegrouped();
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewStray:
+            if (state.timer >= 12.0f) {
+                auto*       follower = Homies::DebugFollower();
+                const float off = follower ? follower->GetPosition().GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter : INFINITY;
+                const int   regrouped = Homies::DebugRegrouped() - state.regroupedBefore;
+                SKSE::log::info("hit test: crew: 12 s after, {} put back near CJ and the follower {:.1f} m off (within 6): {}", regrouped, off,
+                    regrouped > 0 && off <= 6.0f ? "ok" : "FAILED");
+                SKSE::log::info("hit test: crew: the player moves on, as fast travel moves it");
                 RunConsole("cow Tamriel 5 -3");
                 state.phase = Phase::CrewMoved;
                 state.timer = 0.0f;
@@ -1711,8 +1768,12 @@ namespace AhShitRim::HitTest
             break;
         case Phase::CrewMoved:
             if (state.timer >= 12.0f) {
-                SKSE::log::info("hit test: crew: {} following after the move ({} about); CJ walks", Homies::DebugCount(true), Homies::DebugCount(false));
+                SKSE::log::info("hit test: crew: {} following after the move ({} about); CJ walks again, up against Whiterun's walls", Homies::DebugCount(true),
+                    Homies::DebugCount(false));
                 state.phase = Phase::CrewWalk;
+                state.walkMax = 0.0f;
+                state.stood = -1.0f;
+                state.regroupedBefore = Homies::DebugRegrouped();
                 state.timer = 0.0f;
             }
             break;
@@ -1727,20 +1788,42 @@ namespace AhShitRim::HitTest
             }
             state.moveX = x;
             state.moveY = y;
-            if (t - state.walkLog >= 1.0f) {
-                if (auto* follower = Homies::DebugFollower()) {
-                    const auto at = follower->GetPosition();
-                    SKSE::log::info("hit test: crew: a follower {:.1f} m from the player, {:.1f} m/s", at.GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter,
-                        state.walkLog > 0.0f ? at.GetDistance(state.followerWas) / Pose::kUnitsPerMeter / (t - state.walkLog) : 0.0f);
-                    state.followerWas = at;
-                }
-                state.walkLog = t;
+            auto*       follower = Homies::DebugFollower();
+            const float off = follower ? follower->GetPosition().GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter : INFINITY;
+            if (x != 0.0f || y != 0.0f) {
+                state.walkMax = (std::max)(state.walkMax, off);
+            } else if (t >= 9.5f && t < 10.0f) {
+                state.stood = off;  // the last of the first stand
             }
             if (t >= 20.0f) {
                 state.moveX = state.moveY = 0.0f;
-                SKSE::log::info("hit test: crew: {} following after the walk", Homies::DebugCount(true));
-                SKSE::log::info("hit test: done after the crew run");
-                state.phase = Phase::Done;
+                if (state.walks++ == 0) {
+                    // On the stables' road, all navmesh: his AI keeps up (KeepOffsetFromActor, catching up at a run).
+                    constexpr float kMovingWithin = 12.0f, kStoodWithin = 5.0f;
+                    SKSE::log::info("hit test: crew: on the stables' road a follower was at most {:.1f} m off while CJ walked and ran (within {:.0f}), and "
+                                    "{:.1f} and {:.1f} m after CJ stood 4 s (within {:.0f}), {} following: {}",
+                        state.walkMax, kMovingWithin, state.stood, off, kStoodWithin, Homies::DebugCount(true),
+                        state.walkMax <= kMovingWithin && state.stood >= 0.0f && state.stood <= kStoodWithin && off <= kStoodWithin && Homies::DebugCount(true) == 2 ? "ok" : "FAILED");
+                    const float stray = Homies::DebugStray(a_player, 70.0f);
+                    SKSE::log::info("hit test: crew: a follower put {:.0f} m behind CJ on the navmesh, as a car or a rock leaves one", stray);
+                    state.regroupedBefore = Homies::DebugRegrouped();
+                    state.phase = Phase::CrewStray;
+                } else {
+                    // Up against the walls CJ walks where Skyrim has no navmesh: nobody's AI can follow him there, and with no
+                    // navmesh near him at all there's nowhere to put a straggler either, so he waits at its edge, still in the
+                    // crew. With navmesh near CJ he's put back within kRegroupAfter (or never fell that far behind).
+                    const int    regrouped = Homies::DebugRegrouped() - state.regroupedBefore;
+                    RE::NiPoint3 mesh;
+                    const bool   unreachable = !Homies::DebugNavmesh(a_player, mesh);
+                    const bool   cameUp = off <= Crew::kRegroupAfter && (regrouped > 0 || state.walkMax <= Crew::kRegroupAfter);
+                    SKSE::log::info("hit test: crew: after the walk against the walls a follower is {:.1f} m off (at most {:.1f} on the way), {} put back near CJ, "
+                                    "{} following{}: {}",
+                        off, state.walkMax, regrouped, Homies::DebugCount(true), unreachable && !cameUp ? ", CJ where Skyrim has no navmesh near him (he waits at its edge)" : "",
+                        (cameUp || unreachable) && Homies::DebugCount(true) == 2 ? "ok" : "FAILED");
+                    SKSE::log::info("hit test: done after the crew run");
+                    state.phase = Phase::Done;
+                }
+                state.timer = 0.0f;
             }
             break;
         }
