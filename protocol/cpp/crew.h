@@ -168,9 +168,39 @@ namespace AhShitRim::Crew
         return { a_leader.x + o.x * c + o.y * s, a_leader.y - o.x * s + o.y * c, a_leader.z };
     }
 
-    // A follower this far from CJ (metres, across) is put back behind him; this far he is lost and leaves.
+    // A follower this far from CJ (metres, across) is put back near him (Straggler); this far he is lost and leaves.
     inline constexpr float kRegroupAfter = 40.0f;
     inline constexpr float kLostAfter = 300.0f;
+    inline constexpr float kRegroupWait = 2.0f;  // seconds past kRegroupAfter before he's put back, and between tries
+
+    // San Andreas's ground isn't Skyrim's: CJ walks where Skyrim has no navmesh (up a rock, through a wall San Andreas
+    // doesn't have), and a follower's AI that finds no way there leaves him standing at the nearest place it can reach
+    // while CJ goes on. Once he has been over kRegroupAfter off for kRegroupWait he's to be put back near CJ, and again
+    // every kRegroupWait while he stays that far (no spot found for him).
+    class Straggler
+    {
+    public:
+        // Each frame with his distance from CJ (metres, across) and the frame's seconds: whether to put him back now.
+        bool Update(float a_distance, float a_seconds)
+        {
+            if (a_distance <= kRegroupAfter) {
+                _for = 0.0f;
+                return false;
+            }
+            _for += a_seconds;
+            if (_for < kRegroupWait) {
+                return false;
+            }
+            _for = 0.0f;
+            return true;
+        }
+
+        // While he can't be put back (CJ in a vehicle, a load or a remake under way): the wait starts again after.
+        void Hold() { _for = 0.0f; }
+
+    private:
+        float _for = 0.0f;
+    };
 
     // ---- Spots ----
     //

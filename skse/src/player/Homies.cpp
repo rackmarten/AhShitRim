@@ -36,6 +36,9 @@ namespace AhShitRim::Homies
         constexpr float      kDeadFor = 60.0f;           // a dead homie lies there this long (or until out of reach)
         constexpr float      kTargetRange = 50.0f;       // metres from CJ an enemy may be to be shot at
         constexpr int        kMakesPerFrame = 2;
+        constexpr int        kRegroupTries = 5;          // spots behind CJ tried to put a straggler back on
+        constexpr float      kRegroupRise = 300.0f;      // units: a spot this far above or below the player is a ledge
+        constexpr float      kRegroupGain = 10.0f;       // metres nearer CJ a straggler must come to be moved at all
         constexpr std::uint32_t kCopyBase = 0x6A000000;  // even ids for the homies' copies of San Andreas's models
 
         // The stables and the open towns' ways in (Skyrim.esm's spots, as the parked vehicles' table has them), in
@@ -96,6 +99,7 @@ namespace AhShitRim::Homies
             float           deadFor = -1.0f;
             float           offsetIn = 0.0f;
             Crew::Burst     burst;
+            Crew::Straggler straggler;
             RE::ActorHandle target;
             bool            aiming = false, firing = false;
             RE::NiPoint3    aim;
@@ -144,6 +148,7 @@ namespace AhShitRim::Homies
             float                    reanchorWait = 0.0f;
             float                    fresh = 0.0f;  // seconds left in which spots fill in view: the loading screen just went
             unsigned                 made = 0, drawn = 0;
+            unsigned                 regroupMisses = 0, regrouped = 0;
             float                    statIn = 5.0f;
         } state;
 
@@ -254,10 +259,25 @@ namespace AhShitRim::Homies
 
         // ---- Making and taking out ----
 
-        RE::NiPointer<RE::TESObjectREFR> Create(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, float a_heading)
+        // The loaded cell a_at is in, in the player's worldspace, else the player's own. A reference belongs in the cell
+        // it stands in: a probe's navmesh search (MoveToNearestNavmesh) only looks at its own cell's navmesh, and the
+        // player's cell, with CJ walking where Skyrim has none (up against Whiterun's walls), had none in reach.
+        RE::TESObjectCELL* CellAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at)
+        {
+            auto* own = a_player->GetParentCell();
+            if (!own || own->IsInteriorCell()) {
+                return own;
+            }
+            auto* tes = RE::TES::GetSingleton();
+            auto* cell = tes ? tes->GetCell(a_at) : nullptr;
+            return cell && cell->IsAttached() && !cell->IsInteriorCell() && cell->GetRuntimeData().worldSpace == a_player->GetWorldspace() ? cell : own;
+        }
+
+        RE::NiPointer<RE::TESObjectREFR> Create(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, float a_heading,
+            RE::TESObjectCELL* a_cell = nullptr)
         {
             auto* data = RE::TESDataHandler::GetSingleton();
-            auto* cell = a_player->GetParentCell();
+            auto* cell = a_cell ? a_cell : CellAt(a_player, a_at);
             if (!data || !a_base || !cell) {
                 return {};
             }
@@ -268,7 +288,7 @@ namespace AhShitRim::Homies
         }
 
         // The nearest navmesh to a_at, on loaded ground close to it (Police's probe: a marker, deleted the next frame).
-        bool GroundAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, RE::NiPoint3& a_out)
+        bool GroundAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, RE::NiPoint3& a_out, RE::NiPointer<RE::TESObjectREFR>* a_marker = nullptr)
         {
             auto marker = Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), a_at, 0.0f);
             if (!marker) {
@@ -277,6 +297,9 @@ namespace AhShitRim::Homies
             const bool found = marker->MoveToNearestNavmesh();
             a_out = marker->GetPosition();
             state.markers.push_back(marker->CreateRefHandle());
+            if (a_marker) {
+                *a_marker = marker;
+            }
             auto* cell = marker->GetParentCell();
             return found && std::hypot(a_out.x - a_at.x, a_out.y - a_at.y) <= kSnapFar && cell && cell->IsAttached();
         }
@@ -286,7 +309,7 @@ namespace AhShitRim::Homies
             float a_healthShare = 1.0f)
         {
             auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(kBase);
-            auto  ref = Create(a_player, base, a_at, a_heading);
+            auto  ref = Create(a_player, base, a_at, a_heading, a_player->GetParentCell());  // Skyrim moves an actor on to the cell he walks into
             auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
             if (!actor) {
                 if (ref) {
@@ -580,8 +603,59 @@ namespace AhShitRim::Homies
                 return;
             }
             const auto offset = Crew::FormationOffset(a_homie.formation);
-            CallActor(actor, "KeepOffsetFromActor", static_cast<RE::Actor*>(a_player), offset.x, offset.y, 0.0f, 0.0f, 0.0f, 0.0f, 300.0f, 60.0f);
+            if (!CallActor(actor, "KeepOffsetFromActor", static_cast<RE::Actor*>(a_player), offset.x, offset.y, 0.0f, 0.0f, 0.0f, 0.0f, 300.0f, 60.0f)) {
+                SKSE::log::warn("homies: {:08X} couldn't be told his place (KeepOffsetFromActor didn't go)", a_homie.id);
+            }
             a_homie.offsetIn = kOffsetEvery;
+        }
+
+        // A follower whose AI found no way to CJ (Crew::Straggler): put on the navmesh behind CJ, out of view, near enough
+        // to come up to his place (Wanted::SpawnSpot's near ring, straight behind first, then round to either side).
+        void Regroup(RE::PlayerCharacter* a_player, Homie& a_homie, RE::Actor* a_actor, float a_viewHeading)
+        {
+            const auto  feet = a_player->GetPosition();
+            const auto  camera = Wanted::CameraOf(Flat(feet), a_viewHeading);
+            const float was = a_actor->GetPosition().GetDistance(feet) / Crew::kMeter;
+            for (int i = 0; i < kRegroupTries; i++) {
+                const auto   spot = Wanted::SpawnSpot(Flat(feet), a_viewHeading, i, Wanted::kSpawnNear + 100.0f);
+                RE::NiPoint3                     at;
+                RE::NiPointer<RE::TESObjectREFR> marker;
+                if (!GroundAt(a_player, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), at, &marker) || std::abs(at.z - feet.z) > kRegroupRise ||
+                    Wanted::InView(camera, a_viewHeading, Flat(at))) {
+                    continue;
+                }
+                a_actor->MoveTo(marker.get());  // into the marker's cell, which SetPosition wouldn't change
+                TellPlace(a_player, a_homie);
+                state.regrouped++;
+                SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back {:.0f} m behind him", a_homie.id, was, at.GetDistance(feet) / Crew::kMeter);
+                return;
+            }
+            // None there (CJ in a cell with no navmesh at all): the navmesh nearest CJ in the follower's own cell, as close
+            // as his AI can get, if that's out of view and kRegroupGain nearer.
+            auto*       own = CellAt(a_player, a_actor->GetPosition());
+            std::string why = own && own->IsAttached() ? "no navmesh in his cell" : "his cell isn't loaded";
+            auto        marker = own && own->IsAttached() ? Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), feet, 0.0f, own) : nullptr;
+            if (marker) {
+                state.markers.push_back(marker->CreateRefHandle());
+                if (marker->MoveToNearestNavmesh()) {
+                    const auto  at = marker->GetPosition();
+                    const float off = at.GetDistance(feet) / Crew::kMeter;
+                    const bool  seen = Wanted::InView(camera, a_viewHeading, Flat(at));
+                    if (was - off >= kRegroupGain && std::abs(at.z - feet.z) <= kRegroupRise && !seen) {
+                        a_actor->MoveTo(marker.get());
+                        TellPlace(a_player, a_homie);
+                        state.regrouped++;
+                        SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back on the navmesh nearest him, {:.0f} m off", a_homie.id, was, off);
+                        return;
+                    }
+                    why = std::format("the nearest in his cell {:.0f} m from CJ{}{}", off, seen ? ", in view" : "",
+                        std::abs(at.z - feet.z) > kRegroupRise ? ", too high or low" : "");
+                }
+            }
+            if (state.regroupMisses++ % 10 == 0) {
+                SKSE::log::info("homies: {:08X} is {:.0f} m off and no navmesh behind CJ out of view to put him back on ({}; tried again every {:.0f} s)", a_homie.id,
+                    was, why, Crew::kRegroupWait);
+            }
         }
 
         void Join(RE::PlayerCharacter* a_player, Homie& a_homie)
@@ -898,6 +972,16 @@ namespace AhShitRim::Homies
                     it = state.homies.erase(it);
                     continue;
                 }
+                // Put back only on foot (a car's passengers are Riders'), in the player's worldspace (a load door or fast
+                // travel is Remake's), and not while a remake or a load's first moments are under way.
+                auto*      at = actor->GetParentCell();
+                const bool here = at && at->IsAttached() && actor->GetWorldspace() == a_player->GetWorldspace() &&
+                                  (!at->IsInteriorCell() || at == cell);
+                if (!a_onFoot || !settled || !here || state.remakePending || state.fresh > 0.0f || Riders::Rides(h.id)) {
+                    h.straggler.Hold();
+                } else if (h.straggler.Update(distance, a_delta)) {
+                    Regroup(a_player, h, actor, viewHeading);
+                }
                 if ((h.offsetIn -= a_delta) <= 0.0f) {
                     TellPlace(a_player, h);
                 }
@@ -1089,6 +1173,39 @@ namespace AhShitRim::Homies
     int DebugCount(bool a_followers)
     {
         return a_followers ? Followers() : static_cast<int>(state.homies.size());
+    }
+
+    int DebugRegrouped() { return static_cast<int>(state.regrouped); }
+
+    float DebugStray(RE::PlayerCharacter* a_player, float a_metres)
+    {
+        auto* follower = DebugFollower();
+        if (!follower) {
+            return -1.0f;
+        }
+        const auto feet = a_player->GetPosition();
+        for (int i = 0; i < 8; i++) {
+            const auto                       spot = Wanted::SpawnSpot(Flat(feet), a_player->GetAngleZ(), i, a_metres * Crew::kMeter);
+            RE::NiPoint3                     at;
+            RE::NiPointer<RE::TESObjectREFR> marker;
+            if (GroundAt(a_player, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), at, &marker) && std::abs(at.z - feet.z) <= kRegroupRise) {
+                follower->MoveTo(marker.get());
+                return at.GetDistance(feet) / Crew::kMeter;
+            }
+        }
+        return -1.0f;
+    }
+
+    bool DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest)
+    {
+        auto marker = Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), a_player->GetPosition(), 0.0f);
+        if (!marker) {
+            return false;
+        }
+        const bool found = marker->MoveToNearestNavmesh();
+        a_nearest = marker->GetPosition();
+        state.markers.push_back(marker->CreateRefHandle());
+        return found;
     }
 
     RE::Actor* DebugFollower()

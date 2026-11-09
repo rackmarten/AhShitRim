@@ -191,6 +191,22 @@ TEST_CASE("crew: each homie keeps his slot, and a freed one rests before the nex
     CHECK(slots.Find(0) == -1);
 }
 
+TEST_CASE("crew: a follower left over 40 m behind for 2 s is put back, and tried again every 2 s")
+{
+    Crew::Straggler s;
+    CHECK_FALSE(s.Update(39.0f, 5.0f));  // within reach: never
+    CHECK_FALSE(s.Update(45.0f, 1.0f));
+    CHECK_FALSE(s.Update(30.0f, 0.1f));  // he caught up: the wait starts again
+    CHECK_FALSE(s.Update(45.0f, 1.5f));
+    CHECK(s.Update(45.0f, 0.6f));        // 2.1 s that far
+    CHECK_FALSE(s.Update(45.0f, 1.0f));  // no spot found for him: the next try 2 s on
+    CHECK(s.Update(45.0f, 1.0f));
+    CHECK_FALSE(s.Update(45.0f, 1.9f));
+    s.Hold();                            // CJ got in a car: the 2 s start again once he's out
+    CHECK_FALSE(s.Update(45.0f, 1.9f));
+    CHECK(s.Update(45.0f, 0.2f));
+}
+
 TEST_CASE("crew: a puppet faces the way he walks, and CJ's heading or his aim when he stands")
 {
     constexpr float kStep = 1.0f / 30.0f;

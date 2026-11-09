@@ -14,7 +14,7 @@
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
-    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move, then CJ walks and runs off with the crew
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
 #>
@@ -78,6 +78,18 @@ try {
     Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
     Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: ' | ForEach-Object { $_.Line }
+    if ($Scenario -eq 'crew') {
+        # San Andreas's 5 s lines: how far off the way they went the moving followers faced (Crew::Facing).
+        # Only windows with 30 frames or more of it: a follower stuck behind twitches on the spot for a frame or two.
+        $faced = Select-String -Path $saLog -Pattern 'moving followers faced (\d+) degrees off their way on average, \d+ at most \((\d+) frames\)' |
+            Where-Object { [int] $_.Matches[0].Groups[2].Value -ge 30 } | ForEach-Object { [int] $_.Matches[0].Groups[1].Value }
+        if ($faced) {
+            $worst = ($faced | Measure-Object -Maximum).Maximum
+            Write-Host ("hit test: crew: the moving followers faced {0} degrees off their way on average in their worst 5 s of 30 frames or more (within 20): {1}" -f $worst, $(if ($worst -le 20) { 'ok' } else { 'FAILED' }))
+        } else {
+            Write-Host 'hit test: crew: San Andreas saw no follower move: FAILED'
+        }
+    }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
 } finally {
     Stop-Games
