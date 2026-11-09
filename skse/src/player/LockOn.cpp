@@ -207,6 +207,13 @@ namespace AhShitRim::LockOn
                     }
                     SKSE::log::info("lock-on: nobody to shift the gun lock to on the {} ({} around, {} in front, {} in sight)", a_aim.shift > 0 ? "right" : "left",
                         all.size(), shown, seen);
+                    for (std::size_t i = 0; i < all.size(); i++) {
+                        const auto& c = all[i];
+                        if (c.screen.distance <= GunLock::kRange) {
+                            SKSE::log::info("lock-on:   {:08X}{}{}: screen {:.2f},{:.2f}{}, {:.1f} m, {}", c.id, i == current ? " (locked)" : "", c.hostile ? " hostile" : "",
+                                c.screen.x, c.screen.y, c.screen.visible ? "" : " (behind)", c.screen.distance, c.inSight ? "in sight" : "not in sight");
+                        }
+                    }
                 }
                 current = shifted;
             }
