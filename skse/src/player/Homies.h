@@ -60,6 +60,8 @@ namespace AhShitRim::Homies
     int        DebugRecruit(RE::PlayerCharacter* a_player, int a_count);
     int        DebugCount(bool a_followers);
     RE::Actor* DebugFollower();
+    // The ridecrew scenario: every follower.
+    std::vector<RE::Actor*> DebugFollowers();
 
     inline constexpr std::uint32_t kRecordType = 'ASCR';
     inline constexpr std::uint32_t kRecordVersion = 1;

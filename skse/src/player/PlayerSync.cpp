@@ -1922,6 +1922,11 @@ namespace AhShitRim::PlayerSync
         }
     }
 
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        return state.owned ? CheatSpawn(a_model, false) : std::string("San Andreas doesn't have the player");
+    }
+
     bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera)
     {
         const auto& p = state.drawnPose;

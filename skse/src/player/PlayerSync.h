@@ -51,6 +51,9 @@ namespace AhShitRim::PlayerSync
     int  DebugPadCheats();  // console cheat sequences finished on the pad so far
     // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
     void DebugKey(std::uint32_t a_dik, bool a_down);
+    // The hit test's ridecrew scenario (debug): a vehicle of model a_model in front of CJ on foot, as its cheat spawns it,
+    // in the same handover; returns why it can't come, or nothing.
+    std::string DebugSpawn(std::uint16_t a_model);
     // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San
     // Andreas's camera in the world; false on a frame he wasn't drawn.
     bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
