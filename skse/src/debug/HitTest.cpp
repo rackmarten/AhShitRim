@@ -58,6 +58,7 @@ namespace AhShitRim::HitTest
             Oil,        // oil: the pools lit, watched burning
             CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
             Driving,    // drive: CJ drives the Sandking a minute, traced every frame
+            Soak,       // soak: crew on foot, a drive, F11, over and over for the whole time
             Done,
         };
 
@@ -123,6 +124,17 @@ namespace AhShitRim::HitTest
             RE::TESObjectCELL*  lastCell = nullptr;
             float               driven = 0.0f;     // drive: how far the player went, metres
             RE::NiPoint3        lastAt;
+            bool                soak = false;       // the scenario: a long run of play (crew on foot, a drive, F11, the clock running)
+            int                 soakSeg = 0;        // 0 on foot, 1 getting in, 2 driving, 3 getting out
+            float               soakT = 0.0f;       // seconds in the segment
+            float               soakShot = 0.0f;    // to the next F11
+            float               soakLog = 0.0f;     // to the next status line
+            int                 soakCycles = 0;     // drives done
+            int                 soakShots = 0;
+            int                 soakWolves = 0;     // wolf pairs sent
+            int                 soakGone = 0;       // times CJ never got into the vehicle
+            bool                soakRecruited = false;  // this on-foot stretch's recruit and wolves are done
+            bool                soakWolvesSent = false;
         } state;
 
         constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a guard facing CJ, off to the side
@@ -864,6 +876,132 @@ namespace AhShitRim::HitTest
             }
         }
 
+        // ---- The soak scenario ----
+
+        void SoakWolves(RE::PlayerCharacter* a_player)
+        {
+            const float heading = a_player->GetAngleZ();
+            for (int i = 0; i < 2; i++) {
+                auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kWolf);
+                auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
+                if (ref) {
+                    const float side = (i == 0 ? -1.0f : 1.0f) * 200.0f;
+                    ref->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::sin(heading) * 1050.0f + std::cos(heading) * side,
+                                                                   std::cos(heading) * 1050.0f - std::sin(heading) * side, 0.0f));
+                }
+            }
+            state.soakWolves++;
+        }
+
+        void SoakStep(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            constexpr float kFoot = 90.0f, kDrive = 60.0f;
+            state.soakT += a_delta;
+            state.soakShot += a_delta;
+            state.soakLog += a_delta;
+            if (state.soakShot >= 30.0f) {  // F11 now and then
+                state.soakShot = 0.0f;
+                state.soakShots++;
+                SKSE::log::info("hit test: soak: F11 screenshot {}", state.soakShots);
+                Overlay::Screenshot((std::filesystem::temp_directory_path() / "ahshitrim-hit-test-shots").string());
+            }
+            if (state.soakLog >= 30.0f) {
+                state.soakLog = 0.0f;
+                float nearest = -1.0f;
+                if (auto* follower = Homies::DebugFollower()) {
+                    nearest = follower->GetPosition().GetDistance(a_player->GetPosition()) * Pose::kMetersPerUnit;
+                }
+                static const char* const segs[] = { "on foot", "getting in", "driving", "getting out" };
+                auto* calendar = RE::Calendar::GetSingleton();
+                SKSE::log::info("hit test: soak: {:.0f} s, {}, game hour {:.1f}, {} following ({} about, nearest {:.1f} m), player health {:.0f}, armour {:.0f}, {} drives, {} wolf pairs, in {:08X}, CJ has the player: {}",
+                    state.timer, segs[state.soakSeg], calendar ? calendar->GetHour() : 0.0f, Homies::DebugCount(true), Homies::DebugCount(false), nearest,
+                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), Vitals::Armor(), state.soakCycles, state.soakWolves,
+                    a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0, PlayerSync::DebugOwned() ? "yes" : "NO");
+            }
+            if (state.timer >= state.seconds) {
+                PlayerSync::DebugKey(Input::kDikW, false);
+                PlayerSync::DebugKey(Input::kDikA, false);
+                PlayerSync::DebugKey(Input::kDikD, false);
+                state.moveX = state.moveY = 0.0f;
+                RunConsole("set timescale to 20");
+                SKSE::log::info("hit test: done after {:.0f} s of soak, {} drives, {} wolf pairs, {} F11 screenshots, {} times never in the vehicle", state.timer, state.soakCycles,
+                    state.soakWolves, state.soakShots, state.soakGone);
+                state.phase = Phase::Done;
+                return;
+            }
+            switch (state.soakSeg) {
+            case 0: {  // on foot: the crew joins at 10 s, wolves at 15 s, CJ walks and runs about
+                const float t = state.soakT;
+                if (!state.soakRecruited && t >= 10.0f) {
+                    state.soakRecruited = true;
+                    if (Homies::DebugCount(true) < 2) {
+                        const int joined = Homies::DebugRecruit(a_player, 3);
+                        SKSE::log::info("hit test: soak: {} joined the crew, {} following", joined, Homies::DebugCount(true));
+                    }
+                }
+                if (!state.soakWolvesSent && t >= 15.0f) {
+                    state.soakWolvesSent = true;
+                    SoakWolves(a_player);
+                }
+                const float u = std::fmod(t, 20.0f);
+                const bool  leftWard = static_cast<int>(t / 20.0f) % 2 == 1;
+                state.moveX = u >= 9.0f && u < 15.0f ? (leftWard ? -0.7f : 0.7f) : 0.0f;
+                state.moveY = u < 6.0f ? 0.35f : u >= 9.0f && u < 15.0f ? 1.0f : 0.0f;
+                if (t >= kFoot) {
+                    state.moveX = state.moveY = 0.0f;
+                    SKSE::log::info("hit test: soak: CJ takes the Sandking, {} following", Homies::DebugCount(true));
+                    PlayerSync::TakeOverInVehicle(kSandking);
+                    state.soakSeg = 1;
+                    state.soakT = 0.0f;
+                }
+                break;
+            }
+            case 1:
+                if (InVehicle()) {
+                    PlayerSync::DebugKey(Input::kDikW, true);
+                    state.legs = 0;
+                    state.soakSeg = 2;
+                    state.soakT = 0.0f;
+                } else if (state.soakT > 30.0f) {
+                    state.soakGone++;
+                    SKSE::log::info("hit test: soak: CJ never got into the Sandking, on foot again");
+                    state.soakSeg = 0;
+                    state.soakT = 0.0f;
+                    state.soakRecruited = state.soakWolvesSent = false;
+                }
+                break;
+            case 2: {
+                const int leg = static_cast<int>(state.soakT);
+                if (leg != state.legs) {
+                    state.legs = leg;
+                    PlayerSync::DebugKey(Input::kDikA, leg % 8 == 2);
+                    PlayerSync::DebugKey(Input::kDikD, leg % 8 == 6);
+                }
+                if (state.soakT >= kDrive) {
+                    PlayerSync::DebugKey(Input::kDikW, false);
+                    PlayerSync::DebugKey(Input::kDikA, false);
+                    PlayerSync::DebugKey(Input::kDikD, false);
+                    PlayerSync::DebugKey(Input::kDikF, true);
+                    SKSE::log::info("hit test: soak: F, CJ gets out ({} following)", Homies::DebugCount(true));
+                    state.soakSeg = 3;
+                    state.soakT = 0.0f;
+                }
+                break;
+            }
+            default:
+                if (state.soakT >= 0.3f) {
+                    PlayerSync::DebugKey(Input::kDikF, false);
+                }
+                if (state.soakT >= 8.0f) {
+                    state.soakCycles++;
+                    state.soakSeg = 0;
+                    state.soakT = 0.0f;
+                    state.soakRecruited = state.soakWolvesSent = false;
+                }
+                break;
+            }
+        }
+
         // ---- The stealth scenario (v38) ----
 
         bool OnFootPose(Protocol::PlayerState& a_pose)
@@ -1185,7 +1323,7 @@ namespace AhShitRim::HitTest
 
     bool Drive(float& a_moveX, float& a_moveY)
     {
-        if (state.phase != Phase::CrewWalk) {
+        if (state.phase != Phase::CrewWalk && !(state.phase == Phase::Soak && state.soakSeg == 0)) {
             return false;
         }
         a_moveX = state.moveX;
@@ -1196,11 +1334,12 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak") {
             return;
         }
         state.crew = scenario == "crew";
-        if (state.crew) {
+        state.soak = scenario == "soak";
+        if (state.crew || state.soak) {
             Homies::DebugThanes(1);  // Thane of Whiterun; hit-test.ps1 starts it at the Whiterun stables
         }
         state.bust = scenario == "bust";
@@ -1301,6 +1440,18 @@ namespace AhShitRim::HitTest
                 }
                 state.phase = Phase::CrewSpots;
                 state.timer = 0.0f;
+            } else if (state.timer >= 6.0f && state.soak) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot for the soak", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                if (const auto hour = Ini::Value("Debug", "HitTestHour"); !hour.empty()) {
+                    RunConsole("set gamehour to " + hour);
+                }
+                const auto scale = Ini::Value("Debug", "HitTestTimescale");
+                RunConsole("set timescale to " + (scale.empty() ? std::string("60") : scale));
+                state.phase = Phase::Soak;
+                state.timer = state.soakT = state.soakShot = state.soakLog = 0.0f;
             } else if (state.timer >= 6.0f && state.armour) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot, to stand still with armour", a_player->GetParentCell()->GetFormID());
                 if (!PlayerSync::DebugOwned()) {
@@ -1634,6 +1785,9 @@ namespace AhShitRim::HitTest
         }
         case Phase::Driving:
             TraceDriving(a_player);
+            break;
+        case Phase::Soak:
+            SoakStep(a_player, a_delta);
             break;
         default: break;
         }
