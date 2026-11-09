@@ -1091,6 +1091,17 @@ namespace AhShitRim::Homies
         return a_followers ? Followers() : static_cast<int>(state.homies.size());
     }
 
+    std::vector<RE::Actor*> DebugFollowers()
+    {
+        std::vector<RE::Actor*> out;
+        for (const auto& h : state.homies) {
+            if (auto* actor = h.follower ? Get(h) : nullptr) {
+                out.push_back(actor);
+            }
+        }
+        return out;
+    }
+
     RE::Actor* DebugFollower()
     {
         for (const auto& h : state.homies) {

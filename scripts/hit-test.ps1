@@ -9,7 +9,9 @@
     him kill a few of the people around, presses / for Skyrim's wait menu (before and after the kills), puts the clock an hour on, steps into an interior and back out, and logs who
     came back. Or (pad) it injects gamepad events as Skyrim sends them and checks each action from San Andreas's pose
     ("hit test: pad: ... ok"). Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
-    traces both getting out. Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
+    traces both getting out. Or (ridecrew) CJ, on foot at the Whiterun stables, recruits two homies of the crew, gets into a Huntley
+    spawned in front of him with F, and gets out again: each homie's step out is traced (no frame seated while CJ gets out, on the
+    ground once let go, then in his place behind CJ). Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
     bullet, a Molotov and a rocket, and logs whether each burns. Or (soak) a long run of play: the crew on foot, wolves, a drive, F11 and the clock running for -Seconds (the working set of both games every 30 s to soak-memory.csv in the temp folder). Or (drive) CJ drives the Sandking for -Seconds, his body,
     its model and the camera traced in the vehicle every frame as Skyrim draws them. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
@@ -27,7 +29,7 @@
     scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
     scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
-    scripts/hit-test.ps1 -Scenario ridecrew # the same with a recruited homie of the Grove Street crew, at the Whiterun stables
+    scripts/hit-test.ps1 -Scenario ridecrew # two homies of the Grove Street crew board a Huntley with CJ and step out with him, at the Whiterun stables
     scripts/hit-test.ps1 -Scenario soak -Seconds 900 -Hour 9   # a long run of play: crew on foot with wolves, a drive, F11 every 30 s, the clock running; memory of both games sampled, crashes and errors counted
     scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>

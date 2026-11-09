@@ -2,6 +2,7 @@
 
 #include "Ini.h"
 #include "car_exit.h"
+#include "crew.h"
 #include "health.h"
 #include "hud/Overlay.h"
 #include "input.h"
@@ -53,6 +54,7 @@ namespace AhShitRim::HitTest
             CrewOut,    // F10 out and back: the crew comes again
             CrewMoved,  // the player moved as fast travel moves it: the followers come behind
             Standing,   // armour: CJ stands still with full armour, its level logged
+            Boarding,   // ridecrew: a Huntley in front of CJ on foot, F: he gets in, his homies with him
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
             Oil,        // oil: the pools lit, watched burning
@@ -63,6 +65,7 @@ namespace AhShitRim::HitTest
         };
 
         constexpr std::uint16_t kSandking = 495;
+        constexpr std::uint16_t kHuntley = 579;  // ridecrew: four seats, so the crew of two both ride
         constexpr float         kAhead = 840.0f;  // 12 m: where the attackers are placed
 
         struct State
@@ -91,9 +94,25 @@ namespace AhShitRim::HitTest
             bool                armour = false;   // the scenario: CJ stands still with armour and none of it may go
             bool                crewRider = false;  // riders with a recruited homie of the crew (v39) as the follower
             RE::ObjectRefHandle follower;
-            std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
+            std::vector<RE::ObjectRefHandle> homies;  // ridecrew: the crew's followers, who board with CJ
+            int                 boardTry = 0;  // ridecrew: the Huntley asked for this many times
+
+            // Someone riding with CJ as he gets out, traced every frame from F.
+            struct Passenger
+            {
+                RE::ObjectRefHandle          handle;
+                std::string                  name;
+                std::vector<CarExit::Sample> trace;          // his feet in the vehicle's frame, up to the frame Riders lets him go
+                int                          seatedLeaving = 0;  // frames he still sat (kCrewSeated to San Andreas) while CJ was getting out
+                float                        letGo = -1.0f;  // seconds since Riders let him go, -1 before
+                float                        letGoZ = 0.0f;  // his feet's height then
+                bool                         grounded = false;  // a second after: Skyrim's controller has him on the ground
+                float                        drop = 0.0f;    // and how far he came down in that second, metres
+                bool                         groundChecked = false;
+            };
+            std::vector<Passenger>       passengers;
             std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
-            float               outFor = 0.0f;     // seconds since both were out
+            float               outFor = 0.0f;     // seconds since all were out
             bool               oil = false;   // the scenario: oil lit by a bullet, a Molotov and a rocket
             bool               oilMoved = false;
             bool               oilReset = false;  // the pools placed
@@ -733,13 +752,16 @@ namespace AhShitRim::HitTest
                 if (state.timer < 18.0f) {
                     return;
                 }
-                const int joined = Homies::DebugRecruit(a_player, 1);
-                auto*     homie = Homies::DebugFollower();
+                const int joined = Homies::DebugRecruit(a_player, 2);  // the crew of two one title allows
                 SKSE::log::info("hit test: riders: {} homies about, {} joined", Homies::DebugCount(false), joined);
-                if (homie) {
-                    state.follower = homie->GetHandle();
-                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Sandking
-                    SKSE::log::info("hit test: riders: homie {} ({:08X}) is the follower", homie->GetName(), homie->GetFormID());
+                state.homies.clear();
+                for (auto* homie : Homies::DebugFollowers()) {
+                    state.homies.push_back(homie->GetHandle());
+                    SKSE::log::info("hit test: riders: homie {} ({:08X}) follows CJ", homie->GetName(), homie->GetFormID());
+                }
+                if (!state.homies.empty()) {
+                    state.follower = state.homies.front();
+                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Huntley
                 } else if (state.timer >= 30.0f) {
                     SKSE::log::warn("hit test: could not recruit a homie");
                     state.phase = Phase::Done;
@@ -780,30 +802,102 @@ namespace AhShitRim::HitTest
                 a_who, t.samples, t.maxStep, t.maxBack, t.startOut, t.endOut, t.outAtRelease, !a_judge ? "" : CarExit::Smooth(t) ? ": smooth" : ": NOT SMOOTH");
         }
 
-        // Every frame from F until both have been out a second: the follower's feet and CJ's.
+        // Who rides with CJ now, from the follower (riders) or the crew's followers (ridecrew): logged, and traced from F.
+        void TakePassengers()
+        {
+            state.passengers.clear();
+            for (const auto& handle : state.crewRider ? state.homies : std::vector<RE::ObjectRefHandle>{ state.follower }) {
+                auto  ref = handle.get();
+                auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                if (!actor) {
+                    continue;
+                }
+                const bool sits = Riders::Sits(actor->GetFormID());
+                Pose::Vec3 at{};
+                InVehicleFrame(actor->GetPosition(), at);
+                SKSE::log::info("hit test: {} ({:08X}) {} at {:.2f} {:.2f} {:.2f} in the vehicle's frame", actor->GetName(), actor->GetFormID(),
+                    sits ? "sits" : Riders::Rides(actor->GetFormID()) ? "rides, not sitting" : "NEVER SAT", at.x, at.y, at.z);
+                state.passengers.push_back({ handle, std::format("{} ({:08X})", actor->GetName(), actor->GetFormID()) });
+            }
+        }
+
+        // Every frame from F until all have been out a while: each passenger's feet in the vehicle's frame (up to the frame
+        // Riders lets him go: a homie walks off to his formation behind CJ then), and CJ's; whether a passenger still sat
+        // while CJ was getting out (a homie's kCrewSeated, which sits his puppet in San Andreas); and, for the crew, where
+        // each stands once let go: on the ground a second later, then in his place behind CJ.
         void TraceLeaving(RE::PlayerCharacter* a_player, float a_delta)
         {
-            auto       ref = state.follower.get();
-            auto*      actor = ref ? ref->As<RE::Actor>() : nullptr;
-            const bool riding = actor && Riders::Rides(actor->GetFormID());
+            Protocol::PlayerState pose{};
             const bool cjIn = InVehicle();
-            Pose::Vec3 at{}, cj{};
-            if (actor && InVehicleFrame(actor->GetPosition(), at)) {
-                state.riderTrace.push_back({ at, riding });
-            }
+            const bool cjLeaving = cjIn && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerGettingInOut) != 0;
+            Pose::Vec3 cj{};
             if (InVehicleFrame(a_player->GetPosition(), cj)) {
                 state.cjTrace.push_back({ cj, cjIn });
             }
-            SKSE::log::info("hit test: leaving {:5.0f} ms, follower {:6.2f} {:6.2f} {:6.2f} {}, CJ {:6.2f} {:6.2f} {:6.2f} {}", state.timer * 1000.0f, at.x, at.y,
-                at.z, riding ? "in" : "out", cj.x, cj.y, cj.z, cjIn ? "in" : "out");
-            state.outFor = !riding && !cjIn ? state.outFor + a_delta : 0.0f;
-            if (state.outFor >= 1.0f || state.timer > 10.0f) {
-                if (state.crewRider) {
-                    // A homie walks off to his formation behind CJ once let go: judge the step out, up to there.
-                    const auto let = std::find_if(state.riderTrace.begin(), state.riderTrace.end(), [](const CarExit::Sample& a_sample) { return !a_sample.inVehicle; });
-                    state.riderTrace.erase(let == state.riderTrace.end() ? let : let + 1, state.riderTrace.end());
+            bool        allOut = !cjIn;
+            std::string line;
+            for (auto& p : state.passengers) {
+                auto       ref = p.handle.get();
+                auto*      actor = ref ? ref->As<RE::Actor>() : nullptr;
+                const bool riding = actor && Riders::Rides(actor->GetFormID());
+                const bool sits = actor && Riders::Sits(actor->GetFormID());
+                Pose::Vec3 at{};
+                if (actor && InVehicleFrame(actor->GetPosition(), at) && p.letGo < 0.0f) {
+                    p.trace.push_back({ at, riding });
                 }
-                Report("the follower", state.riderTrace, true);
+                if ((cjLeaving || !cjIn) && sits) {
+                    p.seatedLeaving++;
+                }
+                if (actor && !riding) {
+                    if (p.letGo < 0.0f) {
+                        p.letGo = 0.0f;
+                        p.letGoZ = actor->GetPosition().z;
+                    } else {
+                        p.letGo += a_delta;
+                    }
+                    if (p.letGo >= 1.0f && !p.groundChecked) {
+                        auto* controller = actor->GetCharController();
+                        p.groundChecked = true;
+                        p.grounded = controller && controller->context.currentState == RE::hkpCharacterStateType::kOnGround;
+                        p.drop = (p.letGoZ - actor->GetPosition().z) * Pose::kMetersPerUnit;
+                    }
+                }
+                allOut = allOut && !riding;
+                line += std::format(", {} {:6.2f} {:6.2f} {:6.2f} {}", actor ? actor->GetName() : "(gone)", at.x, at.y, at.z, sits ? "sits" : riding ? "steps out" : "out");
+            }
+            SKSE::log::info("hit test: leaving {:5.0f} ms, CJ {:6.2f} {:6.2f} {:6.2f} {}{}{}", state.timer * 1000.0f, cj.x, cj.y, cj.z, cjIn ? "in" : "out",
+                cjLeaving ? " getting out" : "", line);
+            state.outFor = allOut ? state.outFor + a_delta : 0.0f;
+            // The crew gets six seconds out to fall in behind CJ; a follower of Skyrim's is let go where he stands.
+            if (state.outFor >= (state.crewRider ? 6.0f : 1.0f) || state.timer > 16.0f) {
+                const float h = a_player->GetAngleZ();
+                for (std::size_t i = 0; i < state.passengers.size(); i++) {
+                    auto& p = state.passengers[i];
+                    Report(p.name.c_str(), p.trace, true);
+                    SKSE::log::info("hit test: {}: {} frames still seated while CJ got out or was out{}", p.name, p.seatedLeaving, p.seatedLeaving == 0 ? ": none" : ": SEATED THROUGH HIS GET-OUT");
+                    if (!state.crewRider) {
+                        continue;
+                    }
+                    auto  ref = p.handle.get();
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    SKSE::log::info("hit test: {}: a second after Riders let him go {}, {:.2f} m lower{}", p.name,
+                        p.groundChecked ? (p.grounded ? "on the ground" : "not on the ground") : "never let go", p.drop,
+                        p.groundChecked && p.grounded && std::fabs(p.drop) <= 0.5f ? ": landed" : ": NOT LANDED");
+                    if (!actor) {
+                        continue;
+                    }
+                    // In CJ's frame (the player's heading, which KeepOffsetFromActor keeps the formation to): x right, y ahead.
+                    const auto  d = actor->GetPosition() - a_player->GetPosition();
+                    const float right = (d.x * std::cos(h) - d.y * std::sin(h)) * Pose::kMetersPerUnit;
+                    const float ahead = (d.x * std::sin(h) + d.y * std::cos(h)) * Pose::kMetersPerUnit;
+                    float       fromPlace = 1e9f;
+                    for (int j = 0; j < Crew::kFollowerMax; j++) {  // whichever place Homies gave him
+                        const auto place = Crew::FormationAt({ a_player->GetPosition().x, a_player->GetPosition().y, a_player->GetPosition().z }, h, j);
+                        fromPlace = (std::min)(fromPlace, std::hypot(actor->GetPosition().x - place.x, actor->GetPosition().y - place.y) * Pose::kMetersPerUnit);
+                    }
+                    SKSE::log::info("hit test: {}: {:.0f} s after, {:.2f} m right and {:.2f} m ahead of CJ, {:.2f} m from a place of the formation{}", p.name, p.letGo,
+                        right, ahead, fromPlace, ahead < 0.0f && fromPlace <= 1.5f ? ": behind him" : ": NOT IN HIS PLACE");
+                }
                 // San Andreas's line-up moves CJ's position to the door as the get-out begins and his animation keeps his
                 // body in the seat, so his feet jump where his body doesn't: logged, not judged (fake_vehicles judges his body).
                 Report("CJ (the player's position)", state.cjTrace, false);
@@ -1470,6 +1564,13 @@ namespace AhShitRim::HitTest
                 state.timer = 0.0f;
             } else if (state.timer >= 6.0f && state.riders && !state.follower) {
                 PlaceFollower(a_player);
+            } else if (state.timer >= 8.0f && state.crewRider) {
+                // Not TakeOverInVehicle: a new handover sends the crew away and brings it back once CJ sits, so nobody boards.
+                const auto why = PlayerSync::DebugSpawn(kHuntley);
+                SKSE::log::info("hit test: riders: a Huntley in front of CJ on foot{}", why.empty() ? "" : ", refused: " + why);
+                state.phase = why.empty() ? Phase::Boarding : Phase::Done;
+                state.boardTry = 0;
+                state.timer = 0.0f;
             } else if (state.timer >= (state.riders ? 8.0f : 6.0f)) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
@@ -1735,20 +1836,39 @@ namespace AhShitRim::HitTest
                 state.phase = Phase::Done;
             }
             break;
+        case Phase::Boarding: {
+            // F (San Andreas's enter key) once the Huntley is there: CJ walks to it and gets in, the crew boarding with him.
+            // San Andreas spawns nothing without a flat, clear spot in front of him (the crew or a parked vehicle in the way):
+            // then he walks on a second and it's asked for again, every 8 s. F again while he gets in would stop him.
+            const float t = std::fmod(state.timer, 8.0f);
+            if (static_cast<int>(state.timer / 8.0f) != state.boardTry) {
+                state.boardTry = static_cast<int>(state.timer / 8.0f);
+                const auto why = PlayerSync::DebugSpawn(kHuntley);
+                SKSE::log::info("hit test: riders: CJ isn't in yet, the Huntley asked for again{}", why.empty() ? "" : ", refused: " + why);
+            }
+            Protocol::PlayerState pose{};
+            const bool entering = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerGettingInOut) != 0;
+            PlayerSync::DebugKey(Input::kDikF, t >= 2.0f && t < 2.3f);
+            PlayerSync::DebugKey(Input::kDikW, t >= 6.0f && t < 7.0f && !entering);
+            if (InVehicle()) {
+                PlayerSync::DebugKey(Input::kDikF, false);
+                PlayerSync::DebugKey(Input::kDikW, false);
+                SKSE::log::info("hit test: CJ is in the Huntley, {} riding with him", Riders::Riding().size());
+                state.phase = Phase::Seated;
+                state.timer = 0.0f;
+            } else if (state.timer > 32.0f) {
+                PlayerSync::DebugKey(Input::kDikF, false);
+                PlayerSync::DebugKey(Input::kDikW, false);
+                SKSE::log::warn("hit test: CJ never got into the Huntley, stopping");
+                state.phase = Phase::Done;
+            }
+            break;
+        }
         case Phase::Seated:
             if (state.timer >= 3.0f) {
-                if (state.crewRider) {
-                    // The handover into the Sandking sends the crew away and brings it back as new actors: trace whoever rides now.
-                    const auto riding = Riders::Riding();
-                    if (!riding.empty()) {
-                        if (auto* rider = RE::TESForm::LookupByID<RE::Actor>(riding.front())) {
-                            state.follower = rider->GetHandle();
-                        }
-                    }
-                }
                 SKSE::log::info("hit test: {} riding, F: CJ gets out", Riders::Riding().size());
+                TakePassengers();
                 PlayerSync::DebugKey(Input::kDikF, true);
-                state.riderTrace.clear();
                 state.cjTrace.clear();
                 state.outFor = 0.0f;
                 state.phase = Phase::Leaving;
