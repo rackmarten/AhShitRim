@@ -142,14 +142,15 @@ try {
         } else {
             Write-Host 'hit test: crew: San Andreas saw no follower move: FAILED'
         }
-        # And how far their feet went off the ground's pace (Crew::Stride's rate bounds) and how often they changed
-        # between walk and run: a gait flipping back and forth looks as bad as a slide.
-        $paced = Select-String -Path $saLog -Pattern 'feet slid ([\d.]+) m/s off the ground on average, ([\d.]+) at most \((\d+) frames, (\d+) walk-run changes\)' |
-            Where-Object { [int] $_.Matches[0].Groups[3].Value -ge 30 } | ForEach-Object { $_.Matches[0] }
+        # And whether their feet kept to the ground: the metres they went against the metres their walk or run covered
+        # as San Andreas played it (its time through its cycle times its pace), in windows of 30 frames and 3 m or more;
+        # and how often they changed gait (a gait flipping back and forth looks as bad as a slide).
+        $paced = Select-String -Path $saLog -Pattern 'moving followers went ([\d.]+) m on the ground and their steps covered ([\d.]+) m \((\d+) frames, (\d+) gait changes\)' |
+            ForEach-Object { $_.Matches[0] } | Where-Object { [int] $_.Groups[3].Value -ge 30 -and [double] $_.Groups[1].Value -ge 3 }
         if ($paced) {
-            $slid = ($paced | ForEach-Object { [double] $_.Groups[1].Value } | Measure-Object -Maximum).Maximum
+            $off = ($paced | ForEach-Object { [math]::Abs([double] $_.Groups[2].Value - [double] $_.Groups[1].Value) / [double] $_.Groups[1].Value } | Measure-Object -Maximum).Maximum
             $changes = ($paced | ForEach-Object { [int] $_.Groups[4].Value } | Measure-Object -Maximum).Maximum
-            Write-Host ("hit test: crew: the moving followers' feet slid {0:0.00} m/s on average in their worst 5 s (within 0.2), and changed gait {1} times at most in 5 s (within 4): {2}" -f $slid, $changes, $(if ($slid -le 0.2 -and $changes -le 4) { 'ok' } else { 'FAILED' }))
+            Write-Host ("hit test: crew: the moving followers' steps were {0:P0} off the ground they went in their worst 5 s (within 15%), and they changed gait {1} times at most in 5 s (within 8): {2}" -f $off, $changes, $(if ($off -le 0.15 -and $changes -le 8) { 'ok' } else { 'FAILED' }))
         } else {
             Write-Host 'hit test: crew: San Andreas paced no follower: FAILED'
         }

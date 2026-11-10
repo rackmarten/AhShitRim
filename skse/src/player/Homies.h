@@ -68,7 +68,8 @@ namespace AhShitRim::Homies
     std::vector<RE::Actor*> DebugFollowers();
     int        DebugRegrouped();  // followers put back near CJ so far
     bool       DebugTargets(const RE::Actor* a_actor);  // whether a follower has a_actor as his target
-    unsigned   DebugHushed();  // the frames a Skyrim line of theirs was hushed in, so far
+    unsigned   DebugHushed();        // their Skyrim subtitles taken off so far (a line each)
+    unsigned   DebugHushedSounds();  // their Skyrim voice handles stopped so far
     float      DebugStray(RE::PlayerCharacter* a_player, float a_metres);  // a follower put on the navmesh that far behind; metres, -1 for none
     bool       DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest);  // the navmesh nearest the player
 

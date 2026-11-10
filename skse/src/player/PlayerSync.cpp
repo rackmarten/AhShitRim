@@ -946,7 +946,7 @@ namespace AhShitRim::PlayerSync
         // cheat being typed waits (Homies::OnKey).
         void CrewKey(std::uint32_t a_dik)
         {
-            if (state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen()) {
+            if (state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen() && !Vitals::IsWasted() && !Police::IsBusted()) {
                 Homies::OnKey(a_dik == Input::kDikG, CheatCodes::CodeRun(), CheatCodes::Finished());
             }
         }

@@ -571,11 +571,12 @@ namespace AhShitRim::Crew
     // G and H are letters of San Andreas's cheats too (HESOYAM's H, LXGIWYL's G), and HESOYAM typed sent a follower
     // off. So a G or H that may be part of a code (Cheats::Typist::CodeRun) waits: dropped once a code it's part of is
     // finished, acted on as soon as the next letter breaks the code off (W, A, S or D right after it), or once no letter
-    // has come for kHoldFor. One that is no code's start acts at once, and one that finishes a code never does.
+    // has come for kHoldFor (long enough for a cheat typed over a remote desktop). One that is no code's start acts at
+    // once, and one that finishes a code never does.
     class KeyHold
     {
     public:
-        static constexpr float kHoldFor = 0.5f;  // s
+        static constexpr float kHoldFor = 0.75f;  // s
 
         // A letter went into the cheat string (G and H too, before their Press), a_run and a_finished as the Typist
         // has them after it. The held key to act on now, or 0.

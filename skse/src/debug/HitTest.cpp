@@ -143,6 +143,7 @@ namespace AhShitRim::HitTest
             int                regroupedBefore = 0;  // Homies::DebugRegrouped() as the second walk started
             RE::ObjectRefHandle elk;                 // CrewFight: an elk CJ shot, which the crew must leave be
             bool               elkTargeted = false;
+            bool               elkFled = false;      // it had CJ as its combat target: the old rule's enemy
             float              walkMax = 0.0f;    // the furthest a follower was while CJ moved, metres
             float              stood = -1.0f;     // how far he was after CJ's first stand
             float              followLog = 0.0f;  // the crew phases: seconds since a follower was last logged
@@ -1720,9 +1721,10 @@ namespace AhShitRim::HitTest
                     elk->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::cos(heading) * 1400.0f, -std::sin(heading) * 1400.0f, 0.0f));
                     state.elk = elk->GetHandle();
                 } else {
-                    SKSE::log::info("hit test: crew: no elk ({:08X} isn't one here): the wildlife check skipped", kElk);
+                    SKSE::log::info("hit test: crew: no elk ({:08X} isn't one here): the wildlife check INCONCLUSIVE", kElk);
                 }
                 state.elkTargeted = false;
+                state.elkFled = false;
                 state.phase = Phase::CrewFight;
                 state.timer = state.logTimer = 0.0f;
             }
@@ -1743,6 +1745,7 @@ namespace AhShitRim::HitTest
                     SKSE::log::info("hit test: crew: CJ shot the elk");
                 }
                 state.elkTargeted = state.elkTargeted || Homies::DebugTargets(animal);
+                state.elkFled = state.elkFled || (!animal->IsDead() && animal->GetActorRuntimeData().currentCombatTarget.get().get() == a_player);
             }
             state.logTimer += a_delta;
             if (state.logTimer >= 2.0f) {
@@ -1757,11 +1760,10 @@ namespace AhShitRim::HitTest
             }
             if (state.timer >= 15.0f) {
                 if (auto elk = state.elk.get(); elk && elk->As<RE::Actor>()) {
-                    auto*      animal = elk->As<RE::Actor>();
-                    auto*      foe = animal->GetActorRuntimeData().currentCombatTarget.get().get();
-                    const bool fled = foe == a_player;
-                    SKSE::log::info("hit test: crew: the elk CJ shot is {}{}, the crew {}: {}", animal->IsDead() ? "dead" : "up", fled ? " with CJ its combat target" : "",
-                        state.elkTargeted ? "aimed at it" : "left it be", state.elkTargeted ? "FAILED" : "ok");
+                    auto*       animal = elk->As<RE::Actor>();
+                    const char* verdict = state.elkTargeted ? "FAILED" : state.elkFled ? "ok" : "INCONCLUSIVE (it never had CJ as its target, so the old rule wouldn't have shot it either)";
+                    SKSE::log::info("hit test: crew: the elk CJ shot is {}{}, the crew {}: {}", animal->IsDead() ? "dead" : "up",
+                        state.elkFled ? ", had CJ as its combat target" : "", state.elkTargeted ? "aimed at it" : "left it be", verdict);
                     elk->Disable();
                     elk->SetDelete(true);
                     state.elk = {};
@@ -1769,6 +1771,8 @@ namespace AhShitRim::HitTest
                 if (auto* homie = Homies::DebugFollower()) {
                     const std::string_view name = homie->GetDisplayFullName();
                     SKSE::log::info("hit test: crew: a follower's name is \"{}\": {}", name, name == Crew::kHomieName ? "ok" : "FAILED");
+                } else {
+                    SKSE::log::info("hit test: crew: no follower to read the name of: FAILED");
                 }
                 if (auto* homie = Homies::DebugFollower()) {
                     const float before = homie->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
@@ -1812,7 +1816,9 @@ namespace AhShitRim::HitTest
                 state.step = 2;
                 state.timer = 0.0f;
             } else if (state.step == 2 && state.timer >= 3.0f) {
-                SKSE::log::info("hit test: crew: {} Skyrim line(s) of theirs hushed so far; F10 out", Homies::DebugHushed());
+                const unsigned lines = Homies::DebugHushed();
+                SKSE::log::info("hit test: crew: {} Skyrim subtitle(s) of theirs taken off and {} voice(s) stopped so far: {}; F10 out", lines,
+                    Homies::DebugHushedSounds(), lines ? "ok" : "INCONCLUSIVE (none of them spoke)");
                 PlayerSync::DebugToggle();
                 state.phase = Phase::CrewOut;
                 state.timer = 0.0f;
