@@ -263,6 +263,8 @@ namespace AhShitRim::CheatCodes
     }
 
     void Finish(const Cheat& a_cheat, const World& a_world) { Apply(a_cheat, a_world); }
+    std::size_t CodeRun() { return state.typist.CodeRun(); }
+    bool        Finished() { return state.typist.Finished(); }
 
     void Update()
     {

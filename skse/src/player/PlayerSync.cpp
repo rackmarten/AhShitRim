@@ -938,6 +938,16 @@ namespace AhShitRim::PlayerSync
             if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && !Police::IsBusted() && Cheats::LetterOf(a_dik)) {
                 static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
                 CheatCodes::Key(a_dik, world);
+                Homies::OnLetter(CheatCodes::CodeRun(), CheatCodes::Finished());
+            }
+        }
+
+        // v39: San Andreas's group keys, on foot: recruit, regroup, dismiss. After TypeCheat: one that may be part of a
+        // cheat being typed waits (Homies::OnKey).
+        void CrewKey(std::uint32_t a_dik)
+        {
+            if (state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen()) {
+                Homies::OnKey(a_dik == Input::kDikG, CheatCodes::CodeRun(), CheatCodes::Finished());
             }
         }
 
@@ -1704,9 +1714,8 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     if ((code == Input::kDikG || code == Input::kDikH) && state.owned && !InVehicle()) {
-                        // v39: San Andreas's group keys, on foot: recruit, regroup, dismiss.
-                        if (button->IsDown() && !MenuHasInput() && !AmmuNation::IsOpen()) {
-                            Homies::OnKey(code == Input::kDikG);
+                        if (button->IsDown()) {
+                            CrewKey(code);
                         }
                         continue;
                     }
@@ -1998,6 +2007,9 @@ namespace AhShitRim::PlayerSync
             for (std::uint32_t dik = 0; dik < 0x100; dik++) {
                 if (Cheats::LetterOf(dik) == *c) {
                     TypeCheat(dik);
+                    if (dik == Input::kDikG || dik == Input::kDikH) {
+                        CrewKey(dik);  // as the keys do: the hit test types HESOYAM with a crew
+                    }
                     break;
                 }
             }

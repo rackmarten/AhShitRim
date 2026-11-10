@@ -38,7 +38,8 @@ namespace AhShitRim::PlayerSync
     // Whether the gamepad was the last thing used (DESIGN.md, Controller): the help box names its buttons ("LB: Open").
     bool PadInUse();
 
-    // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
+    // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters (G and H
+    // also as the crew's keys, as typed).
     bool DebugOwned();
     void DebugToggle();
     void DebugType(const char* a_code);

@@ -32,8 +32,12 @@ namespace AhShitRim::Homies
     // Every frame, whoever has the player: takes out the homies that are to go, and after a load the ones a save kept.
     void Sweep(float a_delta);
 
-    // G (a_recruit) or H pressed on foot.
-    void OnKey(bool a_recruit);
+    // A letter went into the cheat string (G and H too), a_run and a_finished as CheatCodes has them after it.
+    void OnLetter(std::size_t a_run, bool a_finished);
+
+    // G (a_recruit) or H pressed on foot, after its OnLetter. One that may be part of a cheat being typed waits
+    // (Crew::KeyHold): HESOYAM sends nobody off.
+    void OnKey(bool a_recruit, std::size_t a_run, bool a_finished);
 
     // Back to Skyrim's own player (a_loading: a load or a new game, whose world is about to go): every homie goes, the
     // followers are remembered and come back at the next handover.
@@ -63,6 +67,8 @@ namespace AhShitRim::Homies
     // The ridecrew scenario: every follower.
     std::vector<RE::Actor*> DebugFollowers();
     int        DebugRegrouped();  // followers put back near CJ so far
+    bool       DebugTargets(const RE::Actor* a_actor);  // whether a follower has a_actor as his target
+    unsigned   DebugHushed();  // the frames a Skyrim line of theirs was hushed in, so far
     float      DebugStray(RE::PlayerCharacter* a_player, float a_metres);  // a follower put on the navmesh that far behind; metres, -1 for none
     bool       DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest);  // the navmesh nearest the player
 

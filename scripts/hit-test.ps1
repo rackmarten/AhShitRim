@@ -21,7 +21,7 @@
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
-    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight the elk CJ shot stays out of, friendly fire, HESOYAM and H, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
     scripts/hit-test.ps1 -Scenario oil
     scripts/hit-test.ps1 -Scenario lights -Vehicle 477 -Seconds 20
     scripts/hit-test.ps1 -NewGame
@@ -141,6 +141,17 @@ try {
             Write-Host ("hit test: crew: the moving followers faced {0} degrees off their way on average in their worst 5 s of 30 frames or more (within 20): {1}" -f $worst, $(if ($worst -le 20) { 'ok' } else { 'FAILED' }))
         } else {
             Write-Host 'hit test: crew: San Andreas saw no follower move: FAILED'
+        }
+        # And how far their feet went off the ground's pace (Crew::Stride's rate bounds) and how often they changed
+        # between walk and run: a gait flipping back and forth looks as bad as a slide.
+        $paced = Select-String -Path $saLog -Pattern 'feet slid ([\d.]+) m/s off the ground on average, ([\d.]+) at most \((\d+) frames, (\d+) walk-run changes\)' |
+            Where-Object { [int] $_.Matches[0].Groups[3].Value -ge 30 } | ForEach-Object { $_.Matches[0] }
+        if ($paced) {
+            $slid = ($paced | ForEach-Object { [double] $_.Groups[1].Value } | Measure-Object -Maximum).Maximum
+            $changes = ($paced | ForEach-Object { [int] $_.Groups[4].Value } | Measure-Object -Maximum).Maximum
+            Write-Host ("hit test: crew: the moving followers' feet slid {0:0.00} m/s on average in their worst 5 s (within 0.2), and changed gait {1} times at most in 5 s (within 4): {2}" -f $slid, $changes, $(if ($slid -le 0.2 -and $changes -le 4) { 'ok' } else { 'FAILED' }))
+        } else {
+            Write-Host 'hit test: crew: San Andreas paced no follower: FAILED'
         }
     }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
