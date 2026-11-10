@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - CJ aims pistols, Uzis and sawn-offs (one gun or two) the way San Andreas poses them: the arm straight out to the aim instead of bent down at the elbow, and with the right mouse button held his head turns to the crosshair as well, up, down and to the sides.
-- With two guns, the guns lean in toward each other, as in San Andreas; the right one used to lean outward.
+- One-handed guns lean in toward CJ's middle: with two guns they lean toward each other, and a single pistol or SMG leans in as the right one of a pair. The right-hand gun used to lean outward.
 
 ### Fixed
 
