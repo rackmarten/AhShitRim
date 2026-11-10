@@ -6,26 +6,30 @@
 #include "vehicle_lights.h"
 
 #include <charconv>
+#include <map>
 
 namespace AhShitRim::Headlights
 {
     namespace
     {
-        constexpr int kLamps = 4;  // in kLight order: the headlights, then the tail lights, right one first
+        constexpr int kEnds = 2;  // a point light for the headlights, one for the tail lights (VehicleLights::LightOf)
+        constexpr int kLogsPerModel = 8;  // the lamps of each model logged this many times as they change
 
         struct State
         {
-            RE::NiPointer<RE::NiPointLight> lights[Protocol::kVehicleMax][kLamps];
+            RE::NiPointer<RE::NiPointLight> lights[Protocol::kVehicleMax][kEnds];
             std::uint8_t                    lit[Protocol::kVehicleMax] = {};
+            std::uint8_t                    lampState[Protocol::kVehicleMax] = {};
+            std::uint32_t                   model[Protocol::kVehicleMax] = {};
+            std::map<std::uint32_t, int>    logged;  // by model
             bool                            failed = false;
-            int                             logged = 0;
             bool                            tuned = false;
             VehicleLights::Tuning           tuning;
         } state;
 
         // [Headlights] in AhShitRim.ini, each optional: Ahead, Raise, Radius (metres) and Intensity for the headlights'
-        // light on the road; TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights; LampGlow for
-        // the lamps' meshes. Read once.
+        // light on the road; TailDrop, TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights';
+        // LampGlow and BrakeGlow for the lamps' meshes. Read once.
         const VehicleLights::Tuning& Tuning()
         {
             if (state.tuned) {
@@ -48,11 +52,15 @@ namespace AhShitRim::Headlights
             read("TailIntensity", t.tailIntensity, 1.0f);
             read("BrakeRadius", t.brakeRadius, Pose::kUnitsPerMeter);
             read("BrakeIntensity", t.brakeIntensity, 1.0f);
+            read("TailDrop", t.tailDrop, Pose::kUnitsPerMeter);
             read("LampGlow", t.lampGlow, 1.0f);
-            ModelView::SetLampGlow(t.lampGlow);
-            SKSE::log::info("headlights: beam {:.1f} m ahead, {:.1f} m up, {:.1f} m round at {:.2f}; tail lights {:.1f} m at {:.2f}, braking {:.1f} m at {:.2f}; lamps glow {:.2f}",
+            read("BrakeGlow", t.brakeGlow, 1.0f);
+            ModelView::SetLampTuning(t);
+            SKSE::log::info("headlights: beam at least {:.1f} m ahead, {:.1f} m up, {:.1f} m round at {:.2f}; tail lights {:.1f} m down, {:.1f} m round at {:.2f}, "
+                            "braking {:.1f} m at {:.2f}; lamps glow {:.2f}, {:.1f} times braking",
                 t.beamAhead / Pose::kUnitsPerMeter, t.beamRaise / Pose::kUnitsPerMeter, t.beamRadius / Pose::kUnitsPerMeter, t.beamIntensity,
-                t.tailRadius / Pose::kUnitsPerMeter, t.tailIntensity, t.brakeRadius / Pose::kUnitsPerMeter, t.brakeIntensity, t.lampGlow);
+                t.tailDrop / Pose::kUnitsPerMeter, t.tailRadius / Pose::kUnitsPerMeter, t.tailIntensity, t.brakeRadius / Pose::kUnitsPerMeter,
+                t.brakeIntensity, t.lampGlow, t.brakeGlow);
             return t;
         }
 
@@ -63,7 +71,7 @@ namespace AhShitRim::Headlights
             return root ? root->parent : nullptr;
         }
 
-        // A point light for one end of a vehicle, made the first time it burns (as the muzzle flash's).
+        // The point light for one end of a vehicle, made the first time it burns (as the muzzle flash's).
         RE::NiPointLight* Ensure(std::uint32_t a_slot, int a_end)
         {
             auto& light = state.lights[a_slot][a_end];
@@ -81,7 +89,7 @@ namespace AhShitRim::Headlights
                 SKSE::log::warn("headlights: no point light could be made, the vehicles' lights won't light the scene");
                 return nullptr;
             }
-            made->name = a_end < 2 ? "AhShitRimHeadlight" : "AhShitRimTailLight";
+            made->name = a_end == 0 ? "AhShitRimHeadlight" : "AhShitRimTailLight";
             auto& data = made->GetLightRuntimeData();
             data.ambient = RE::NiColor(0.0f, 0.0f, 0.0f);
             data.fade = 0.0f;
@@ -154,29 +162,44 @@ namespace AhShitRim::Headlights
             return;
         }
         const std::uint8_t lit = a_pose && (a_pose->flags & Protocol::kBodyWrecked) == 0 ? a_pose->lights.lit : 0;
-        if (a_pose && lit != state.lit[a_slot] && state.logged < 24) {
-            state.logged++;
-            SKSE::log::info("headlights: the vehicle in slot {} has lamps {:X} lit{} (front at {}, {}, {}, rear at {}, {}, {})", a_slot, lit,
-                (a_pose->lights.state & Protocol::kLightBraking) != 0 ? ", braking" : "", a_pose->lights.front[0], a_pose->lights.front[1],
-                a_pose->lights.front[2], a_pose->lights.rear[0], a_pose->lights.rear[1], a_pose->lights.rear[2]);
+        const std::uint8_t lampState = a_pose ? a_pose->lights.state : 0;
+        // Each model's lamps logged as they change (a few times each): which burn, and where each end's light goes.
+        bool log = false;
+        if (a_pose && (lit != state.lit[a_slot] || lampState != state.lampState[a_slot] || a_pose->model != state.model[a_slot])) {
+            auto& count = state.logged[a_pose->model];
+            log = count < kLogsPerModel;
+            count += log ? 1 : 0;
+            if (log) {
+                SKSE::log::info("headlights: {} in slot {} has lamps {:X} lit{} (headlight dummy at {}, {}, {}, tail light dummy at {}, {}, {})",
+                    ModelView::NameOf(a_pose->model), a_slot, lit, (lampState & Protocol::kLightBraking) != 0 ? ", braking" : "",
+                    a_pose->lights.front[0], a_pose->lights.front[1], a_pose->lights.front[2], a_pose->lights.rear[0], a_pose->lights.rear[1],
+                    a_pose->lights.rear[2]);
+            }
+            state.model[a_slot] = a_pose->model;
         }
         state.lit[a_slot] = lit;
+        state.lampState[a_slot] = lampState;
         if (lit == 0) {
             Out(a_slot);
             return;
         }
         const auto& tuning = Tuning();
         const auto  frame = VehicleHits::FrameOf(a_pose->vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
-        for (int lamp = 0; lamp < kLamps; lamp++) {
+        for (int end = 0; end < kEnds; end++) {
             VehicleLights::Glow glow;
-            if (!VehicleLights::LampOf(a_pose->lights, lamp, tuning, glow)) {
-                if (state.lights[a_slot][lamp]) {
-                    state.lights[a_slot][lamp]->GetLightRuntimeData().fade = 0.0f;
+            if (!VehicleLights::LightOf(a_pose->lights, end, tuning, glow)) {
+                if (state.lights[a_slot][end]) {
+                    state.lights[a_slot][end]->GetLightRuntimeData().fade = 0.0f;
                 }
                 continue;
             }
             const auto at = VehicleHits::ToWorld(frame, glow.at);
-            Place(a_slot, lamp, RE::NiPoint3(at.x, at.y, at.z), glow);
+            Place(a_slot, end, RE::NiPoint3(at.x, at.y, at.z), glow);
+            if (log) {
+                SKSE::log::info("headlights: {}'s {} light placed at {:.0f}, {:.0f}, {:.0f} in the vehicle (world {:.0f}, {:.0f}, {:.0f}), {:.1f} m round at {:.2f}{}",
+                    ModelView::NameOf(a_pose->model), end == 0 ? "headlights'" : "tail lights'", glow.at.x, glow.at.y, glow.at.z, at.x, at.y, at.z,
+                    glow.radius / Pose::kUnitsPerMeter, glow.intensity, state.lights[a_slot][end] ? "" : " (no light made)");
+            }
         }
     }
 
