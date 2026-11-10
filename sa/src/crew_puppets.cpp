@@ -16,6 +16,7 @@
 #include <CAnimBlendAssociation.h>
 #include <CAnimBlendHierarchy.h>
 #include <CAnimManager.h>
+#include <CColModel.h>
 #include <CModelInfo.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
@@ -23,6 +24,7 @@
 #include <CPopulation.h>
 #include <CStreaming.h>
 #include <CTimer.h>
+#include <CVehicle.h>
 #include <CWeapon.h>
 #include <CWeaponInfo.h>
 #include <CWorld.h>
@@ -49,6 +51,7 @@ namespace AhShitRim::CrewPuppets
         constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
         constexpr int kBoneRightHand = 24;
         constexpr int kBonePelvis = 2;        // BONE_PELVIS
+        constexpr int kBoneHead = 5;          // BONE_HEAD
         constexpr unsigned short kAnimLooped = 0x2;
         constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
 
@@ -502,8 +505,19 @@ namespace AhShitRim::CrewPuppets
                     puppet.satLogged = true;
                     const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - feet -
                                         CVector(0.0f, 0.0f, Passengers::kSeatDrop * Pose::kMetersPerUnit);
-                    Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}", member.id, off.x, off.y, off.z,
-                        std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT"));
+                    // And his head's joint under the top of CJ's vehicle's collision box (its roof, on a car).
+                    std::string headroom;
+                    RwMatrix    head;
+                    auto*       vehicle = FindPlayerVehicle(-1, false);
+                    auto*       col = vehicle ? vehicle->GetColModel() : nullptr;
+                    if (col && CjBody::BoneWorld(static_cast<CPlayerPed*>(ped), kBoneHead, head)) {
+                        const CMatrix& m = static_cast<const CMatrix&>(vehicle->GetMatrix());
+                        const CVector  d = CVector(head.pos.x, head.pos.y, head.pos.z) - vehicle->GetPosition();
+                        headroom = std::format(", his head's joint {:.2f} m under the top of model {}", col->m_boundBox.m_vecMax.z - (d.x * m.at.x + d.y * m.at.y + d.z * m.at.z),
+                            vehicle->m_nModelIndex);
+                    }
+                    Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}{}", member.id, off.x, off.y, off.z,
+                        std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT", headroom));
                 }
             } else if (puppet.sat) {
                 // Stood up (or fell): his seat anim must be gone within its fade.
