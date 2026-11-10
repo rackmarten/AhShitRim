@@ -1,7 +1,6 @@
 #include <doctest/doctest.h>
 
 #include "../../cpp/cheats.h"
-#include "../../cpp/crew.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -437,68 +436,4 @@ TEST_CASE("cheats: the command for San Andreas")
     CHECK(CommandFor(Row("BSXSGGC")).cheat == 54);   // CHEAT_CARS_FLOAT_AWAY_WHEN_HIT
     CHECK(Toggles(Row("IAVENJQ").kind));
     CHECK(Toggles(Row("BSXSGGC").kind));
-}
-
-namespace
-{
-    // Types a_text a_gap seconds a letter, as PlayerSync does: every letter into the Typist and the KeyHold, G and H
-    // pressed after. The crew keys acted on, in order.
-    std::string TypeWithCrewKeys(Typist& a_typist, std::string_view a_text, float a_gap = 0.1f, float a_after = 1.0f)
-    {
-        Crew::KeyHold hold;
-        std::string   acted;
-        const auto    act = [&](int a_key) {
-            if (a_key) {
-                acted += static_cast<char>(a_key);
-            }
-        };
-        for (char c : a_text) {
-            act(hold.Update(a_gap));
-            a_typist.Key(Dik(c));
-            act(hold.Letter(a_typist.CodeRun(), a_typist.Finished()));
-            if (c == 'G' || c == 'H') {
-                act(hold.Press(c, a_typist.CodeRun(), a_typist.Finished()));
-            }
-        }
-        act(hold.Update(a_after));
-        return acted;
-    }
-}
-
-TEST_CASE("cheats: G and H don't act while a cheat with them in it is typed, and act at once or soon otherwise")
-{
-    Typist typist;
-    typist.SetVehicleNames({ { "HYDRA", 520 }, { "GREENWOO", 492 }, { "HOTDOG", 588 } });
-    // Typed at a typist's pace, none of these sends a homie off or brings one along.
-    for (const char* code : { "HESOYAM", "LXGIWYL", "NCSGDAG", "KGGGDKP", "OHDUDE", "AKJJYGLC", "JUMPJET", "HYDRA", "GREENWOO", "WWWHESOYAM" }) {
-        CAPTURE(code);
-        CHECK(TypeWithCrewKeys(typist, code) == "");
-    }
-    // A cheat finished is done with: nothing waits on afterwards.
-    CHECK(TypeWithCrewKeys(typist, "NCSGDAG", 0.1f, 5.0f) == "");
-    // G and H on their own act, at once or once the wait is up.
-    CHECK(TypeWithCrewKeys(typist, "G") == "G");
-    CHECK(TypeWithCrewKeys(typist, "H") == "H");
-    CHECK(TypeWithCrewKeys(typist, "WWWG") == "G");
-    CHECK(TypeWithCrewKeys(typist, "DDH") == "H");
-    // Moving off right after: at once, since no code goes on that way.
-    for (char move : std::string_view("WASD")) {
-        for (char key : std::string_view("GH")) {
-            const std::string typed{ key, move };
-            CAPTURE(typed);
-            CHECK(TypeWithCrewKeys(typist, typed, 0.05f, 0.0f) == std::string(1, key));
-        }
-    }
-    // A code broken off part way: the key it held acts once it's clear no code goes on, or once nothing more comes.
-    CHECK(TypeWithCrewKeys(typist, "HEX") == "H");
-    CHECK(TypeWithCrewKeys(typist, "HE") == "H");
-    CHECK(TypeWithCrewKeys(typist, "HESOYA", 0.1f, 0.2f) == "");  // still being typed
-    // Typed at half a second a letter it still holds; slower than Crew::KeyHold::kHoldFor, a code's H acts first: the
-    // price of not holding G and H longer.
-    CHECK(TypeWithCrewKeys(typist, "HESOYAM", 0.5f) == "");
-    CHECK(TypeWithCrewKeys(typist, "HESOYAM", 0.8f) == "H");
-    // H then G at once: both act, H first (Homies queues them).
-    CHECK(TypeWithCrewKeys(typist, "HG", 0.05f) == "HG");
-    // Two presses: each its own.
-    CHECK(TypeWithCrewKeys(typist, "G", 0.1f) + TypeWithCrewKeys(typist, "G", 0.1f) == "GG");
 }

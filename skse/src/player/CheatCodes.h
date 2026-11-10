@@ -38,11 +38,6 @@ namespace AhShitRim::CheatCodes
     // A key went down while CJ has the player and no menu has the input.
     void Key(std::uint32_t a_dik, const World& a_world);
 
-    // After the last letter Key typed: how many of the newest letters start a code, and whether it finished one
-    // (Cheats::Typist::CodeRun, Finished). Homies holds G and H back by them.
-    std::size_t CodeRun();
-    bool        Finished();
-
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();
 

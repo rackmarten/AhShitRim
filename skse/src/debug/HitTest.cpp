@@ -37,7 +37,7 @@ namespace AhShitRim::HitTest
             CrewSpots,  // crew (v39): the spots fill, two homies join
             CrewFight,  // wolves come, the crew shoots
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
-            CrewCheat,  // HESOYAM typed with a crew sends nobody off; H on its own still does, and two join again
+            CrewCheat,  // HESOYAM, and G with no aim, typed with a crew send nobody off
             CrewOut,    // F10 out and back: the crew comes again
             CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
             CrewStray,  // a follower put 70 m behind, as one left by a car or stuck: he's put back near CJ and comes up
@@ -655,14 +655,12 @@ namespace AhShitRim::HitTest
             if (state.step == 0 && state.timer >= 1.5f) {
                 const int following = Homies::DebugCount(true);
                 SKSE::log::info("hit test: crew: {} following after HESOYAM was typed (2 before): {}", following, following == 2 ? "ok" : "FAILED");
-                PlayerSync::DebugType("H");
+                PlayerSync::DebugType("G");
                 state.step = 1;
                 state.timer = 0.0f;
             } else if (state.step == 1 && state.timer >= 1.5f) {
                 const int following = Homies::DebugCount(true);
-                SKSE::log::info("hit test: crew: {} following after H on its own: {}", following, following == 0 ? "ok" : "FAILED");
-                const int joined = Homies::DebugRecruit(a_player, 2);
-                SKSE::log::info("hit test: crew: {} joined again, {} following", joined, Homies::DebugCount(true));
+                SKSE::log::info("hit test: crew: {} following after G with no aim: {}", following, following == 2 ? "ok" : "FAILED");
                 state.step = 2;
                 state.timer = 0.0f;
             } else if (state.step == 2 && state.timer >= 3.0f) {

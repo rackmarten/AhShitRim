@@ -112,21 +112,26 @@ TEST_CASE("crew: a spot fills out of view and close, and empties far away")
     CHECK_FALSE(Crew::Empties(200.0f, false));
 }
 
-TEST_CASE("crew: G picks the homie CJ targets, else the nearest in front within reach")
+TEST_CASE("crew: G acts on the homie CJ aims at: his lock-on or crosshair, else the one on his aim line")
 {
     const Crew::Vec3 cj{ 0.0f, 0.0f, 0.0f };
     std::vector<Crew::Candidate> c;
-    c.push_back({ 1, { 0.0f, 5.0f * Crew::kMeter, 0.0f }, false });   // ahead, 5 m
-    c.push_back({ 2, { 0.0f, 3.0f * Crew::kMeter, 0.0f }, false });   // ahead, 3 m
-    c.push_back({ 3, { 0.0f, -2.0f * Crew::kMeter, 0.0f }, false });  // behind
-    CHECK(Crew::Pick(cj, 0.0f, c) == 2);
-    CHECK(Crew::Pick(cj, Pose::kPi, c) == 3);  // turned round
-    c.push_back({ 4, { 0.0f, 20.0f * Crew::kMeter, 0.0f }, true });   // targeted, far but in reach of a gun
-    CHECK(Crew::Pick(cj, 0.0f, c) == 4);
-    std::vector<Crew::Candidate> far{ { 5, { 0.0f, 12.0f * Crew::kMeter, 0.0f }, false } };
-    CHECK(Crew::Pick(cj, 0.0f, far) == 0);
-    std::vector<Crew::Candidate> touching{ { 6, { 0.5f * Crew::kMeter, -0.2f * Crew::kMeter, 0.0f }, false } };
-    CHECK(Crew::Pick(cj, 0.0f, touching) == 6);  // right beside him, whatever the angle
+    c.push_back({ 1, { 0.3f * Crew::kMeter, 5.0f * Crew::kMeter, 0.0f }, false });  // 5 m ahead, a little right of the line
+    c.push_back({ 2, { 2.0f * Crew::kMeter, 3.0f * Crew::kMeter, 0.0f }, false });  // nearer, but well off it
+    c.push_back({ 3, { 0.0f, -2.0f * Crew::kMeter, 0.0f }, false });                // behind
+    CHECK(Crew::AimPick(cj, 0.0f, c) == 1);
+    CHECK(Crew::AimPick(cj, Pose::kPi, c) == 3);                                       // turned round
+    CHECK(Crew::AimPick(cj, Pose::HeadingOf(2.0f, 3.0f), c) == 2);                    // aimed at him
+    CHECK(Crew::AimPick(cj, Pose::kPi / 2.0f, c) == 0);                               // aimed east: nobody there
+    // Further off the aim line may stray by kAimCone only, not kAimWidth.
+    std::vector<Crew::Candidate> far{ { 4, { 1.5f * Crew::kMeter, 18.0f * Crew::kMeter, 0.0f }, false } };
+    CHECK(Crew::AimPick(cj, 0.0f, far) == 4);                                          // 4.8 degrees off
+    far[0].at.x = 2.5f * Crew::kMeter;
+    CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // 7.9 degrees off
+    far[0].at = { 0.0f, 25.0f * Crew::kMeter, 0.0f };
+    CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // past kAimReach
+    far[0].targeted = true;
+    CHECK(Crew::AimPick(cj, Pose::kPi, far) == 4);                                     // his crosshair on him: wherever
 }
 
 TEST_CASE("crew: a homie fires in bursts of 1 to 2 s with 1 to 2 s between")

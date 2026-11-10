@@ -838,16 +838,14 @@ namespace AhShitRim::PlayerSync
             if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && !Police::IsBusted() && Cheats::LetterOf(a_dik)) {
                 static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
                 CheatCodes::Key(a_dik, world);
-                Homies::OnLetter(CheatCodes::CodeRun(), CheatCodes::Finished());
             }
         }
 
-        // v39: San Andreas's group keys, on foot: recruit, regroup, dismiss. After TypeCheat: one that may be part of a
-        // cheat being typed waits (Homies::OnKey).
+        // v39: San Andreas's group key on foot, G: aimed at a homie, recruit or dismiss him (Homies::OnKey).
         void CrewKey(std::uint32_t a_dik)
         {
-            if (state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen() && !Vitals::IsWasted() && !Police::IsBusted()) {
-                Homies::OnKey(a_dik == Input::kDikG, CheatCodes::CodeRun(), CheatCodes::Finished());
+            if (a_dik == Input::kDikG && state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen() && !Vitals::IsWasted() && !Police::IsBusted()) {
+                Homies::OnKey(state.input.Aiming());
             }
         }
 
@@ -1376,7 +1374,7 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
-                    if ((code == Input::kDikG || code == Input::kDikH) && state.owned && !InVehicle()) {
+                    if (code == Input::kDikG && state.owned && !InVehicle()) {
                         if (button->IsDown()) {
                             CrewKey(code);
                         }
@@ -1618,8 +1616,8 @@ namespace AhShitRim::PlayerSync
             for (std::uint32_t dik = 0; dik < 0x100; dik++) {
                 if (Cheats::LetterOf(dik) == *c) {
                     TypeCheat(dik);
-                    if (dik == Input::kDikG || dik == Input::kDikH) {
-                        CrewKey(dik);  // as the keys do: the hit test types HESOYAM with a crew
+                    if (dik == Input::kDikG) {
+                        CrewKey(dik);  // as the key does: the hit test types G with a crew and no aim
                     }
                     break;
                 }

@@ -241,7 +241,7 @@ namespace AhShitRim::Activation
         std::vector<Activate::Candidate>   candidates;
         std::vector<RE::TESObjectREFR*>    refs;
         tes->ForEachReferenceInRange(a_player, reach + kSearchSlack, [&](RE::TESObjectREFR* a_ref) {
-            if (a_ref && a_ref != a_player && !a_ref->IsDisabled() && !a_ref->IsDeleted() && !Homies::IsHomie(a_ref) && Activatable(a_ref)) {  // v39: a homie has nothing to say, G and H are his keys
+            if (a_ref && a_ref != a_player && !a_ref->IsDisabled() && !a_ref->IsDeleted() && !Homies::IsHomie(a_ref) && Activatable(a_ref)) {  // v39: a homie has nothing to say, G (aimed) is his key
                 if (auto* root = a_ref->Get3D(); root && !root->GetAppCulled()) {
                     auto* actor = a_ref->As<RE::Actor>();
                     auto* base = a_ref->GetBaseObject();

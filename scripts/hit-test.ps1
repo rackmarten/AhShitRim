@@ -14,7 +14,7 @@
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
-    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight the elk CJ shot stays out of, friendly fire, HESOYAM and H, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight the elk CJ shot stays out of, friendly fire, HESOYAM and G with no aim, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
 #>
