@@ -10,9 +10,10 @@
 //  - fills the spots of the holds where the player is Thane while CJ has the player: about 15 homies round the way into
 //    the capital (the stable, the gate outside, past the gate inside; a town's way in where it has no walls), standing
 //    about with San Andreas's idles, their AI off; a spot fills out of view and empties far away,
-//  - G on foot recruits the homie CJ targets or the nearest in front of him (up to the crew size San Andreas's respect
-//    table gives the Thane titles), H dismisses one, H with nobody near dismisses all, G with nobody near regroups,
-//  - followers keep to San Andreas's formation behind the player (KeepOffsetFromActor) and never fight Skyrim's way:
+//  - G on foot while CJ aims recruits the homie he aims at (up to the crew size San Andreas's respect table gives the
+//    Thane titles), or dismisses him if he's of the crew; G without aiming does nothing,
+//  - followers run Skyrim's own follower package (Lydia's, pathing after the player), their Skyrim gear taken off, and
+//    never fight Skyrim's way:
 //    their target is picked here (the nearest enemy of the player's in sight and in range), and they fire San Andreas's
 //    guns at it in bursts; the bullets come back as shots with them as the shooter (Shots),
 //  - CJ's own hits on them have no aggressor and no crime (Shots::Hurt), so they never turn on him,
@@ -24,7 +25,7 @@ namespace AhShitRim::Homies
     void OnDataLoaded();  // reads [Crew] and [Debug] CrewThanes
 
     // Every frame San Andreas has the player, before ModelView::EndFrame: the spots, the crew, their fights, the input
-    // for San Andreas and the drawing. a_pose is null while it isn't valid; a_onFoot: CJ walks (G and H work);
+    // for San Andreas and the drawing. a_pose is null while it isn't valid; a_onFoot: CJ walks (G works);
     // a_target: CJ's lock-on (0 for none).
     void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState* a_pose,
         bool a_onFoot, RE::FormID a_target, float a_delta);
@@ -32,12 +33,9 @@ namespace AhShitRim::Homies
     // Every frame, whoever has the player: takes out the homies that are to go, and after a load the ones a save kept.
     void Sweep(float a_delta);
 
-    // A letter went into the cheat string (G and H too), a_run and a_finished as CheatCodes has them after it.
-    void OnLetter(std::size_t a_run, bool a_finished);
-
-    // G (a_recruit) or H pressed on foot, after its OnLetter. One that may be part of a cheat being typed waits
-    // (Crew::KeyHold): HESOYAM sends nobody off.
-    void OnKey(bool a_recruit, std::size_t a_run, bool a_finished);
+    // G pressed on foot, a_aiming: the aim key held. It acts at the next Update, only while CJ aims (San Andreas's aim
+    // counts too), so a G typed in a cheat does nothing.
+    void OnKey(bool a_aiming);
 
     // Back to Skyrim's own player (a_loading: a load or a new game, whose world is about to go): every homie goes, the
     // followers are remembered and come back at the next handover.

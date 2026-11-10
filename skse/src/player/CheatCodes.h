@@ -40,10 +40,6 @@ namespace AhShitRim::CheatCodes
 
     // A cheat finished some other way than typing it: San Andreas's console sequence on the pad (protocol/cpp/pad_cheats.h).
     void Finish(const Cheats::Cheat& a_cheat, const World& a_world);
-    // After the last letter Key typed: how many of the newest letters start a code, and whether it finished one
-    // (Cheats::Typist::CodeRun, Finished). Homies holds G and H back by them.
-    std::size_t CodeRun();
-    bool        Finished();
 
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();

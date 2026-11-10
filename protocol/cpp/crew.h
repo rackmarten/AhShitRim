@@ -287,33 +287,40 @@ namespace AhShitRim::Crew
     {
         std::uint32_t id = 0;
         Vec3          at;
-        bool          targeted = false;  // CJ's lock-on or aim is on him
+        bool          targeted = false;  // CJ's lock-on or crosshair is on him
     };
 
-    inline constexpr float kRecruitReach = 8.0f;    // metres
-    inline constexpr float kRecruitCone = 60.0f;    // degrees either side of CJ's facing
+    inline constexpr float kAimReach = 20.0f;  // metres: a homie further than this isn't picked by CJ's aim alone
+    inline constexpr float kAimWidth = 0.6f;   // metres either side of CJ's aim line a homie may stand
+    inline constexpr float kAimCone = 6.0f;    // degrees either side of it, for those further off
 
-    // The homie G recruits (or H dismisses): the one CJ targets, else the nearest within reach in front of him. 0 for none.
-    inline std::uint32_t Pick(const Vec3& a_cj, float a_heading, const std::vector<Candidate>& a_candidates)
+    // The homie G acts on while CJ aims (G does nothing else, so typing a cheat never sends anyone off): the one his
+    // lock-on or crosshair is on, else the one nearest CJ's aim line (a_heading) within kAimReach, kAimWidth either side
+    // of it close up and kAimCone further off. 0 for none.
+    inline std::uint32_t AimPick(const Vec3& a_cj, float a_heading, const std::vector<Candidate>& a_candidates)
     {
+        const float   ax = std::sin(a_heading), ay = std::cos(a_heading);  // Skyrim's heading (Pose::HeadingOf): 0 north, clockwise
         std::uint32_t best = 0;
-        float         bestDistance = kRecruitReach * kMeter;
+        float         bestAngle = INFINITY;
         for (const auto& c : a_candidates) {
             const float dx = c.at.x - a_cj.x, dy = c.at.y - a_cj.y;
             const float d = std::hypot(dx, dy);
             if (c.targeted && d <= 30.0f * kMeter) {
                 return c.id;
             }
-            if (d > bestDistance) {
+            const float along = dx * ax + dy * ay;
+            const float side = std::abs(dx * ay - dy * ax);
+            if (along <= 0.0f || d > kAimReach * kMeter) {
                 continue;
             }
-            float off = std::abs(Pose::HeadingOf(dx, dy) - a_heading);
-            off = (std::min)(off, 2.0f * Pose::kPi - off);
-            if (d > 1.0f * kMeter && off > kRecruitCone * Pose::kPi / 180.0f) {
+            const float angle = std::atan2(side, along);
+            if (side > kAimWidth * kMeter && angle > kAimCone * Pose::kPi / 180.0f) {
                 continue;
             }
-            best = c.id;
-            bestDistance = d;
+            if (angle < bestAngle) {
+                best = c.id;
+                bestAngle = angle;
+            }
         }
         return best;
     }
@@ -565,77 +572,6 @@ namespace AhShitRim::Crew
             return rate < kMinRate ? kMinRate : rate > kMaxRate ? kMaxRate : rate;
         }
     }
-
-    // ---- The keys ----
-
-    // G and H are letters of San Andreas's cheats too (HESOYAM's H, LXGIWYL's G), and HESOYAM typed sent a follower
-    // off. So a G or H that may be part of a code (Cheats::Typist::CodeRun) waits: dropped once a code it's part of is
-    // finished, acted on as soon as the next letter breaks the code off (W, A, S or D right after it), or once no letter
-    // has come for kHoldFor (long enough for a cheat typed over a remote desktop). One that is no code's start acts at
-    // once, and one that finishes a code never does.
-    class KeyHold
-    {
-    public:
-        static constexpr float kHoldFor = 0.75f;  // s
-
-        // A letter went into the cheat string (G and H too, before their Press), a_run and a_finished as the Typist
-        // has them after it. The held key to act on now, or 0.
-        int Letter(std::size_t a_run, bool a_finished)
-        {
-            if (!_key) {
-                return 0;
-            }
-            _since++;
-            if (a_run < _since) {
-                return Take();  // the code broke off before it: it was the key
-            }
-            if (a_finished) {
-                _key = 0;  // a cheat with it in it, typed
-            }
-            _held = 0.0f;  // the code goes on through it: wait for the next letter
-            return 0;
-        }
-
-        // G or H (a_key, not 0) went down, after its Letter. The key to act on now, or 0 while it waits.
-        int Press(int a_key, std::size_t a_run, bool a_finished)
-        {
-            if (a_finished) {
-                return 0;
-            }
-            if (a_run == 0) {
-                return a_key;
-            }
-            _key = a_key;
-            _since = 1;
-            _held = 0.0f;
-            return 0;
-        }
-
-        // a_seconds since the last call. The held key once it has waited kHoldFor, else 0.
-        int Update(float a_seconds)
-        {
-            if (!_key) {
-                return 0;
-            }
-            _held += a_seconds;
-            return _held >= kHoldFor ? Take() : 0;
-        }
-
-        bool Holding() const { return _key != 0; }
-        void Clear() { _key = 0; }
-
-    private:
-        int Take()
-        {
-            const int key = _key;
-            _key = 0;
-            return key;
-        }
-
-        int         _key = 0;
-        std::size_t _since = 0;
-        float       _held = 0.0f;
-    };
 
     // One animation on a clump, as San Andreas's CAnimBlendAssociation has it.
     struct Blend
