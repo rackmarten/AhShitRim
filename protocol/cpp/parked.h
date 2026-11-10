@@ -63,17 +63,7 @@ namespace AhShitRim::Parked
     // San Andreas's models the table uses.
     inline constexpr std::uint16_t kSanchez = 468;
     inline constexpr std::uint16_t kBmx = 481;
-    inline constexpr std::uint16_t kRhino = 432;
-    inline constexpr std::uint16_t kPatriot = 470;
-    inline constexpr std::uint16_t kHunter = 425;
-    inline constexpr std::uint16_t kSeasparrow = 447;
-    inline constexpr std::uint16_t kMonster = 444;
     inline constexpr std::uint16_t kQuad = 471;
-    inline constexpr std::uint16_t kRomero = 442;
-    inline constexpr std::uint16_t kCombine = 532;
-    inline constexpr std::uint16_t kCropduster = 512;
-    inline constexpr std::uint16_t kCamper = 483;
-    inline constexpr std::uint16_t kDozer = 486;
     inline constexpr std::uint16_t kFreeway = 463;
 
     // A spot this far off the marker it stands by, clear of the pickups there (on the marker and 2 m to either side).
@@ -105,108 +95,40 @@ namespace AhShitRim::Parked
         { 33, kBmx, Hold::Winterhold, World::Tamriel, { 109299.0f, 102777.0f + kAside, -8867.0f }, 0.0f, "Winterhold" },
         { 34, kBmx, Hold::Pale, World::Tamriel, { 73031.0f, 45290.0f + kAside, -6517.0f }, 0.0f, "Heljarchen" },
 
-        // Themed spots, in San Andreas's spirit. The big ones (BigOne) wait in the open, clear of every place in kPlaces.
-        { 50, kRhino, Hold::Whiterun, World::Tamriel, { -9654.0f, -4901.0f, -6130.0f }, 0.8f, "Fort Greymoor: a tank on the plain below the fort" },
-        { 51, kPatriot, Hold::Falkreath, World::Tamriel, { -67967.0f, -51506.0f + kAside, 512.0f }, 0.0f, "the Imperial camp in Falkreath: an army jeep" },
-        { 52, kHunter, Hold::Falkreath, World::Tamriel, { 10655.0f, -43590.0f, 440.0f }, 4.71f, "Bleak Falls Barrow: a gunship at the foot of its mountain, over Riverwood" },
-        { 53, kSeasparrow, Hold::Haafingar, World::Tamriel, { -51820.0f, 128212.0f, -13350.0f }, 1.57f, "the Solitude Lighthouse: a seaplane helicopter on the shore" },
-        { 54, kMonster, Hold::Whiterun, World::Tamriel, { -2557.0f, -722.0f, -5570.0f }, 1.57f, "Bleakwind Basin: a monster truck outside the giants' camp" },
+        // Themed spots, in San Andreas's spirit.
         { 55, kQuad, Hold::Falkreath, World::Tamriel, { -56672.0f + kAside, -54925.0f, 1559.0f }, 1.57f, "Hunter's Rest: a quad at the hunters' camp" },
-        { 56, kRomero, Hold::Falkreath, World::Tamriel, { -30566.0f - kAside, -86850.0f, -3124.0f }, 4.71f, "Falkreath: a hearse in the town of graves" },
-        { 57, kCombine, Hold::Whiterun, World::Tamriel, { 13653.0f, -15526.0f, -4720.0f }, 3.14f, "Pelagia Farm: a combine harvester on the plain below the farm" },
-        { 58, kCropduster, Hold::Whiterun, World::Tamriel, { -74500.0f, -1900.0f, -4730.0f }, 2.36f, "the Rorikstead farms: a crop duster on a flat run east of the village" },
-        { 59, kCamper, Hold::Falkreath, World::Tamriel, { -43534.0f + kAside, -59851.0f, 992.0f }, 1.57f, "Half-Moon Mill: a camper van by Lake Ilinalta" },
-        { 60, kDozer, Hold::Reach, World::Tamriel, { -163676.0f, 5707.0f, -4490.0f }, 0.0f, "Left Hand Mine: a dozer on the flat outside the mine" },
         { 61, kFreeway, Hold::Reach, World::Tamriel, { -114906.0f, -7748.0f - kAside, -5452.0f }, 3.14f, "Old Hroldan: a chopper outside the roadside inn" },
     };
     // clang-format on
 
-    // ---- Big ones wait in the open ----
+    // ---- Only two wheels and the quad ----
     //
-    // A tank in a fort, or a combine in a farmyard, can't get out past the walls, fences and barricades, and is too
-    // much for the place. So nothing bigger than a car (BigOne: aircraft, monster trucks, and San Andreas's tanks,
-    // trucks, buses and works vehicles) waits in a town or a structure (a fort, a camp, a ruin, a farm, a mine, a
-    // walled place): its spot is in the open, kOpenMargin past the reach of every place in kPlaces, where it can
-    // drive or fly off. A car, a bike or a quad may wait inside one.
-
-    // San Andreas's car-type models (VehicleKinds::Kind::Car) bigger than a car, by data/vehicles.ide: the Linerunner,
-    // Firetruck, Trashmaster, Mule, Enforcer, Securicar, Bus, Rhino, Barracks, Coach, Packer, Flatbed, Yankee, Dozer,
-    // Boxville, Benson, Journey, Tanker, Roadtrain, Cement Truck, Combine Harvester, Firetruck LA, DFT-30, S.W.A.T.
-    // and Boxburg. Vans and SUVs (the Camper, the Patriot, the Romero) count as cars.
-    inline constexpr std::uint16_t kBigCars[] = { 403, 407, 408, 414, 427, 428, 431, 432, 433, 437, 443, 455, 456, 486, 498, 499, 508, 514, 515, 524, 532,
-        544, 578, 601, 609 };
-
-    constexpr bool BigOne(std::uint16_t a_model)
+    // A parked car, truck, tank or aircraft blocks a road or a gate, or can't get out past the walls round it, wherever
+    // it stands in Skyrim. A bicycle, a motorbike or the quad fits anywhere and rides off, so those are all that waits
+    // parked. The rest come by other ways (the dev spawn keys for now).
+    constexpr bool MayPark(std::uint16_t a_model)
     {
         using VehicleKinds::Kind;
         switch (VehicleKinds::KindOf(a_model)) {
-        case Kind::Heli:
-        case Kind::Plane:
-        case Kind::MonsterTruck:
+        case Kind::Bicycle:
+        case Kind::Bike:
+        case Kind::Quad:
             return true;
-        case Kind::Car:
-            return VehicleKinds::Ids::In(kBigCars, a_model);
         default:
             return false;
         }
     }
 
-    // A town or structure a spot stands by: its middle (its marker, Skyrim units) and how far its buildings, walls,
-    // fences, tents and barricades reach from it (metres across), measured from Skyrim.esm's references round it.
-    struct Place
+    constexpr bool AllMayPark()
     {
-        Vec3             at;
-        float            reach;
-        std::string_view name;
-    };
-
-    // clang-format off
-    inline constexpr Place kPlaces[] = {
-        { { 22243.0f, -44616.0f, -136.0f }, 68.0f, "Riverwood" },
-        { { -83782.0f, 7902.0f, -4118.0f }, 88.0f, "Rorikstead" },  // its fields' fences too
-        { { 77183.0f, -65456.0f, 10869.0f }, 30.0f, "Ivarstead" },
-        { { -101407.0f, 84423.0f, -12003.0f }, 45.0f, "Dragon Bridge" },
-        { { -132797.0f, 38451.0f, -6200.0f }, 47.0f, "Karthwasten" },
-        { { 134765.0f, 12937.0f, -12073.0f }, 52.0f, "Kynesgrove" },
-        { { 163299.0f, -60431.0f, 7107.0f }, 34.0f, "Shor's Stone" },
-        { { 121354.0f, -34306.0f, -9809.0f }, 38.0f, "Darkwater Crossing" },
-        { { -117661.0f, 6257.0f, -5419.0f }, 30.0f, "Soljund's Sinkhole" },
-        { { -6557.0f, 64347.0f, -11432.0f }, 61.0f, "Stonehills" },
-        { { -30566.0f, -86850.0f, -3124.0f }, 67.0f, "Falkreath" },
-        { { -38384.0f, 63751.0f, -13910.0f }, 78.0f, "Morthal" },
-        { { 33278.0f, 105558.0f, -13633.0f }, 54.0f, "Dawnstar" },
-        { { 109299.0f, 102777.0f, -8867.0f }, 44.0f, "Winterhold" },
-        { { 73031.0f, 45290.0f, -6517.0f }, 35.0f, "Heljarchen" },
-        { { -13759.0f, -8448.0f, -5552.0f }, 61.0f, "Fort Greymoor" },
-        { { -67967.0f, -51506.0f, 512.0f }, 13.0f, "the Imperial camp in Falkreath" },
-        { { 1482.0f, -41162.0f, 5727.0f }, 84.0f, "Bleak Falls Barrow" },  // its towers and bridges
-        { { -47782.0f, 128632.0f, -12908.0f }, 16.0f, "the Solitude Lighthouse" },
-        { { 1539.0f, 1306.0f, -5796.0f }, 38.0f, "the giants' camp in Bleakwind Basin" },
-        { { -56672.0f, -54925.0f, 1559.0f }, 16.0f, "Hunter's Rest" },
-        { { 19072.0f, -18080.0f, -4360.0f }, 74.0f, "Pelagia Farm" },  // up to Whiterun's outer fences
-        { { -43534.0f, -59851.0f, 992.0f }, 61.0f, "Half-Moon Mill" },
-        { { -165398.0f, 861.0f, -4501.0f }, 31.0f, "Left Hand Mine" },
-        { { -114906.0f, -7748.0f, -5452.0f }, 33.0f, "Old Hroldan" },
-    };
-    // clang-format on
-
-    // How far past a place's reach a big one's spot stands at least: its own length and room to turn.
-    inline constexpr float kOpenMargin = 10.0f;  // metres
-
-    // The place a vehicle of a_model at a_at (Skyrim units) would wait in, or nullptr: always nullptr for one no
-    // bigger than a car, which may wait inside a place.
-    inline const Place* Enclosing(std::uint16_t a_model, const Vec3& a_at)
-    {
-        if (!BigOne(a_model)) {
-            return nullptr;
-        }
-        for (const auto& place : kPlaces) {
-            if (std::hypot(a_at.x - place.at.x, a_at.y - place.at.y) / kMeter < place.reach + kOpenMargin) {
-                return &place;
+        for (const auto& spot : kSpots) {
+            if (!MayPark(spot.model)) {
+                return false;
             }
         }
-        return nullptr;
+        return true;
     }
+    static_assert(AllMayPark(), "a parked spot holds a model bigger than a bike or the quad");
 
     inline const Spot* SpotById(std::uint16_t a_id)
     {
