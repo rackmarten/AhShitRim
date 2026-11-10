@@ -142,9 +142,10 @@ namespace AhShitRim::Homies
             std::vector<RE::ObjectRefHandle> markers;  // ground probes, deleted the next frame
             std::vector<Bound>       bound;
             std::uint32_t            roll = 0x9E3779B9u;
-            int                      key = 0;  // 1 G, 2 H, waiting for the next Update
+            std::vector<int>         keys;  // 1 G, 2 H, in order, waiting for the next Update
             Crew::KeyHold            hold;     // a G or H that may be part of a cheat being typed
-            unsigned                 hushed = 0;  // Skyrim lines of theirs stopped
+            unsigned                 hushedLines = 0;   // subtitles of theirs taken off (a line each)
+            unsigned                 hushedSounds = 0;  // their voice handles stopped
             std::uint32_t            handover = 0;
             std::uint32_t            freshFor = 0;
             float                    reanchorWait = 0.0f;
@@ -747,7 +748,6 @@ namespace AhShitRim::Homies
         // voice is stopped as it starts and its subtitle taken off.
         void Hush()
         {
-            unsigned hushed = 0;
             for (auto& h : state.homies) {
                 auto* actor = Get(h);
                 auto* process = actor ? actor->GetActorRuntimeData().currentProcess : nullptr;
@@ -758,7 +758,9 @@ namespace AhShitRim::Homies
                 for (auto& sound : high->soundHandles) {
                     if (sound.IsPlaying()) {
                         sound.Stop();
-                        hushed++;
+                        if (state.hushedSounds++ % 20 == 0) {
+                            SKSE::log::info("homies: a homie's Skyrim voice stopped ({} so far)", state.hushedSounds);
+                        }
                     }
                 }
             }
@@ -767,15 +769,14 @@ namespace AhShitRim::Homies
                 for (auto it = manager->subtitles.begin(); it != manager->subtitles.end();) {
                     auto speaker = it->speaker.get();
                     if (speaker && IsHomie(speaker.get())) {
+                        if (state.hushedLines++ < 10) {
+                            SKSE::log::info("homies: a homie's Skyrim subtitle taken off: \"{}\"", it->subtitle.c_str());
+                        }
                         it = manager->subtitles.erase(it);
-                        hushed++;
                     } else {
                         ++it;
                     }
                 }
-            }
-            if (hushed && (state.hushed++ % 20) == 0) {
-                SKSE::log::info("homies: a homie's Skyrim line hushed ({} so far: his voice stopped, its subtitle taken off)", state.hushed);
             }
         }
 
@@ -784,11 +785,16 @@ namespace AhShitRim::Homies
         bool IsFoe(RE::PlayerCharacter* a_player, RE::Actor* a_actor)
         {
             auto*       foe = a_actor->GetActorRuntimeData().currentCombatTarget.get().get();
+            const bool  hostile = a_actor->IsHostileToActor(a_player);
+            const bool  fightsUs = foe == a_player || (foe && IsHomie(foe));
+            if (!hostile && !fightsUs) {
+                return false;  // the common case, before the keyword scan
+            }
             const auto* combat = a_actor->GetActorRuntimeData().combatController;
             const bool  fleeing = combat && combat->state && combat->IsFleeing();
             const bool  animal = a_actor->HasKeywordString("ActorTypeAnimal");
             const bool  aggressive = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAggression) > 0.0f;
-            return Crew::IsFoe(a_actor->IsHostileToActor(a_player), foe == a_player || (foe && IsHomie(foe)), fleeing, animal, aggressive);
+            return Crew::IsFoe(hostile, fightsUs, fleeing, animal, aggressive);
         }
 
         // The followers' targets: the nearest foe (IsFoe) in sight and in his gun's range. Skyrim's own fights are
@@ -981,10 +987,12 @@ namespace AhShitRim::Homies
         }
         Hush();
         if (const int held = state.hold.Update(a_delta)) {
-            state.key = held;
+            state.keys.push_back(held);
         }
-        if (const int key = std::exchange(state.key, 0); key && a_onFoot) {
-            HandleKey(a_player, key, a_pose ? a_pose->heading : a_player->GetAngleZ(), a_target);
+        for (const int key : std::exchange(state.keys, {})) {
+            if (a_onFoot) {
+                HandleKey(a_player, key, a_pose ? a_pose->heading : a_player->GetAngleZ(), a_target);
+            }
         }
         if ((state.lookIn -= a_delta) <= 0.0f) {
             state.lookIn = kLookEvery;
@@ -1148,14 +1156,14 @@ namespace AhShitRim::Homies
     void OnLetter(std::size_t a_run, bool a_finished)
     {
         if (const int key = state.hold.Letter(a_run, a_finished)) {
-            state.key = key;
+            state.keys.push_back(key);  // H then G at once: both act, in order
         }
     }
 
     void OnKey(bool a_recruit, std::size_t a_run, bool a_finished)
     {
         if (const int key = state.hold.Press(a_recruit ? 1 : 2, a_run, a_finished)) {
-            state.key = key;
+            state.keys.push_back(key);
         } else if (state.hold.Holding()) {
             SKSE::log::info("homies: {} held: it may be part of a cheat being typed", a_recruit ? "G" : "H");
         }
@@ -1164,6 +1172,7 @@ namespace AhShitRim::Homies
     void OnRelease(bool a_loading)
     {
         state.hold.Clear();
+        state.keys.clear();
         if (a_loading) {
             // The world goes with the load: nothing of it is touched. The save being loaded says who comes back.
             state.homies.clear();
@@ -1249,7 +1258,8 @@ namespace AhShitRim::Homies
         return false;
     }
 
-    unsigned DebugHushed() { return state.hushed; }
+    unsigned DebugHushed() { return state.hushedLines; }
+    unsigned DebugHushedSounds() { return state.hushedSounds; }
 
     int DebugCount(bool a_followers)
     {

@@ -493,8 +493,12 @@ TEST_CASE("cheats: G and H don't act while a cheat with them in it is typed, and
     CHECK(TypeWithCrewKeys(typist, "HEX") == "H");
     CHECK(TypeWithCrewKeys(typist, "HE") == "H");
     CHECK(TypeWithCrewKeys(typist, "HESOYA", 0.1f, 0.2f) == "");  // still being typed
-    // Typed slower than half a second a letter, a code's H acts first: the price of not holding G and H longer.
-    CHECK(TypeWithCrewKeys(typist, "HESOYAM", 0.6f) == "H");
+    // Typed at half a second a letter it still holds; slower than Crew::KeyHold::kHoldFor, a code's H acts first: the
+    // price of not holding G and H longer.
+    CHECK(TypeWithCrewKeys(typist, "HESOYAM", 0.5f) == "");
+    CHECK(TypeWithCrewKeys(typist, "HESOYAM", 0.8f) == "H");
+    // H then G at once: both act, H first (Homies queues them).
+    CHECK(TypeWithCrewKeys(typist, "HG", 0.05f) == "HG");
     // Two presses: each its own.
     CHECK(TypeWithCrewKeys(typist, "G", 0.1f) + TypeWithCrewKeys(typist, "G", 0.1f) == "GG");
 }
