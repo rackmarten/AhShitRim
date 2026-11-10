@@ -11,7 +11,7 @@
     ("hit test: pad: ... ok"). Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
     traces both getting out. Or (ridecrew) CJ, on foot at the Whiterun stables, recruits two homies of the crew, gets into a Huntley
     spawned in front of him with F, and gets out again: each homie's step out is traced (no frame seated while CJ gets out, on the
-    ground once let go, then in his place behind CJ). Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
+    ground once let go, then in his place behind CJ). Or (ridebike) the same on a Sanchez: one homie rides its pillion and gets off with CJ. Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
     bullet, a Molotov and a rocket, and logs whether each burns. Or (soak) a long run of play: the crew on foot, wolves, a drive, F11 and the clock running for -Seconds (the working set of both games every 30 s to soak-memory.csv in the temp folder). Or (drive) CJ drives the Sandking for -Seconds, his body,
     its model and the camera traced in the vehicle every frame as Skyrim draws them. Or (lights) it sets the hour to 23:00, hands CJ over in -Vehicle (495 the Sandking, 477 the ZR-350) and takes two screenshots (into -Shots,
     AhShitRim's Screenshots folder when empty) while each lamp is logged found, lit and placed. Then it prints what the logs say, closes both
@@ -32,11 +32,12 @@
     scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
     scripts/hit-test.ps1 -Scenario ridecrew # two homies of the Grove Street crew board a Huntley with CJ and step out with him, at the Whiterun stables
+    scripts/hit-test.ps1 -Scenario ridebike # one homie rides a Sanchez's pillion with CJ and gets off with him, at the Whiterun stables
     scripts/hit-test.ps1 -Scenario soak -Seconds 900 -Hour 9   # a long run of play: crew on foot with wolves, a drive, F11 every 30 s, the clock running; memory of both games sampled, crashes and errors counted
     scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil', 'drive', 'soak', 'lights')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'ridebike', 'armour', 'oil', 'drive', 'soak', 'lights')] [string] $Scenario = 'hits',
     [int] $Vehicle = 495,
     [string] $Shots = '',
     [int] $Seconds = 90,
@@ -51,7 +52,7 @@ param(
 
 . "$PSScriptRoot/common.ps1"
 
-if ($Scenario -in 'crew', 'ridecrew' -and -not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }  # the Whiterun stables' cell, by the gate
+if ($Scenario -in 'crew', 'ridecrew', 'ridebike' -and -not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }  # the Whiterun stables' cell, by the gate
 
 $config = Get-LocalConfig
 $skyrim = Get-RequiredSetting $config 'SkyrimPath'

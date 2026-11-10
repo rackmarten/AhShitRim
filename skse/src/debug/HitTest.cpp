@@ -55,7 +55,7 @@ namespace AhShitRim::HitTest
             CrewOut,    // F10 out and back: the crew comes again
             CrewMoved,  // the player moved as fast travel moves it: the followers come behind
             Standing,   // armour: CJ stands still with full armour, its level logged
-            Boarding,   // ridecrew: a Huntley in front of CJ on foot, F: he gets in, his homies with him
+            Boarding,   // ridecrew, ridebike: a Huntley (a Sanchez) in front of CJ on foot, F: he gets in, his homies with him
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
             Oil,        // oil: the pools lit, watched burning
@@ -69,6 +69,7 @@ namespace AhShitRim::HitTest
         constexpr std::uint16_t kSandking = 495;
         constexpr std::uint16_t kHuntley = 579;  // ridecrew: four seats, so the crew of two both ride
         constexpr RE::FormID    kElk = 0x00023A91;  // EncElkMale (checked by its name before it's placed)
+        constexpr std::uint16_t kSanchez = 468;  // ridebike: one pillion, so one homie rides and gets off with CJ
         constexpr float         kAhead = 840.0f;  // 12 m: where the attackers are placed
 
         struct State
@@ -100,9 +101,10 @@ namespace AhShitRim::HitTest
             bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
             bool                armour = false;   // the scenario: CJ stands still with armour and none of it may go
             bool                crewRider = false;  // riders with a recruited homie of the crew (v39) as the follower
+            bool                bike = false;       // ridebike: ridecrew on a Sanchez
             RE::ObjectRefHandle follower;
             std::vector<RE::ObjectRefHandle> homies;  // ridecrew: the crew's followers, who board with CJ
-            int                 boardTry = 0;  // ridecrew: the Huntley asked for this many times
+            int                 boardTry = 0;  // ridecrew: the Huntley (Sanchez) asked for this many times
 
             // Someone riding with CJ as he gets out, traced every frame from F.
             struct Passenger
@@ -171,6 +173,10 @@ namespace AhShitRim::HitTest
             bool                soakRecruited = false;  // this on-foot stretch's recruit and wolves are done
             bool                soakWolvesSent = false;
         } state;
+
+        // ridecrew's vehicle, or ridebike's.
+        std::uint16_t RideModel() { return state.bike ? kSanchez : kHuntley; }
+        const char*   RideName() { return state.bike ? "Sanchez" : "Huntley"; }
 
         constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a guard facing CJ, off to the side
 
@@ -809,7 +815,7 @@ namespace AhShitRim::HitTest
                 }
                 if (!state.homies.empty()) {
                     state.follower = state.homies.front();
-                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Huntley
+                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Huntley (Sanchez)
                 } else if (state.timer >= 30.0f) {
                     SKSE::log::warn("hit test: could not recruit a homie");
                     state.phase = Phase::Done;
@@ -861,11 +867,18 @@ namespace AhShitRim::HitTest
                     continue;
                 }
                 const bool sits = Riders::Sits(actor->GetFormID());
+                if (state.bike && !Riders::Rides(actor->GetFormID())) {
+                    SKSE::log::info("hit test: {} ({:08X}) stays off, the Sanchez's one pillion taken", actor->GetName(), actor->GetFormID());
+                    continue;
+                }
                 Pose::Vec3 at{};
                 InVehicleFrame(actor->GetPosition(), at);
                 SKSE::log::info("hit test: {} ({:08X}) {} at {:.2f} {:.2f} {:.2f} in the vehicle's frame", actor->GetName(), actor->GetFormID(),
                     sits ? "sits" : Riders::Rides(actor->GetFormID()) ? "rides, not sitting" : "NEVER SAT", at.x, at.y, at.z);
                 state.passengers.push_back({ handle, std::format("{} ({:08X})", actor->GetName(), actor->GetFormID()) });
+            }
+            if (state.bike && state.passengers.empty()) {
+                SKSE::log::warn("hit test: NOBODY RIDES the Sanchez's pillion");
             }
         }
 
@@ -1476,7 +1489,7 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak" && scenario != "lights") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "ridebike" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak" && scenario != "lights") {
             return;
         }
         state.crew = scenario == "crew";
@@ -1488,8 +1501,9 @@ namespace AhShitRim::HitTest
         state.stealth = scenario == "stealth";
         state.respawns = scenario == "respawns";
         state.pad = scenario == "pad";
-        state.riders = scenario == "riders" || scenario == "ridecrew";
-        state.crewRider = scenario == "ridecrew";
+        state.riders = scenario == "riders" || scenario == "ridecrew" || scenario == "ridebike";
+        state.crewRider = scenario == "ridecrew" || scenario == "ridebike";
+        state.bike = scenario == "ridebike";
         state.armour = scenario == "armour";
         state.oil = scenario == "oil";
         state.lights = scenario == "lights";
@@ -1625,8 +1639,8 @@ namespace AhShitRim::HitTest
                 PlaceFollower(a_player);
             } else if (state.timer >= 8.0f && state.crewRider) {
                 // Not TakeOverInVehicle: a new handover sends the crew away and brings it back once CJ sits, so nobody boards.
-                const auto why = PlayerSync::DebugSpawn(kHuntley);
-                SKSE::log::info("hit test: riders: a Huntley in front of CJ on foot{}", why.empty() ? "" : ", refused: " + why);
+                const auto why = PlayerSync::DebugSpawn(RideModel());
+                SKSE::log::info("hit test: riders: a {} in front of CJ on foot{}", RideName(), why.empty() ? "" : ", refused: " + why);
                 state.phase = why.empty() ? Phase::Boarding : Phase::Done;
                 state.boardTry = 0;
                 state.timer = 0.0f;
@@ -2005,14 +2019,14 @@ namespace AhShitRim::HitTest
             }
             break;
         case Phase::Boarding: {
-            // F (San Andreas's enter key) once the Huntley is there: CJ walks to it and gets in, the crew boarding with him.
+            // F (San Andreas's enter key) once the Huntley (Sanchez) is there: CJ walks to it and gets in, the crew boarding with him.
             // San Andreas spawns nothing without a flat, clear spot in front of him (the crew or a parked vehicle in the way):
             // then he walks on a second and it's asked for again, every 8 s. F again while he gets in would stop him.
             const float t = std::fmod(state.timer, 8.0f);
             if (static_cast<int>(state.timer / 8.0f) != state.boardTry) {
                 state.boardTry = static_cast<int>(state.timer / 8.0f);
-                const auto why = PlayerSync::DebugSpawn(kHuntley);
-                SKSE::log::info("hit test: riders: CJ isn't in yet, the Huntley asked for again{}", why.empty() ? "" : ", refused: " + why);
+                const auto why = PlayerSync::DebugSpawn(RideModel());
+                SKSE::log::info("hit test: riders: CJ isn't in yet, the {} asked for again{}", RideName(), why.empty() ? "" : ", refused: " + why);
             }
             Protocol::PlayerState pose{};
             const bool entering = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerGettingInOut) != 0;
@@ -2021,13 +2035,13 @@ namespace AhShitRim::HitTest
             if (InVehicle()) {
                 PlayerSync::DebugKey(Input::kDikF, false);
                 PlayerSync::DebugKey(Input::kDikW, false);
-                SKSE::log::info("hit test: CJ is in the Huntley, {} riding with him", Riders::Riding().size());
+                SKSE::log::info("hit test: CJ is in the {}, {} riding with him", RideName(), Riders::Riding().size());
                 state.phase = Phase::Seated;
                 state.timer = 0.0f;
             } else if (state.timer > 32.0f) {
                 PlayerSync::DebugKey(Input::kDikF, false);
                 PlayerSync::DebugKey(Input::kDikW, false);
-                SKSE::log::warn("hit test: CJ never got into the Huntley, stopping");
+                SKSE::log::warn("hit test: CJ never got into the {}, stopping", RideName());
                 state.phase = Phase::Done;
             }
             break;
