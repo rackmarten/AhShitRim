@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "../ahshitrim_protocol.h"
+#include "body.h"
 
 // CJ's weapons on Skyrim's side (protocol v12). San Andreas keeps them; this
 //  - draws the weapon model in CJ's hand (two for a twin pistol) from the weapon slots, smoothed like CJ,
@@ -36,8 +37,10 @@ namespace AhShitRim::Arms
 
     // Every frame San Andreas has the player: the weapons in CJ's hands where San Andreas has them, relative
     // to a_anchor, and the flash of the shots a_pose counted; a_hide draws none (CJ looks through a scope).
-    // a_delta is the frame's seconds.
-    void Draw(const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState& a_pose, double a_nowMs, float a_delta, bool a_hide);
+    // a_delta is the frame's seconds. With a_body (CJ's skeleton) each is drawn at its moment a_bodyTime, as the
+    // vehicles are (Body::Follow): on its own clock a gun is a frame off his hand, beside a moving bike.
+    void Draw(const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState& a_pose, double a_nowMs, float a_delta, bool a_hide,
+        const Body::Interpolator* a_body = nullptr, double a_bodyTime = 0.0);
 
     // Back to Skyrim's own player: nothing of CJ's drawn.
     void Hide();

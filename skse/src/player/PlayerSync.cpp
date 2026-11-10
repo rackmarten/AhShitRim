@@ -99,6 +99,7 @@ namespace AhShitRim::PlayerSync
             double             bodyTime = 0.0;    // the moment on San Andreas's clock CJ was drawn at this frame
             bool               haveBodyTime = false;
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
+            Body::Follow       gearFollow;  // drawn at CJ's moment (bodyTime), as the vehicles are
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
@@ -348,6 +349,7 @@ namespace AhShitRim::PlayerSync
                 vehicle.Reset();
             }
             state.gear.Reset();
+            state.gearFollow.Reset();
         }
 
         constexpr float kCameraShakeMax = 0.5f;  // radians Skyrim's camera may be off its own axes and still count as a shake
@@ -538,6 +540,7 @@ namespace AhShitRim::PlayerSync
             if (LinkService::Get().ReadGear(gear)) {
                 if ((gear.flags & Protocol::kBodyValid) == 0 || gear.handover != state.handover) {
                     state.gear.Reset();
+                    state.gearFollow.Reset();
                     Particles::ShowGear(nullptr, {}, a_delta);
                     return;
                 }
@@ -546,7 +549,8 @@ namespace AhShitRim::PlayerSync
                 }
             }
             Protocol::BodyState pose{};
-            if (state.gear.Sample(now, pose)) {
+            const bool sampled = state.haveBodyTime ? state.gearFollow.Sample(state.body, state.bodyTime, state.gear, now, pose) : state.gear.Sample(now, pose);
+            if (sampled) {
                 const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                 ModelView::Show(pose, feet);
                 Particles::ShowGear(&pose, feet, a_delta);
@@ -669,6 +673,7 @@ namespace AhShitRim::PlayerSync
                 vehicle.Reset();
             }
             state.gear.Reset();
+            state.gearFollow.Reset();
             VehicleFx::Clear();
             Headlights::Clear();
             Particles::Clear();
@@ -1090,7 +1095,7 @@ namespace AhShitRim::PlayerSync
             DrawGear(a_delta);
             Particles::Update(a_delta);
             if (valid) {
-                Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
+                Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough, state.haveBodyTime ? &state.body : nullptr, state.bodyTime);
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
