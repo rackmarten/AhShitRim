@@ -77,7 +77,7 @@ namespace AhShitRim::HitTest
             std::string        away = "RiverwoodSleepingGiantInn";
             bool               lights = false;  // or lights: night, CJ in HitTestVehicle, its lamps logged and photographed
             std::uint16_t      vehicle = kSandking;
-            std::string        shots;  // HitTestShots: the screenshots' folder (empty: AhShitRim's Screenshots)
+            std::string        shotsDir;  // HitTestShots: the screenshots' folder (empty: AhShitRim's Screenshots)
             int                shot = 0;
             std::string        start = "Riverwood";
             float              seconds = 90.0f;
@@ -1494,7 +1494,7 @@ namespace AhShitRim::HitTest
             } catch (...) {
             }
         }
-        state.shots = Ini::Value("Debug", "HitTestShots");
+        state.shotsDir = Ini::Value("Debug", "HitTestShots");
         if (const auto at = Ini::Value("Debug", "HitTestOilAt"); !at.empty()) {
             state.oilAt = at;
         }
@@ -1674,7 +1674,7 @@ namespace AhShitRim::HitTest
             state.combatTimer += a_delta;
             if (state.lights && state.shot < 2 && state.timer >= 6.0f + 4.0f * state.shot) {
                 state.shot++;
-                Overlay::Screenshot(state.shots);  // its path goes to the log
+                Overlay::Screenshot(state.shotsDir);  // its path goes to the log
             }
             if (!state.bust && !state.lights && state.combatTimer >= 1.5f) {
                 state.combatTimer = 0.0f;
