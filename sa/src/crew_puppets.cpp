@@ -63,6 +63,7 @@ namespace AhShitRim::CrewPuppets
             bool                   sat = false;     // he sat since he last stood (for the logs)
             bool                   satLogged = false;
             float                  stood = 0.0f;    // seconds since he stood up while his seat anim fades
+            float                  seatedFor = 0.0f;  // seconds since he sat down
             Crew::Facing           facing;
             float                  heading = 0.0f;  // as he faced last
             int                    playing = -1;  // the Scene::Motion played, -1 before any
@@ -496,7 +497,8 @@ namespace AhShitRim::CrewPuppets
                 const auto* anim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, kSeatIdle);
                 puppet.sat = true;
                 puppet.stood = 0.0f;
-                if (!puppet.satLogged && posed && anim && anim->m_fBlendAmount >= 0.99f) {
+                puppet.seatedFor += seconds;
+                if (!puppet.satLogged && posed && anim && anim->m_fBlendAmount >= 0.99f && puppet.seatedFor >= 1.0f) {  // settled
                     puppet.satLogged = true;
                     const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - feet -
                                         CVector(0.0f, 0.0f, Passengers::kSeatDrop * Pose::kMetersPerUnit);
@@ -513,6 +515,7 @@ namespace AhShitRim::CrewPuppets
                             : std::format("crew: homie {:08X} stood up, his seat anim gone in {:.2f} s", member.id, puppet.stood));
                     puppet.sat = false;
                     puppet.satLogged = false;
+                    puppet.seatedFor = 0.0f;
                 }
             }
             const CVector aim = toSa(member.aim);
