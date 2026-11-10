@@ -13,7 +13,8 @@
     spawned in front of him with F, and gets out again: each homie's step out is traced (no frame seated while CJ gets out, on the
     ground once let go, then in his place behind CJ). Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
     bullet, a Molotov and a rocket, and logs whether each burns. Or (soak) a long run of play: the crew on foot, wolves, a drive, F11 and the clock running for -Seconds (the working set of both games every 30 s to soak-memory.csv in the temp folder). Or (drive) CJ drives the Sandking for -Seconds, his body,
-    its model and the camera traced in the vehicle every frame as Skyrim draws them. Then it prints what the logs say, closes both
+    its model and the camera traced in the vehicle every frame as Skyrim draws them. Or (lights) it sets the hour to 23:00, hands CJ over in -Vehicle (495 the Sandking, 477 the ZR-350) and takes two screenshots (into -Shots,
+    AhShitRim's Screenshots folder when empty) while each lamp is logged found, lit and placed. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
@@ -22,6 +23,7 @@
     scripts/hit-test.ps1 -Scenario respawns
     scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
     scripts/hit-test.ps1 -Scenario oil
+    scripts/hit-test.ps1 -Scenario lights -Vehicle 477 -Seconds 20
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
     scripts/hit-test.ps1 -Scenario stealth -StealthMeters 0.7   # the guard closer in
@@ -34,7 +36,9 @@
     scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil', 'drive', 'soak')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil', 'drive', 'soak', 'lights')] [string] $Scenario = 'hits',
+    [int] $Vehicle = 495,
+    [string] $Shots = '',
     [int] $Seconds = 90,
     [string] $Start = '',
     [int] $TimeoutSeconds = 300,
@@ -80,7 +84,7 @@ for ($attempt = 1; ; $attempt++) {
     }
 }
 Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)",
-    "HitTestHour=$Hour", "HitTestTimescale=$Timescale", "HitTestStealthMeters=$($StealthMeters.ToString([Globalization.CultureInfo]::InvariantCulture))", "HitTestNear=$Near")
+    "HitTestHour=$Hour", "HitTestTimescale=$Timescale", "HitTestStealthMeters=$($StealthMeters.ToString([Globalization.CultureInfo]::InvariantCulture))", "HitTestNear=$Near", "HitTestVehicle=$Vehicle", "HitTestShots=$Shots")
 
 try {
     $started = Get-Date
@@ -117,7 +121,7 @@ try {
         $crashDir = Split-Path $skseLog
         Write-Host "--- crash logs since the start: $(@(Get-ChildItem $crashDir -Filter 'crash-*.log' -ErrorAction SilentlyContinue | Where-Object LastWriteTime -gt $started).Count)"
     }
-    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|player sync: / pressed|skyrim messages: .*help box|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit|object hits: .*oil|CJ re-anchored' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|player sync: / pressed|skyrim messages: .*help box|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit|object hits: .*oil|CJ re-anchored|headlights:|model view: .*lamp|screenshot' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
     Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: |health: ' | ForEach-Object { $_.Line }
     if ($Scenario -eq 'soak') {

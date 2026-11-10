@@ -75,6 +75,10 @@ namespace AhShitRim::HitTest
             bool               bust = false;  // the scenario: bust, else hits
             bool               respawns = false;  // the scenario: respawns
             std::string        away = "RiverwoodSleepingGiantInn";
+            bool               lights = false;  // or lights: night, CJ in HitTestVehicle, its lamps logged and photographed
+            std::uint16_t      vehicle = kSandking;
+            std::string        shots;  // HitTestShots: the screenshots' folder (empty: AhShitRim's Screenshots)
+            int                shot = 0;
             std::string        start = "Riverwood";
             float              seconds = 90.0f;
             float              timer = 0.0f;
@@ -1467,7 +1471,7 @@ namespace AhShitRim::HitTest
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak" && scenario != "lights") {
             return;
         }
         state.crew = scenario == "crew";
@@ -1483,6 +1487,14 @@ namespace AhShitRim::HitTest
         state.crewRider = scenario == "ridecrew";
         state.armour = scenario == "armour";
         state.oil = scenario == "oil";
+        state.lights = scenario == "lights";
+        if (const auto vehicle = Ini::Value("Debug", "HitTestVehicle"); !vehicle.empty()) {
+            try {
+                state.vehicle = static_cast<std::uint16_t>(std::stoi(vehicle));
+            } catch (...) {
+            }
+        }
+        state.shots = Ini::Value("Debug", "HitTestShots");
         if (const auto at = Ini::Value("Debug", "HitTestOilAt"); !at.empty()) {
             state.oilAt = at;
         }
@@ -1613,9 +1625,12 @@ namespace AhShitRim::HitTest
                 state.phase = why.empty() ? Phase::Boarding : Phase::Done;
                 state.boardTry = 0;
                 state.timer = 0.0f;
+            } else if (state.lights && state.timer >= 4.0f && !state.oilMoved) {
+                state.oilMoved = true;
+                RunConsole("set gamehour to 23");  // night: every vehicle's lights on
             } else if (state.timer >= (state.riders ? 8.0f : 6.0f)) {
-                SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
-                PlayerSync::TakeOverInVehicle(kSandking);
+                SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in vehicle model {}", a_player->GetParentCell()->GetFormID(), state.vehicle);
+                PlayerSync::TakeOverInVehicle(state.lights ? state.vehicle : kSandking);
                 state.phase = Phase::Handing;
                 state.timer = 0.0f;
             }
@@ -1639,8 +1654,11 @@ namespace AhShitRim::HitTest
                 state.phase = Phase::Seated;
                 state.timer = 0.0f;
             } else if (InVehicle()) {
-                SKSE::log::info("hit test: CJ is in the Sandking (health {:.0f}), the {} begin", CarHealth(), state.bust ? "stars" : "attackers");
-                if (state.bust) {
+                SKSE::log::info("hit test: CJ is in the vehicle (health {:.0f}), the {} begin", CarHealth(),
+                    state.lights ? "lights" : state.bust ? "stars" : "attackers");
+                if (state.lights) {
+                    // nothing set on him: the lamps are watched and photographed
+                } else if (state.bust) {
                     Police::CheatStars(1);
                 } else {
                     PlaceAttackers(a_player);
@@ -1654,7 +1672,11 @@ namespace AhShitRim::HitTest
             break;
         case Phase::Watching:
             state.combatTimer += a_delta;
-            if (!state.bust && state.combatTimer >= 1.5f) {
+            if (state.lights && state.shot < 2 && state.timer >= 6.0f + 4.0f * state.shot) {
+                state.shot++;
+                Overlay::Screenshot(state.shots);  // its path goes to the log
+            }
+            if (!state.bust && !state.lights && state.combatTimer >= 1.5f) {
                 state.combatTimer = 0.0f;
                 SetOn(a_player);
             }
