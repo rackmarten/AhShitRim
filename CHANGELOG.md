@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Homies sit in CJ's vehicle and stand up again. A passenger homie sat a head too high (through a car's roof) and behind his seat (in the air beside a bike), and once he got out he kept sitting, in mid-air, as he followed CJ and fought. His pelvis now sits on the seat, and his seat pose fades out as he stands up, however the ride ends.
 - The Rhino drives like a tank on Skyrim's ground. It turns about its middle instead of swinging its middle out round its rear axle like a car (San Andreas's own turn, which a tank with straight tracks showed as strafing), on San Andreas's own turning circle; the handbrake still turns it tighter, as in San Andreas. Over rocks its tracks grip where San Andreas only let its four corner wheels grip, so it no longer slides about with its corners in the air, and when its hull hits a rock it isn't thrown up like a car any more: the Rhino, the Dumper and the other vehicles over 8 tonnes stay heavy.
 
 ## [0.1.1] - 2026-10-26
