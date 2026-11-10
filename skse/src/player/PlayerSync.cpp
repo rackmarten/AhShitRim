@@ -117,6 +117,8 @@ namespace AhShitRim::PlayerSync
             Pad::Look      padLook;               // [Input] PadLookSpeed, PadAimSpeed, PadInvertY
             RE::Setting*   mouseSensitivity = nullptr;  // Skyrim's look sensitivity, read live: CJ's camera follows it
             RE::Setting*   padSensitivity = nullptr;
+            LookSensitivity::Range mouseRange = LookSensitivity::kMouseRange;  // its sliders' ends
+            LookSensitivity::Range padRange = LookSensitivity::kPadRange;
             bool           padOn = true;          // [Input] Pad
             bool           padLast = false;       // the pad was the last thing used: the help box names its buttons
             std::chrono::steady_clock::time_point padTime{};  // the last pad update, for Back's hold in real time
@@ -143,11 +145,59 @@ namespace AhShitRim::PlayerSync
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
         }
 
-        // Skyrim's look sensitivity now (its Settings, Controls, Look Sensitivity), over its default: the scale for CJ's look counts.
+        // Skyrim's look sensitivity now (its Settings, Controls, Look Sensitivity), along its slider: the scale for CJ's look
+        // counts, San Andreas's own speed at the slider's middle (look_sensitivity.h).
         double LookScale(RE::Setting* a_setting, bool a_pad)
         {
             const float live = a_setting ? a_setting->GetFloat() : 0.0f;
-            return a_pad ? LookSensitivity::Pad(live) : LookSensitivity::Mouse(live);
+            return LookSensitivity::Scale(live, a_pad ? state.padRange : state.mouseRange);
+        }
+
+        // A slider's ends, from Skyrim.ini's settings (or SkyrimPrefs.ini's), else the ones Skyrim SE ships with.
+        LookSensitivity::Range LookRange(const char* a_min, const char* a_max, LookSensitivity::Range a_fallback)
+        {
+            auto find = [](const char* a_name) -> RE::Setting* {
+                auto* ini = RE::INISettingCollection::GetSingleton();
+                auto* setting = ini ? ini->GetSetting(a_name) : nullptr;
+                if (!setting) {
+                    auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
+                    setting = prefs ? prefs->GetSetting(a_name) : nullptr;
+                }
+                return setting;
+            };
+            auto* min = find(a_min);
+            auto* max = find(a_max);
+            if (!min || !max) {
+                return a_fallback;
+            }
+            return LookSensitivity::Checked({ min->GetFloat(), max->GetFloat() }, a_fallback);
+        }
+
+        // Once (until [Input] LookReset=1 is recorded): both look sliders to their middle, San Andreas's own speed, so
+        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini.
+        void ResetLookOnce()
+        {
+            const auto recorded = Ini::Value("Input", "LookReset");
+            if (!LookSensitivity::ResetDue(recorded) || (!state.mouseSensitivity && !state.padSensitivity)) {
+                return;
+            }
+            for (auto [setting, range, name] : { std::tuple{ state.mouseSensitivity, state.mouseRange, "mouse" },
+                     std::tuple{ state.padSensitivity, state.padRange, "pad" } }) {
+                if (setting) {
+                    const float old = setting->GetFloat();
+                    setting->data.f = LookSensitivity::Middle(range);
+                    SKSE::log::info("player sync: Skyrim's {} look sensitivity moved once to its slider's middle: {:.4f} -> {:.4f} (x{:.2f} -> x1)",
+                        name, old, setting->GetFloat(), LookSensitivity::Scale(old, range));
+                }
+            }
+            if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton()) {
+                prefs->WriteAllSettings();  // as Skyrim's Settings menu does on closing
+            }
+            if (Ini::Set("Input", "LookReset", "1", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)")) {
+                SKSE::log::info("player sync: recorded [Input] LookReset=1 in {}", Ini::kPath);
+            } else {
+                SKSE::log::warn("player sync: couldn't record [Input] LookReset=1 in {}: the look sliders move to the middle again next start", Ini::kPath);
+            }
         }
 
         // A Skyrim menu has the input: the game is paused, or it shows its cursor (dialogue, which
@@ -1797,6 +1847,11 @@ namespace AhShitRim::PlayerSync
             state.mouseSensitivity = prefs->GetSetting(LookSensitivity::kMouseSetting);
             state.padSensitivity = prefs->GetSetting(LookSensitivity::kPadSetting);
         }
+        state.mouseRange = LookRange(LookSensitivity::kMouseMinSetting, LookSensitivity::kMouseMaxSetting, LookSensitivity::kMouseRange);
+        state.padRange = LookRange(LookSensitivity::kPadMinSetting, LookSensitivity::kPadMaxSetting, LookSensitivity::kPadRange);
+        SKSE::log::info("player sync: look sliders: mouse {:.4f} to {:.4f}, pad {:.4f} to {:.4f}", state.mouseRange.min, state.mouseRange.max,
+            state.padRange.min, state.padRange.max);
+        ResetLookOnce();
         SKSE::log::info("player sync: CJ's look follows Skyrim's look sensitivity: mouse {}, pad {}",
             state.mouseSensitivity ? std::format("{:.4f} (x{:.2f})", state.mouseSensitivity->GetFloat(), LookScale(state.mouseSensitivity, false)) : "not found, x1",
             state.padSensitivity ? std::format("{:.4f} (x{:.2f})", state.padSensitivity->GetFloat(), LookScale(state.padSensitivity, true)) : "not found, x1");

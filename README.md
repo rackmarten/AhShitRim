@@ -110,7 +110,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | | A or LB |
 | F or Enter | F or Enter | In Ammu-Nation: back, then leave | | Y |
 
-CJ's camera turns at Skyrim's own look sensitivity (Settings, Controls, Look Sensitivity, for the mouse and the pad alike), changed in the menu at any time; San Andreas's own mouse sensitivity applies on top.
+CJ's camera turns at Skyrim's own look sensitivity (Settings, Controls, Look Sensitivity, for the mouse and the pad alike), changed in the menu at any time: the slider's middle is San Andreas's own speed, its bottom a quarter of it and its top four times it. Skyrim's own default sits near the bottom of the slider, so the first time AhShitRim starts it moves both sliders (the mouse's and the pad's) to their middle, once, and records that as `LookReset=1` under `[Input]` in `AhShitRim.ini`; after that the sliders are yours and AhShitRim never moves them again. This changes Skyrim's own look too, outside F10: at the middle it turns 2.4 times as fast as Skyrim's default with the mouse and 1.5 times with the pad, so move the slider back down there if you play Skyrim's own character a lot. San Andreas's own mouse sensitivity applies on top.
 
 On a gamepad (the Pad column): turn on Skyrim's own gamepad setting (Settings, Controls, Gamepad), AhShitRim reads the pad through Skyrim. B opens Skyrim's tween menu (the map, items, magic, skills) and Start its journal, as in Skyrim; Skyrim's menus, dialogue and the map work on the pad as Skyrim's own. In a dialogue A skips a line, in a seat the left stick or A stands up. Back tapped changes the camera distance; held a second it hands the player over, either way (with Skyrim on the player a tap opens the wait menu as usual). The d-pad's up and down do nothing on foot for now. The spawn keys, F11, the swear and the developer keys are keyboard only, and so is the Shout from a vehicle (RB is the handbrake there). `[Input]` in `AhShitRim.ini` has `Pad` (`0` turns the pad off for CJ), `PadLookSpeed` (1400, the right stick's camera speed), `PadAimSpeed` (0.55, its share while LT aims) and `PadInvertY` (`1` inverts it).
 
@@ -198,6 +198,7 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 |---|---|---|
 | `[Input]` | `KeyLayout` | `Modern` (default) or `Classic`, the keys above |
 | `[Input]` | `Pad` | `1` (default): CJ plays on the gamepad too (the Pad column above, Skyrim's gamepad setting on); `0`: the pad stays Skyrim's |
+| `[Input]` | `LookReset` | Written by AhShitRim: `1` once it has moved Skyrim's Look Sensitivity sliders to their middle (see the keys above); delete the line to have it do that again |
 | `[Input]` | `PadLookSpeed`, `PadAimSpeed`, `PadInvertY` | The right stick's camera speed (1400), its share while LT aims (0.55), `1` to invert it |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
