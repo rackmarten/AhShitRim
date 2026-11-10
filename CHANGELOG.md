@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).
+- Homies sit in CJ's vehicle and stand up again. A passenger homie sat a head too high (through a car's roof) and behind his seat (in the air beside a bike), and once he got out he kept sitting, in mid-air, as he followed CJ and fought. His pelvis now sits on the seat, and his seat pose fades out as he stands up, however the ride ends.
 
 ### Fixed
 

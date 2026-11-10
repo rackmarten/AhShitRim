@@ -6,6 +6,7 @@
 #include "cj_weapons.h"
 #include "log.h"
 #include "model_sender.h"
+#include "passengers.h"
 #include "pose.h"
 #include "scene.h"
 #include "skin_model.h"
@@ -47,6 +48,7 @@ namespace AhShitRim::CrewPuppets
         constexpr int kSeatIdle = 150;        // ANIM_DEFAULT_SEAT_IDLE
         constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
         constexpr int kBoneRightHand = 24;
+        constexpr int kBonePelvis = 2;        // BONE_PELVIS
         constexpr unsigned short kAnimLooped = 0x2;
         constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
 
@@ -57,6 +59,10 @@ namespace AhShitRim::CrewPuppets
             std::uint16_t          model = 0;
             std::uint8_t           weapon = 0;
             Scene::MotionTracker   motion;
+            Scene::SeatMatch       seat;  // seated: his pelvis's offset from his position, to sit it on the seat
+            bool                   sat = false;     // he sat since he last stood (for the logs)
+            bool                   satLogged = false;
+            float                  stood = 0.0f;    // seconds since he stood up while his seat anim fades
             Crew::Facing           facing;
             float                  heading = 0.0f;  // as he faced last
             int                    playing = -1;  // the Scene::Motion played, -1 before any
@@ -200,6 +206,15 @@ namespace AhShitRim::CrewPuppets
             return &entry;
         }
 
+        // His seat fades out. It's a partial anim, and BlendAnimation only fades out those as partial as the one it
+        // blends in, so his walk, run, idle or fall never would: he'd sit on top of them for good.
+        void StandUp(CPed* a_ped)
+        {
+            if (auto* seat = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, kSeatIdle)) {
+                seat->m_fBlendDelta = -4.0f;  // SEAT_idle is blend-auto-remove: gone once faded
+            }
+        }
+
         // His walk, run, idle or seat, blended straight onto his clump the moment the gait changes. Not through a task:
         // a task's anim fades out (and is deleted) as the task goes, while the next task's anim only starts once San
         // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update.
@@ -207,6 +222,9 @@ namespace AhShitRim::CrewPuppets
         {
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
             auto* clump = a_ped->m_pRwClump;
+            if (a_motion != Scene::Motion::Seated) {
+                StandUp(a_ped);
+            }
             switch (a_motion) {
             case Scene::Motion::Seated: CAnimManager::BlendAnimation(clump, kGroupDefault, kSeatIdle, 4.0f); break;
             case Scene::Motion::Walk: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
@@ -220,6 +238,7 @@ namespace AhShitRim::CrewPuppets
         {
             a_puppet.fallen = true;
             a_puppet.ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
+            StandUp(a_puppet.ped);
             if (auto* assoc = CAnimManager::BlendAnimation(a_puppet.ped->m_pRwClump, kGroupDefault, kShotFront, 8.0f)) {
                 assoc->m_nFlags = static_cast<unsigned short>(assoc->m_nFlags & ~kAnimLooped);
                 assoc->Start(0.0f);
@@ -432,8 +451,20 @@ namespace AhShitRim::CrewPuppets
                 state.facedMax = (std::max)(state.facedMax, off);
                 state.facedSamples++;
             }
+            // Seated, his pelvis on the seat, not his feet on his actor's: San Andreas's sitting anim lowers him backwards
+            // from where he stands onto a chair behind him, which put him a head too high (through a car's roof) and
+            // behind his seat (beside a bike). His actor's feet are kSeatDrop under the seat, where the hips go.
+            const bool  sits = !dead && motion == Scene::Motion::Seated;
             const float lift = ped->GetDistanceFromCentreOfMassToBaseOfModel();
-            ped->SetPosn(feet + CVector(0.0f, 0.0f, lift));
+            CVector     at = feet + CVector(0.0f, 0.0f, lift);
+            if (!sits) {
+                puppet.seat.Reset();
+            } else if (puppet.seat.Have()) {
+                const float surface = Passengers::kSeatDrop * Pose::kMetersPerUnit - Scene::SeatMatch::kPelvisOverSeat;
+                const auto  place = puppet.seat.Place(Vec(feet + CVector(0.0f, 0.0f, surface)), lift);
+                at = CVector(place.x, place.y, place.z);
+            }
+            ped->SetPosn(at);
             ped->SetHeading(heading);
             ped->m_fHeadingCurrent = heading;
             ped->m_fHeadingGoal = heading;
@@ -456,6 +487,34 @@ namespace AhShitRim::CrewPuppets
             ped->UpdateRwMatrix();
             ped->UpdateRwFrame();
             ped->UpdateRpHAnim();
+            if (sits) {
+                RwMatrix   pelvis;
+                const bool posed = CjBody::BoneWorld(static_cast<CPlayerPed*>(ped), kBonePelvis, pelvis);
+                const auto from = ped->GetPosition();
+                puppet.seat.Update(posed, pelvis.pos.x - from.x, pelvis.pos.y - from.y, pelvis.pos.z - from.z, seconds);
+                // Once, sat down: how far his pelvis is from the seat (the ridecrew hit test reads it).
+                const auto* anim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, kSeatIdle);
+                puppet.sat = true;
+                puppet.stood = 0.0f;
+                if (!puppet.satLogged && posed && anim && anim->m_fBlendAmount >= 0.99f) {
+                    puppet.satLogged = true;
+                    const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - feet -
+                                        CVector(0.0f, 0.0f, Passengers::kSeatDrop * Pose::kMetersPerUnit);
+                    Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}", member.id, off.x, off.y, off.z,
+                        std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT"));
+                }
+            } else if (puppet.sat) {
+                // Stood up (or fell): his seat anim must be gone within its fade.
+                const auto* anim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, kSeatIdle);
+                puppet.stood += seconds;
+                if (!anim || anim->m_fBlendAmount <= 0.0f || puppet.stood >= 2.0f) {
+                    Log(anim && anim->m_fBlendAmount > 0.0f
+                            ? std::format("crew: homie {:08X} STILL SITS {:.1f} s after he stood up (seat blend {:.2f})", member.id, puppet.stood, anim->m_fBlendAmount)
+                            : std::format("crew: homie {:08X} stood up, his seat anim gone in {:.2f} s", member.id, puppet.stood));
+                    puppet.sat = false;
+                    puppet.satLogged = false;
+                }
+            }
             const CVector aim = toSa(member.aim);
             if (aiming) {
                 CjBody::AimRightArm(ped->m_pRwClump, ped->GetForward(), aim);
@@ -475,7 +534,7 @@ namespace AhShitRim::CrewPuppets
             Protocol::CrewBody out{};
             out.id = member.id;
             auto* body = BodyModel(ped, member.model);
-            const CVector pedFeet = ped->GetPosition() - CVector(0.0f, 0.0f, lift);
+            const CVector pedFeet = feet;  // his bones go from his actor's feet, where Skyrim draws them (seated, not his own)
             if (body && CjBody::PoseSkinned(ped->m_pRwClump, body->bones, pedFeet, out.body)) {
                 out.body.frame = a_frame;
                 out.body.flags = Protocol::kBodyValid;
