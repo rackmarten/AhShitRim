@@ -2,12 +2,17 @@
 
 #include "Ini.h"
 #include "car_exit.h"
+#include "crew.h"
+#include "health.h"
+#include "hud/Overlay.h"
 #include "input.h"
 #include "passengers.h"
 #include "link/LinkService.h"
 #include "pad.h"
 #include "player/Homies.h"
 #include "player/LockOn.h"
+#include "player/ObjectHits.h"
+#include "body/ModelView.h"
 #include "player/PlayerSync.h"
 #include "player/Shots.h"
 #include "player/Police.h"
@@ -18,7 +23,10 @@
 #include "wanted.h"
 #include "weapons.h"
 
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <format>
 #include <thread>
 
 namespace AhShitRim::HitTest
@@ -35,7 +43,8 @@ namespace AhShitRim::HitTest
             Handing,   // CJ comes, in the Sandking
             Watching,
             Killing,    // respawns: CJ kills a few of the people around
-            Waiting,    // their quests' window, then an hour on the clock
+            Waiting,    // their quests' window, then / for Skyrim's wait menu
+            WaitMenu,   // it opens (and is closed) or Skyrim refuses it; after the kills, an hour on the clock
             Looking,    // still there: who gets up out of view, and who waits in view
             Away,       // in an interior, out of their sight
             Returning,  // back outside: are they up at their spots?
@@ -44,12 +53,20 @@ namespace AhShitRim::HitTest
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
             CrewOut,    // F10 out and back: the crew comes again
             CrewMoved,  // the player moved as fast travel moves it: the followers come behind
+            Standing,   // armour: CJ stands still with full armour, its level logged
+            Boarding,   // ridecrew: a Huntley in front of CJ on foot, F: he gets in, his homies with him
             Seated,     // riders: CJ and his follower sit in the Sandking
             Leaving,    // riders: F, both get out, traced every frame
+            Oil,        // oil: the pools lit, watched burning
+            CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
+            Driving,    // drive: CJ drives the Sandking a minute, traced every frame
+            Soak,       // soak: crew on foot, a drive, F11, over and over for the whole time
+            CrewStray,  // a follower put 70 m behind, as one left by a car or stuck: he's put back near CJ and comes up
             Done,
         };
 
         constexpr std::uint16_t kSandking = 495;
+        constexpr std::uint16_t kHuntley = 579;  // ridecrew: four seats, so the crew of two both ride
         constexpr float         kAhead = 840.0f;  // 12 m: where the attackers are placed
 
         struct State
@@ -70,17 +87,82 @@ namespace AhShitRim::HitTest
             int                step = 0;         // its steps
             RE::ObjectRefHandle victim;
             std::vector<RE::FormID>          victims;  // respawns
+            bool               waitAsked = false;  // the wait menu opened (and was told to close)
+            bool               waitedFirst = false;  // the / press before the kills (no enemies near yet) is done
             bool               crew = false;     // the scenario: the Grove Street crew (v39)
             RE::ActorHandle    hurt;             // the follower CJ shot
             bool                riders = false;  // the scenario: a follower rides with CJ and gets out with him
+            bool                armour = false;   // the scenario: CJ stands still with armour and none of it may go
             bool                crewRider = false;  // riders with a recruited homie of the crew (v39) as the follower
             RE::ObjectRefHandle follower;
-            std::vector<CarExit::Sample> riderTrace;  // the follower's feet in the vehicle's frame, every frame
+            std::vector<RE::ObjectRefHandle> homies;  // ridecrew: the crew's followers, who board with CJ
+            int                 boardTry = 0;  // ridecrew: the Huntley asked for this many times
+
+            // Someone riding with CJ as he gets out, traced every frame from F.
+            struct Passenger
+            {
+                RE::ObjectRefHandle          handle;
+                std::string                  name;
+                std::vector<CarExit::Sample> trace;          // his feet in the vehicle's frame, up to the frame Riders lets him go
+                int                          seatedLeaving = 0;  // frames he still sat (kCrewSeated to San Andreas) while CJ was getting out
+                float                        letGo = -1.0f;  // seconds since Riders let him go, -1 before
+                float                        letGoZ = 0.0f;  // his feet's height then
+                bool                         grounded = false;  // a second after: Skyrim's controller has him on the ground
+                float                        drop = 0.0f;    // and how far he came down in that second, metres
+                bool                         groundChecked = false;
+            };
+            std::vector<Passenger>       passengers;
             std::vector<CarExit::Sample> cjTrace;     // and the player's (CJ's feet)
-            float               outFor = 0.0f;     // seconds since both were out
+            float               outFor = 0.0f;     // seconds since all were out
+            bool               oil = false;   // the scenario: oil lit by a bullet, a Molotov and a rocket
+            bool               oilMoved = false;
+            bool               oilReset = false;  // the pools placed
+            std::string        oilAt = "0009B0E6";  // the reference the player is moved to first (HitTestOilAt): by the floor PlaceOil puts the pools on
+
+            struct Pool
+            {
+                RE::ObjectRefHandle ref;
+                const char*         by = "";
+                float               lowest = 100.0f;  // its health at the lowest seen, of 100
+                bool                burned = false;   // seen burning: below 94% and above 7% (its fire's stages)
+                bool                gone = false;     // burnt out and disabled
+            };
+            std::vector<Pool> pools;
+            float              moveX = 0.0f;     // CrewWalk: CJ's stick
+            float              moveY = 0.0f;
+            float              walkLog = 0.0f;   // CrewWalk: when a follower was last logged
+            float              shotTimer = 0.0f;  // CrewFight: seconds to the next F11 screenshot (the crew's crash trigger in play)
+            int                shots = 0;
+            int                walks = 0;
+            int                regroupedBefore = 0;  // Homies::DebugRegrouped() as the second walk started         // CrewWalk: the walks done (the first at the stables, the second after the move)
+            float              walkMax = 0.0f;    // the furthest a follower was while CJ moved, metres
+            float              stood = -1.0f;     // how far he was after CJ's first stand
+            float              followLog = 0.0f;  // the crew phases: seconds since a follower was last logged
+            RE::FormID         followerId = 0;
+            RE::NiPoint3       followerWas;
+            float               victimAhead = 1.6f * Pose::kUnitsPerMeter;  // the guard with his back to CJ ([Debug] HitTestStealthMeters)
+            RE::FormID          nearRef = 0;      // [Debug] HitTestNear: a ref the player is moved to first, its stealth verdict logged
+            bool                movedNear = false;
+            bool                drive = false;     // the scenario: CJ drives, his body traced in the vehicle as Skyrim draws them
+            std::vector<CarExit::Sample> feetTrace, nodeTrace, cameraTrace;  // drive: CJ's drawn feet, his model's node, the camera
+            int                 legs = 0;          // drive: the steering's legs so far
+            int                 cells = 0;         // drive: exterior cells crossed
+            RE::TESObjectCELL*  lastCell = nullptr;
+            float               driven = 0.0f;     // drive: how far the player went, metres
+            RE::NiPoint3        lastAt;
+            bool                soak = false;       // the scenario: a long run of play (crew on foot, a drive, F11, the clock running)
+            int                 soakSeg = 0;        // 0 on foot, 1 getting in, 2 driving, 3 getting out
+            float               soakT = 0.0f;       // seconds in the segment
+            float               soakShot = 0.0f;    // to the next F11
+            float               soakLog = 0.0f;     // to the next status line
+            int                 soakCycles = 0;     // drives done
+            int                 soakShots = 0;
+            int                 soakWolves = 0;     // wolf pairs sent
+            int                 soakGone = 0;       // times CJ never got into the vehicle
+            bool                soakRecruited = false;  // this on-foot stretch's recruit and wolves are done
+            bool                soakWolvesSent = false;
         } state;
 
-        constexpr float kVictimAhead = 1.6f * Pose::kUnitsPerMeter;  // the stealth scenario's guard, back to CJ
         constexpr float kOthersAside = 5.0f * Pose::kUnitsPerMeter;  // and a guard facing CJ, off to the side
 
         void RunConsole(const std::string& a_command)
@@ -125,6 +207,17 @@ namespace AhShitRim::HitTest
                     state.phase = Phase::Loading;
                     TryLoad(1);
                 }
+                if (state.phase == Phase::WaitMenu && a_event && a_event->menuName == RE::SleepWaitMenu::MENU_NAME) {
+                    SKSE::log::info("hit test: Skyrim's wait menu {}", a_event->opening ? "opened" : "closed");
+                    if (a_event->opening && !state.waitAsked) {
+                        state.waitAsked = true;
+                        // It opened through /: closed again, as the hit test can't press its Wait button (driving the menu's
+                        // OK from here never waited), and the hour goes on the clock instead.
+                        if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                            queue->AddMessage(RE::SleepWaitMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                        }
+                    }
+                }
                 return RE::BSEventNotifyControl::kContinue;
             }
         } menuSink;
@@ -165,6 +258,38 @@ namespace AhShitRim::HitTest
                 state.attackers.push_back(ref->GetHandle());
                 SKSE::log::info("hit test: placed {} ({:08X}) {:.0f} units ahead", ref->GetName(), ref->GetFormID(), kAhead);
             }
+        }
+
+        // Once a second from the join on: how far a follower is from the player, how fast he goes and what his AI is up
+        // to, so a follower who stays put shows why.
+        void LogFollower(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            if ((state.followLog += a_delta) < 1.0f) {
+                return;
+            }
+            auto* follower = Homies::DebugFollower();
+            if (!follower) {
+                state.followerId = 0;
+                return;
+            }
+            const auto at = follower->GetPosition();
+            const bool same = follower->GetFormID() == state.followerId;
+            auto*      process = follower->GetActorRuntimeData().currentProcess;
+            auto*      package = follower->GetCurrentPackage();
+            const auto feet = a_player->GetPosition();
+            RE::NiPoint3 mesh;
+            const bool   onMesh = Homies::DebugNavmesh(a_player, mesh);
+            SKSE::log::info("hit test: crew: follower {:08X} {:.1f} m from the player, {:.1f} m/s, AI {}, process {}, package {:08X} type {}, 3D {}{}; "
+                            "the player {:.1f} m across and {:+.1f} m up from the nearest navmesh{}",
+                follower->GetFormID(), at.GetDistance(feet) / Pose::kUnitsPerMeter,
+                same ? at.GetDistance(state.followerWas) / Pose::kUnitsPerMeter / state.followLog : 0.0f, follower->IsAIEnabled() ? "on" : "off",
+                process ? static_cast<int>(process->processLevel.get()) : -1, package ? package->GetFormID() : 0u,
+                package ? static_cast<int>(package->packData.packType.get()) : -1, follower->Is3DLoaded() ? "loaded" : "not loaded",
+                follower->IsInCombat() ? ", in combat" : "", std::hypot(feet.x - mesh.x, feet.y - mesh.y) / Pose::kUnitsPerMeter,
+                (feet.z - mesh.z) / Pose::kUnitsPerMeter, onMesh ? "" : " (none found)");
+            state.followerId = follower->GetFormID();
+            state.followerWas = at;
+            state.followLog = 0.0f;
         }
 
         void SetOn(RE::PlayerCharacter* a_player)
@@ -250,7 +375,12 @@ namespace AhShitRim::HitTest
             const bool                   onFoot = valid && !(pose.flags & Protocol::kPlayerInVehicle);
             switch (state.step) {
             case 0:  // Back held a second, with Skyrim on the player
-                if (state.timer >= 6.0f) {
+                if (state.timer >= 6.0f && PlayerSync::DebugOwned()) {
+                    // The most recent save was made with CJ on the player: Skyrim has it first, as the steps below expect.
+                    SKSE::log::info("hit test: pad: the save had CJ on the player, handing it back first");
+                    PlayerSync::DebugToggle();
+                    state.timer = 2.0f;
+                } else if (state.timer >= 6.0f) {
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         start = player->GetPosition();
                     }
@@ -661,13 +791,16 @@ namespace AhShitRim::HitTest
                 if (state.timer < 18.0f) {
                     return;
                 }
-                const int joined = Homies::DebugRecruit(a_player, 1);
-                auto*     homie = Homies::DebugFollower();
+                const int joined = Homies::DebugRecruit(a_player, 2);  // the crew of two one title allows
                 SKSE::log::info("hit test: riders: {} homies about, {} joined", Homies::DebugCount(false), joined);
-                if (homie) {
-                    state.follower = homie->GetHandle();
-                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Sandking
-                    SKSE::log::info("hit test: riders: homie {} ({:08X}) is the follower", homie->GetName(), homie->GetFormID());
+                state.homies.clear();
+                for (auto* homie : Homies::DebugFollowers()) {
+                    state.homies.push_back(homie->GetHandle());
+                    SKSE::log::info("hit test: riders: homie {} ({:08X}) follows CJ", homie->GetName(), homie->GetFormID());
+                }
+                if (!state.homies.empty()) {
+                    state.follower = state.homies.front();
+                    state.timer = 2.0f;  // a few seconds to walk up to CJ before the Huntley
                 } else if (state.timer >= 30.0f) {
                     SKSE::log::warn("hit test: could not recruit a homie");
                     state.phase = Phase::Done;
@@ -708,35 +841,297 @@ namespace AhShitRim::HitTest
                 a_who, t.samples, t.maxStep, t.maxBack, t.startOut, t.endOut, t.outAtRelease, !a_judge ? "" : CarExit::Smooth(t) ? ": smooth" : ": NOT SMOOTH");
         }
 
-        // Every frame from F until both have been out a second: the follower's feet and CJ's.
+        // Who rides with CJ now, from the follower (riders) or the crew's followers (ridecrew): logged, and traced from F.
+        void TakePassengers()
+        {
+            state.passengers.clear();
+            for (const auto& handle : state.crewRider ? state.homies : std::vector<RE::ObjectRefHandle>{ state.follower }) {
+                auto  ref = handle.get();
+                auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                if (!actor) {
+                    continue;
+                }
+                const bool sits = Riders::Sits(actor->GetFormID());
+                Pose::Vec3 at{};
+                InVehicleFrame(actor->GetPosition(), at);
+                SKSE::log::info("hit test: {} ({:08X}) {} at {:.2f} {:.2f} {:.2f} in the vehicle's frame", actor->GetName(), actor->GetFormID(),
+                    sits ? "sits" : Riders::Rides(actor->GetFormID()) ? "rides, not sitting" : "NEVER SAT", at.x, at.y, at.z);
+                state.passengers.push_back({ handle, std::format("{} ({:08X})", actor->GetName(), actor->GetFormID()) });
+            }
+        }
+
+        // Every frame from F until all have been out a while: each passenger's feet in the vehicle's frame (up to the frame
+        // Riders lets him go: a homie walks off to his formation behind CJ then), and CJ's; whether a passenger still sat
+        // while CJ was getting out (a homie's kCrewSeated, which sits his puppet in San Andreas); and, for the crew, where
+        // each stands once let go: on the ground a second later, then in his place behind CJ.
         void TraceLeaving(RE::PlayerCharacter* a_player, float a_delta)
         {
-            auto       ref = state.follower.get();
-            auto*      actor = ref ? ref->As<RE::Actor>() : nullptr;
-            const bool riding = actor && Riders::Rides(actor->GetFormID());
+            Protocol::PlayerState pose{};
             const bool cjIn = InVehicle();
-            Pose::Vec3 at{}, cj{};
-            if (actor && InVehicleFrame(actor->GetPosition(), at)) {
-                state.riderTrace.push_back({ at, riding });
-            }
+            const bool cjLeaving = cjIn && LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerGettingInOut) != 0;
+            Pose::Vec3 cj{};
             if (InVehicleFrame(a_player->GetPosition(), cj)) {
                 state.cjTrace.push_back({ cj, cjIn });
             }
-            SKSE::log::info("hit test: leaving {:5.0f} ms, follower {:6.2f} {:6.2f} {:6.2f} {}, CJ {:6.2f} {:6.2f} {:6.2f} {}", state.timer * 1000.0f, at.x, at.y,
-                at.z, riding ? "in" : "out", cj.x, cj.y, cj.z, cjIn ? "in" : "out");
-            state.outFor = !riding && !cjIn ? state.outFor + a_delta : 0.0f;
-            if (state.outFor >= 1.0f || state.timer > 10.0f) {
-                if (state.crewRider) {
-                    // A homie walks off to his formation behind CJ once let go: judge the step out, up to there.
-                    const auto let = std::find_if(state.riderTrace.begin(), state.riderTrace.end(), [](const CarExit::Sample& a_sample) { return !a_sample.inVehicle; });
-                    state.riderTrace.erase(let == state.riderTrace.end() ? let : let + 1, state.riderTrace.end());
+            bool        allOut = !cjIn;
+            std::string line;
+            for (auto& p : state.passengers) {
+                auto       ref = p.handle.get();
+                auto*      actor = ref ? ref->As<RE::Actor>() : nullptr;
+                const bool riding = actor && Riders::Rides(actor->GetFormID());
+                const bool sits = actor && Riders::Sits(actor->GetFormID());
+                Pose::Vec3 at{};
+                if (actor && InVehicleFrame(actor->GetPosition(), at) && p.letGo < 0.0f) {
+                    p.trace.push_back({ at, riding });
                 }
-                Report("the follower", state.riderTrace, true);
+                if ((cjLeaving || !cjIn) && sits) {
+                    p.seatedLeaving++;
+                }
+                if (actor && !riding) {
+                    if (p.letGo < 0.0f) {
+                        p.letGo = 0.0f;
+                        p.letGoZ = actor->GetPosition().z;
+                    } else {
+                        p.letGo += a_delta;
+                    }
+                    if (p.letGo >= 1.0f && !p.groundChecked) {
+                        auto* controller = actor->GetCharController();
+                        p.groundChecked = true;
+                        p.grounded = controller && controller->context.currentState == RE::hkpCharacterStateType::kOnGround;
+                        p.drop = (p.letGoZ - actor->GetPosition().z) * Pose::kMetersPerUnit;
+                    }
+                }
+                allOut = allOut && !riding;
+                line += std::format(", {} {:6.2f} {:6.2f} {:6.2f} {}", actor ? actor->GetName() : "(gone)", at.x, at.y, at.z, sits ? "sits" : riding ? "steps out" : "out");
+            }
+            SKSE::log::info("hit test: leaving {:5.0f} ms, CJ {:6.2f} {:6.2f} {:6.2f} {}{}{}", state.timer * 1000.0f, cj.x, cj.y, cj.z, cjIn ? "in" : "out",
+                cjLeaving ? " getting out" : "", line);
+            state.outFor = allOut ? state.outFor + a_delta : 0.0f;
+            // The crew gets six seconds out to fall in behind CJ; a follower of Skyrim's is let go where he stands.
+            if (state.outFor >= (state.crewRider ? 6.0f : 1.0f) || state.timer > 16.0f) {
+                const float h = a_player->GetAngleZ();
+                for (std::size_t i = 0; i < state.passengers.size(); i++) {
+                    auto& p = state.passengers[i];
+                    Report(p.name.c_str(), p.trace, true);
+                    SKSE::log::info("hit test: {}: {} frames still seated while CJ got out or was out{}", p.name, p.seatedLeaving, p.seatedLeaving == 0 ? ": none" : ": SEATED THROUGH HIS GET-OUT");
+                    if (!state.crewRider) {
+                        continue;
+                    }
+                    auto  ref = p.handle.get();
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    SKSE::log::info("hit test: {}: a second after Riders let him go {}, {:.2f} m lower{}", p.name,
+                        p.groundChecked ? (p.grounded ? "on the ground" : "not on the ground") : "never let go", p.drop,
+                        p.groundChecked && p.grounded && std::fabs(p.drop) <= 0.5f ? ": landed" : ": NOT LANDED");
+                    if (!actor) {
+                        continue;
+                    }
+                    // In CJ's frame (the player's heading, which KeepOffsetFromActor keeps the formation to): x right, y ahead.
+                    const auto  d = actor->GetPosition() - a_player->GetPosition();
+                    const float right = (d.x * std::cos(h) - d.y * std::sin(h)) * Pose::kMetersPerUnit;
+                    const float ahead = (d.x * std::sin(h) + d.y * std::cos(h)) * Pose::kMetersPerUnit;
+                    float       fromPlace = 1e9f;
+                    for (int j = 0; j < Crew::kFollowerMax; j++) {  // whichever place Homies gave him
+                        const auto place = Crew::FormationAt({ a_player->GetPosition().x, a_player->GetPosition().y, a_player->GetPosition().z }, h, j);
+                        fromPlace = (std::min)(fromPlace, std::hypot(actor->GetPosition().x - place.x, actor->GetPosition().y - place.y) * Pose::kMetersPerUnit);
+                    }
+                    SKSE::log::info("hit test: {}: {:.0f} s after, {:.2f} m right and {:.2f} m ahead of CJ, {:.2f} m from a place of the formation{}", p.name, p.letGo,
+                        right, ahead, fromPlace, ahead < 0.0f && fromPlace <= 1.5f ? ": behind him" : ": NOT IN HIS PLACE");
+                }
                 // San Andreas's line-up moves CJ's position to the door as the get-out begins and his animation keeps his
                 // body in the seat, so his feet jump where his body doesn't: logged, not judged (fake_vehicles judges his body).
                 Report("CJ (the player's position)", state.cjTrace, false);
                 SKSE::log::info("hit test: done after the riders run");
                 state.phase = Phase::Done;
+            }
+        }
+
+        // ---- The drive scenario ----
+
+        // Every frame for a minute while CJ drives the Sandking (W, and A or D a second every 4 s), from a second in (the
+        // handover settling): in the vehicle's frame as Skyrim drew it, his feet as drawn, his model's node as Skyrim's
+        // scene has it after its update, and Skyrim's camera. His feet and node must not jump in it (CarExit::Seated), nor
+        // the camera: a frame his body is drawn behind the vehicle shows here. How far he drove and the cells
+        // he crossed are logged too: a car stuck on a rock proves nothing.
+        void TraceDriving(RE::PlayerCharacter* a_player)
+        {
+            const int leg = static_cast<int>(state.timer);
+            if (leg != state.legs) {
+                state.legs = leg;
+                PlayerSync::DebugKey(Input::kDikA, leg % 8 == 2);
+                PlayerSync::DebugKey(Input::kDikD, leg % 8 == 6);
+            }
+            auto* cell = a_player->GetParentCell();
+            if (state.lastCell && cell != state.lastCell) {
+                state.cells++;
+            }
+            state.lastCell = cell;
+            if (state.timer > 0.0f && state.lastAt != RE::NiPoint3()) {
+                state.driven += a_player->GetPosition().GetDistance(state.lastAt) * Pose::kMetersPerUnit;
+            }
+            state.lastAt = a_player->GetPosition();
+            Protocol::BodyState pose{};
+            RE::NiPoint3        feet, camera, node, parent;
+            Pose::Vec3          f{}, n{}, c{};
+            const bool          drawn = PlayerSync::DebugDrawn(pose, feet, camera);
+            const bool          shown = drawn && ModelView::DebugWorld(pose.model, node, parent);
+            auto*               cameraRoot = RE::PlayerCamera::GetSingleton() ? RE::PlayerCamera::GetSingleton()->cameraRoot.get() : nullptr;
+            const bool settled = state.timer >= 1.0f;
+            if (drawn && InVehicleFrame(feet, f) && settled) {
+                state.feetTrace.push_back({ f, true });
+            }
+            if (shown && InVehicleFrame(node, n) && settled) {
+                state.nodeTrace.push_back({ n, true });
+            }
+            if (cameraRoot && InVehicleFrame(cameraRoot->world.translate, c) && settled) {
+                state.cameraTrace.push_back({ c, true });
+            }
+            const auto& p = a_player->GetPosition();
+            SKSE::log::info("hit test: driving {:5.0f} ms, feet {:6.2f} {:6.2f} {:6.2f}{}, node {:6.2f} {:6.2f} {:6.2f} (its parent at {:.0f} {:.0f} {:.0f}), camera {:6.2f} {:6.2f} {:6.2f}, player at {:.0f} {:.0f} in {:08X}",
+                state.timer * 1000.0f, f.x, f.y, f.z, drawn ? "" : " (not drawn)", n.x, n.y, n.z, parent.x, parent.y, parent.z, c.x, c.y, c.z, p.x, p.y,
+                a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0);
+            if (state.timer >= state.seconds) {
+                PlayerSync::DebugKey(Input::kDikW, false);
+                PlayerSync::DebugKey(Input::kDikA, false);
+                PlayerSync::DebugKey(Input::kDikD, false);
+                for (const auto& [who, trace] : { std::pair{ "his feet as drawn", &state.feetTrace }, std::pair{ "his model's node", &state.nodeTrace },
+                         std::pair{ "the camera", &state.cameraTrace } }) {
+                    const auto r = CarExit::CheckRide(*trace);
+                    // The camera is San Andreas's chase camera: it swings behind the vehicle as it turns, smoothly. And
+                    // only a jump counts for CJ too: his feet are straight down from his middle in the world, so they
+                    // go round the seat as the vehicle rolls over.
+                    const bool camera = trace == &state.cameraTrace;
+                    SKSE::log::info("hit test: drove {:.0f} s, {}: {} frames, off where it was at most {:.2f} m (frame {}), biggest step {:.2f} m{}", state.timer,
+                        who, r.samples, r.maxOff, r.worstAt, r.maxStep, camera ? (r.maxStep <= 1.0f ? ": smooth" : ": JUMPS") : CarExit::Seated(r, true) ? ": seated" : ": NOT SEATED");
+                }
+                SKSE::log::info("hit test: drove {:.0f} m through {} cells{}", state.driven, state.cells, state.cells < 3 ? ": TOO SHORT A DRIVE TO TELL" : "");
+                SKSE::log::info("hit test: done after the drive");
+                state.phase = Phase::Done;
+            }
+        }
+
+        // ---- The soak scenario ----
+
+        void SoakWolves(RE::PlayerCharacter* a_player)
+        {
+            const float heading = a_player->GetAngleZ();
+            for (int i = 0; i < 2; i++) {
+                auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kWolf);
+                auto  ref = base ? a_player->PlaceObjectAtMe(base, false) : nullptr;
+                if (ref) {
+                    const float side = (i == 0 ? -1.0f : 1.0f) * 200.0f;
+                    ref->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::sin(heading) * 1050.0f + std::cos(heading) * side,
+                                                                   std::cos(heading) * 1050.0f - std::sin(heading) * side, 0.0f));
+                }
+            }
+            state.soakWolves++;
+        }
+
+        void SoakStep(RE::PlayerCharacter* a_player, float a_delta)
+        {
+            constexpr float kFoot = 90.0f, kDrive = 60.0f;
+            state.soakT += a_delta;
+            state.soakShot += a_delta;
+            state.soakLog += a_delta;
+            if (state.soakShot >= 30.0f) {  // F11 now and then
+                state.soakShot = 0.0f;
+                state.soakShots++;
+                SKSE::log::info("hit test: soak: F11 screenshot {}", state.soakShots);
+                Overlay::Screenshot((std::filesystem::temp_directory_path() / "ahshitrim-hit-test-shots").string());
+            }
+            if (state.soakLog >= 30.0f) {
+                state.soakLog = 0.0f;
+                float nearest = -1.0f;
+                if (auto* follower = Homies::DebugFollower()) {
+                    nearest = follower->GetPosition().GetDistance(a_player->GetPosition()) * Pose::kMetersPerUnit;
+                }
+                static const char* const segs[] = { "on foot", "getting in", "driving", "getting out" };
+                auto* calendar = RE::Calendar::GetSingleton();
+                SKSE::log::info("hit test: soak: {:.0f} s, {}, game hour {:.1f}, {} following ({} about, nearest {:.1f} m), player health {:.0f}, armour {:.0f}, {} drives, {} wolf pairs, {} regrouped, in {:08X}, CJ has the player: {}",
+                    state.timer, segs[state.soakSeg], calendar ? calendar->GetHour() : 0.0f, Homies::DebugCount(true), Homies::DebugCount(false), nearest,
+                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), Vitals::Armor(), state.soakCycles, state.soakWolves, Homies::DebugRegrouped(),
+                    a_player->GetParentCell() ? a_player->GetParentCell()->GetFormID() : 0, PlayerSync::DebugOwned() ? "yes" : "NO");
+            }
+            if (state.timer >= state.seconds) {
+                PlayerSync::DebugKey(Input::kDikW, false);
+                PlayerSync::DebugKey(Input::kDikA, false);
+                PlayerSync::DebugKey(Input::kDikD, false);
+                state.moveX = state.moveY = 0.0f;
+                RunConsole("set timescale to 20");
+                SKSE::log::info("hit test: done after {:.0f} s of soak, {} drives, {} wolf pairs, {} F11 screenshots, {} times never in the vehicle", state.timer, state.soakCycles,
+                    state.soakWolves, state.soakShots, state.soakGone);
+                state.phase = Phase::Done;
+                return;
+            }
+            switch (state.soakSeg) {
+            case 0: {  // on foot: the crew joins at 10 s, wolves at 15 s, CJ walks and runs about
+                const float t = state.soakT;
+                if (!state.soakRecruited && t >= 10.0f) {
+                    state.soakRecruited = true;
+                    if (Homies::DebugCount(true) < 2) {
+                        const int joined = Homies::DebugRecruit(a_player, 3);
+                        SKSE::log::info("hit test: soak: {} joined the crew, {} following", joined, Homies::DebugCount(true));
+                    }
+                }
+                if (!state.soakWolvesSent && t >= 15.0f) {
+                    state.soakWolvesSent = true;
+                    SoakWolves(a_player);
+                }
+                const float u = std::fmod(t, 20.0f);
+                const bool  leftWard = static_cast<int>(t / 20.0f) % 2 == 1;
+                state.moveX = u >= 9.0f && u < 15.0f ? (leftWard ? -0.7f : 0.7f) : 0.0f;
+                state.moveY = u < 6.0f ? 0.35f : u >= 9.0f && u < 15.0f ? 1.0f : 0.0f;
+                if (t >= kFoot) {
+                    state.moveX = state.moveY = 0.0f;
+                    SKSE::log::info("hit test: soak: CJ takes the Sandking, {} following", Homies::DebugCount(true));
+                    PlayerSync::TakeOverInVehicle(kSandking);
+                    state.soakSeg = 1;
+                    state.soakT = 0.0f;
+                }
+                break;
+            }
+            case 1:
+                if (InVehicle()) {
+                    PlayerSync::DebugKey(Input::kDikW, true);
+                    state.legs = 0;
+                    state.soakSeg = 2;
+                    state.soakT = 0.0f;
+                } else if (state.soakT > 30.0f) {
+                    state.soakGone++;
+                    SKSE::log::info("hit test: soak: CJ never got into the Sandking, on foot again");
+                    state.soakSeg = 0;
+                    state.soakT = 0.0f;
+                    state.soakRecruited = state.soakWolvesSent = false;
+                }
+                break;
+            case 2: {
+                const int leg = static_cast<int>(state.soakT);
+                if (leg != state.legs) {
+                    state.legs = leg;
+                    PlayerSync::DebugKey(Input::kDikA, leg % 8 == 2);
+                    PlayerSync::DebugKey(Input::kDikD, leg % 8 == 6);
+                }
+                if (state.soakT >= kDrive) {
+                    PlayerSync::DebugKey(Input::kDikW, false);
+                    PlayerSync::DebugKey(Input::kDikA, false);
+                    PlayerSync::DebugKey(Input::kDikD, false);
+                    PlayerSync::DebugKey(Input::kDikF, true);
+                    SKSE::log::info("hit test: soak: F, CJ gets out ({} following)", Homies::DebugCount(true));
+                    state.soakSeg = 3;
+                    state.soakT = 0.0f;
+                }
+                break;
+            }
+            default:
+                if (state.soakT >= 0.3f) {
+                    PlayerSync::DebugKey(Input::kDikF, false);
+                }
+                if (state.soakT >= 8.0f) {
+                    state.soakCycles++;
+                    state.soakSeg = 0;
+                    state.soakT = 0.0f;
+                    state.soakRecruited = state.soakWolvesSent = false;
+                }
+                break;
             }
         }
 
@@ -780,10 +1175,10 @@ namespace AhShitRim::HitTest
         {
             const RE::NiPoint3 ahead(std::sin(a_heading), std::cos(a_heading), 0.0f);
             const RE::NiPoint3 right(std::cos(a_heading), -std::sin(a_heading), 0.0f);
-            if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead, a_heading)) {
+            if (auto* guard = PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * state.victimAhead, a_heading)) {
                 state.victim = guard->GetHandle();
             }
-            PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * kVictimAhead + right * kOthersAside, a_heading + Pose::kPi);
+            PlaceAt(a_player, Wanted::kHolds[0].guard, a_feet + ahead * state.victimAhead + right * kOthersAside, a_heading + Pose::kPi);
         }
 
         // Skyrim's sneak kill moves, by editor id and the event that plays them: what a victim could play.
@@ -824,6 +1219,34 @@ namespace AhShitRim::HitTest
                     StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), StealthKill::Behind({ feet.x, feet.y, feet.z }, target.feet, target.heading) ? "back to CJ" : "facing him",
                     actor->RequestDetectionLevel(a_player), actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
             }
+            if (auto* nearby = state.nearRef ? RE::TESForm::LookupByID<RE::Actor>(state.nearRef) : nullptr; nearby && nearby->Is3DLoaded()) {
+                const auto target = StealthKills::TargetOf(nearby, a_player);
+                const auto off = StealthKills::OffItsFeet(nearby);
+                SKSE::log::info("hit test: near {} ({:08X}): {}{}{} at {:.2f} m, detection {}", nearby->GetName(), nearby->GetFormID(),
+                    StealthKill::Why(StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target)), off.empty() ? "" : ", ", off,
+                    StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), nearby->RequestDetectionLevel(a_player));
+            }
+        }
+
+        // Every actor about that a stealth kill would call off its feet, and why (Skyrim's sit, knock and ragdoll states).
+        void LogOffTheirFeet(RE::PlayerCharacter* a_player)
+        {
+            auto* lists = RE::ProcessLists::GetSingleton();
+            if (!lists) {
+                return;
+            }
+            int about = 0;
+            for (auto& handle : lists->highActorHandles) {
+                auto actor = handle.get();
+                if (!actor || actor.get() == a_player || actor->IsDead()) {
+                    continue;
+                }
+                about++;
+                if (const auto off = StealthKills::OffItsFeet(actor.get()); !off.empty()) {
+                    SKSE::log::info("hit test: {} ({:08X}) is off its feet: {}", actor->GetName(), actor->GetFormID(), off);
+                }
+            }
+            SKSE::log::info("hit test: {} actors about", about);
         }
 
         // From Arriving on: CJ on foot with the knife, the three placed, then the right button held and the left one
@@ -839,6 +1262,15 @@ namespace AhShitRim::HitTest
             }
             switch (state.step) {
             case 0:  // hand over on foot
+                if (state.nearRef && !state.movedNear && state.timer >= 1.0f) {
+                    RunConsole(std::format("player.moveto {:08X}", state.nearRef));
+                    state.movedNear = true;
+                    state.timer = 0.0f;
+                }
+                if (state.nearRef && state.logTimer >= 1.0f) {
+                    state.logTimer = 0.0f;
+                    LogVerdicts(a_player);
+                }
                 if (state.timer >= 6.0f) {
                     if (!PlayerSync::DebugOwned()) {
                         PlayerSync::DebugToggle();
@@ -861,8 +1293,9 @@ namespace AhShitRim::HitTest
                 break;
             case 2:  // in his hands, then the three
                 if (onFoot && pose.weaponType == Weapons::Knife && state.timer >= 2.0f) {
-                    SKSE::log::info("hit test: CJ holds the knife, placing a guard {:.1f} m ahead with his back to him", kVictimAhead * Pose::kMetersPerUnit);
+                    SKSE::log::info("hit test: CJ holds the knife, placing a guard {:.1f} m ahead with his back to him", state.victimAhead * Pose::kMetersPerUnit);
                     PlaceVictims(a_player, a_player->GetPosition(), pose.heading);
+                    LogOffTheirFeet(a_player);
                     state.step = 3;
                     state.timer = 0.0f;
                 } else if (state.timer > 20.0f) {
@@ -952,16 +1385,94 @@ namespace AhShitRim::HitTest
                     home && actor && !actor->IsDead() ? std::format(", {:.0f} units from the editor spot", actor->GetPosition().GetDistance(at)) : "");
             }
         }
+
+        float HealthOf(RE::TESObjectREFR* a_ref)
+        {
+            const auto* health = a_ref->extraList.GetByType<RE::ExtraObjectHealth>();
+            return health ? health->health : 100.0f;
+        }
+
+        // Three fresh oil pools (Skyrim's TrapOilPool01) placed on the floor where the save's own may be burnt out already:
+        // at three of a row of pools in BleakFallsBarrow01, 3 m apart. A bullet lands in the first, a Molotov bursts on the
+        // second, a rocket on the third, each through what CJ's own shots and projectiles call (ObjectHits).
+        constexpr std::uint32_t kOilPool = 0x000862CC;
+        constexpr std::uint32_t kOilSpots[3] = { 0x0009B0E6, 0x0009B0E0, 0x0009B0DE };
+
+        void PlaceOil()
+        {
+            auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(kOilPool);
+            for (const auto spot : kOilSpots) {
+                auto* at = RE::TESForm::LookupByID<RE::TESObjectREFR>(spot);
+                auto  made = base && at ? at->PlaceObjectAtMe(base, false) : nullptr;
+                if (!made) {
+                    SKSE::log::warn("hit test: couldn't place oil at {:08X}", spot);
+                    continue;
+                }
+                state.pools.push_back({ made->GetHandle() });
+                SKSE::log::info("hit test: placed the oil {:08X} at ({:.0f}, {:.0f}, {:.0f})", made->GetFormID(), made->GetPositionX(), made->GetPositionY(), made->GetPositionZ());
+            }
+        }
+
+        void LightOil(RE::PlayerCharacter* a_player)
+        {
+            const char* by[] = { "a bullet", "a Molotov", "a rocket" };
+            for (std::size_t i = 0; i < state.pools.size() && i < 3; i++) {
+                auto  ref = state.pools[i].ref.get();
+                auto* root = ref ? ref->Get3D() : nullptr;
+                state.pools[i].by = by[i];
+                if (!root) {
+                    SKSE::log::info("hit test: the oil for {} has no 3D", by[i]);
+                    continue;
+                }
+                const auto at = root->worldBound.center;
+                SKSE::log::info("hit test: {} on the oil {:08X} at ({:.0f}, {:.0f}, {:.0f}), health {:.0f}", by[i], ref->GetFormID(), at.x, at.y, at.z, HealthOf(ref.get()));
+                if (i == 0) {
+                    ObjectHits::BulletLanded(a_player, at, Weapons::Pistol);
+                } else {
+                    ObjectHits::Around(a_player, at, 5.0f,  // just the pool, not its neighbours
+                         i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);
+                }
+            }
+        }
+
+        // True once every pool burnt out.
+        bool WatchOil()
+        {
+            bool all = true;
+            for (auto& pool : state.pools) {
+                const auto ref = pool.ref.get();
+                if (!ref || ref->IsDisabled()) {
+                    pool.gone = true;
+                    continue;
+                }
+                const float health = HealthOf(ref.get());
+                pool.lowest = (std::min)(pool.lowest, health);
+                pool.burned = pool.burned || (health < 94.0f && health > 7.0f);
+                all = false;
+            }
+            return all;
+        }
+    }
+
+    bool Drive(float& a_moveX, float& a_moveY)
+    {
+        if (state.phase != Phase::CrewWalk && !(state.phase == Phase::Soak && state.soakSeg == 0)) {
+            return false;
+        }
+        a_moveX = state.moveX;
+        a_moveY = state.moveY;
+        return true;
     }
 
     void OnDataLoaded()
     {
         const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew") {
+        if (scenario != "hits" && scenario != "bust" && scenario != "stealth" && scenario != "respawns" && scenario != "crew" && scenario != "pad" && scenario != "riders" && scenario != "ridecrew" && scenario != "armour" && scenario != "oil" && scenario != "drive" && scenario != "soak") {
             return;
         }
         state.crew = scenario == "crew";
-        if (state.crew) {
+        state.soak = scenario == "soak";
+        if (state.crew || state.soak) {
             Homies::DebugThanes(1);  // Thane of Whiterun; hit-test.ps1 starts it at the Whiterun stables
         }
         state.bust = scenario == "bust";
@@ -970,10 +1481,16 @@ namespace AhShitRim::HitTest
         state.pad = scenario == "pad";
         state.riders = scenario == "riders" || scenario == "ridecrew";
         state.crewRider = scenario == "ridecrew";
+        state.armour = scenario == "armour";
+        state.oil = scenario == "oil";
+        if (const auto at = Ini::Value("Debug", "HitTestOilAt"); !at.empty()) {
+            state.oilAt = at;
+        }
         if (state.crewRider) {
             Homies::DebugThanes(1);
         }
-        state.seconds = state.stealth ? 12.0f : state.seconds;
+        state.drive = scenario == "drive";
+        state.seconds = state.stealth ? 12.0f : state.drive ? 60.0f : state.seconds;
         if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
             state.start = start;
         }
@@ -987,6 +1504,15 @@ namespace AhShitRim::HitTest
             }
         }
         state.newGame = Ini::Value("Debug", "HitTestNewGame") == "1";
+        try {
+            if (const auto meters = Ini::Value("Debug", "HitTestStealthMeters"); !meters.empty()) {
+                state.victimAhead = std::stof(meters) * Pose::kUnitsPerMeter;
+            }
+            if (const auto nearId = Ini::Value("Debug", "HitTestNear"); !nearId.empty()) {
+                state.nearRef = static_cast<RE::FormID>(std::stoul(nearId, nullptr, 16));
+            }
+        } catch (...) {
+        }
         state.phase = Phase::MainMenu;
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
@@ -1005,6 +1531,9 @@ namespace AhShitRim::HitTest
             return;
         }
         state.timer += a_delta;
+        if (state.phase >= Phase::CrewFight && state.phase <= Phase::CrewMoved) {
+            LogFollower(a_player, a_delta);
+        }
         switch (state.phase) {
         case Phase::MainMenu:
         case Phase::Loading:
@@ -1019,7 +1548,24 @@ namespace AhShitRim::HitTest
             state.timer = 0.0f;
             break;
         case Phase::Arriving:
-            if (state.pad) {
+            if (state.oil) {
+                if (state.oil && state.timer >= 4.0f && !state.oilMoved) {
+                    state.oilMoved = true;
+                    RunConsole("tgm");  // the player stands in the fire
+                    RunConsole("player.moveto " + state.oilAt);
+                } else if (state.oil && state.timer >= 6.0f && !state.oilReset) {
+                    state.oilReset = true;
+                    PlaceOil();
+                } else if (state.oil && state.timer >= 10.0f) {
+                    SKSE::log::info("hit test: in {:08X}, lighting the oil", a_player->GetParentCell()->GetFormID());
+                    LightOil(a_player);
+                    state.phase = state.pools.empty() ? Phase::Done : Phase::Oil;
+                    if (state.pools.empty()) {
+                        SKSE::log::info("hit test: done, no oil here");
+                    }
+                    state.timer = state.logTimer = 0.0f;
+                }
+            } else if (state.pad) {
                 PadSteps();
             } else if (state.stealth) {
                 Stealth(a_player, a_delta);
@@ -1030,6 +1576,27 @@ namespace AhShitRim::HitTest
                 }
                 state.phase = Phase::CrewSpots;
                 state.timer = 0.0f;
+            } else if (state.timer >= 6.0f && state.soak) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot for the soak", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                if (const auto hour = Ini::Value("Debug", "HitTestHour"); !hour.empty()) {
+                    RunConsole("set gamehour to " + hour);
+                }
+                const auto scale = Ini::Value("Debug", "HitTestTimescale");
+                RunConsole("set timescale to " + (scale.empty() ? std::string("60") : scale));
+                state.phase = Phase::Soak;
+                state.timer = state.soakT = state.soakShot = state.soakLog = 0.0f;
+            } else if (state.timer >= 6.0f && state.armour) {
+                SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot, to stand still with armour", a_player->GetParentCell()->GetFormID());
+                if (!PlayerSync::DebugOwned()) {
+                    PlayerSync::DebugToggle();
+                }
+                Vitals::SetArmor(Health::kSaFullHealth);
+                RunConsole("set timescale to 3600");  // an hour of game time a second: San Andreas's hunger (48 hours without food) comes within a minute
+                state.phase = Phase::Standing;
+                state.timer = state.logTimer = 0.0f;
             } else if (state.timer >= 6.0f && state.respawns) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over to CJ on foot", a_player->GetParentCell()->GetFormID());
                 if (!PlayerSync::DebugOwned()) {
@@ -1039,6 +1606,13 @@ namespace AhShitRim::HitTest
                 state.timer = 0.0f;
             } else if (state.timer >= 6.0f && state.riders && !state.follower) {
                 PlaceFollower(a_player);
+            } else if (state.timer >= 8.0f && state.crewRider) {
+                // Not TakeOverInVehicle: a new handover sends the crew away and brings it back once CJ sits, so nobody boards.
+                const auto why = PlayerSync::DebugSpawn(kHuntley);
+                SKSE::log::info("hit test: riders: a Huntley in front of CJ on foot{}", why.empty() ? "" : ", refused: " + why);
+                state.phase = why.empty() ? Phase::Boarding : Phase::Done;
+                state.boardTry = 0;
+                state.timer = 0.0f;
             } else if (state.timer >= (state.riders ? 8.0f : 6.0f)) {
                 SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
                 PlayerSync::TakeOverInVehicle(kSandking);
@@ -1047,7 +1621,20 @@ namespace AhShitRim::HitTest
             }
             break;
         case Phase::Handing:
-            if (InVehicle() && state.riders) {
+            if (InVehicle() && state.drive) {
+                SKSE::log::info("hit test: CJ is in the Sandking, W: he drives for {:.0f} s", state.seconds);
+                PlayerSync::DebugKey(Input::kDikW, true);
+                state.feetTrace.clear();
+                state.nodeTrace.clear();
+                state.cameraTrace.clear();
+                state.legs = 0;
+                state.cells = 0;
+                state.lastCell = nullptr;
+                state.driven = 0.0f;
+                state.lastAt = RE::NiPoint3();
+                state.phase = Phase::Driving;
+                state.timer = 0.0f;
+            } else if (InVehicle() && state.riders) {
                 SKSE::log::info("hit test: CJ is in the Sandking, {} riding with him", Riders::Riding().size());
                 state.phase = Phase::Seated;
                 state.timer = 0.0f;
@@ -1106,6 +1693,13 @@ namespace AhShitRim::HitTest
             break;
         case Phase::CrewFight:
             SetOn(a_player);
+            state.shotTimer += a_delta;
+            if (state.shots < 6 && state.shotTimer >= 1.0f) {  // F11 a few times while the crew runs
+                state.shotTimer = 0.0f;
+                state.shots++;
+                SKSE::log::info("hit test: crew: F11 screenshot {}", state.shots);
+                Overlay::Screenshot((std::filesystem::temp_directory_path() / "ahshitrim-hit-test-shots").string());
+            }
             state.logTimer += a_delta;
             if (state.logTimer >= 2.0f) {
                 state.logTimer = 0.0f;
@@ -1151,7 +1745,22 @@ namespace AhShitRim::HitTest
                 PlayerSync::DebugToggle();
                 state.timer = 0.0f;
             } else if (state.timer >= 8.0f && PlayerSync::DebugOwned()) {
-                SKSE::log::info("hit test: crew: {} following after F10 out and back; the player moves on, as fast travel moves it", Homies::DebugCount(true));
+                SKSE::log::info("hit test: crew: {} following after F10 out and back; CJ walks the stables' road", Homies::DebugCount(true));
+                state.phase = Phase::CrewWalk;
+                state.walkMax = 0.0f;
+                state.stood = -1.0f;
+                state.regroupedBefore = Homies::DebugRegrouped();
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewStray:
+            if (state.timer >= 12.0f) {
+                auto*       follower = Homies::DebugFollower();
+                const float off = follower ? follower->GetPosition().GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter : INFINITY;
+                const int   regrouped = Homies::DebugRegrouped() - state.regroupedBefore;
+                SKSE::log::info("hit test: crew: 12 s after, {} put back near CJ and the follower {:.1f} m off (within 6): {}", regrouped, off,
+                    regrouped > 0 && off <= 6.0f ? "ok" : "FAILED");
+                SKSE::log::info("hit test: crew: the player moves on, as fast travel moves it");
                 RunConsole("cow Tamriel 5 -3");
                 state.phase = Phase::CrewMoved;
                 state.timer = 0.0f;
@@ -1159,17 +1768,77 @@ namespace AhShitRim::HitTest
             break;
         case Phase::CrewMoved:
             if (state.timer >= 12.0f) {
-                SKSE::log::info("hit test: crew: {} following after the move ({} about)", Homies::DebugCount(true), Homies::DebugCount(false));
-                SKSE::log::info("hit test: done after the crew run");
-                state.phase = Phase::Done;
+                SKSE::log::info("hit test: crew: {} following after the move ({} about); CJ walks again, up against Whiterun's walls", Homies::DebugCount(true),
+                    Homies::DebugCount(false));
+                state.phase = Phase::CrewWalk;
+                state.walkMax = 0.0f;
+                state.stood = -1.0f;
+                state.regroupedBefore = Homies::DebugRegrouped();
+                state.timer = 0.0f;
             }
             break;
+        case Phase::CrewWalk:
+        {
+            // 0-6 s a walk ahead, 6-10 s standing, 10-16 s a run off to the right, 16-20 s standing.
+            const float t = state.timer;
+            const float x = t >= 10.0f && t < 16.0f ? 0.7f : 0.0f;
+            const float y = t < 6.0f ? 0.35f : t >= 10.0f && t < 16.0f ? 1.0f : 0.0f;
+            if (x != state.moveX || y != state.moveY) {
+                SKSE::log::info("hit test: crew: CJ's stick at ({:.2f},{:.2f}), {} following", x, y, Homies::DebugCount(true));
+            }
+            state.moveX = x;
+            state.moveY = y;
+            auto*       follower = Homies::DebugFollower();
+            const float off = follower ? follower->GetPosition().GetDistance(a_player->GetPosition()) / Pose::kUnitsPerMeter : INFINITY;
+            if (x != 0.0f || y != 0.0f) {
+                state.walkMax = (std::max)(state.walkMax, off);
+            } else if (t >= 9.5f && t < 10.0f) {
+                state.stood = off;  // the last of the first stand
+            }
+            if (t >= 20.0f) {
+                state.moveX = state.moveY = 0.0f;
+                if (state.walks++ == 0) {
+                    // On the stables' road, all navmesh: his AI keeps up (KeepOffsetFromActor, catching up at a run).
+                    constexpr float kMovingWithin = 12.0f, kStoodWithin = 5.0f;
+                    SKSE::log::info("hit test: crew: on the stables' road a follower was at most {:.1f} m off while CJ walked and ran (within {:.0f}), and "
+                                    "{:.1f} and {:.1f} m after CJ stood 4 s (within {:.0f}), {} following: {}",
+                        state.walkMax, kMovingWithin, state.stood, off, kStoodWithin, Homies::DebugCount(true),
+                        state.walkMax <= kMovingWithin && state.stood >= 0.0f && state.stood <= kStoodWithin && off <= kStoodWithin && Homies::DebugCount(true) == 2 ? "ok" : "FAILED");
+                    const float stray = Homies::DebugStray(a_player, 70.0f);
+                    SKSE::log::info("hit test: crew: a follower put {:.0f} m behind CJ on the navmesh, as a car or a rock leaves one", stray);
+                    state.regroupedBefore = Homies::DebugRegrouped();
+                    state.phase = Phase::CrewStray;
+                } else {
+                    // Up against the walls CJ walks where Skyrim has no navmesh: nobody's AI can follow him there, and with no
+                    // navmesh near him at all there's nowhere to put a straggler either, so he waits at its edge, still in the
+                    // crew. With navmesh near CJ he's put back within kRegroupAfter (or never fell that far behind).
+                    const int    regrouped = Homies::DebugRegrouped() - state.regroupedBefore;
+                    RE::NiPoint3 mesh;
+                    const bool   unreachable = !Homies::DebugNavmesh(a_player, mesh);
+                    const bool   cameUp = off <= Crew::kRegroupAfter && (regrouped > 0 || state.walkMax <= Crew::kRegroupAfter);
+                    SKSE::log::info("hit test: crew: after the walk against the walls a follower is {:.1f} m off (at most {:.1f} on the way), {} put back near CJ, "
+                                    "{} following{}: {}",
+                        off, state.walkMax, regrouped, Homies::DebugCount(true), unreachable && !cameUp ? ", CJ where Skyrim has no navmesh near him (he waits at its edge)" : "",
+                        (cameUp || unreachable) && Homies::DebugCount(true) == 2 ? "ok" : "FAILED");
+                    SKSE::log::info("hit test: done after the crew run");
+                    state.phase = Phase::Done;
+                }
+                state.timer = 0.0f;
+            }
+            break;
+        }
         case Phase::Killing:
             if (!PlayerSync::DebugOwned()) {
                 if (state.timer > 30.0f) {
                     SKSE::log::info("hit test: CJ never got the player, stopping");
                     state.phase = Phase::Done;
                 }
+                break;
+            }
+            if (state.timer >= 3.0f && !state.waitedFirst) {
+                // First / before anyone is killed, so the wait menu opens: once a guard is, Skyrim refuses to wait with them near.
+                state.timer = 5.0f;
+                state.phase = Phase::Waiting;
                 break;
             }
             if (state.timer >= 3.0f) {
@@ -1180,16 +1849,35 @@ namespace AhShitRim::HitTest
             break;
         case Phase::Waiting:
             if (state.timer >= 5.0f) {
-                if (auto* calendar = RE::Calendar::GetSingleton(); calendar && calendar->gameDaysPassed && calendar->gameHour) {
-                    constexpr float kHours = 1.1f;
-                    calendar->gameDaysPassed->value += kHours / 24.0f;
-                    calendar->gameHour->value += kHours;
-                    if (calendar->gameHour->value >= 24.0f) {
-                        calendar->gameHour->value -= 24.0f;
+                state.waitAsked = false;
+                SKSE::log::info("hit test: pressing / for Skyrim's wait menu");
+                state.phase = Phase::WaitMenu;
+                state.timer = 0.0f;
+                PlayerSync::DebugWait();
+            }
+            break;
+        case Phase::WaitMenu:
+            if (ui && ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME)) {
+                break;
+            }
+            if (state.waitAsked || state.timer >= 6.0f) {
+                auto* calendar = RE::Calendar::GetSingleton();
+                if (calendar && calendar->gameDaysPassed && calendar->gameHour) {
+                    if (!state.waitedFirst) {
+                        SKSE::log::info("hit test: the wait menu {} before the kills", state.waitAsked ? "opened through / and was closed" : "never opened through /");
+                    } else {
+                        constexpr float kHours = 1.1f;
+                        calendar->gameDaysPassed->value += kHours / 24.0f;
+                        calendar->gameHour->value += kHours;
+                        if (calendar->gameHour->value >= 24.0f) {
+                            calendar->gameHour->value -= 24.0f;
+                        }
+                        SKSE::log::info("hit test: the wait menu {} after the kills: {:.1f} game hours on the clock, staying put",
+                            state.waitAsked ? "opened through / and was closed" : "never opened through / (refused)", kHours);
                     }
-                    SKSE::log::info("hit test: {:.1f} game hours on, staying put", kHours);
                 }
-                state.phase = Phase::Looking;
+                state.phase = state.waitedFirst ? Phase::Looking : Phase::Killing;
+                state.waitedFirst = true;
                 state.timer = 0.0f;
             }
             break;
@@ -1217,20 +1905,53 @@ namespace AhShitRim::HitTest
                 state.phase = Phase::Done;
             }
             break;
+        case Phase::Standing:
+            state.logTimer += a_delta;
+            if (state.logTimer >= 10.0f) {
+                state.logTimer = 0.0f;
+                SKSE::log::info("hit test: {:.0f} s: armour {:.1f}, player health {:.0f}", state.timer, Vitals::Armor(),
+                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth));
+            }
+            if (state.timer >= state.seconds) {
+                SKSE::log::info("hit test: done after {:.0f} s standing still, armour {:.1f} of {:.0f} ({})", state.timer, Vitals::Armor(), Health::kSaFullHealth,
+                    Vitals::Armor() >= Health::kSaFullHealth ? "kept" : "DRAINED");
+                RunConsole("set timescale to 20");
+                state.phase = Phase::Done;
+            }
+            break;
+        case Phase::Boarding: {
+            // F (San Andreas's enter key) once the Huntley is there: CJ walks to it and gets in, the crew boarding with him.
+            // San Andreas spawns nothing without a flat, clear spot in front of him (the crew or a parked vehicle in the way):
+            // then he walks on a second and it's asked for again, every 8 s. F again while he gets in would stop him.
+            const float t = std::fmod(state.timer, 8.0f);
+            if (static_cast<int>(state.timer / 8.0f) != state.boardTry) {
+                state.boardTry = static_cast<int>(state.timer / 8.0f);
+                const auto why = PlayerSync::DebugSpawn(kHuntley);
+                SKSE::log::info("hit test: riders: CJ isn't in yet, the Huntley asked for again{}", why.empty() ? "" : ", refused: " + why);
+            }
+            Protocol::PlayerState pose{};
+            const bool entering = LinkService::Get().ReadPlayer(pose) && (pose.flags & Protocol::kPlayerGettingInOut) != 0;
+            PlayerSync::DebugKey(Input::kDikF, t >= 2.0f && t < 2.3f);
+            PlayerSync::DebugKey(Input::kDikW, t >= 6.0f && t < 7.0f && !entering);
+            if (InVehicle()) {
+                PlayerSync::DebugKey(Input::kDikF, false);
+                PlayerSync::DebugKey(Input::kDikW, false);
+                SKSE::log::info("hit test: CJ is in the Huntley, {} riding with him", Riders::Riding().size());
+                state.phase = Phase::Seated;
+                state.timer = 0.0f;
+            } else if (state.timer > 32.0f) {
+                PlayerSync::DebugKey(Input::kDikF, false);
+                PlayerSync::DebugKey(Input::kDikW, false);
+                SKSE::log::warn("hit test: CJ never got into the Huntley, stopping");
+                state.phase = Phase::Done;
+            }
+            break;
+        }
         case Phase::Seated:
             if (state.timer >= 3.0f) {
-                if (state.crewRider) {
-                    // The handover into the Sandking sends the crew away and brings it back as new actors: trace whoever rides now.
-                    const auto riding = Riders::Riding();
-                    if (!riding.empty()) {
-                        if (auto* rider = RE::TESForm::LookupByID<RE::Actor>(riding.front())) {
-                            state.follower = rider->GetHandle();
-                        }
-                    }
-                }
                 SKSE::log::info("hit test: {} riding, F: CJ gets out", Riders::Riding().size());
+                TakePassengers();
                 PlayerSync::DebugKey(Input::kDikF, true);
-                state.riderTrace.clear();
                 state.cjTrace.clear();
                 state.outFor = 0.0f;
                 state.phase = Phase::Leaving;
@@ -1242,6 +1963,34 @@ namespace AhShitRim::HitTest
                 PlayerSync::DebugKey(Input::kDikF, false);
             }
             TraceLeaving(a_player, a_delta);
+            break;
+        case Phase::Oil: {
+            const bool out = WatchOil();
+            state.logTimer += a_delta;
+            if (state.logTimer >= 2.0f || out || state.timer >= state.seconds) {
+                state.logTimer = 0.0f;
+                for (const auto& pool : state.pools) {
+                    const auto ref = pool.ref.get();
+                    SKSE::log::info("hit test: {:.0f} s: the oil {:08X} ({}): {}, lowest health {:.0f}", state.timer, ref ? ref->GetFormID() : 0, pool.by,
+                        pool.gone ? "burnt out" : ref ? std::format("health {:.0f}", HealthOf(ref.get())) : "gone", pool.lowest);
+                }
+            }
+            if (out || state.timer >= state.seconds) {
+                int burned = 0;
+                for (const auto& pool : state.pools) {
+                    burned += pool.burned ? 1 : 0;
+                    SKSE::log::info("hit test: the oil lit by {} {}", pool.by, pool.burned ? (pool.gone ? "burned and burnt out" : "burned") : "never burned");
+                }
+                SKSE::log::info("hit test: done after {:.0f} s, {} of {} pools burned", state.timer, burned, state.pools.size());
+                state.phase = Phase::Done;
+            }
+            break;
+        }
+        case Phase::Driving:
+            TraceDriving(a_player);
+            break;
+        case Phase::Soak:
+            SoakStep(a_player, a_delta);
             break;
         default: break;
         }

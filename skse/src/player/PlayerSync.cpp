@@ -95,8 +95,13 @@ namespace AhShitRim::PlayerSync
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
             std::bitset<256> debugKeys;  // held by the hit test (DebugKey), not by the keyboard
+            Protocol::BodyState drawnPose{};  // the hit test's: CJ as DrawCj drew him (DebugDrawn)
+            bool                drawnThisFrame = false;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            Body::Follow       vehicleFollow[Protocol::kVehicleMax];  // each drawn at CJ's moment (bodyTime)
+            double             bodyTime = 0.0;    // the moment on San Andreas's clock CJ was drawn at this frame
+            bool               haveBodyTime = false;
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
@@ -269,6 +274,7 @@ namespace AhShitRim::PlayerSync
             const bool wasted = state.owned && (Vitals::IsWasted() || Police::IsBusted());  // the player is dying or arrested: CJ stands still
             // In Ammu-Nation the keys are the shop's: CJ stands still.
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted && !AmmuNation::IsOpen(), a_paused);
+            HitTest::Drive(input.moveX, input.moveY);  // the crew hit test walks CJ
             if (state.owned && Vitals::IsDown()) {
                 input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
             }
@@ -516,12 +522,18 @@ namespace AhShitRim::PlayerSync
         void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu, bool a_hideBody)
         {
             const double        now = NowMs();
+            state.drawnThisFrame = false;
+            state.haveBodyTime = false;
             Protocol::BodyState body{};
             if (LinkService::Get().ReadBody(body) && (body.flags & Protocol::kBodyValid) != 0 && body.handover == state.handover &&
                 body.boneCount <= Protocol::kBodyBoneMax && Body::Finite(body)) {
                 state.body.Push(body, now);
             }
             Protocol::BodyState pose{};
+            if (state.body.Count() > 0) {
+                state.bodyTime = state.body.TimeAt(now);
+                state.haveBodyTime = true;
+            }
             // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
             if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
                 (!a_hideBody && !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2])))) {
@@ -532,6 +544,8 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             PoseCamera(pose, a_fromHeading, a_fromPitch, a_menu);
             state.drawn++;
+            state.drawnPose = pose;
+            state.drawnThisFrame = true;
             if (!state.cjLogged) {
                 state.cjLogged = true;
                 SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", pose.model,
@@ -553,6 +567,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehicleFollow[i].Reset();
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         Headlights::Show(i, nullptr, {});
@@ -562,8 +577,11 @@ namespace AhShitRim::PlayerSync
                         state.vehicles[i].Push(vehicle, now);
                     }
                 }
+                // At CJ's moment, so he sits where the vehicle is drawn (Body::Follow).
                 Protocol::BodyState pose{};
-                if (state.vehicles[i].Sample(now, pose)) {
+                const bool          sampled = state.haveBodyTime ? state.vehicleFollow[i].Sample(state.body, state.bodyTime, state.vehicles[i], now, pose) :
+                                                                   state.vehicles[i].Sample(now, pose);
+                if (sampled) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
@@ -1037,6 +1055,12 @@ namespace AhShitRim::PlayerSync
                 Release("the player died");
                 return;
             }
+            // A stealth kill's kill move eases the player it pairs with the victim into place: that isn't the game
+            // moving it (a re-anchor would carry CJ off wherever the move took the hidden player).
+            if (StealthKills::HoldsPlayer(a_player)) {
+                StealthKills::Pushed(a_player->GetPosition() - state.lastPlaced);
+                state.lastPlaced = a_player->GetPosition();
+            }
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
@@ -1106,10 +1130,12 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
-            const bool killMove = StealthKills::HoldsPlayer(a_player);  // a stealth kill's kill move moves the player itself
-            if (killMove) {
-                state.lastPlaced = a_player->GetPosition();
-            }
+            // In a stealth kill's kill move the hidden player is the pair's to line up with the victim (put at CJ's
+            // feet every frame, Skyrim's move waits on it and runs twice as long), as long as it stays within
+            // StealthKill::kKillMoveStray of him.
+            const bool killMove = valid && StealthKills::HoldsPlayer(a_player) &&
+                                  a_player->GetPosition().GetDistance(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2])) <=
+                                      StealthKill::kKillMoveStray * Pose::kUnitsPerMeter;
             if (valid && !scene && !unpinned && !killMove) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
@@ -1345,7 +1371,8 @@ namespace AhShitRim::PlayerSync
         };
 
         // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
-        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
+        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu. Nor does T, the wait menu:
+        // / opens it instead (WaitKey).
         // On the pad (DESIGN.md, Controller) Back is held back from Skyrim's wait menu in either game, so a second's hold can
         // hand the player over (Pad::Mapper), and a tap with Skyrim on the player opens the menu through Skyrim's own
         // handler (OpenWaitMenu). While CJ has the player only the pad's journal (Start) and tween menu (B) open.
@@ -1374,9 +1401,9 @@ namespace AhShitRim::PlayerSync
             static inline REL::Relocation<decltype(thunk)> original;
         };
 
-        // Back tapped on the pad while Skyrim has the player: its wait menu, through Skyrim's own menu open handler (which
-        // refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
-        void OpenMenu(const RE::BSFixedString& a_userEvent, std::uint32_t a_id)
+        // Back tapped on the pad while Skyrim has the player, or / while CJ has it: its wait menu, through Skyrim's own
+        // menu open handler (which refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
+        void OpenMenu(const RE::BSFixedString& a_userEvent, std::uint32_t a_id, RE::INPUT_DEVICE a_device = RE::INPUT_DEVICE::kGamepad)
         {
             auto* controls = RE::MenuControls::GetSingleton();
             auto* handler = controls ? controls->menuOpenHandler : nullptr;
@@ -1384,7 +1411,7 @@ namespace AhShitRim::PlayerSync
                 return;
             }
             for (const float value : { 1.0f, 0.0f }) {
-                auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kGamepad, a_userEvent, a_id, value, value > 0.0f ? 0.0f : 0.1f);
+                auto* event = RE::ButtonEvent::Create(a_device, a_userEvent, a_id, value, value > 0.0f ? 0.0f : 0.1f);
                 if (!event) {
                     return;
                 }
@@ -1400,6 +1427,24 @@ namespace AhShitRim::PlayerSync
             if (auto* events = RE::UserEvents::GetSingleton()) {
                 OpenMenu(events->wait, Pad::kBack);
             }
+        }
+
+        // / while CJ has the player, on foot: Skyrim's wait menu, since T is a letter of the cheat codes here.
+        void WaitKey()
+        {
+            if (!state.owned || MenuHasInput() || AmmuNation::IsOpen() || Vitals::IsWasted() || Police::IsBusted()) {
+                return;
+            }
+            if (InVehicle()) {
+                SaHud::ShowHelp("Get out of the vehicle to wait.", 3.0f);
+                return;
+            }
+            auto* events = RE::UserEvents::GetSingleton();
+            if (!events) {
+                return;
+            }
+            SKSE::log::info("player sync: / pressed: Skyrim's wait menu, as T without CJ");
+            OpenMenu(events->wait, Input::kDikWait, RE::INPUT_DEVICE::kKeyboard);
         }
 
         // Skyrim's Shout on the pad (RB) is the handbrake while CJ is in a vehicle (DESIGN.md, Controller): Z still shouts.
@@ -1694,9 +1739,9 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikApostrophe && !state.devKeys) {
                         continue;
                     }
-                    if (code == Input::kDikSlash && state.owned) {
-                        if (button->IsDown() && !MenuHasInput()) {
-                            SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
+                    if (code == Input::kDikWait && state.owned) {
+                        if (button->IsDown()) {
+                            WaitKey();  // Skyrim's wait menu, as T opens it without CJ
                         }
                         continue;
                     }
@@ -1931,6 +1976,21 @@ namespace AhShitRim::PlayerSync
             state.input.SetKey(a_dik, a_down);
         }
     }
+
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        return state.owned ? CheatSpawn(a_model, false) : std::string("San Andreas doesn't have the player");
+    }
+
+    bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera)
+    {
+        const auto& p = state.drawnPose;
+        a_pose = p;
+        a_feet = state.anchor + RE::NiPoint3(p.feet[0], p.feet[1], p.feet[2]);
+        a_camera = state.anchor + RE::NiPoint3(p.cameraPosition[0], p.cameraPosition[1], p.cameraPosition[2]);
+        return state.drawnThisFrame;
+    }
+    void DebugWait() { WaitKey(); }
 
     void DebugType(const char* a_code)
     {

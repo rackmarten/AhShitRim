@@ -37,12 +37,14 @@ namespace AhShitRim::Input
 {
     // Scan codes Skyrim keeps for itself while San Andreas has the player: Escape and Tab open its
     // menus (the map is in Tab's, as San Andreas's is in its pause menu), ~ the console, F10 hands the
-    // player back. M is Skyrim's map key, and (v20) only a letter of the cheat codes here.
+    // player back, / opens its wait menu. M is Skyrim's map key, and (v20) only a letter of the cheat
+    // codes here; so is T, Skyrim's own wait key.
     inline constexpr std::uint32_t kDikEscape = 0x01;
     inline constexpr std::uint32_t kDikTab = 0x0F;
     inline constexpr std::uint32_t kDikGrave = 0x29;
     inline constexpr std::uint32_t kDikM = 0x32;
-    inline constexpr std::uint32_t kDikSlash = 0x35;
+    inline constexpr std::uint32_t kDikSlash = 0x35;  // Skyrim's wait menu while CJ has the player (T is a cheat letter)
+    inline constexpr std::uint32_t kDikWait = kDikSlash;
     inline constexpr std::uint32_t kDikF10 = 0x44;
     inline constexpr std::uint32_t kDikF11 = 0x57;  // a screenshot with everything on screen
     inline constexpr std::uint32_t kDikEquals = 0x0D;  // the debug key: gives CJ San Andreas's next weapon set

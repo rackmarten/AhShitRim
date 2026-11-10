@@ -72,7 +72,4 @@ namespace AhShitRim::SaHud
     };
     void ShowMenu(std::string a_title, std::vector<MenuRow> a_rows);
     void ClearText();                             // every text style, the fade and the bars off
-
-    // The dev key (/ while San Andreas has the player): shows the next text style in turn.
-    void NextDemo();
 }

@@ -2,6 +2,7 @@
 
 #include "air_spawn.h"
 #include "car_exit.h"
+#include "cj_body.h"
 #include "cj_cheats.h"
 #include "fx_model.h"
 #include "log.h"
@@ -106,6 +107,7 @@ namespace AhShitRim::Vehicles
             float          heavyTaken = 0.0f;       // and the speed up it took off, m/s summed
             int            trackSteps = 0;          // corner-steps the Rhino's tracks gripped for (TrackGrip) since the last driving line
             float          trackTaken = 0.0f;       // and the sliding they took off, m/s summed
+            bool          weatherForced = false;  // San Andreas's weather is kept dry for Skyrim's sky (SetSky)
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -114,18 +116,6 @@ namespace AhShitRim::Vehicles
         {
             return { { a_m.right.x, a_m.right.y, a_m.right.z }, { a_m.up.x, a_m.up.y, a_m.up.z }, { a_m.at.x, a_m.at.y, a_m.at.z },
                 { a_m.pos.x, a_m.pos.y, a_m.pos.z } };
-        }
-
-        std::uint32_t NowMs()
-        {
-            static LARGE_INTEGER frequency{}, start{};
-            if (!frequency.QuadPart) {
-                ::QueryPerformanceFrequency(&frequency);
-                ::QueryPerformanceCounter(&start);
-            }
-            LARGE_INTEGER now;
-            ::QueryPerformanceCounter(&now);
-            return static_cast<std::uint32_t>((now.QuadPart - start.QuadPart) * 1000 / frequency.QuadPart);
         }
 
         CVehicleModelInfo* InfoOf(int a_model)
@@ -362,6 +352,25 @@ namespace AhShitRim::Vehicles
             slot.extras.clear();
             slot.atomics.clear();
             slot.spinners.clear();
+            // A texture's index in the model, read once; -1 (white) when it can't be read.
+            const auto textureOf = [&](RwTexture* a_texture) -> std::int32_t {
+                const auto found = byRaster.find(a_texture->raster);
+                if (found != byRaster.end()) {
+                    return found->second;
+                }
+                std::string  why;
+                auto         read = RwTextures::Read(a_texture, why);
+                std::int32_t index = -1;
+                if (read.rgba.empty()) {
+                    Log(std::format("vehicle: texture {} of the {} left white: {}", static_cast<const char*>(a_texture->name), slot.name, why));
+                } else {
+                    textureLog += std::format(" {} {}x{}", static_cast<const char*>(a_texture->name), read.width, read.height);
+                    index = static_cast<std::int32_t>(model.textures.size());
+                    model.textures.push_back(std::move(read));
+                }
+                byRaster[a_texture->raster] = index;
+                return index;
+            };
             for (RpAtomic* atomic : atomics) {
                 RpGeometry* geometry = atomic->geometry;
                 if (!Usable(atomic)) {
@@ -390,23 +399,16 @@ namespace AhShitRim::Vehicles
                     out.color[1] = rgb.g;
                     out.color[2] = rgb.b;
                     out.color[3] = material->color.alpha;
+                    // A lamp (the lights texture in a lamp's placeholder colour): Skyrim draws it lit while that lamp burns.
+                    if (texture && texture == CVehicleModelInfo::ms_pLightsTexture) {
+                        out.flags |= VehicleLights::MeshFlagsOf(VehicleLights::LampOfMaterial(material->color.red, material->color.green, material->color.blue));
+                    }
                     if (texture && texture->raster) {
-                        const auto found = byRaster.find(texture->raster);
-                        if (found != byRaster.end()) {
-                            out.texture = found->second;
-                        } else {
-                            std::string why;
-                            auto        read = RwTextures::Read(texture, why);
-                            if (read.rgba.empty()) {
-                                Log(std::format("vehicle: texture {} of the {} left white: {}", static_cast<const char*>(texture->name), slot.name, why));
-                                out.texture = -1;
-                            } else {
-                                textureLog += std::format(" {} {}x{}", static_cast<const char*>(texture->name), read.width, read.height);
-                                out.texture = static_cast<std::int32_t>(model.textures.size());
-                                model.textures.push_back(std::move(read));
-                            }
-                            byRaster[texture->raster] = out.texture;
-                        }
+                        out.texture = textureOf(texture);
+                    }
+                    // A lamp shows San Andreas's lights-on texture while it burns, as SetEditableMaterialsCB swaps it in.
+                    if (VehicleLights::LampOfMesh(out.flags) != 0 && CVehicleModelInfo::ms_pLightsOnTexture && CVehicleModelInfo::ms_pLightsOnTexture->raster) {
+                        out.litTexture = textureOf(CVehicleModelInfo::ms_pLightsOnTexture);
                     }
                     // A spinning rotor's or propeller's disc: San Andreas fades it in by the material's alpha when it draws it
                     // (SetComponentAtomicAlpha), so it is see-through, never solid.
@@ -652,6 +654,8 @@ namespace AhShitRim::Vehicles
 
         // ---- The lights (v36, protocol/cpp/vehicle_lights.h) ----
 
+        constexpr short kDryWeather = 14;  // WEATHER_SUNNY_COUNTRYSIDE: no rain, so no thunder (SetSky)
+
         constexpr unsigned char kNoLightOverride = 0;  // m_nOverrideLights: NO_CAR_LIGHT_OVERRIDE
         constexpr unsigned char kForceLightsOff = 1;   // FORCE_CAR_LIGHTS_OFF
         constexpr unsigned char kForceLightsOn = 2;    // FORCE_CAR_LIGHTS_ON
@@ -684,6 +688,7 @@ namespace AhShitRim::Vehicles
             lamps.wanted = a_vehicle->GetVehicleLightsStatus();
             lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
             lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
+            lamps.braking = a_vehicle->m_pDriver && a_vehicle->m_fBreakPedal > 0.0f && !a_vehicle->bIsHandbrakeOn;
             lamps.twin = a_vehicle->m_nVehicleClass == VEHICLE_AUTOMOBILE;  // a bike has one lamp of each
             lamps.hasFront = !IsZero(front);
             lamps.hasRear = !IsZero(rear);
@@ -695,6 +700,7 @@ namespace AhShitRim::Vehicles
                 }
             }
             a_out.lights.lit = VehicleLights::Lit(lamps);
+            a_out.lights.state = VehicleLights::StateOf(lamps);
         }
 
         // Its shape (v31), for Skyrim's arrows and blows to hit: how it is turned and its col model's box in that
@@ -749,7 +755,7 @@ namespace AhShitRim::Vehicles
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
-            s.timeMs = NowMs();
+            s.timeMs = CjBody::NowMs();  // CJ's clock and this frame's stamp: Skyrim draws the vehicle at his moment
             const CVector d = at - a_spawnFeet;
             s.feet[0] = d.x * Pose::kUnitsPerMeter;
             s.feet[1] = d.y * Pose::kUnitsPerMeter;
@@ -1320,6 +1326,24 @@ namespace AhShitRim::Vehicles
         }
         state.sky = a_sky;
         state.minuteOfDay = a_minuteOfDay;
+        // San Andreas's weather stays dry while Skyrim sends its sky. Its rainy weathers always thunder (CWeather::Update
+        // plays AE_THUNDER through the weather audio entity, which Audio leaves on) whatever Skyrim's sky is, and Skyrim's
+        // own weather already plays its rain and its storms' thunder. (Its rain loops are off: Audio hooks the entity's Service.)
+        if ((a_sky & Protocol::kSkyClock) != 0) {
+            if (CWeather::ForcedWeatherType != kDryWeather || CWeather::NewWeatherType != kDryWeather || CWeather::OldWeatherType != kDryWeather) {
+                CWeather::ForceWeatherNow(kDryWeather);
+                CWeather::WhenToPlayLightningSound = 0;
+                CWeather::LightningBurst = false;
+                CWeather::LightningFlash = false;
+                if (!state.weatherForced) {
+                    Log("vehicle: San Andreas's weather kept dry (no thunder of its own), Skyrim's sky plays its rain and storms");
+                }
+                state.weatherForced = true;
+            }
+        } else if (state.weatherForced) {
+            state.weatherForced = false;
+            CWeather::ReleaseWeather();
+        }
     }
 
     void Update(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, unsigned a_handover, unsigned a_frame)

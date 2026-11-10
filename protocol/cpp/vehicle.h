@@ -300,7 +300,7 @@ namespace AhShitRim::Vehicle
         std::vector<SkinModel::MeshIn> out;
         for (auto& mesh : a_meshes) {
             auto same = std::find_if(out.begin(), out.end(), [&](const SkinModel::MeshIn& a_other) {
-                return a_other.texture == mesh.texture && a_other.flags == mesh.flags && std::memcmp(a_other.color, mesh.color, sizeof(mesh.color)) == 0 &&
+                return a_other.texture == mesh.texture && a_other.flags == mesh.flags && a_other.litTexture == mesh.litTexture && std::memcmp(a_other.color, mesh.color, sizeof(mesh.color)) == 0 &&
                        a_other.vertices.size() + mesh.vertices.size() <= Protocol::kModelMeshVertexMax &&
                        (a_other.indices.size() + mesh.indices.size()) / 3 <= Protocol::kModelMeshVertexMax;
             });

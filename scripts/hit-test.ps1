@@ -6,29 +6,43 @@
     a giant and two guards on him (hits) or gives him two stars (bust); stealth hands CJ over on foot with the knife, puts a
     guard with his back to him and clicks the mouse buttons for a stealth kill.
     Or (respawns) it hands CJ over on foot, has
-    him kill a few of the people around, puts the clock an hour on, steps into an interior and back out, and logs who
+    him kill a few of the people around, presses / for Skyrim's wait menu (before and after the kills), puts the clock an hour on, steps into an interior and back out, and logs who
     came back. Or (pad) it injects gamepad events as Skyrim sends them and checks each action from San Andreas's pose
     ("hit test: pad: ... ok"). Or (riders) it puts a guard beside the player as a follower, hands CJ over in the Sandking, presses F and
-    traces both getting out. Then it prints what the logs say, closes both
+    traces both getting out. Or (ridecrew) CJ, on foot at the Whiterun stables, recruits two homies of the crew, gets into a Huntley
+    spawned in front of him with F, and gets out again: each homie's step out is traced (no frame seated while CJ gets out, on the
+    ground once let go, then in his place behind CJ). Or (oil) it goes to Bleak Falls Barrow instead and places three fresh oil pools there and lights them, by a
+    bullet, a Molotov and a rocket, and logs whether each burns. Or (soak) a long run of play: the crew on foot, wolves, a drive, F11 and the clock running for -Seconds (the working set of both games every 30 s to soak-memory.csv in the temp folder). Or (drive) CJ drives the Sandking for -Seconds, his body,
+    its model and the camera traced in the vehicle every frame as Skyrim draws them. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario respawns
-    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, a move
+    scripts/hit-test.ps1 -Scenario crew      # v39: the Grove Street crew at the Whiterun stables: spots, recruits, a fight, friendly fire, F10, CJ walking and running off with the crew, a move, the walk again up against Whiterun's walls
+    scripts/hit-test.ps1 -Scenario oil
     scripts/hit-test.ps1 -NewGame
     scripts/hit-test.ps1 -Scenario stealth -Seconds 12   # v38: CJ's knife stealth kill on a guard, on foot
+    scripts/hit-test.ps1 -Scenario stealth -StealthMeters 0.7   # the guard closer in
+    scripts/hit-test.ps1 -Scenario stealth -Near 000DC9E4   # moved to that ref first, its stealth verdict logged
     scripts/hit-test.ps1 -Scenario pad   # the gamepad: Back's hold, the sticks, weapons, aim and fire, driving, the radio
+    scripts/hit-test.ps1 -Scenario armour -Seconds 120   # CJ stands still with full armour: what takes any, both games log it
     scripts/hit-test.ps1 -Scenario riders   # a follower rides in the Sandking, both get out, traced every frame
-    scripts/hit-test.ps1 -Scenario ridecrew # the same with a recruited homie of the Grove Street crew, at the Whiterun stables
+    scripts/hit-test.ps1 -Scenario ridecrew # two homies of the Grove Street crew board a Huntley with CJ and step out with him, at the Whiterun stables
+    scripts/hit-test.ps1 -Scenario soak -Seconds 900 -Hour 9   # a long run of play: crew on foot with wolves, a drive, F11 every 30 s, the clock running; memory of both games sampled, crashes and errors counted
+    scripts/hit-test.ps1 -Scenario drive -Seconds 60   # CJ drives; he must stay in his seat as Skyrim draws him
 #>
 param(
-    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'stealth', 'respawns', 'crew', 'pad', 'riders', 'ridecrew', 'armour', 'oil', 'drive', 'soak')] [string] $Scenario = 'hits',
     [int] $Seconds = 90,
-    [string] $Start = 'Riverwood',
+    [string] $Start = '',
     [int] $TimeoutSeconds = 300,
-    [switch] $NewGame
+    [switch] $NewGame,
+    [double] $StealthMeters = 1.6,
+    [string] $Near = '',
+    [string] $Hour = '',       # soak: the game hour it starts at
+    [string] $Timescale = ''   # soak: Skyrim's timescale (60 by default: an hour of game time a minute)
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -50,6 +64,13 @@ function Stop-Games {
     }
 }
 
+if ($Scenario -eq 'soak') {
+    if (-not $PSBoundParameters.ContainsKey('Start')) { $Start = 'cow Tamriel 4 -3' }
+    if (-not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = $Seconds + 240 }
+}
+
+if (-not $Start) { $Start = if ($Scenario -eq 'oil') { 'BleakFallsBarrow01' } else { 'Riverwood' } }
+
 Stop-Games
 for ($attempt = 1; ; $attempt++) {
     try { & "$PSScriptRoot/deploy-local.ps1"; break }
@@ -58,7 +79,8 @@ for ($attempt = 1; ; $attempt++) {
         Start-Sleep -Seconds 2
     }
 }
-Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)")
+Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)",
+    "HitTestHour=$Hour", "HitTestTimescale=$Timescale", "HitTestStealthMeters=$($StealthMeters.ToString([Globalization.CultureInfo]::InvariantCulture))", "HitTestNear=$Near")
 
 try {
     $started = Get-Date
@@ -67,8 +89,17 @@ try {
     Start-Process -WorkingDirectory $skyrim (Join-Path $skyrim 'skse64_loader.exe')
     $deadline = $started.AddSeconds($TimeoutSeconds)
     $finished = $false
+    $memory = Join-Path ([IO.Path]::GetTempPath()) 'soak-memory.csv'
+    $nextSample = Get-Date
+    if ($Scenario -eq 'soak') { Set-Content -Path $memory -Value 'time,process,workingSetMB,privateMB,handles' }
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 5
+        if ($Scenario -eq 'soak' -and (Get-Date) -ge $nextSample) {
+            $nextSample = (Get-Date).AddSeconds(30)
+            foreach ($p in Get-Process SkyrimSE, gta_sa -ErrorAction SilentlyContinue) {
+                Add-Content -Path $memory -Value ('{0},{1},{2:N0},{3:N0},{4}' -f (Get-Date -Format 's'), $p.ProcessName, ($p.WorkingSet64 / 1MB), ($p.PrivateMemorySize64 / 1MB), $p.HandleCount)
+            }
+        }
         if ((Test-Path $skseLog) -and (Get-Item $skseLog).LastWriteTime -gt $started -and
             (Select-String -Path $skseLog -Pattern 'hit test: (done|could not|CJ never)' -Quiet)) {
             $finished = $true
@@ -80,9 +111,34 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:' | ForEach-Object { $_.Line }
+    if ($Scenario -eq 'soak' -and (Test-Path $memory)) {
+        Write-Host "--- memory ($memory), first and last sample of each game"
+        Import-Csv $memory | Group-Object process | ForEach-Object { $_.Group[0]; $_.Group[-1] } | Format-Table -AutoSize | Out-String | Write-Host
+        $crashDir = Split-Path $skseLog
+        Write-Host "--- crash logs since the start: $(@(Get-ChildItem $crashDir -Filter 'crash-*.log' -ErrorAction SilentlyContinue | Where-Object LastWriteTime -gt $started).Count)"
+    }
+    Select-String -Path $skseLog -Pattern 'hit test:|respawns:|player sync: / pressed|skyrim messages: .*help box|homies:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|stealth kill|lock-on:|shots: knife|chatter: a stealth|riders:|vitals: San Andreas hit|object hits: .*oil|CJ re-anchored' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
-    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: ' | ForEach-Object { $_.Line }
+    Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted|melee: |weapons: loadout|crew: |health: ' | ForEach-Object { $_.Line }
+    if ($Scenario -eq 'soak') {
+        foreach ($log in $skseLog, $saLog) {
+            $bad = @(Select-String -Path $log -Pattern 'error|failed|could not|link down|ring full|exception' -ErrorAction SilentlyContinue)
+            Write-Host "--- $(Split-Path $log -Leaf) in $(Split-Path (Split-Path $log) -Leaf): $($bad.Count) lines with error/failed/could not/link down/ring full/exception; the first 15:"
+            $bad | Select-Object -First 15 | ForEach-Object { $_.Line }
+        }
+    }
+    if ($Scenario -eq 'crew') {
+        # San Andreas's 5 s lines: how far off the way they went the moving followers faced (Crew::Facing).
+        # Only windows with 30 frames or more of it: a follower stuck behind twitches on the spot for a frame or two.
+        $faced = Select-String -Path $saLog -Pattern 'moving followers faced (\d+) degrees off their way on average, \d+ at most \((\d+) frames\)' |
+            Where-Object { [int] $_.Matches[0].Groups[2].Value -ge 30 } | ForEach-Object { [int] $_.Matches[0].Groups[1].Value }
+        if ($faced) {
+            $worst = ($faced | Measure-Object -Maximum).Maximum
+            Write-Host ("hit test: crew: the moving followers faced {0} degrees off their way on average in their worst 5 s of 30 frames or more (within 20): {1}" -f $worst, $(if ($worst -le 20) { 'ok' } else { 'FAILED' }))
+        } else {
+            Write-Host 'hit test: crew: San Andreas saw no follower move: FAILED'
+        }
+    }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
 } finally {
     Stop-Games

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <vector>
 
 #include "../../cpp/car_exit.h"
@@ -69,4 +70,44 @@ TEST_CASE("car exit: a get-out that never left the seat, or was let go of while 
         samples.push_back({ { slow[i], 0.0f, 0.0f }, i < 3 });
     }
     CHECK_FALSE(Smooth(Check(samples)));
+}
+
+TEST_CASE("car ride: steering's few centimetres keep CJ seated, a frame left behind does not")
+{
+    std::vector<Sample> samples;
+    for (int i = 0; i < 300; i++) {
+        const float sway = 0.04f * std::sin(i * 0.1f);  // his body leaning into the turns
+        samples.push_back({ { -0.49f + sway, 0.1f, 0.3f + 0.5f * sway }, true });
+    }
+    const auto ride = CheckRide(samples);
+    CHECK(ride.samples == 300);
+    CHECK(ride.maxOff < 0.1f);
+    CHECK(Seated(ride));
+
+    // His seating skipped for three frames at 20 m/s: the vehicle drives on 0.67 m a frame without him.
+    for (int i = 1; i <= 3; i++) {
+        samples[150 + i].at.y -= 0.67f * i;
+    }
+    const auto behind = CheckRide(samples);
+    CHECK(behind.maxOff > 1.9f);
+    CHECK(behind.worstAt == 153);
+    CHECK(behind.maxStep > 0.6f);
+    CHECK_FALSE(Seated(behind));
+    CHECK_FALSE(Seated(CheckRide({})));
+}
+
+TEST_CASE("car ride: on a bike he leans into a turn, smoothly")
+{
+    std::vector<Sample> samples;
+    for (int i = 0; i < 60; i++) {
+        const float lean = (std::min)(1.0f, i / 20.0f) * 1.2f;  // over 20 frames, about 70 degrees
+        samples.push_back({ { 0.63f * std::sin(lean), 0.05f, 0.63f * std::cos(lean) }, true });
+    }
+    const auto ride = CheckRide(samples);
+    CHECK(ride.maxOff > 0.5f);
+    CHECK(ride.maxStep < 0.05f);
+    CHECK(Seated(ride, true));
+    CHECK_FALSE(Seated(ride));
+    samples[40].at.y -= 0.67f;
+    CHECK_FALSE(Seated(CheckRide(samples), true));
 }

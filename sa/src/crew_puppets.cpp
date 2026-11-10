@@ -12,6 +12,8 @@
 
 #include <plugin.h>
 
+#include <CAnimBlendAssociation.h>
+#include <CAnimBlendHierarchy.h>
 #include <CAnimManager.h>
 #include <CModelInfo.h>
 #include <CPedIntelligence.h>
@@ -19,7 +21,6 @@
 #include <CPools.h>
 #include <CPopulation.h>
 #include <CStreaming.h>
-#include <CTaskSimpleRunAnim.h>
 #include <CTimer.h>
 #include <CWeapon.h>
 #include <CWeaponInfo.h>
@@ -56,6 +57,8 @@ namespace AhShitRim::CrewPuppets
             std::uint16_t          model = 0;
             std::uint8_t           weapon = 0;
             Scene::MotionTracker   motion;
+            Crew::Facing           facing;
+            float                  heading = 0.0f;  // as he faced last
             int                    playing = -1;  // the Scene::Motion played, -1 before any
             bool                   fallen = false;
             float                  fireWait = 0.0f;
@@ -76,9 +79,13 @@ namespace AhShitRim::CrewPuppets
             std::map<std::uint8_t, ModelEntry>     weapons;  // by weapon type
             unsigned                               handover = 0;
             bool                                   loggedFirst = false;
+            std::uint32_t                          inputFrame = 0;   // Skyrim's frame the gaits and facings last moved on
+            float                                  sinceInput = 0.0f;  // seconds of ours since
             std::mt19937                           rng{ 0x5EED };
             std::uint64_t                          statMs = 0;
-            unsigned                               posed = 0, fired = 0;
+            unsigned                               posed = 0, fired = 0, kept = 0;
+            unsigned                               facedSamples = 0;  // followers on the move: how far off their way they face
+            float                                  facedSum = 0.0f, facedMax = 0.0f;
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -193,23 +200,18 @@ namespace AhShitRim::CrewPuppets
             return &entry;
         }
 
+        // His walk, run, idle or seat, blended straight onto his clump the moment the gait changes. Not through a task:
+        // a task's anim fades out (and is deleted) as the task goes, while the next task's anim only starts once San
+        // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update.
         void PlayMotion(CPed* a_ped, Scene::Motion a_motion)
         {
-            auto& tasks = a_ped->m_pIntelligence->m_TaskMgr;
+            a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
+            auto* clump = a_ped->m_pRwClump;
             switch (a_motion) {
-            case Scene::Motion::Seated:
-                tasks.SetTask(new CTaskSimpleRunAnim(kGroupDefault, kSeatIdle, 4.0f, false), kTaskPrimary, false);
-                break;
-            case Scene::Motion::Walk:
-                tasks.SetTask(new CTaskSimpleRunAnim(a_ped->m_nAnimGroup, kMoveWalk, 4.0f, false), kTaskPrimary, false);
-                break;
-            case Scene::Motion::Run:
-                tasks.SetTask(new CTaskSimpleRunAnim(a_ped->m_nAnimGroup, kMoveRun, 4.0f, false), kTaskPrimary, false);
-                break;
-            default:
-                tasks.SetTask(nullptr, kTaskPrimary, false);
-                CAnimManager::BlendAnimation(a_ped->m_pRwClump, a_ped->m_nAnimGroup, kMoveIdle, 4.0f);
-                break;
+            case Scene::Motion::Seated: CAnimManager::BlendAnimation(clump, kGroupDefault, kSeatIdle, 4.0f); break;
+            case Scene::Motion::Walk: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
+            case Scene::Motion::Run: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveRun, 4.0f); break;
+            default: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveIdle, 4.0f); break;
             }
         }
 
@@ -309,6 +311,25 @@ namespace AhShitRim::CrewPuppets
         return (t - 0.5f) * 2.0f * 2.5f * Pose::kPi / 180.0f;
     }
 
+    void KeepAnimated(void* a_ped, float a_step)
+    {
+        auto*                       ped = static_cast<CPed*>(a_ped);
+        std::array<Crew::Blend, 16> blends{};
+        std::size_t                 count = 0;
+        for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(ped->m_pRwClump); assoc && count < blends.size();
+             assoc = RpAnimBlendGetNextAssociation(assoc)) {
+            blends[count++] = { assoc->m_fBlendAmount, assoc->m_fBlendDelta, (assoc->m_nFlags & Crew::kBlendDeleteFaded) != 0,
+                assoc->m_pHierarchy && assoc->m_pHierarchy->m_pSequences };
+        }
+        if (count == blends.size() || Crew::LeavesANode(blends.data(), count, a_step)) {
+            return;  // as many as that: some outlive the update
+        }
+        CAnimManager::AddAnimation(ped->m_pRwClump, ped->m_nAnimGroup, kMoveIdle);
+        if (state.kept++ == 0) {
+            Log(std::format("crew: the puppet in slot {} had no animation to outlive its update ({} fading out); his idle put on", SlotOf(ped), count));
+        }
+    }
+
     void Clear()
     {
         for (auto& puppet : state.puppets) {
@@ -331,6 +352,16 @@ namespace AhShitRim::CrewPuppets
         const float  ground = a_cj->GetDistanceFromCentreOfMassToBaseOfModel();
         const CVector spawnFeet = a_spawn - CVector(0.0f, 0.0f, ground + a_lift);
         const float  seconds = CTimer::ms_fTimeStep * kStepSeconds;
+        // Gaits and facings move only on a frame of Skyrim's they haven't seen, over the time since the last one: while
+        // Skyrim stalls (an F11 screenshot holds its frame a fifth of a second) the homies would seem to stop and then
+        // leap, and their gait flipped from run to walk and back.
+        const bool  freshInput = have && input.frame != state.inputFrame;
+        state.sinceInput += seconds;
+        const float tracked = state.sinceInput;
+        if (freshInput) {
+            state.inputFrame = input.frame;
+            state.sinceInput = 0.0f;
+        }
         const auto   toSa = [&](const float (&a_rel)[3]) {
             return spawnFeet + CVector(a_rel[0] * Pose::kMetersPerUnit, a_rel[1] * Pose::kMetersPerUnit, a_rel[2] * Pose::kMetersPerUnit);
         };
@@ -376,8 +407,31 @@ namespace AhShitRim::CrewPuppets
                 puppet.weapon = member.weapon;
             }
 
-            // Where Skyrim says, facing where Skyrim says.
-            const float heading = Pose::SanAndreasHeading(member.heading);
+            const bool dead = (member.flags & Protocol::kCrewDead) != 0;
+            const bool seated = (member.flags & Protocol::kCrewSeated) != 0;
+            const bool aiming = !dead && (member.flags & (Protocol::kCrewAiming | Protocol::kCrewFiring)) != 0;
+            const bool track = freshInput || puppet.playing < 0;
+            auto       motion = puppet.playing >= 0 ? static_cast<Scene::Motion>(puppet.playing) : Scene::Motion::Idle;
+            if (!dead && track) {
+                motion = puppet.motion.Update(seated, Vec(feet), tracked);
+            }
+            const bool moving = motion == Scene::Motion::Walk || motion == Scene::Motion::Run;
+
+            // Where Skyrim says, facing the way he goes while he walks or runs, else as Skyrim says (his aim, CJ's
+            // heading for a follower, his own at a spot; seated or dead at once).
+            const float still = Pose::SanAndreasHeading(member.heading);
+            if (track) {
+                puppet.heading = puppet.facing.Update(Vec(feet), tracked, still, moving, aiming);
+            }
+            float heading = puppet.heading;
+            if (seated || dead) {
+                heading = still;
+            } else if (track && moving && !aiming && (member.flags & Protocol::kCrewFollower) && puppet.facing.Speed() >= Crew::Facing::kMinSpeed) {
+                const float off = std::fabs(Scene::TurnToward(0.0f, heading - puppet.facing.Travel(), Pose::kPi));
+                state.facedSum += off;
+                state.facedMax = (std::max)(state.facedMax, off);
+                state.facedSamples++;
+            }
             const float lift = ped->GetDistanceFromCentreOfMassToBaseOfModel();
             ped->SetPosn(feet + CVector(0.0f, 0.0f, lift));
             ped->SetHeading(heading);
@@ -387,12 +441,10 @@ namespace AhShitRim::CrewPuppets
             ped->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
             ped->m_fHealth = 100.0f;
 
-            const bool dead = (member.flags & Protocol::kCrewDead) != 0;
             if (dead && !puppet.fallen) {
                 Fall(puppet);
             } else if (!dead) {
                 puppet.fallen = false;
-                const auto motion = puppet.motion.Update((member.flags & Protocol::kCrewSeated) != 0, Vec(feet), seconds);
                 if (static_cast<int>(motion) != puppet.playing) {
                     puppet.playing = static_cast<int>(motion);
                     PlayMotion(ped, motion);
@@ -405,7 +457,6 @@ namespace AhShitRim::CrewPuppets
             ped->UpdateRwFrame();
             ped->UpdateRpHAnim();
             const CVector aim = toSa(member.aim);
-            const bool    aiming = !dead && (member.flags & (Protocol::kCrewAiming | Protocol::kCrewFiring)) != 0;
             if (aiming) {
                 CjBody::AimRightArm(ped->m_pRwClump, ped->GetForward(), aim);
             }
@@ -466,13 +517,25 @@ namespace AhShitRim::CrewPuppets
         if (now - state.statMs >= 5000) {
             if (state.statMs && state.posed) {
                 int puppets = 0;
+                int gaits[4]{};
                 for (const auto& p : state.puppets) {
                     puppets += p.ped ? 1 : 0;
+                    if (p.ped && p.playing >= 0 && p.playing < 4) {
+                        gaits[p.playing]++;
+                    }
                 }
-                Log(std::format("crew: {} puppets, {} poses sent and {} shots fired in the last 5 s", puppets, state.posed, state.fired));
+                Log(std::format("crew: {} puppets ({} idle, {} walking, {} running, {} seated), {} poses sent, {} shots fired and {} empty anim "
+                                "updates kept in the last 5 s",
+                    puppets, gaits[0], gaits[1], gaits[2], gaits[3], state.posed, state.fired, state.kept));
+                if (state.facedSamples) {
+                    Log(std::format("crew: moving followers faced {:.0f} degrees off their way on average, {:.0f} at most ({} frames)",
+                        state.facedSum / state.facedSamples * 180.0f / Pose::kPi, state.facedMax * 180.0f / Pose::kPi, state.facedSamples));
+                }
             }
             state.statMs = now;
-            state.posed = state.fired = 0;
+            state.posed = state.fired = state.kept = 0;
+            state.facedSamples = 0;
+            state.facedSum = state.facedMax = 0.0f;
         }
     }
 }

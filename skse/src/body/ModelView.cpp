@@ -6,6 +6,7 @@
 
 #include "body.h"
 #include "skin_model.h"
+#include "vehicle_lights.h"
 
 namespace AhShitRim::ModelView
 {
@@ -38,6 +39,11 @@ namespace AhShitRim::ModelView
             W32::ID3D11Buffer*            buffer = nullptr;  // dynamic: rewritten every frame
             std::uint32_t                 mesh = 0;          // index into Built::model.meshes
             std::vector<std::uint8_t>     vertices;          // packed, UVs filled in once
+            RE::BSLightingShaderProperty* lampShader = nullptr;  // a vehicle lamp's mesh: its shader, glowing while the lamp burns
+            std::uint8_t                  lamp = 0;          // and that lamp's kLight bit
+            RE::NiSourceTexture*          offTexture = nullptr;  // its texture unlit, and while it burns (San Andreas's lights-on
+            RE::NiSourceTexture*          onTexture = nullptr;   // texture, whose lamps are bright where the unlit one's are dark)
+            bool                          lit = false;
         };
 
         // A received model, built once: never destroyed (the game's destructors expect geometry it
@@ -72,6 +78,7 @@ namespace AhShitRim::ModelView
             bool                                         mapFailLogged = false;
             std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
+            float                                        lampGlow = VehicleLights::Tuning{}.lampGlow;
         } state;
 
         Built* Find(std::uint32_t a_id)
@@ -386,6 +393,20 @@ namespace AhShitRim::ModelView
             bound.center = vehicle ? RE::NiPoint3() : kBodyBoundCenter;
             bound.radius = vehicle ? kVehicleBoundRadius : kBodyBoundRadius;
             auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f, a_twoSided);
+            // A vehicle lamp's mesh glows by itself while the lamp burns, as San Andreas draws it at full ambient then: its own
+            // emissive, which Skyrim's shader adds to the light on it before the texture, so the lamp keeps its colours.
+            if (const auto lamp = vehicle ? VehicleLights::LampOfMesh(mesh.flags) : std::uint8_t{ 0 }; lamp != 0) {
+                shader->flags.set(RE::BSShaderProperty::EShaderPropertyFlag::kOwnEmit);
+                if (!shader->emissiveColor) {
+                    shader->emissiveColor = static_cast<RE::NiColor*>(RE::malloc(sizeof(RE::NiColor)));  // never freed, as the shapes
+                }
+                if (shader->emissiveColor) {
+                    *shader->emissiveColor = RE::NiColor(1.0f, 1.0f, 1.0f);
+                }
+                shader->emissiveMult = 0.0f;
+                a_out.lampShader = shader;
+                a_out.lamp = lamp;
+            }
             geometry.shaderProperty.reset(shader);
             shader->SetupGeometry(shape.get());
             shader->FinishSetupGeometry(shape.get());
@@ -454,12 +475,24 @@ namespace AhShitRim::ModelView
                 if (!MakeShape(*built, m, diffuse, !single, shape)) {
                     continue;
                 }
+                if (shape.lampShader && mesh.litTexture >= 0 && mesh.litTexture < static_cast<std::int32_t>(textures.size())) {
+                    shape.offTexture = diffuse;
+                    shape.onTexture = textures[mesh.litTexture];
+                }
                 twins += meshTwins;
                 oneSided += single ? 1 : 0;
                 built->node->AttachChild(shape.shape.get(), true);
                 vertices += mesh.vertexCount;
                 triangles += mesh.indexCount / 3;
                 built->shapes.push_back(std::move(shape));
+            }
+            if (built->model.kind == Protocol::kSkinModelVehicle) {
+                int lamps = 0, litTextures = 0;
+                for (const auto& shape : built->shapes) {
+                    lamps += shape.lampShader ? 1 : 0;
+                    litTextures += shape.onTexture ? 1 : 0;
+                }
+                SKSE::log::info("model view: {} has {} lamp shapes, {} with San Andreas's lights-on texture", built->model.name, lamps, litTextures);
             }
             built->node->SetAppCulled(true);
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -590,6 +623,20 @@ namespace AhShitRim::ModelView
             }
         }
 
+        // The lamps burning glow (v36), on a wreck none.
+        const std::uint8_t lit = (a_pose.flags & Protocol::kBodyWrecked) == 0 ? a_pose.lights.lit : 0;
+        for (auto& shape : built->shapes) {
+            if (shape.lampShader) {
+                const bool on = (shape.lamp & lit) != 0;
+                shape.lampShader->emissiveMult = on ? state.lampGlow : 0.0f;
+                if (on != shape.lit && shape.onTexture && shape.offTexture) {
+                    static_cast<RE::BSLightingShaderMaterialBase*>(shape.lampShader->material)->diffuseTexture =
+                        RE::NiPointer<RE::NiSourceTexture>(on ? shape.onTexture : shape.offTexture);
+                }
+                shape.lit = on;
+            }
+        }
+
         built->node->local.translate = a_origin;
         built->node->local.rotate = RE::NiMatrix3();
         built->node->local.scale = a_scale;
@@ -604,6 +651,11 @@ namespace AhShitRim::ModelView
         return true;
     }
 
+    void SetLampGlow(float a_glow)
+    {
+        state.lampGlow = std::isfinite(a_glow) && a_glow >= 0.0f ? a_glow : state.lampGlow;
+    }
+
     void EndFrame()
     {
         for (auto& [id, built] : state.models) {
@@ -614,6 +666,17 @@ namespace AhShitRim::ModelView
             }
         }
         state.frame++;
+    }
+
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent)
+    {
+        const auto* built = Find(a_model);
+        if (!built || !built->shown || !built->node) {
+            return false;
+        }
+        a_at = built->node->world.translate;
+        a_parent = built->node->parent ? built->node->parent->world.translate : RE::NiPoint3();
+        return true;
     }
 
     void HideAll()

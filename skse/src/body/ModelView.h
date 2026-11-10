@@ -30,7 +30,14 @@ namespace AhShitRim::ModelView
     // isn't built.
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
 
+    // How strongly a vehicle's burning lamps glow (their meshes' emissive strength; AhShitRim.ini's [Headlights] LampGlow).
+    // Show draws a vehicle's lamp meshes (Protocol::kSkinMeshLamp) lit while a_pose.lights says they burn.
+    void SetLampGlow(float a_glow);
+
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
+    // The hit test (debug): where model a_model's node is in the world after Skyrim's scene update, and its parent's
+    // world position (its cell's node); false while it isn't shown.
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent);
     void HideAll();
 }

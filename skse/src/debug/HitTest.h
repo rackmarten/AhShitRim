@@ -11,16 +11,26 @@
 //    back to CJ (and a guard facing him off to the side), then holds the right mouse button and clicks the left
 //    one, for the knife stealth kill; each one's StealthKill::Check verdict is logged every second and the guard's fate at the end,
 //  - respawns (HitTest=respawns): hands CJ the player on foot instead, logs what a kill would do to everyone placed
-//    in the editor nearby, has the player kill three that come back (and one that doesn't), puts the clock 1.1 game
-//    hours on, stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
+//    in the editor nearby, has the player kill three that come back (and one that doesn't), presses / before and
+//    after the kills (Skyrim's wait menu opens and is closed again, or Skyrim refuses it with enemies near), puts the clock
+//    1.1 game hours on, stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
 //  - riders (HitTest=riders): places one of Whiterun's guards beside the player as a follower, hands CJ over in the Sandking
 //    (the follower takes its passenger seat), presses F after 3 s and logs the follower's feet and the player's in the
 //    vehicle's frame every frame until both have been out a second, then whether the follower got out smoothly (protocol/cpp/car_exit.h),
-// and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
+//  - drive (HitTest=drive): hands CJ over in the Sandking and drives it for HitTestSeconds (W, A or D a second every 4 s),
+//    logging every frame CJ's drawn feet, his model's node and Skyrim's camera in the drawn vehicle's frame, then whether
+//    he stayed in his seat (CarExit::Seated),
+// and logs the car's and the player's health every 2 s for HitTestSeconds (90). HitTest=oil (with HitTestStart
+// BleakFallsBarrow01) hands nothing over: it places three fresh oil pools (a save may hold the barrow's burnt out) and lights them the way CJ's bullet, Molotov and rocket
+// do (ObjectHits), logs each pool's health until they burn out or HitTestSeconds pass, and whether each burned.
+// Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {
     void OnDataLoaded();
 
     // Every player update, after Skyrim's own.
     void Update(RE::PlayerCharacter* a_player, float a_delta);
+
+    // The crew scenario's walk (v39): while it walks CJ, his stick as the test holds it (true), else as the keys have it.
+    bool Drive(float& a_moveX, float& a_moveY);
 }

@@ -14,7 +14,8 @@
 // or a blast to destroy a web outright, as Skyrim's fire spells do.
 //
 // Oil burns GTA style: besides fire and blasts, a bullet landing in a pool of oil (an object carrying the
-// TrapExplosiveGas script: the oil on the floor, a fallen lamp's spill) lights it, sent to it as fire. Blows don't.
+// TrapExplosiveGas script: the oil on the floor, a fallen lamp's spill) lights it. Blows don't. Oil is lit the way
+// GasExplode lights it (OilDamage), not only through the hit, which the pool's script may or may not act on.
 
 #pragma once
 
@@ -111,6 +112,16 @@ namespace AhShitRim::Traps
 
     // What sets oil alight: CJ's fire and blasts, as Skyrim's fire spells do, and his bullets, as in San Andreas.
     constexpr bool IgnitesOil(Hit a_hit) { return a_hit != Hit::Blow; }
+
+    // A pool burns by its destruction stages, which go by its health (100; Skyrim.esm's TrapOilPool01): below 99%
+    // it starts to go, at 94% its fire bursts out (the stage's explosion) and it burns down by itself, gone at 7%.
+    // TrapExplosiveGas lights it with damageObject(5) and nothing more. Its first stage ignores damage from outside,
+    // so the damage CJ's hits sent it never landed, and it lit only if its script took the hit as fire. Now it is
+    // lit directly: that 5, once, from whatever lights it, past the stage's guard, the player its cause; no other
+    // damage, which would only cut its fire short.
+    inline constexpr float kOilLights = 5.0f;
+
+    constexpr float OilDamage(Hit a_hit, bool a_alight) { return IgnitesOil(a_hit) && !a_alight ? kOilLights : 0.0f; }
 
     // Whether a bullet that stopped at a_at (on the floor, or on the oil itself) landed in the pool whose bound
     // (its 3D's world bound) is a_center and a_radius: within it across, plus a little, and near its height (a
