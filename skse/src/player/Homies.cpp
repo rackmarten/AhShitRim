@@ -340,6 +340,17 @@ namespace AhShitRim::Homies
             }
         }
 
+        // His soldier's hellos to the player ("Hmm?", "Out with it.", "I'm waiting.", as CJ comes near or looks at him)
+        // never start: Skyrim only greets the player from an actor that may talk to him, a race's Allow PC Dialogue,
+        // which ExtraCanTalkToPlayer overrides for this one actor (Papyrus's AllowPCDialogue). Hush still stops anything
+        // else of Skyrim's he says. E never picks a homie, so nothing is lost.
+        void Mute(RE::Actor* a_actor)
+        {
+            if (a_actor->CanTalkToPlayer()) {
+                a_actor->AllowPCDialogue(false);
+            }
+        }
+
         // A homie at a_at: the soldier in nobody's faction but the player's, with San Andreas's Families model and gun.
         Homie* Make(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, float a_heading, std::uint16_t a_model, std::uint8_t a_weapon, bool a_follower,
             float a_healthShare = 1.0f)
@@ -377,6 +388,7 @@ namespace AhShitRim::Homies
             actor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
             actor->SetDisplayName(RE::BSFixedString(std::string(Crew::kHomieName).c_str()), true);  // not "Imperial Soldier"
             Strip(actor);
+            Mute(actor);
             Homie h;
             h.handle = actor->CreateRefHandle();
             h.id = actor->GetFormID();
@@ -1125,6 +1137,7 @@ namespace AhShitRim::Homies
             if ((h.gearIn -= a_delta) <= 0.0f) {
                 h.gearIn = kGearEvery;
                 Strip(actor);
+                Mute(actor);
             }
             // His fight: aim at his target and fire in bursts.
             auto* target = h.target.get().get();
