@@ -186,11 +186,22 @@ TEST_CASE("a gun's roll about its barrel, leaning right positive")
     CHECK(RollOf({ 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }) == 0.0f);
 }
 
-TEST_CASE("twin guns roll in toward each other, mirrored")
+TEST_CASE("the right gun leans in, alone or as one of a pair")
 {
     const float degree = Pose::kPi / 180.0f;
-    // The left gun leans 35 degrees right (inward): the right one leans 35 left.
-    CHECK(TwinRoll(35.0f * degree) == doctest::Approx(-35.0f * degree));
+    // A pair: the left gun leans 33 degrees right (in), the right one 33 left, whatever its own pose had.
+    CHECK(RightGunRoll(35.0f * degree, true, 33.0f * degree) == doctest::Approx(-33.0f * degree));
+    CHECK(RightGunRoll(-10.0f * degree, true, 33.0f * degree) == doctest::Approx(-33.0f * degree));
+    // On its own: the right hand's pose leans it 35 degrees right (out), so it leans 35 left (in) as the right
+    // one of a pair; already leaning in, it stays.
+    CHECK(RightGunRoll(35.0f * degree, false, 0.0f) == doctest::Approx(-35.0f * degree));
+    CHECK(RightGunRoll(-20.0f * degree, false, 0.0f) == doctest::Approx(-20.0f * degree));
+    CHECK(RightGunRoll(0.0f, false, 0.0f) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a gun's top rolled to a roll reads back as that roll")
+{
+    const float degree = Pose::kPi / 180.0f;
     // A top rolled to a roll reads back as that roll, square to the barrel, whichever way the barrel points.
     for (const Vec3 barrel : { Vec3{ 0.0f, 1.0f, 0.0f }, Body::Normalize({ 0.3f, 1.0f, 0.4f }, {}), Body::Normalize({ -1.0f, 0.2f, -0.5f }, {}) }) {
         for (const float roll : { -35.0f * degree, 0.0f, 20.0f * degree, 120.0f * degree }) {
