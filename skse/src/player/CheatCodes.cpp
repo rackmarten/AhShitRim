@@ -262,6 +262,9 @@ namespace AhShitRim::CheatCodes
         }
     }
 
+    std::size_t CodeRun() { return state.typist.CodeRun(); }
+    bool        Finished() { return state.typist.Finished(); }
+
     void Update()
     {
         const bool up = LinkService::Get().IsUp();

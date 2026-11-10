@@ -268,3 +268,64 @@ TEST_CASE("crew: a puppet's anim update needs one animation that outlives it")
     const Crew::Blend withRun[] = { fadingWalk, { 0.0f, 4.0f, true, true } };
     CHECK(Crew::LeavesANode(withRun, 2, kStep));
 }
+
+TEST_CASE("crew: the followers shoot whoever is hostile or fights them, never a fleeing or peaceful animal")
+{
+    // IsFoe(hostile, fightsUs, fleeing, animal, aggressive)
+    CHECK(Crew::IsFoe(true, false, false, false, true));    // a bandit
+    CHECK(Crew::IsFoe(true, true, true, false, true));      // one running off is still hostile
+    CHECK(Crew::IsFoe(false, true, false, false, false));   // a guard CJ hit, fighting back
+    CHECK_FALSE(Crew::IsFoe(false, true, true, false, false));  // a townsman running from the shooting
+    CHECK_FALSE(Crew::IsFoe(false, false, false, false, false));  // anybody else
+    CHECK(Crew::IsFoe(true, true, false, true, true));      // a wolf
+    CHECK(Crew::IsFoe(false, true, false, true, true));     // a bear CJ woke
+    CHECK_FALSE(Crew::IsFoe(false, true, true, true, false));   // an elk running from CJ, CJ its combat target
+    CHECK_FALSE(Crew::IsFoe(false, true, false, true, false));  // or turned to him
+    CHECK_FALSE(Crew::IsFoe(true, true, false, true, false));   // an animal that isn't aggressive is never one
+}
+
+TEST_CASE("crew: a puppet's walk and run play at the rate that keeps his feet on the ground")
+{
+    using M = Scene::Motion;
+    // San Andreas's own paces, played at rate 1.
+    CHECK(Crew::Stride::Rate(106, M::Walk, Crew::Stride::kWalkGang1) == doctest::Approx(1.0f));
+    CHECK(Crew::Stride::Rate(105, M::Walk, Crew::Stride::kWalkGang2) == doctest::Approx(1.0f));
+    CHECK(Crew::Stride::Rate(107, M::Run, Crew::Stride::kRunGang) == doctest::Approx(1.0f));
+    // A follower catching up at Skyrim's 5.7 m/s runs faster, one walking briskly walks faster.
+    CHECK(Crew::Stride::Rate(105, M::Run, 5.7f) == doctest::Approx(5.7f / 4.396f));
+    CHECK(Crew::Stride::Rate(105, M::Walk, 1.8f) == doctest::Approx(1.8f / 0.992f));
+    // Within bounds, and standing or sitting plays as it is.
+    CHECK(Crew::Stride::Rate(105, M::Run, 30.0f) == doctest::Approx(Crew::Stride::kMaxRate));
+    CHECK(Crew::Stride::Rate(105, M::Walk, 0.1f) == doctest::Approx(Crew::Stride::kMinRate));
+    CHECK(Crew::Stride::Rate(105, M::Idle, 3.0f) == doctest::Approx(1.0f));
+    CHECK(Crew::Stride::Rate(105, M::Seated, 3.0f) == doctest::Approx(1.0f));
+    // At the speeds he changes gait, neither gait is played much past twice or half its pace.
+    CHECK(Crew::Stride::Rate(105, M::Walk, Crew::Stride::kRunFrom) <= 2.5f);
+    CHECK(Crew::Stride::Rate(105, M::Run, Crew::Stride::kWalkBelow) >= 0.4f);
+}
+
+TEST_CASE("crew: a puppet takes to the run at about 2.4 m/s and back to the walk below 1.9, not flipping between")
+{
+    using M = Scene::Motion;
+    CHECK(Crew::Stride::Next(M::Idle, 0.1f) == M::Idle);
+    CHECK(Crew::Stride::Next(M::Idle, 1.0f) == M::Walk);
+    CHECK(Crew::Stride::Next(M::Idle, 3.0f) == M::Run);
+    CHECK(Crew::Stride::Next(M::Walk, 2.3f) == M::Walk);
+    CHECK(Crew::Stride::Next(M::Walk, 2.4f) == M::Run);
+    CHECK(Crew::Stride::Next(M::Run, 2.0f) == M::Run);  // in the margin: stays as he was
+    CHECK(Crew::Stride::Next(M::Run, 1.8f) == M::Walk);
+    CHECK(Crew::Stride::Next(M::Run, 0.1f) == M::Idle);
+    CHECK(Crew::Stride::Next(M::Walk, 0.1f) == M::Idle);
+    // A follower easing up from a run to his place goes run, walk, stand: never run straight to stand while moving.
+    M gait = M::Run;
+    std::string seen;
+    for (float speed = 5.7f; speed > 0.0f; speed -= 0.1f) {
+        const M next = Crew::Stride::Next(gait, speed);
+        if (next != gait) {
+            seen += Scene::NameOf(next);
+            seen += ' ';
+        }
+        gait = next;
+    }
+    CHECK(seen == std::string(Scene::NameOf(M::Walk)) + " " + Scene::NameOf(M::Idle) + " ");
+}

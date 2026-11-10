@@ -143,6 +143,8 @@ namespace AhShitRim::Homies
             std::vector<Bound>       bound;
             std::uint32_t            roll = 0x9E3779B9u;
             int                      key = 0;  // 1 G, 2 H, waiting for the next Update
+            Crew::KeyHold            hold;     // a G or H that may be part of a cheat being typed
+            unsigned                 hushed = 0;  // Skyrim lines of theirs stopped
             std::uint32_t            handover = 0;
             std::uint32_t            freshFor = 0;
             float                    reanchorWait = 0.0f;
@@ -339,6 +341,7 @@ namespace AhShitRim::Homies
                 av->DamageActorValue(RE::ActorValue::kHealth, state.health * (1.0f - (std::max)(0.05f, a_healthShare)));
             }
             actor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+            actor->SetDisplayName(RE::BSFixedString(std::string(Crew::kHomieName).c_str()), true);  // not "Imperial Soldier"
             Homie h;
             h.handle = actor->CreateRefHandle();
             h.id = actor->GetFormID();
@@ -740,8 +743,56 @@ namespace AhShitRim::Homies
             }
         }
 
-        // The followers' targets: the nearest enemy of the player's (or one fighting him or the crew) in sight and in his
-        // gun's range. Skyrim's own fights are called off: theirs are picked here.
+        // Their soldier's Skyrim lines (greetings, idle chatter, combat calls): a homie says nothing of Skyrim's. His
+        // voice is stopped as it starts and its subtitle taken off.
+        void Hush()
+        {
+            unsigned hushed = 0;
+            for (auto& h : state.homies) {
+                auto* actor = Get(h);
+                auto* process = actor ? actor->GetActorRuntimeData().currentProcess : nullptr;
+                auto* high = process ? process->high : nullptr;
+                if (!high) {
+                    continue;
+                }
+                for (auto& sound : high->soundHandles) {
+                    if (sound.IsPlaying()) {
+                        sound.Stop();
+                        hushed++;
+                    }
+                }
+            }
+            if (auto* manager = RE::SubtitleManager::GetSingleton(); manager && !state.homies.empty()) {
+                RE::BSSpinLockGuard guard(manager->lock);
+                for (auto it = manager->subtitles.begin(); it != manager->subtitles.end();) {
+                    auto speaker = it->speaker.get();
+                    if (speaker && IsHomie(speaker.get())) {
+                        it = manager->subtitles.erase(it);
+                        hushed++;
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+            if (hushed && (state.hushed++ % 20) == 0) {
+                SKSE::log::info("homies: a homie's Skyrim line hushed ({} so far: his voice stopped, its subtitle taken off)", state.hushed);
+            }
+        }
+
+        // Whether a_actor is one the followers shoot (Crew::IsFoe): hostile to the player, or fighting him or the crew
+        // without fleeing; never an animal that isn't aggressive (an elk running from CJ has him as its combat target).
+        bool IsFoe(RE::PlayerCharacter* a_player, RE::Actor* a_actor)
+        {
+            auto*       foe = a_actor->GetActorRuntimeData().currentCombatTarget.get().get();
+            const auto* combat = a_actor->GetActorRuntimeData().combatController;
+            const bool  fleeing = combat && combat->state && combat->IsFleeing();
+            const bool  animal = a_actor->HasKeywordString("ActorTypeAnimal");
+            const bool  aggressive = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAggression) > 0.0f;
+            return Crew::IsFoe(a_actor->IsHostileToActor(a_player), foe == a_player || (foe && IsHomie(foe)), fleeing, animal, aggressive);
+        }
+
+        // The followers' targets: the nearest foe (IsFoe) in sight and in his gun's range. Skyrim's own fights are
+        // called off: theirs are picked here.
         void Look(RE::PlayerCharacter* a_player)
         {
             auto* lists = RE::ProcessLists::GetSingleton();
@@ -757,8 +808,7 @@ namespace AhShitRim::Homies
                     actor->IsPlayerTeammate() || actor->GetPosition().GetDistance(cj) > kTargetRange * Crew::kMeter) {
                     continue;
                 }
-                auto* foe = actor->GetActorRuntimeData().currentCombatTarget.get().get();
-                if (actor->IsHostileToActor(a_player) || foe == a_player || (foe && IsHomie(foe))) {
+                if (IsFoe(a_player, actor)) {
                     enemies.push_back(actor);
                 }
             }
@@ -929,6 +979,10 @@ namespace AhShitRim::Homies
         if (settled) {
             Tend(a_player, viewHeading);
         }
+        Hush();
+        if (const int held = state.hold.Update(a_delta)) {
+            state.key = held;
+        }
         if (const int key = std::exchange(state.key, 0); key && a_onFoot) {
             HandleKey(a_player, key, a_pose ? a_pose->heading : a_player->GetAngleZ(), a_target);
         }
@@ -1091,10 +1145,25 @@ namespace AhShitRim::Homies
         }
     }
 
-    void OnKey(bool a_recruit) { state.key = a_recruit ? 1 : 2; }
+    void OnLetter(std::size_t a_run, bool a_finished)
+    {
+        if (const int key = state.hold.Letter(a_run, a_finished)) {
+            state.key = key;
+        }
+    }
+
+    void OnKey(bool a_recruit, std::size_t a_run, bool a_finished)
+    {
+        if (const int key = state.hold.Press(a_recruit ? 1 : 2, a_run, a_finished)) {
+            state.key = key;
+        } else if (state.hold.Holding()) {
+            SKSE::log::info("homies: {} held: it may be part of a cheat being typed", a_recruit ? "G" : "H");
+        }
+    }
 
     void OnRelease(bool a_loading)
     {
+        state.hold.Clear();
         if (a_loading) {
             // The world goes with the load: nothing of it is touched. The save being loaded says who comes back.
             state.homies.clear();
@@ -1169,6 +1238,18 @@ namespace AhShitRim::Homies
         }
         return joined;
     }
+
+    bool DebugTargets(const RE::Actor* a_actor)
+    {
+        for (const auto& h : state.homies) {
+            if (h.follower && a_actor && h.target.get().get() == a_actor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    unsigned DebugHushed() { return state.hushed; }
 
     int DebugCount(bool a_followers)
     {

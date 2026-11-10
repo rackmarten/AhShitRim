@@ -363,18 +363,20 @@ namespace AhShitRim::Cheats
             }
             _letters[0] = a_letter;
             _count = _count < kLength ? _count + 1 : kLength;
+            _finished = false;
+            _run = StartRun();
             for (std::size_t n = kShortestOurs; n <= _count; ++n) {
                 const std::uint32_t key = n >= kShortest ? KeyOf(_letters, n) : 0;
                 for (const auto& cheat : kCheats) {
                     if (cheat.sa != SaCheat::None ? n >= kShortest && CodeKey(cheat.code) == key : Ends(cheat.code, n)) {
-                        Clear();
+                        Finish(n);
                         return { &cheat, 0 };
                     }
                 }
                 for (const auto& name : _names) {
                     if (Ends(name.code, n)) {
                         const bool airborne = AirSpawn::Flies(name.model) && Before(kAir, n);
-                        Clear();
+                        Finish(n);
                         return { nullptr, name.model, airborne };
                     }
                 }
@@ -382,11 +384,61 @@ namespace AhShitRim::Cheats
             return {};
         }
 
-        void Clear() { _count = 0; }
+        void Clear()
+        {
+            _count = 0;
+            _run = 0;
+            _finished = false;
+        }
 
         std::size_t Count() const { return _count; }
 
+        // After the last letter: how many of the newest letters are the start of a code (kCheats' codes as spelt
+        // there, and the vehicle names), the longest such run, 0 for none; or, when that letter finished a code
+        // (Finished), how long that code was. San Andreas's alternative codes known only by their key don't count.
+        // Crew::KeyHold reads it to keep G and H, letters of cheats too, from acting while one is typed.
+        std::size_t CodeRun() const { return _run; }
+        bool        Finished() const { return _finished; }
+
     private:
+        void Finish(std::size_t a_n)
+        {
+            Clear();
+            _run = a_n;
+            _finished = true;
+        }
+
+        // Whether the newest a_n letters are how a_code starts.
+        bool Starts(std::string_view a_code, std::size_t a_n) const
+        {
+            if (a_code.size() < a_n) {
+                return false;
+            }
+            for (std::size_t i = 0; i < a_n; ++i) {
+                if (a_code[i] != _letters[a_n - 1 - i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        std::size_t StartRun() const
+        {
+            for (std::size_t n = _count; n > 0; --n) {
+                for (const auto& cheat : kCheats) {
+                    if (Starts(cheat.code, n)) {
+                        return n;
+                    }
+                }
+                for (const auto& name : _names) {
+                    if (Starts(name.code, n)) {
+                        return n;
+                    }
+                }
+            }
+            return 0;
+        }
+
         // Whether the letters typed just before the newest a_n are a_word.
         bool Before(std::string_view a_word, std::size_t a_n) const
         {
@@ -418,6 +470,8 @@ namespace AhShitRim::Cheats
         std::vector<VehicleName> _names;
         char        _letters[kLength] = {};
         std::size_t _count = 0;
+        std::size_t _run = 0;
+        bool        _finished = false;
     };
 
     // Which toggles are on, by row in kCheats.

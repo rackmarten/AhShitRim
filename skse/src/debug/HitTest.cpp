@@ -37,6 +37,7 @@ namespace AhShitRim::HitTest
             CrewSpots,  // crew (v39): the spots fill, two homies join
             CrewFight,  // wolves come, the crew shoots
             CrewHurt,   // CJ shoots one of his own: hurt, never hostile
+            CrewCheat,  // HESOYAM typed with a crew sends nobody off; H on its own still does, and two join again
             CrewOut,    // F10 out and back: the crew comes again
             CrewWalk,   // CJ walks, stops, runs off at an angle and stops: the followers walk and run after him, facing their way
             CrewStray,  // a follower put 70 m behind, as one left by a car or stuck: he's put back near CJ and comes up
@@ -45,6 +46,7 @@ namespace AhShitRim::HitTest
         };
 
         constexpr std::uint16_t kSandking = 495;
+        constexpr RE::FormID    kElk = 0x00023A91;  // EncElkMale (checked by its name before it's placed)
         constexpr float         kAhead = 840.0f;  // 12 m: where the attackers are placed
 
         struct State
@@ -68,8 +70,10 @@ namespace AhShitRim::HitTest
             RE::ActorHandle    hurt;             // the follower CJ shot
             float              moveX = 0.0f;     // CrewWalk: CJ's stick
             float              moveY = 0.0f;
-            int                walks = 0;
-            int                regroupedBefore = 0;  // Homies::DebugRegrouped() as the second walk started         // CrewWalk: the walks done (the first at the stables, the second after the move)
+            int                walks = 0;            // CrewWalk: the walks done (the first at the stables, the second after the move)
+            int                regroupedBefore = 0;  // Homies::DebugRegrouped() as the second walk started
+            RE::ObjectRefHandle elk;                 // CrewFight: an elk CJ shot, which the crew must leave be
+            bool               elkTargeted = false;
             float              walkMax = 0.0f;    // the furthest a follower was while CJ moved, metres
             float              stood = -1.0f;     // how far he was after CJ's first stand
             float              followLog = 0.0f;  // the crew phases: seconds since a follower was last logged
@@ -566,12 +570,30 @@ namespace AhShitRim::HitTest
                         state.attackers.push_back(ref->GetHandle());
                     }
                 }
+                // An elk 20 m off to the side, shot by CJ: it runs from him (CJ its combat target), and nobody shoots it.
+                auto* elkBase = RE::TESForm::LookupByID<RE::TESNPC>(kElk);
+                auto  elk = elkBase && std::string_view(elkBase->GetName()) == "Elk" ? a_player->PlaceObjectAtMe(elkBase, false) : nullptr;
+                if (elk) {
+                    elk->SetPosition(a_player->GetPosition() + RE::NiPoint3(std::cos(heading) * 1400.0f, -std::sin(heading) * 1400.0f, 0.0f));
+                    state.elk = elk->GetHandle();
+                } else {
+                    SKSE::log::info("hit test: crew: no elk ({:08X} isn't one here): the wildlife check skipped", kElk);
+                }
+                state.elkTargeted = false;
                 state.phase = Phase::CrewFight;
                 state.timer = state.logTimer = 0.0f;
             }
             break;
         case Phase::CrewFight:
             SetOn(a_player);
+            if (auto elk = state.elk.get(); elk && elk->As<RE::Actor>()) {
+                auto* animal = elk->As<RE::Actor>();
+                if (state.timer >= 1.0f && state.timer - a_delta < 1.0f) {
+                    Shots::Hurt(a_player, animal, 22, 5.0f, animal->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 80.0f), RE::NiPoint3(0.0f, 1.0f, 0.0f), true);
+                    SKSE::log::info("hit test: crew: CJ shot the elk");
+                }
+                state.elkTargeted = state.elkTargeted || Homies::DebugTargets(animal);
+            }
             state.logTimer += a_delta;
             if (state.logTimer >= 2.0f) {
                 state.logTimer = 0.0f;
@@ -584,6 +606,20 @@ namespace AhShitRim::HitTest
                 SKSE::log::info("hit test: crew: {:.0f} s of the fight, {} wolves alive, {} following", state.timer, alive, Homies::DebugCount(true));
             }
             if (state.timer >= 15.0f) {
+                if (auto elk = state.elk.get(); elk && elk->As<RE::Actor>()) {
+                    auto*      animal = elk->As<RE::Actor>();
+                    auto*      foe = animal->GetActorRuntimeData().currentCombatTarget.get().get();
+                    const bool fled = foe == a_player;
+                    SKSE::log::info("hit test: crew: the elk CJ shot is {}{}, the crew {}: {}", animal->IsDead() ? "dead" : "up", fled ? " with CJ its combat target" : "",
+                        state.elkTargeted ? "aimed at it" : "left it be", state.elkTargeted ? "FAILED" : "ok");
+                    elk->Disable();
+                    elk->SetDelete(true);
+                    state.elk = {};
+                }
+                if (auto* homie = Homies::DebugFollower()) {
+                    const std::string_view name = homie->GetDisplayFullName();
+                    SKSE::log::info("hit test: crew: a follower's name is \"{}\": {}", name, name == Crew::kHomieName ? "ok" : "FAILED");
+                }
                 if (auto* homie = Homies::DebugFollower()) {
                     const float before = homie->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
                     Shots::Hurt(a_player, homie, 22, 25.0f, homie->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 90.0f), RE::NiPoint3(0.0f, 1.0f, 0.0f), true);
@@ -605,7 +641,28 @@ namespace AhShitRim::HitTest
                     SKSE::log::info("hit test: crew: the homie CJ shot is {}{}, {}hostile to the player, {} following", homie->IsDead() ? "dead" : "up",
                         fights ? " and fighting CJ" : "", homie->IsHostileToActor(a_player) ? "" : "not ", Homies::DebugCount(true));
                 }
-                SKSE::log::info("hit test: crew: F10 out");
+                PlayerSync::DebugType("HESOYAM");
+                state.phase = Phase::CrewCheat;
+                state.step = 0;
+                state.timer = 0.0f;
+            }
+            break;
+        case Phase::CrewCheat:
+            if (state.step == 0 && state.timer >= 1.5f) {
+                const int following = Homies::DebugCount(true);
+                SKSE::log::info("hit test: crew: {} following after HESOYAM was typed (2 before): {}", following, following == 2 ? "ok" : "FAILED");
+                PlayerSync::DebugType("H");
+                state.step = 1;
+                state.timer = 0.0f;
+            } else if (state.step == 1 && state.timer >= 1.5f) {
+                const int following = Homies::DebugCount(true);
+                SKSE::log::info("hit test: crew: {} following after H on its own: {}", following, following == 0 ? "ok" : "FAILED");
+                const int joined = Homies::DebugRecruit(a_player, 2);
+                SKSE::log::info("hit test: crew: {} joined again, {} following", joined, Homies::DebugCount(true));
+                state.step = 2;
+                state.timer = 0.0f;
+            } else if (state.step == 2 && state.timer >= 3.0f) {
+                SKSE::log::info("hit test: crew: {} Skyrim line(s) of theirs hushed so far; F10 out", Homies::DebugHushed());
                 PlayerSync::DebugToggle();
                 state.phase = Phase::CrewOut;
                 state.timer = 0.0f;

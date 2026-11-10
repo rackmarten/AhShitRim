@@ -86,6 +86,8 @@ namespace AhShitRim::CrewPuppets
             unsigned                               posed = 0, fired = 0, kept = 0;
             unsigned                               facedSamples = 0;  // followers on the move: how far off their way they face
             float                                  facedSum = 0.0f, facedMax = 0.0f;
+            unsigned                               paced = 0, strides = 0;  // walking or running frames; walk-run changes
+            float                                  slipSum = 0.0f, slipMax = 0.0f;  // m/s his feet go off the ground's pace
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -200,19 +202,50 @@ namespace AhShitRim::CrewPuppets
             return &entry;
         }
 
+        // How far through its cycle a_assoc is, 0 to 1 (-1 for none).
+        float PhaseOf(const CAnimBlendAssociation* a_assoc)
+        {
+            if (!a_assoc || !a_assoc->m_pHierarchy || a_assoc->m_pHierarchy->m_fTotalTime <= 0.0f) {
+                return -1.0f;
+            }
+            return a_assoc->m_fCurrentTime / a_assoc->m_pHierarchy->m_fTotalTime;
+        }
+
         // His walk, run, idle or seat, blended straight onto his clump the moment the gait changes. Not through a task:
         // a task's anim fades out (and is deleted) as the task goes, while the next task's anim only starts once San
-        // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update.
+        // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update. From a walk to a run
+        // or back the new one starts where the old one was in its stride, as San Andreas keeps its peds' in step, so the
+        // feet don't jump as one fades into the other.
         void PlayMotion(CPed* a_ped, Scene::Motion a_motion)
         {
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
-            auto* clump = a_ped->m_pRwClump;
+            auto*       clump = a_ped->m_pRwClump;
+            const bool  walk = a_motion == Scene::Motion::Walk;
+            const float phase = walk || a_motion == Scene::Motion::Run ? PhaseOf(RpAnimBlendClumpGetAssociation(clump, walk ? kMoveRun : kMoveWalk)) : -1.0f;
+            CAnimBlendAssociation* assoc = nullptr;
             switch (a_motion) {
             case Scene::Motion::Seated: CAnimManager::BlendAnimation(clump, kGroupDefault, kSeatIdle, 4.0f); break;
-            case Scene::Motion::Walk: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
-            case Scene::Motion::Run: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveRun, 4.0f); break;
+            case Scene::Motion::Walk: assoc = CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
+            case Scene::Motion::Run: assoc = CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveRun, 4.0f); break;
             default: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveIdle, 4.0f); break;
             }
+            if (assoc && phase >= 0.0f && assoc->m_pHierarchy) {
+                assoc->SetCurrentTime(phase * assoc->m_pHierarchy->m_fTotalTime);
+            }
+        }
+
+        // His walk or run played at the rate that keeps his feet on the ground at a_speed m/s (Crew::Stride). How far
+        // off the ground's pace his feet still go, m/s (past the rate's bounds), or -1 standing.
+        float PaceMotion(CPed* a_ped, std::uint16_t a_model, Scene::Motion a_motion, float a_speed)
+        {
+            if (a_motion != Scene::Motion::Walk && a_motion != Scene::Motion::Run) {
+                return -1.0f;
+            }
+            const float rate = Crew::Stride::Rate(a_model, a_motion, a_speed);
+            if (auto* assoc = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, a_motion == Scene::Motion::Walk ? kMoveWalk : kMoveRun)) {
+                assoc->m_fSpeed = rate;
+            }
+            return std::fabs(a_speed - rate * Crew::Stride::Natural(a_model, a_motion));
         }
 
         // His fall as the actor dies (San Andreas's shot-in-front knockout), held on its last frame.
@@ -413,7 +446,12 @@ namespace AhShitRim::CrewPuppets
             const bool track = freshInput || puppet.playing < 0;
             auto       motion = puppet.playing >= 0 ? static_cast<Scene::Motion>(puppet.playing) : Scene::Motion::Idle;
             if (!dead && track) {
+                // San Andreas's gaits at his pace, changed where its paces meet (Crew::Stride), not the scenes' 3.5 m/s.
+                const auto was = puppet.playing >= 0 ? static_cast<Scene::Motion>(puppet.playing) : Scene::Motion::Idle;
                 motion = puppet.motion.Update(seated, Vec(feet), tracked);
+                if (motion != Scene::Motion::Seated) {
+                    motion = Crew::Stride::Next(was == Scene::Motion::Seated ? Scene::Motion::Idle : was, puppet.motion.Speed());
+                }
             }
             const bool moving = motion == Scene::Motion::Walk || motion == Scene::Motion::Run;
 
@@ -446,8 +484,16 @@ namespace AhShitRim::CrewPuppets
             } else if (!dead) {
                 puppet.fallen = false;
                 if (static_cast<int>(motion) != puppet.playing) {
+                    const bool stride = (motion == Scene::Motion::Walk && puppet.playing == static_cast<int>(Scene::Motion::Run)) ||
+                                        (motion == Scene::Motion::Run && puppet.playing == static_cast<int>(Scene::Motion::Walk));
+                    state.strides += stride ? 1 : 0;
                     puppet.playing = static_cast<int>(motion);
                     PlayMotion(ped, motion);
+                }
+                if (const float slip = PaceMotion(ped, member.model, motion, puppet.motion.Speed()); slip >= 0.0f && (member.flags & Protocol::kCrewFollower)) {
+                    state.slipSum += slip;
+                    state.slipMax = (std::max)(state.slipMax, slip);
+                    state.paced++;
                 }
             }
 
@@ -531,11 +577,17 @@ namespace AhShitRim::CrewPuppets
                     Log(std::format("crew: moving followers faced {:.0f} degrees off their way on average, {:.0f} at most ({} frames)",
                         state.facedSum / state.facedSamples * 180.0f / Pose::kPi, state.facedMax * 180.0f / Pose::kPi, state.facedSamples));
                 }
+                if (state.paced) {
+                    Log(std::format("crew: moving followers' feet slid {:.2f} m/s off the ground on average, {:.2f} at most ({} frames, {} walk-run changes)",
+                        state.slipSum / state.paced, state.slipMax, state.paced, state.strides));
+                }
             }
             state.statMs = now;
             state.posed = state.fired = state.kept = 0;
             state.facedSamples = 0;
             state.facedSum = state.facedMax = 0.0f;
+            state.paced = state.strides = 0;
+            state.slipSum = state.slipMax = 0.0f;
         }
     }
 }

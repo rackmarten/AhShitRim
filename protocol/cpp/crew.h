@@ -32,6 +32,9 @@ namespace AhShitRim::Crew
     inline constexpr std::array<std::uint16_t, 3> kModels = { 105, 106, 107 };
     inline constexpr std::uint16_t ModelFor(std::uint32_t a_roll) { return kModels[a_roll % kModels.size()]; }
 
+    // The name Skyrim shows for one (his health bar when CJ aims at him), instead of his soldier's.
+    inline constexpr std::string_view kHomieName = "Grove Street Homie";
+
     // ---- How many follow ----
 
     // San Andreas's player group holds 7 followers (CPedGroupMembership: 8 members, the leader the last).
@@ -357,6 +360,17 @@ namespace AhShitRim::Crew
         return a_lineOfSight && a_distanceMeters <= RangeOf(a_weapon);
     }
 
+    // Whom the followers shoot: one hostile to CJ, or one fighting CJ or the crew who stands and fights. Not one
+    // fleeing (Skyrim's deer and elk run from CJ in a fight of their own, CJ their target), and never an animal that
+    // isn't aggressive (Skyrim's Aggression 0: elk, deer, horses, goats), whatever it does. Nobody else either.
+    inline constexpr bool IsFoe(bool a_hostile, bool a_fightsUs, bool a_fleeing, bool a_animal, bool a_aggressive)
+    {
+        if (a_animal && !a_aggressive) {
+            return false;
+        }
+        return a_hostile || (a_fightsUs && !a_fleeing);
+    }
+
     // ShotEvent.shooter: 0 CJ, slot + 1 a homie.
     inline constexpr std::uint8_t ShooterOf(std::uint32_t a_slot) { return static_cast<std::uint8_t>(a_slot + 1); }
     inline constexpr bool         FromCrew(std::uint8_t a_shooter) { return a_shooter >= 1 && a_shooter <= Protocol::kCrewMax; }
@@ -499,6 +513,127 @@ namespace AhShitRim::Crew
         float      _vx = 0.0f;
         float      _vy = 0.0f;
         float      _heading = 0.0f;
+    };
+
+    // How a homie's puppet steps. San Andreas's walk and run carry a ped along at their own pace (ped.ifp's root motion:
+    // WALK_gang1 1.12 m/s, fam2's; WALK_gang2 0.99, fam1's and fam3's; run_gang1 4.40, all three's), but Skyrim moves
+    // him at its own (a follower catching up runs at 5.7 m/s, and walks or jogs anything between). Played at their own
+    // pace his feet slid. So each plays at the rate that keeps his feet on the ground (kMinRate to kMaxRate), and he
+    // takes to the run where a sped-up walk and a slowed run are equally off (2.1 m/s, the paces' geometric mean)
+    // rather than at Scene::MotionTracker's 3.5 m/s, with a margin each way so he doesn't flip between the two.
+    namespace Stride
+    {
+        inline constexpr float kWalkGang1 = 1.117f;  // m/s
+        inline constexpr float kWalkGang2 = 0.992f;
+        inline constexpr float kRunGang = 4.396f;
+        inline constexpr float kRunFrom = 2.4f;
+        inline constexpr float kWalkBelow = 1.9f;
+        inline constexpr float kMinRate = 0.4f;
+        inline constexpr float kMaxRate = 2.5f;
+
+        // The pace a_motion carries model a_model at when played at rate 1 (0 for one that stands).
+        constexpr float Natural(std::uint16_t a_model, Scene::Motion a_motion)
+        {
+            switch (a_motion) {
+            case Scene::Motion::Walk: return a_model == 106 ? kWalkGang1 : kWalkGang2;  // fam2 walks as gang1, fam1 and fam3 as gang2
+            case Scene::Motion::Run: return kRunGang;
+            default: return 0.0f;
+            }
+        }
+
+        // His gait at a_speed (m/s, smoothed: Scene::MotionTracker::Speed), from a_now.
+        constexpr Scene::Motion Next(Scene::Motion a_now, float a_speed)
+        {
+            using M = Scene::Motion;
+            constexpr float idleBelow = Scene::MotionTracker::kIdleBelow;
+            constexpr float walkFrom = Scene::MotionTracker::kWalkFrom;
+            switch (a_now) {
+            case M::Run: return a_speed < idleBelow ? M::Idle : a_speed < kWalkBelow ? M::Walk : M::Run;
+            case M::Walk: return a_speed < idleBelow ? M::Idle : a_speed >= kRunFrom ? M::Run : M::Walk;
+            default: return a_speed >= kRunFrom ? M::Run : a_speed >= walkFrom ? M::Walk : M::Idle;
+            }
+        }
+
+        // The rate a_motion plays at for model a_model going at a_speed m/s (1 for one that stands).
+        constexpr float Rate(std::uint16_t a_model, Scene::Motion a_motion, float a_speed)
+        {
+            const float natural = Natural(a_model, a_motion);
+            if (natural <= 0.0f) {
+                return 1.0f;
+            }
+            const float rate = a_speed / natural;
+            return rate < kMinRate ? kMinRate : rate > kMaxRate ? kMaxRate : rate;
+        }
+    }
+
+    // ---- The keys ----
+
+    // G and H are letters of San Andreas's cheats too (HESOYAM's H, LXGIWYL's G), and HESOYAM typed sent a follower
+    // off. So a G or H that may be part of a code (Cheats::Typist::CodeRun) waits: dropped once a code it's part of is
+    // finished, acted on as soon as the next letter breaks the code off (W, A, S or D right after it), or once no letter
+    // has come for kHoldFor. One that is no code's start acts at once, and one that finishes a code never does.
+    class KeyHold
+    {
+    public:
+        static constexpr float kHoldFor = 0.5f;  // s
+
+        // A letter went into the cheat string (G and H too, before their Press), a_run and a_finished as the Typist
+        // has them after it. The held key to act on now, or 0.
+        int Letter(std::size_t a_run, bool a_finished)
+        {
+            if (!_key) {
+                return 0;
+            }
+            _since++;
+            if (a_run < _since) {
+                return Take();  // the code broke off before it: it was the key
+            }
+            if (a_finished) {
+                _key = 0;  // a cheat with it in it, typed
+            }
+            _held = 0.0f;  // the code goes on through it: wait for the next letter
+            return 0;
+        }
+
+        // G or H (a_key, not 0) went down, after its Letter. The key to act on now, or 0 while it waits.
+        int Press(int a_key, std::size_t a_run, bool a_finished)
+        {
+            if (a_finished) {
+                return 0;
+            }
+            if (a_run == 0) {
+                return a_key;
+            }
+            _key = a_key;
+            _since = 1;
+            _held = 0.0f;
+            return 0;
+        }
+
+        // a_seconds since the last call. The held key once it has waited kHoldFor, else 0.
+        int Update(float a_seconds)
+        {
+            if (!_key) {
+                return 0;
+            }
+            _held += a_seconds;
+            return _held >= kHoldFor ? Take() : 0;
+        }
+
+        bool Holding() const { return _key != 0; }
+        void Clear() { _key = 0; }
+
+    private:
+        int Take()
+        {
+            const int key = _key;
+            _key = 0;
+            return key;
+        }
+
+        int         _key = 0;
+        std::size_t _since = 0;
+        float       _held = 0.0f;
     };
 
     // One animation on a clump, as San Andreas's CAnimBlendAssociation has it.

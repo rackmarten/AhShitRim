@@ -30,7 +30,8 @@ namespace AhShitRim::PlayerSync
     // once the game is up), and a new game or a load starting over.
     void Snapshot(Cosave::Record& a_out);
 
-    // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
+    // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters (G and H
+    // also as the crew's keys, as typed).
     bool DebugOwned();
     void DebugToggle();
     void DebugType(const char* a_code);
