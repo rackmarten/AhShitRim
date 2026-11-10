@@ -10,6 +10,9 @@
 // and logs the car's and the player's health every 2 s for HitTestSeconds (90). HitTest=oil (with HitTestStart
 // BleakFallsBarrow01) hands nothing over: it places three fresh oil pools (a save may hold the barrow's burnt out) and lights them the way CJ's bullet, Molotov and rocket
 // do (ObjectHits), logs each pool's health until they burn out or HitTestSeconds pass, and whether each burned.
+// HitTest=lights sets the hour to 23:00, hands the player over with CJ in model HitTestVehicle (495, the Sandking; 477
+// the ZR-350), sets nothing on him, and takes two screenshots (into HitTestShots, AhShitRim's Screenshots when empty)
+// while Headlights and ModelView log each lamp found, lit and placed.
 // Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {

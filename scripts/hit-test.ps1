@@ -4,17 +4,22 @@
     last, turns on the SKSE plugin's hit test ([Debug] HitTest, skse/src/debug/HitTest.h), starts San Andreas and
     Skyrim, and waits while it loads the most recent save, goes to Riverwood, hands CJ over in a Sandking and either sets
     a giant and two guards on him (hits) or gives him two stars (bust). The oil scenario goes to Bleak Falls Barrow
-    instead and places three fresh oil pools there and lights them, by a bullet, a Molotov and a rocket, and logs whether each burns. Then it prints what the logs say, closes both
+    instead and places three fresh oil pools there and lights them, by a bullet, a Molotov and a rocket, and logs whether each burns. The lights scenario sets
+    the hour to 23:00, hands CJ over in -Vehicle (495 the Sandking, 477 the ZR-350) and takes two screenshots (into -Shots,
+    AhShitRim's Screenshots folder when empty) while each lamp is logged found, lit and placed. Then it prints what the logs say, closes both
     games and takes the hit test out of the ini again. Loads (never saves) the most recent save, or with -NewGame starts
     a new game at the start instead (for Skyrim SE 1.5.97, which can't load the AE saves).
 .EXAMPLE
     scripts/hit-test.ps1
     scripts/hit-test.ps1 -Scenario bust -Seconds 60
     scripts/hit-test.ps1 -Scenario oil
+    scripts/hit-test.ps1 -Scenario lights -Vehicle 477 -Seconds 20
     scripts/hit-test.ps1 -NewGame
 #>
 param(
-    [ValidateSet('hits', 'bust', 'oil')] [string] $Scenario = 'hits',
+    [ValidateSet('hits', 'bust', 'oil', 'lights')] [string] $Scenario = 'hits',
+    [int] $Vehicle = 495,
+    [string] $Shots = '',
     [int] $Seconds = 90,
     [string] $Start = '',
     [int] $TimeoutSeconds = 300,
@@ -48,7 +53,7 @@ for ($attempt = 1; ; $attempt++) {
         Start-Sleep -Seconds 2
     }
 }
-Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)")
+Add-Content -Path $ini -Encoding ascii -Value @('', '[Debug]', "HitTest=$Scenario", "HitTestSeconds=$Seconds", "HitTestStart=$Start", "HitTestNewGame=$([int] $NewGame.IsPresent)", "HitTestVehicle=$Vehicle", "HitTestShots=$Shots")
 
 try {
     $started = Get-Date
@@ -70,7 +75,7 @@ try {
         }
     }
     Write-Host "--- Skyrim ($skseLog)"
-    Select-String -Path $skseLog -Pattern 'hit test:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|object hits: .*oil' | ForEach-Object { $_.Line }
+    Select-String -Path $skseLog -Pattern 'hit test:|hitboxes:|vitals: CJ''s vehicle|police: .*(door|runs for|BUSTED|star)|car hits:|object hits: .*oil|headlights:|model view: .*lamp|screenshot' | ForEach-Object { $_.Line }
     Write-Host "--- San Andreas ($saLog)"
     Select-String -Path $saLog -Pattern 'car hits: Skyrim|scenes: CJ (hit|has)|busted' | ForEach-Object { $_.Line }
     if (-not $finished) { throw "The hit test didn't finish within $TimeoutSeconds s." }
