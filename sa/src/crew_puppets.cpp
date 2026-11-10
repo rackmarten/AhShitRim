@@ -513,8 +513,10 @@ namespace AhShitRim::CrewPuppets
                     if (col && CjBody::BoneWorld(static_cast<CPlayerPed*>(ped), kBoneHead, head)) {
                         const CMatrix& m = static_cast<const CMatrix&>(vehicle->GetMatrix());
                         const CVector  d = CVector(head.pos.x, head.pos.y, head.pos.z) - vehicle->GetPosition();
-                        headroom = std::format(", his head's joint {:.2f} m under the top of model {}", col->m_boundBox.m_vecMax.z - (d.x * m.at.x + d.y * m.at.y + d.z * m.at.z),
-                            vehicle->m_nModelIndex);
+                        const float under = col->m_boundBox.m_vecMax.z - (d.x * m.at.x + d.y * m.at.y + d.z * m.at.z);
+                        const float raised = feet.z + lift - at.z;  // how much higher his feet on his actor's put him
+                        headroom = std::format(", his head's joint {:.2f} m under the top of model {} ({:.2f} m on his actor's feet)", under, vehicle->m_nModelIndex,
+                            under - raised);
                     }
                     Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}{}", member.id, off.x, off.y, off.z,
                         std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT", headroom));
