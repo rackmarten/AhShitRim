@@ -85,7 +85,10 @@ namespace AhShitRim::TestKit
                 "Hands the player to San Andreas (on=true, the default) or back to Skyrim, as F10 does; answers once it's done",
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
-                    auto       wait = std::make_shared<int>(0);
+                    if (want && !PlayerSync::DebugOwned() && !LinkService::Get().IsUp()) {
+                        throw Error("San Andreas isn't linked (not running, or still starting): nothing to hand the player to");
+                    }
+                    auto wait = std::make_shared<int>(0);
                     // Done when the player is where asked and, for CJ, San Andreas has answered the handover with a pose.
                     auto done = [want]() {
                         if (PlayerSync::DebugOwned() != want) {
@@ -127,6 +130,8 @@ namespace AhShitRim::TestKit
                     const bool in = a_call.Flag("in", false);
                     if (!in) {
                         RequireCj();
+                    } else if (auto* player = RE::PlayerCharacter::GetSingleton(); !player || !player->GetParentCell() || !LinkService::Get().IsUp()) {
+                        throw Error("in=true needs the player in the world and San Andreas linked");
                     }
                     const auto before = ReadSlots();
                     if (in) {
@@ -148,22 +153,28 @@ namespace AhShitRim::TestKit
                         if (in && (!(pose.flags & Protocol::kPlayerInVehicle) || pose.vehicleModel != model)) {
                             return std::nullopt;
                         }
-                        // in=true: the slot CJ drives. Else a slot that was empty before, or failing that one whose model
-                        // changed (San Andreas reuses the oldest slot when all are taken).
-                        const auto now = ReadSlots();
-                        std::optional<std::uint32_t> found;
-                        for (int pass = 0; pass < 2 && !found; pass++) {
-                            for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax && !found; slot++) {
-                                Protocol::BodyState vehicle{};
-                                if (!now[slot] || !LinkService::Get().ReadVehicle(slot, vehicle) || vehicle.handover != handover) {
-                                    continue;
-                                }
-                                const bool driven = (vehicle.flags & Protocol::kBodyDriven) != 0;
-                                const bool pick = in ? driven : (pass == 0 ? before[slot] == 0 : now[slot] != before[slot]);
-                                if (pick) {
-                                    found = slot;
+                        // This handover's vehicles, each slot read once.
+                        std::array<std::optional<Protocol::BodyState>, Protocol::kVehicleMax> slots;
+                        for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax; slot++) {
+                            Protocol::BodyState vehicle{};
+                            if (LinkService::Get().ReadVehicle(slot, vehicle) && (vehicle.flags & Protocol::kBodyValid) && vehicle.handover == handover) {
+                                slots[slot] = vehicle;
+                            }
+                        }
+                        auto first = [&](auto a_rule) -> std::optional<std::uint32_t> {
+                            for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax; slot++) {
+                                if (slots[slot] && a_rule(slot, *slots[slot])) {
+                                    return slot;
                                 }
                             }
+                            return std::nullopt;
+                        };
+                        // in=true: the one CJ drives. Else one in a slot that was empty before, or failing that one whose
+                        // model changed (San Andreas reuses the oldest slot when all are taken).
+                        auto found = in ? first([](std::uint32_t, const Protocol::BodyState& a_v) { return (a_v.flags & Protocol::kBodyDriven) != 0; })
+                                        : first([&](std::uint32_t a_slot, const Protocol::BodyState&) { return before[a_slot] == 0; });
+                        if (!found && !in) {
+                            found = first([&](std::uint32_t a_slot, const Protocol::BodyState& a_v) { return a_v.model != before[a_slot]; });
                         }
                         if (!found) {
                             // San Andreas answers in a few frames; when it finds no flat, clear spot in front of CJ (another
@@ -173,8 +184,7 @@ namespace AhShitRim::TestKit
                             }
                             return std::nullopt;
                         }
-                        Protocol::BodyState vehicle{};
-                        LinkService::Get().ReadVehicle(*found, vehicle);
+                        const auto& vehicle = *slots[*found];
                         // Both relative to the handover's anchor: the difference is the vehicle from CJ, whom the player follows.
                         const float offset[3] = { vehicle.feet[0] - pose.offset[0], vehicle.feet[1] - pose.offset[1], vehicle.feet[2] - pose.offset[2] };
                         return JsonObject{ { "model", model }, { "label", VehicleKinds::Label(model) }, { "slot", *found },

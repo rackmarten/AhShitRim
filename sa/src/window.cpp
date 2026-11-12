@@ -230,9 +230,10 @@ namespace AhShitRim::Window
             return window;
         }
 
+        // Returns what SetFocus would: the window that had the focus (which stays where it is).
         HWND WINAPI SetFocusHook(HWND a_window)
         {
-            return Ours(a_window) ? nullptr : g_setFocus(a_window);
+            return Ours(a_window) ? ::GetFocus() : g_setFocus(a_window);
         }
 
         HWND WINAPI SetActiveWindowHook(HWND a_window)
