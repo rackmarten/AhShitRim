@@ -159,6 +159,9 @@ namespace AhShitRim::Window
 
         BOOL WINAPI ShowWindowHook(HWND a_window, int a_cmd)
         {
+            if (a_window && a_window == g_window) {
+                return TRUE;  // shown once below; it stays as it is (a restore or show would activate it)
+            }
             if (g_window || !a_window || ::GetParent(a_window)) {
                 return g_showWindow(a_window, a_cmd);
             }
@@ -184,6 +187,82 @@ namespace AhShitRim::Window
         {
             return TRUE;
         }
+
+        // ---- Never in front ----
+        // San Andreas gets its input from Skyrim over the link, so its window never needs the focus. It's created
+        // without WS_VISIBLE and never activates (ShowWindowHook shows it once, minimized or small, and later calls
+        // leave it as it is), the calls that would bring it to the front do nothing, and WinMain's
+        // SPI_SETFOREGROUNDLOCKTIMEOUT 0 (which lets any program take the foreground from the user, desktop-wide) isn't
+        // made.
+
+        using CreateWindowExAFn = HWND(WINAPI*)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+        using HwndFn = HWND(WINAPI*)(HWND);
+        using BoolHwndFn = BOOL(WINAPI*)(HWND);
+        using SystemParametersInfoAFn = BOOL(WINAPI*)(UINT, UINT, PVOID, UINT);
+
+        CreateWindowExAFn       g_createWindowExA = nullptr;
+        HwndFn                  g_setFocus = nullptr;
+        HwndFn                  g_setActiveWindow = nullptr;
+        BoolHwndFn              g_setForegroundWindow = nullptr;
+        BoolHwndFn              g_bringWindowToTop = nullptr;
+        SystemParametersInfoAFn g_systemParametersInfoA = nullptr;
+        HWND                    g_created = nullptr;  // the main window, from its creation (g_window is set when it's shown)
+
+        bool Ours(HWND a_window)
+        {
+            return a_window && (a_window == g_created || a_window == g_window);
+        }
+
+        HWND WINAPI CreateWindowExAHook(DWORD a_exStyle, LPCSTR a_class, LPCSTR a_name, DWORD a_style, int a_x, int a_y, int a_w, int a_h,
+            HWND a_parent, HMENU a_menu, HINSTANCE a_instance, LPVOID a_param)
+        {
+            const bool main = !g_created && !a_parent && !(a_style & WS_CHILD);
+            const bool askedVisible = (a_style & WS_VISIBLE) != 0;
+            if (main) {
+                a_style &= ~WS_VISIBLE;
+                a_exStyle |= WS_EX_NOACTIVATE | WS_EX_APPWINDOW;  // its taskbar button stays
+            }
+            HWND window = g_createWindowExA(a_exStyle, a_class, a_name, a_style, a_x, a_y, a_w, a_h, a_parent, a_menu, a_instance, a_param);
+            if (main && window) {
+                g_created = window;
+                Log(std::format("window: created without showing it ({}), never activated", askedVisible ? "it asked to be visible" : "it asked to be hidden"));
+            }
+            return window;
+        }
+
+        HWND WINAPI SetFocusHook(HWND a_window)
+        {
+            return Ours(a_window) ? nullptr : g_setFocus(a_window);
+        }
+
+        HWND WINAPI SetActiveWindowHook(HWND a_window)
+        {
+            return Ours(a_window) ? nullptr : g_setActiveWindow(a_window);
+        }
+
+        BOOL WINAPI SetForegroundWindowHook(HWND a_window)
+        {
+            return Ours(a_window) ? TRUE : g_setForegroundWindow(a_window);
+        }
+
+        BOOL WINAPI BringWindowToTopHook(HWND a_window)
+        {
+            return Ours(a_window) ? TRUE : g_bringWindowToTop(a_window);
+        }
+
+        BOOL WINAPI SystemParametersInfoAHook(UINT a_action, UINT a_param, PVOID a_value, UINT a_flags)
+        {
+            if (a_action == SPI_SETFOREGROUNDLOCKTIMEOUT) {
+                return TRUE;
+            }
+            return g_systemParametersInfoA(a_action, a_param, a_value, a_flags);
+        }
+
+        template <class T>
+        void Patch(T& a_original, const char* a_function, T a_hook)
+        {
+            a_original = reinterpret_cast<T>(PatchImport("user32.dll", a_function, reinterpret_cast<void*>(a_hook)));
+        }
     }
 
     void Install(bool a_visible)
@@ -202,6 +281,13 @@ namespace AhShitRim::Window
         if (!g_direct3DCreate9 || !g_showWindow) {
             Log("window: could not patch San Andreas's window; it will start fullscreen");
         }
+        // Each hook only runs where its import was patched (PatchImport logs the ones the exe doesn't import).
+        Patch(g_setFocus, "SetFocus", &SetFocusHook);
+        Patch(g_setActiveWindow, "SetActiveWindow", &SetActiveWindowHook);
+        Patch(g_setForegroundWindow, "SetForegroundWindow", &SetForegroundWindowHook);
+        Patch(g_bringWindowToTop, "BringWindowToTop", &BringWindowToTopHook);
+        Patch(g_systemParametersInfoA, "SystemParametersInfoA", &SystemParametersInfoAHook);
+        Patch(g_createWindowExA, "CreateWindowExA", &CreateWindowExAHook);
     }
 
     bool Visible()
