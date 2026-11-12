@@ -1544,6 +1544,8 @@ namespace AhShitRim::PlayerSync
 
     bool DebugOwned() { return state.owned; }
 
+    std::uint32_t DebugHandover() { return state.handover; }
+
     void DebugToggle()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();

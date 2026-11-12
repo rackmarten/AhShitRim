@@ -6,6 +6,7 @@
 #include "player/Arms.h"
 #include "player/PlayerSync.h"
 #include "vehicle_kinds.h"
+#include "weapons.h"
 
 #include <skse_test_kit/Kit.h>
 
@@ -85,9 +86,20 @@ namespace AhShitRim::TestKit
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
                     auto       wait = std::make_shared<int>(0);
-                    return [want, wait](Call&) -> std::optional<Json> {
-                        if (PlayerSync::DebugOwned() == want) {
+                    // Done when the player is where asked and, for CJ, San Andreas has answered the handover with a pose.
+                    auto done = [want]() {
+                        if (PlayerSync::DebugOwned() != want) {
+                            return false;
+                        }
+                        Protocol::PlayerState pose{};
+                        return !want || (LinkService::Get().ReadPlayer(pose) && pose.handover == PlayerSync::DebugHandover());
+                    };
+                    return [want, wait, done](Call&) -> std::optional<Json> {
+                        if (done()) {
                             return JsonObject{ { "cj", want } };
+                        }
+                        if (PlayerSync::DebugOwned() == want) {
+                            return std::nullopt;  // handed over, San Andreas's first pose still to come
                         }
                         if ((*wait)-- > 0) {
                             return std::nullopt;
@@ -96,84 +108,115 @@ namespace AhShitRim::TestKit
                         if (!want || LinkService::Get().IsUp()) {
                             PlayerSync::DebugToggle();
                         }
-                        return PlayerSync::DebugOwned() == want ? std::optional<Json>(JsonObject{ { "cj", want } }) : std::nullopt;
+                        return std::nullopt;
                     };
                 });
 
             SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>]",
                 "Spawns a San Andreas vehicle by model id (400 to 611) where San Andreas puts a cheat's vehicle, in front of CJ; in=true puts CJ "
-                "in a new one where he stands. Answers with its slot and where it is from the player",
+                "in a new one where he stands (handing him the player if he hasn't it). Answers with its slot and where it is from the player",
                 [](Call& a_call) -> Step {
-                    RequireCj();
                     const double number = a_call.Number("model");
-                    if (number < 0 || number > 65535 || number != std::floor(number)) {
-                        throw Error("model is a San Andreas model id");
+                    if (number < 400 || number > 611 || number != std::floor(number)) {
+                        throw Error("model is a San Andreas vehicle model id, 400 to 611");
                     }
                     const auto model = static_cast<std::uint16_t>(number);
-                    if (!VehicleKinds::Spawnable(model)) {
+                    if (!VehicleKinds::Spawnable(model) || VehicleKinds::IsGear(model)) {
                         throw Error(std::format("{} can't spawn: {}", VehicleKinds::Label(model), VehicleKinds::TraitsOf(VehicleKinds::KindOf(model)).refusal));
                     }
-                    const auto before = ReadSlots();
                     const bool in = a_call.Flag("in", false);
+                    if (!in) {
+                        RequireCj();
+                    }
+                    const auto before = ReadSlots();
                     if (in) {
-                        PlayerSync::TakeOverInVehicle(model);
+                        PlayerSync::TakeOverInVehicle(model);  // a new handover: San Andreas starts over with CJ in one
                     } else if (const auto refusal = PlayerSync::DebugSpawn(model); !refusal.empty()) {
                         throw Error(refusal);
                     }
+                    const auto handover = PlayerSync::DebugHandover();
                     a_call.DefaultTimeout(20.0);
-                    return [model, before, in](Call&) -> std::optional<Json> {
+                    return [model, before, in, handover](Call& a_call) -> std::optional<Json> {
+                        if (PlayerSync::DebugHandover() != handover) {
+                            throw Error("the handover changed while waiting (a load door, fast travel, F10): its vehicles are gone");
+                        }
+                        // Only San Andreas's answers to this handover: older poses and slots are another anchor's.
                         Protocol::PlayerState pose{};
-                        if (!LinkService::Get().ReadPlayer(pose)) {
+                        if (!LinkService::Get().ReadPlayer(pose) || pose.handover != handover) {
                             return std::nullopt;
                         }
-                        // in=true: CJ sits in one of that model (a new handover, so the slots start over); else a slot
-                        // that's new, or holds another model than before.
                         if (in && (!(pose.flags & Protocol::kPlayerInVehicle) || pose.vehicleModel != model)) {
                             return std::nullopt;
                         }
+                        // in=true: the slot CJ drives. Else a slot that was empty before, or failing that one whose model
+                        // changed (San Andreas reuses the oldest slot when all are taken).
                         const auto now = ReadSlots();
-                        for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax; slot++) {
-                            Protocol::BodyState vehicle{};
-                            if (!now[slot] || !LinkService::Get().ReadVehicle(slot, vehicle)) {
-                                continue;
+                        std::optional<std::uint32_t> found;
+                        for (int pass = 0; pass < 2 && !found; pass++) {
+                            for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax && !found; slot++) {
+                                Protocol::BodyState vehicle{};
+                                if (!now[slot] || !LinkService::Get().ReadVehicle(slot, vehicle) || vehicle.handover != handover) {
+                                    continue;
+                                }
+                                const bool driven = (vehicle.flags & Protocol::kBodyDriven) != 0;
+                                const bool pick = in ? driven : (pass == 0 ? before[slot] == 0 : now[slot] != before[slot]);
+                                if (pick) {
+                                    found = slot;
+                                }
                             }
-                            const bool driven = (vehicle.flags & Protocol::kBodyDriven) != 0;
-                            if (in ? !driven : now[slot] == before[slot]) {
-                                continue;
-                            }
-                            // Both relative to the handover's anchor: the difference is the vehicle from CJ, whom the player follows.
-                            const float offset[3] = { vehicle.feet[0] - pose.offset[0], vehicle.feet[1] - pose.offset[1], vehicle.feet[2] - pose.offset[2] };
-                            return JsonObject{ { "model", model }, { "label", VehicleKinds::Label(model) }, { "slot", slot }, { "driven", driven },
-                                { "offset", Point(offset) }, { "distance", std::sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]) },
-                                { "health", vehicle.health } };
                         }
-                        return std::nullopt;
+                        if (!found) {
+                            // San Andreas answers in a few frames; when it finds no flat, clear spot in front of CJ (another
+                            // vehicle in the way) it spawns nothing and only its own log says so.
+                            if (!in && a_call.Seconds() > 5.0) {
+                                throw Error("San Andreas spawned nothing in 5 s: no clear spot in front of CJ? (its AhShitRim.log says why)");
+                            }
+                            return std::nullopt;
+                        }
+                        Protocol::BodyState vehicle{};
+                        LinkService::Get().ReadVehicle(*found, vehicle);
+                        // Both relative to the handover's anchor: the difference is the vehicle from CJ, whom the player follows.
+                        const float offset[3] = { vehicle.feet[0] - pose.offset[0], vehicle.feet[1] - pose.offset[1], vehicle.feet[2] - pose.offset[2] };
+                        return JsonObject{ { "model", model }, { "label", VehicleKinds::Label(model) }, { "slot", *found },
+                            { "driven", (vehicle.flags & Protocol::kBodyDriven) != 0 }, { "offset", Point(offset) },
+                            { "distance", std::sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]) }, { "health", vehicle.health } };
                     };
                 });
 
             SkseTestKit::AddTask("asr.give", "<weapon> [ammo=<n>]",
                 "Gives CJ a weapon by San Andreas's weapon type (22 pistol, 25 shotgun, 31 M4...) with ammo rounds (default 500); answers with "
-                "his loadout once San Andreas has it",
+                "his loadout once San Andreas has the gift",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const double number = a_call.Number("weapon");
-                    if (number < 1 || number > 46 || number != std::floor(number)) {
-                        throw Error("weapon is a San Andreas weapon type, 1 to 46");
+                    if (number < 1 || number > 46 || number != std::floor(number) || !Weapons::Carried(static_cast<std::uint8_t>(number))) {
+                        throw Error("weapon is a San Andreas weapon type CJ can carry");
                     }
                     const auto type = static_cast<std::uint8_t>(number);
-                    Arms::Give(type, static_cast<std::uint32_t>((std::max)(0.0, a_call.Number("ammo", 500.0))));
+                    const auto rounds = static_cast<std::uint32_t>((std::max)(0.0, a_call.Number("ammo", 500.0)));
+                    // What he has of it now: the answer waits for the gift on top (or the weapon itself, when he hasn't it).
+                    std::optional<std::uint32_t> had;
+                    for (const auto& entry : Arms::Loadout()) {
+                        if (entry.type == type) {
+                            had = entry.ammo;
+                        }
+                    }
+                    Arms::Give(type, rounds);
                     a_call.DefaultTimeout(10.0);
-                    return [type](Call&) -> std::optional<Json> {
-                        JsonArray loadout;
-                        bool      has = false;
+                    return [type, had, rounds](Call&) -> std::optional<Json> {
+                        JsonArray                    loadout;
+                        std::optional<std::uint32_t> has;
                         for (const auto& entry : Arms::Loadout()) {
                             if (entry.type == 0) {
                                 continue;
                             }
-                            has = has || entry.type == type;
+                            if (entry.type == type) {
+                                has = entry.ammo;
+                            }
                             loadout.emplace_back(JsonObject{ { "type", entry.type }, { "clip", entry.clip }, { "ammo", entry.ammo } });
                         }
-                        if (!has) {
+                        const bool arrived = has && (!had || rounds == 0 || *has > *had || *has >= 99999);
+                        if (!arrived) {
                             return std::nullopt;
                         }
                         return JsonObject{ { "weapon", type }, { "loadout", std::move(loadout) } };
@@ -205,7 +248,7 @@ namespace AhShitRim::TestKit
                     a_call.DefaultTimeout(frames / 30.0 + 30.0);
                     return [count = static_cast<std::uint64_t>(frames)](Call& a_call) -> std::optional<Json> {
                         Protocol::PlayerState pose{};
-                        if (LinkService::Get().ReadPlayer(pose)) {
+                        if (LinkService::Get().ReadPlayer(pose) && pose.handover == PlayerSync::DebugHandover()) {
                             const bool inVehicle = (pose.flags & Protocol::kPlayerInVehicle) != 0;
                             a_call.Row(JsonObject{ { "frame", a_call.Frames() }, { "saFrame", pose.frame }, { "cj", Point(pose.offset) },
                                 { "inVehicle", inVehicle }, { "vehicleModel", inVehicle ? Json(pose.vehicleModel) : Json() } });

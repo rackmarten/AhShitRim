@@ -3,7 +3,11 @@
 {
   "name": "test-kit-smoke",
   "steps": [
+    // Off and on again: a new handover, so San Andreas starts without vehicles (one left in front of CJ would leave no
+    // room for the Elegy below).
+    { "label": "Skyrim has the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ has the player", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
     { "label": "night", "cmd": "asr.night", "hour": 23, "expect": "hour ~ 23 +- 0.01" },
     "asr.give 22 ammo=120 expect=\"weapon == 22\"",
     { "label": "an Elegy in front of CJ", "cmd": "asr.spawn", "model": 562, "expect": ["distance < 600", "health > 0", "driven == false"] },

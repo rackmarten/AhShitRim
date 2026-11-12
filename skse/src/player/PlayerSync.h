@@ -31,7 +31,8 @@ namespace AhShitRim::PlayerSync
     void Snapshot(Cosave::Record& a_out);
 
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
-    bool DebugOwned();
+    bool          DebugOwned();
+    std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
     void DebugToggle();
     void DebugType(const char* a_code);
 

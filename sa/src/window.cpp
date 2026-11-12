@@ -279,7 +279,9 @@ namespace AhShitRim::Window
         g_showWindow = reinterpret_cast<ShowWindowFn>(PatchImport("user32.dll", "ShowWindow", reinterpret_cast<void*>(&ShowWindowHook)));
         PatchImport("user32.dll", "SetCursorPos", reinterpret_cast<void*>(&SetCursorPosHook));
         if (!g_direct3DCreate9 || !g_showWindow) {
-            Log("window: could not patch San Andreas's window; it will start fullscreen");
+            // A fullscreen device needs its window in front: the hooks below would get in its way.
+            Log("window: could not patch San Andreas's window; it will start fullscreen, and may take the focus");
+            return;
         }
         // Each hook only runs where its import was patched (PatchImport logs the ones the exe doesn't import).
         Patch(g_setFocus, "SetFocus", &SetFocusHook);
