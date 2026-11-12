@@ -31,7 +31,8 @@ namespace AhShitRim::PlayerSync
     void Snapshot(Cosave::Record& a_out);
 
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
-    bool DebugOwned();
+    bool          DebugOwned();
+    std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
     void DebugToggle();
     void DebugType(const char* a_code);
 
@@ -41,4 +42,8 @@ namespace AhShitRim::PlayerSync
     // The hit test (debug, v31): San Andreas takes the player (again, if it had it), with CJ in a new vehicle of model a_model
     // where it stands.
     void TakeOverInVehicle(std::uint16_t a_model);
+
+    // The test kit (debug): asks San Andreas for a vehicle of model a_model in front of CJ, as typing its name does. Why
+    // it can't, or nothing.
+    std::string DebugSpawn(std::uint16_t a_model);
 }

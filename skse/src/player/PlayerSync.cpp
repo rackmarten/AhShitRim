@@ -1544,6 +1544,8 @@ namespace AhShitRim::PlayerSync
 
     bool DebugOwned() { return state.owned; }
 
+    std::uint32_t DebugHandover() { return state.handover; }
+
     void DebugToggle()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1591,6 +1593,14 @@ namespace AhShitRim::PlayerSync
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
         WorldPickups::Restore(a_record.pickupsTaken);
+    }
+
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        if (!state.owned) {
+            return "San Andreas doesn't have the player";
+        }
+        return CheatSpawn(a_model, false);
     }
 
     void TakeOverInVehicle(std::uint16_t a_model)

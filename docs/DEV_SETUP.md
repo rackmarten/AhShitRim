@@ -160,14 +160,30 @@ never need it). To use it:
    Andreas (`[Test] CJ=1`) and returns once CJ has it, about 20 s after the command. `-Start save:<name>` (or
    `save:latest`, `cow:<worldspace> <x> <y>`, `newgame`, `menu`) starts elsewhere, `-NoPartner` leaves San Andreas
    out, `-Set CJ=0` keeps the player in Skyrim, `-Lean` renders one frame in 30.
-5. Work with it running (restart only after a new build); `scripts/skytest.ps1 status` shows its state,
-   `scripts/skytest.ps1 stop` closes both games and releases the lock.
+5. Work with it running: `scripts/skytest.ps1 session` does the start once per build and reuses the session after
+   that, until `skytest.psd1`'s `Build` files (the SKSE plugin and the ASI) change. `scripts/skytest.ps1 status` shows
+   its state, `scripts/skytest.ps1 stop` closes both games and releases the lock.
+6. Drive it with commands, each answered in a frame (about 16 ms): `scripts/skytest.ps1 cmd <command>` prints the
+   answer as one line of JSON, `scripts/skytest.ps1 run scenarios/<file>.json` runs a file of steps and checks and
+   writes `out/<time>-<name>/results.csv`. The kit's own commands (`state`, `node`, `console`, `wait`, `time`,
+   `weather`, `pause`, `step`, ...) are in its `docs/COMMANDS.md`. AhShitRim adds (`skse/src/debug/TestKit.cpp`):
+
+   | Command | What it does | Example |
+   |---|---|---|
+   | `asr.cj [on]` | hands the player to San Andreas (or back, `on=false`) as F10 does; answers once done | `asr.cj` |
+   | `asr.spawn <model> [in=<bool>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one); answers with its slot and offset from the player | `asr.spawn 562` |
+   | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
+   | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
+   | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
+
+   `scenarios/test-kit-smoke.json` runs them all with checks.
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
 `SkyrimPrefs.ini` and `AhShitRim.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a
 test session's runs (someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
-San Andreas still takes the foreground while it runs (minimized), as `launch-sa.ps1` starts it; Skyrim never does.
+Neither game takes the foreground: San Andreas's window is created hidden and never activated (`sa/src/window.cpp`),
+as Skyrim's is.
 `restart-games.ps1`, `hit-test.ps1` and `load-test.ps1` don't take the games lock: don't run them while a test session
 holds it.
 
