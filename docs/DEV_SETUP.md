@@ -140,6 +140,40 @@ A crash, a hang or Skyrim gone is recorded with its cycle, the games are started
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
 `-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
 
+### Test sessions
+
+`scripts/skytest.ps1` starts Skyrim hidden and never focused, straight into a test state, with San Andreas beside it,
+so an agent (or you) can check a change without Skyrim taking over the desktop. It comes from
+[skse-test-kit](https://github.com/rackmarten/skse-test-kit), a submodule at `skse/extern/skse-test-kit` that clones
+never fetch by themselves (`update = none` in `.gitmodules`; the kit is private for now, so CI and the release build
+never need it). To use it:
+
+1. Fetch the kit: `git submodule update --init --checkout skse/extern/skse-test-kit`.
+2. In `local.props`, `GamesLock` names the folder every session on this machine locks the games with (see
+   `local.props.example`). Without it the kit uses its own default under `%LOCALAPPDATA%`, which other test sessions
+   share but scripts that lock the games another way don't.
+3. `scripts/build.ps1`: with the submodule there, the SKSE plugin links the kit (the CMake option
+   `AHSHITRIM_TEST_KIT`, `-NoTestKit` to leave it out). The kit does nothing unless `AhShitRim.ini` has a `[Test]`
+   section, which only `skytest` writes, and takes out again as soon as Skyrim has read it.
+4. `scripts/skytest.ps1 start`: takes the games lock, deploys (`scripts/deploy-local.ps1`), starts San Andreas hidden
+   (`scripts/launch-sa.ps1`) and Skyrim hidden into `coc:Riverwood` with a new character, hands the player to San
+   Andreas (`[Test] CJ=1`) and returns once CJ has it, about 20 s after the command. `-Start save:<name>` (or
+   `save:latest`, `cow:<worldspace> <x> <y>`, `newgame`, `menu`) starts elsewhere, `-NoPartner` leaves San Andreas
+   out, `-Set CJ=0` keeps the player in Skyrim, `-Lean` renders one frame in 30.
+5. Work with it running (restart only after a new build); `scripts/skytest.ps1 status` shows its state,
+   `scripts/skytest.ps1 stop` closes both games and releases the lock.
+
+The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
+in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
+`SkyrimPrefs.ini` and `AhShitRim.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a
+test session's runs (someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
+San Andreas still takes the foreground while it runs (minimized), as `launch-sa.ps1` starts it; Skyrim never does.
+`restart-games.ps1`, `hit-test.ps1` and `load-test.ps1` don't take the games lock: don't run them while a test session
+holds it.
+
+A release never carries the kit: CI never fetches the submodule, and `scripts/package.ps1` builds the SKSE plugin
+again with `-NoTestKit` and refuses a DLL that still has the kit's strings in it.
+
 ### Testing on Skyrim Special Edition 1.5.97
 
 The same `AhShitRim.dll` loads on SE 1.5.97 and AE (CommonLibSSE-NG picks each address for the running game; see [Skyrim SE and AE](#skyrim-se-and-ae)), so there is no separate SE build. Test SE on a second copy of the game so the AE install stays as it is. A copy set up for PerkeleRim's SE test works as it is.
