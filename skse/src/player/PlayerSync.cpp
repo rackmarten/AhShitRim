@@ -86,6 +86,13 @@ namespace AhShitRim::PlayerSync
             Input::Builder input;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            struct Drawn
+            {
+                bool         on = false;
+                RE::NiPoint3 position;
+                float        heading = 0.0f;
+            };
+            Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
@@ -328,6 +335,9 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
+            }
             state.gear.Reset();
         }
 
@@ -463,6 +473,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehiclesDrawn[i].on = false;
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         continue;
@@ -475,6 +486,11 @@ namespace AhShitRim::PlayerSync
                 if (state.vehicles[i].Sample(now, pose)) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     ModelView::Show(pose, feet);
+                    // Its heading from its frame (X right, Y forward, Z up): the turned Y axis, by the quaternion.
+                    const float* q = pose.vehicleFrame.rotation;
+                    const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
+                    const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY) };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
@@ -482,6 +498,8 @@ namespace AhShitRim::PlayerSync
                         drivenFeet = feet;
                         anyDriven = true;
                     }
+                } else {
+                    state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
@@ -626,6 +644,9 @@ namespace AhShitRim::PlayerSync
             }
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
+            }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
             }
             state.gear.Reset();
             VehicleFx::Clear();
@@ -1545,6 +1566,16 @@ namespace AhShitRim::PlayerSync
     bool DebugOwned() { return state.owned; }
 
     std::uint32_t DebugHandover() { return state.handover; }
+
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading)
+    {
+        if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
+            return false;
+        }
+        a_position = state.vehiclesDrawn[a_slot].position;
+        a_heading = state.vehiclesDrawn[a_slot].heading;
+        return true;
+    }
 
     void DebugToggle()
     {

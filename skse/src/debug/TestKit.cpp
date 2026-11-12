@@ -2,6 +2,7 @@
 #include "debug/TestKit.h"
 
 #include "Ini.h"
+#include "hud/Overlay.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
 #include "player/PlayerSync.h"
@@ -11,6 +12,8 @@
 #include <skse_test_kit/Kit.h>
 
 #include <array>
+#include <charconv>
+#include <optional>
 
 namespace AhShitRim::TestKit
 {
@@ -25,6 +28,7 @@ namespace AhShitRim::TestKit
 
         bool g_cj = false;
         int  g_wait = 0;  // frames until the next try at the handover
+        std::optional<std::uint32_t> g_spawned;  // the slot asr.spawn found last, for the asr.vehicle target
 
         void Arrived(const SkseTestKit::Settings& a_settings)
         {
@@ -185,6 +189,7 @@ namespace AhShitRim::TestKit
                             return std::nullopt;
                         }
                         const auto& vehicle = *slots[*found];
+                        g_spawned = *found;
                         // Both relative to the handover's anchor: the difference is the vehicle from CJ, whom the player follows.
                         const float offset[3] = { vehicle.feet[0] - pose.offset[0], vehicle.feet[1] - pose.offset[1], vehicle.feet[2] - pose.offset[2] };
                         return JsonObject{ { "model", model }, { "label", VehicleKinds::Label(model) }, { "slot", *found },
@@ -246,6 +251,46 @@ namespace AhShitRim::TestKit
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
 
+            // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
+            // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit
+            // can't find them or their heading itself.
+            SkseTestKit::AddTarget("asr.vehicle", "[slot|driven|last]",
+                "A San Andreas vehicle where it's drawn, facing its way: a slot (asr.spawn answers it), the one CJ drives, or (the default) "
+                "the one asr.spawn made last",
+                [](std::string_view a_which) -> SkseTestKit::Place {
+                    std::optional<std::uint32_t> slot;
+                    if (a_which.empty() || a_which == "last") {
+                        if (!g_spawned) {
+                            throw Error("asr.spawn hasn't made a vehicle yet: name a slot");
+                        }
+                        slot = g_spawned;
+                    } else if (a_which == "driven") {
+                        for (std::uint32_t i = 0; i < Protocol::kVehicleMax && !slot; i++) {
+                            Protocol::BodyState vehicle{};
+                            if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                                vehicle.handover == PlayerSync::DebugHandover()) {
+                                slot = i;
+                            }
+                        }
+                        if (!slot) {
+                            throw Error("CJ isn't driving");
+                        }
+                    } else {
+                        std::uint32_t number = 0;
+                        const auto [end, error] = std::from_chars(a_which.data(), a_which.data() + a_which.size(), number);
+                        if (error != std::errc{} || end != a_which.data() + a_which.size() || number >= Protocol::kVehicleMax) {
+                            throw Error(std::format("asr.vehicle takes a slot from 0 to {}, driven or last", Protocol::kVehicleMax - 1));
+                        }
+                        slot = number;
+                    }
+                    RE::NiPoint3 position;
+                    float        heading = 0.0f;
+                    if (!PlayerSync::DebugVehicle(*slot, position, heading)) {
+                        throw Error(std::format("vehicle slot {} isn't drawn (asr.cj and asr.spawn first)", *slot));
+                    }
+                    return SkseTestKit::Place{ position.x, position.y, position.z, heading };
+                });
+
             // A scenario: a row a frame, for skytest run's CSV.
             SkseTestKit::AddScenario("asr.track", "[frames]",
                 "Records CJ for frames frames (default 60), a row a frame: where San Andreas has him from the handover's anchor, and his vehicle",
@@ -274,7 +319,9 @@ namespace AhShitRim::TestKit
 
     void Load()
     {
-        if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = { .arrived = &Arrived, .ready = &CjReady } })) {
+        // Shots without the HUD hide San Andreas's too (Overlay draws it in Present, before the kit's capture).
+        const SkseTestKit::Hooks hooks{ .arrived = &Arrived, .ready = &CjReady, .hud = [](bool a_visible) { Overlay::SetHidden(!a_visible); } };
+        if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = hooks })) {
             AddCommands();
         }
     }
