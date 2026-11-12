@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- For developers: test sessions (`scripts/skytest.ps1`, docs/DEV_SETUP.md "Test sessions"). Skyrim starts hidden and never focused, straight into Riverwood with CJ there or into a save, with San Andreas beside it, in about 20 s, through the skse-test-kit submodule. Dev builds only: a release never has it.
+
 ## [0.1.1] - 2026-10-26
 
 The first patch: crime works like San Andreas's now (one wanted level for all of Skyrim, stars instead of bounties, nobody holds a grudge), plus the fixes from recording the 0.1.0 montage and from the first bug report.
