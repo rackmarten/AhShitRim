@@ -498,6 +498,8 @@ namespace AhShitRim::PlayerSync
                         drivenFeet = feet;
                         anyDriven = true;
                     }
+                } else {
+                    state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
