@@ -55,8 +55,12 @@ if(AHSHITRIM_TEST_KIT)
     endif()
 endif()
 if(AHSHITRIM_WITH_TEST_KIT)
+    # Only TestKit.cpp sees the kit's headers and the library file is linked as it is (CommonLib is already linked),
+    # so turning the option on or off rebuilds that file and the link, not every source.
     target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKit.cpp)
-    target_link_libraries(${PROJECT_NAME} PRIVATE skse_test_kit::skse_test_kit)
+    set_source_files_properties(src/debug/TestKit.cpp PROPERTIES INCLUDE_DIRECTORIES "${AHSHITRIM_TEST_KIT_DIR}/include")
+    add_dependencies(${PROJECT_NAME} skse_test_kit)
+    target_link_libraries(${PROJECT_NAME} PRIVATE "$<TARGET_FILE:skse_test_kit>")
     message(STATUS "AhShitRim: with skse-test-kit (${AHSHITRIM_TEST_KIT_DIR})")
 else()
     target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKitOff.cpp)
