@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - For developers: test sessions (`scripts/skytest.ps1`, docs/DEV_SETUP.md "Test sessions"). Skyrim starts hidden and never focused, straight into Riverwood with CJ there or into a save, with San Andreas beside it, in about 20 s, through the skse-test-kit submodule. Dev builds only: a release never has it.
+- For developers: a test session takes commands while it runs (`scripts/skytest.ps1 session`, `cmd`, `run`): the kit's (state, console, wait, pause, exact steps...) and AhShitRim's `asr.cj`, `asr.spawn`, `asr.give`, `asr.night` and the `asr.track` scenario. `scenarios/test-kit-smoke.json` checks them.
+
+### Fixed
+
+- San Andreas no longer takes the foreground when it starts: its window is created hidden and never activated, and it no longer turns off Windows' foreground lock for the whole desktop.
 
 ## [0.1.1] - 2026-10-26
 
