@@ -33,6 +33,9 @@ namespace AhShitRim::PlayerSync
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
+    // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units) and its heading (radians, Skyrim's:
+    // 0 north, clockwise). False when San Andreas hasn't the player or the slot draws nothing.
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading);
     void DebugToggle();
     void DebugType(const char* a_code);
 
