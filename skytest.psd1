@@ -5,6 +5,8 @@
     Ini     = 'Data/SKSE/Plugins/AhShitRim.ini'
     # Copies what scripts/build.ps1 built last (both plugins); skytest starts nothing until it's done.
     Deploy  = @{ Script = 'scripts/deploy-local.ps1' }
+    # What a build changes: skytest session starts again when these differ from the running session's.
+    Build   = @('skse/build/release/AhShitRim.dll', 'sa/build/Release/AhShitRim.asi')
     # San Andreas, hidden as scripts/restart-games.ps1 starts it, beside Skyrim. CJ=1 only while it runs: the session
     # is ready once San Andreas has the player.
     Partner = @{ Script = 'scripts/launch-sa.ps1'; Processes = @('gta_sa'); Test = @{ CJ = '1' } }

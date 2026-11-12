@@ -1593,6 +1593,14 @@ namespace AhShitRim::PlayerSync
         WorldPickups::Restore(a_record.pickupsTaken);
     }
 
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        if (!state.owned) {
+            return "San Andreas doesn't have the player";
+        }
+        return CheatSpawn(a_model, false);
+    }
+
     void TakeOverInVehicle(std::uint16_t a_model)
     {
         auto* player = RE::PlayerCharacter::GetSingleton();

@@ -3,14 +3,25 @@
 
 #include "Ini.h"
 #include "link/LinkService.h"
+#include "player/Arms.h"
 #include "player/PlayerSync.h"
+#include "vehicle_kinds.h"
 
 #include <skse_test_kit/Kit.h>
+
+#include <array>
 
 namespace AhShitRim::TestKit
 {
     namespace
     {
+        using SkseTestKit::Call;
+        using SkseTestKit::Error;
+        using SkseTestKit::Json;
+        using SkseTestKit::JsonArray;
+        using SkseTestKit::JsonObject;
+        using SkseTestKit::Step;
+
         bool g_cj = false;
         int  g_wait = 0;  // frames until the next try at the handover
 
@@ -38,11 +49,181 @@ namespace AhShitRim::TestKit
             }
             return PlayerSync::DebugOwned();
         }
+
+        Json Point(const float (&a_point)[3])
+        {
+            return JsonObject{ { "x", a_point[0] }, { "y", a_point[1] }, { "z", a_point[2] } };
+        }
+
+        // What each vehicle slot holds: its streamed model (BodyState.model, not San Andreas's model id), 0 when empty.
+        using Slots = std::array<std::uint32_t, Protocol::kVehicleMax>;
+
+        Slots ReadSlots()
+        {
+            Slots slots{};
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid)) {
+                    slots[i] = vehicle.model;
+                }
+            }
+            return slots;
+        }
+
+        void RequireCj()
+        {
+            if (!PlayerSync::DebugOwned()) {
+                throw Error("San Andreas doesn't have the player: asr.cj first");
+            }
+        }
+
+        // AhShitRim's commands on the kit's command pipe (docs/DEV_SETUP.md, "Test sessions").
+        void AddCommands()
+        {
+            SkseTestKit::AddTask("asr.cj", "[on]",
+                "Hands the player to San Andreas (on=true, the default) or back to Skyrim, as F10 does; answers once it's done",
+                [](Call& a_call) -> Step {
+                    const bool want = a_call.Flag("on", true);
+                    auto       wait = std::make_shared<int>(0);
+                    return [want, wait](Call&) -> std::optional<Json> {
+                        if (PlayerSync::DebugOwned() == want) {
+                            return JsonObject{ { "cj", want } };
+                        }
+                        if ((*wait)-- > 0) {
+                            return std::nullopt;
+                        }
+                        *wait = 120;  // a handover takes a moment: again in 2 s
+                        if (!want || LinkService::Get().IsUp()) {
+                            PlayerSync::DebugToggle();
+                        }
+                        return PlayerSync::DebugOwned() == want ? std::optional<Json>(JsonObject{ { "cj", want } }) : std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>]",
+                "Spawns a San Andreas vehicle by model id (400 to 611) where San Andreas puts a cheat's vehicle, in front of CJ; in=true puts CJ "
+                "in a new one where he stands. Answers with its slot and where it is from the player",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double number = a_call.Number("model");
+                    if (number < 0 || number > 65535 || number != std::floor(number)) {
+                        throw Error("model is a San Andreas model id");
+                    }
+                    const auto model = static_cast<std::uint16_t>(number);
+                    if (!VehicleKinds::Spawnable(model)) {
+                        throw Error(std::format("{} can't spawn: {}", VehicleKinds::Label(model), VehicleKinds::TraitsOf(VehicleKinds::KindOf(model)).refusal));
+                    }
+                    const auto before = ReadSlots();
+                    const bool in = a_call.Flag("in", false);
+                    if (in) {
+                        PlayerSync::TakeOverInVehicle(model);
+                    } else if (const auto refusal = PlayerSync::DebugSpawn(model); !refusal.empty()) {
+                        throw Error(refusal);
+                    }
+                    a_call.DefaultTimeout(20.0);
+                    return [model, before, in](Call&) -> std::optional<Json> {
+                        Protocol::PlayerState pose{};
+                        if (!LinkService::Get().ReadPlayer(pose)) {
+                            return std::nullopt;
+                        }
+                        // in=true: CJ sits in one of that model (a new handover, so the slots start over); else a slot
+                        // that's new, or holds another model than before.
+                        if (in && (!(pose.flags & Protocol::kPlayerInVehicle) || pose.vehicleModel != model)) {
+                            return std::nullopt;
+                        }
+                        const auto now = ReadSlots();
+                        for (std::uint32_t slot = 0; slot < Protocol::kVehicleMax; slot++) {
+                            Protocol::BodyState vehicle{};
+                            if (!now[slot] || !LinkService::Get().ReadVehicle(slot, vehicle)) {
+                                continue;
+                            }
+                            const bool driven = (vehicle.flags & Protocol::kBodyDriven) != 0;
+                            if (in ? !driven : now[slot] == before[slot]) {
+                                continue;
+                            }
+                            // Both relative to the handover's anchor: the difference is the vehicle from CJ, whom the player follows.
+                            const float offset[3] = { vehicle.feet[0] - pose.offset[0], vehicle.feet[1] - pose.offset[1], vehicle.feet[2] - pose.offset[2] };
+                            return JsonObject{ { "model", model }, { "label", VehicleKinds::Label(model) }, { "slot", slot }, { "driven", driven },
+                                { "offset", Point(offset) }, { "distance", std::sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]) },
+                                { "health", vehicle.health } };
+                        }
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.give", "<weapon> [ammo=<n>]",
+                "Gives CJ a weapon by San Andreas's weapon type (22 pistol, 25 shotgun, 31 M4...) with ammo rounds (default 500); answers with "
+                "his loadout once San Andreas has it",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double number = a_call.Number("weapon");
+                    if (number < 1 || number > 46 || number != std::floor(number)) {
+                        throw Error("weapon is a San Andreas weapon type, 1 to 46");
+                    }
+                    const auto type = static_cast<std::uint8_t>(number);
+                    Arms::Give(type, static_cast<std::uint32_t>((std::max)(0.0, a_call.Number("ammo", 500.0))));
+                    a_call.DefaultTimeout(10.0);
+                    return [type](Call&) -> std::optional<Json> {
+                        JsonArray loadout;
+                        bool      has = false;
+                        for (const auto& entry : Arms::Loadout()) {
+                            if (entry.type == 0) {
+                                continue;
+                            }
+                            has = has || entry.type == type;
+                            loadout.emplace_back(JsonObject{ { "type", entry.type }, { "clip", entry.clip }, { "ammo", entry.ammo } });
+                        }
+                        if (!has) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "weapon", type }, { "loadout", std::move(loadout) } };
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.night", "[hour]", "Sets the game's hour (default 23, night for the lights and the HUD clock)", [](Call& a_call) -> Json {
+                const double hour = a_call.Number("hour", 23.0);
+                if (hour < 0.0 || hour >= 24.0) {
+                    throw Error("hour is 0 to 24");
+                }
+                auto* calendar = RE::Calendar::GetSingleton();
+                if (!calendar || !calendar->gameHour) {
+                    throw Error("no calendar yet");
+                }
+                calendar->gameHour->value = static_cast<float>(hour);
+                return JsonObject{ { "hour", calendar->GetHour() } };
+            });
+
+            // A scenario: a row a frame, for skytest run's CSV.
+            SkseTestKit::AddScenario("asr.track", "[frames]",
+                "Records CJ for frames frames (default 60), a row a frame: where San Andreas has him from the handover's anchor, and his vehicle",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double frames = a_call.Number("frames", 60.0);
+                    if (frames < 1.0 || frames > 36000.0) {
+                        throw Error("frames is 1 to 36000");
+                    }
+                    a_call.DefaultTimeout(frames / 30.0 + 30.0);
+                    return [count = static_cast<std::uint64_t>(frames)](Call& a_call) -> std::optional<Json> {
+                        Protocol::PlayerState pose{};
+                        if (LinkService::Get().ReadPlayer(pose)) {
+                            const bool inVehicle = (pose.flags & Protocol::kPlayerInVehicle) != 0;
+                            a_call.Row(JsonObject{ { "frame", a_call.Frames() }, { "saFrame", pose.frame }, { "cj", Point(pose.offset) },
+                                { "inVehicle", inVehicle }, { "vehicleModel", inVehicle ? Json(pose.vehicleModel) : Json() } });
+                        }
+                        if (a_call.Frames() + 1 < count) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "frames", count } };
+                    };
+                });
+        }
     }
 
     void Load()
     {
-        SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = { .arrived = &Arrived, .ready = &CjReady } });
+        if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = { .arrived = &Arrived, .ready = &CjReady } })) {
+            AddCommands();
+        }
     }
 
     void OnMessage(SKSE::MessagingInterface::Message* a_message)
