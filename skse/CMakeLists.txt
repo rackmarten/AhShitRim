@@ -37,3 +37,27 @@ set_source_files_properties(../protocol/cpp/link.cpp PROPERTIES SKIP_PRECOMPILE_
 set_source_files_properties(src/hud/Overlay.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 # And the display request, which needs <Windows.h> for its power API.
 set_source_files_properties(src/power/KeepAwake.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+# skse-test-kit (docs/DEV_SETUP.md, "Test sessions"): agent-driven test sessions, in dev builds only. scripts/build.ps1
+# turns it on when the submodule is there; CI and scripts/package.ps1 leave it off, so a release DLL never has it. The
+# submodule is never fetched by a plain or recursive clone (update = none in .gitmodules); without it a dev build
+# goes on without the kit and says so.
+option(AHSHITRIM_TEST_KIT "Link skse-test-kit for test sessions (dev builds only)" OFF)
+set(AHSHITRIM_TEST_KIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/skse-test-kit" CACHE PATH "The skse-test-kit checkout")
+set(AHSHITRIM_WITH_TEST_KIT OFF)
+if(AHSHITRIM_TEST_KIT)
+    if(EXISTS "${AHSHITRIM_TEST_KIT_DIR}/CMakeLists.txt")
+        add_subdirectory("${AHSHITRIM_TEST_KIT_DIR}" skse-test-kit)
+        set(AHSHITRIM_WITH_TEST_KIT ON)
+    else()
+        message(WARNING "AHSHITRIM_TEST_KIT is on, but ${AHSHITRIM_TEST_KIT_DIR} is empty: building without the test kit. "
+            "Fetch it with: git submodule update --init --checkout skse/extern/skse-test-kit")
+    endif()
+endif()
+if(AHSHITRIM_WITH_TEST_KIT)
+    target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKit.cpp)
+    target_link_libraries(${PROJECT_NAME} PRIVATE skse_test_kit::skse_test_kit)
+    message(STATUS "AhShitRim: with skse-test-kit (${AHSHITRIM_TEST_KIT_DIR})")
+else()
+    target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKitOff.cpp)
+endif()
