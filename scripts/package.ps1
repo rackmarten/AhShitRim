@@ -9,8 +9,8 @@
         install.ps1, wizard.ps1) and INSTALL.md
       - radar_map.exe, which the launcher runs to paint the radar's map from the player's own plugins
     Run scripts/build.ps1 first; this builds radar_map itself (the tools preset), and the SKSE plugin once more without
-    skse-test-kit (-NoTestKit; only that part rebuilds), then checks the DLL has none of it. The zip's version is the SKSE
-    plugin's (skse/CMakeLists.txt).
+    skse-test-kit (-NoTestKit; only that part rebuilds), checks the DLL has none of it, and afterwards builds it with the
+    kit again when the submodule is there. The zip's version is the SKSE plugin's (skse/CMakeLists.txt).
 .EXAMPLE
     scripts/package.ps1
 #>
@@ -84,3 +84,6 @@ Add-File (Join-Path $RepoRoot 'docs/INSTALL.md') $stage '.'
 
 New-Zip $stage $zip $true
 Write-Host "Packaged $zip"
+# The dev build back, with the kit when it's checked out (only TestKit.cpp and the link rebuild), so the next deploy
+# isn't the release build.
+if (Test-Path (Join-Path $RepoRoot 'skse/extern/skse-test-kit/CMakeLists.txt')) { & "$PSScriptRoot/build.ps1" -Target skse }

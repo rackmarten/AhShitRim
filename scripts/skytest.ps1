@@ -15,4 +15,4 @@ $kit = Join-Path (Split-Path -Parent $PSScriptRoot) 'skse/extern/skse-test-kit/s
 if (-not (Test-Path $kit)) {
     throw 'skse-test-kit is not checked out: git submodule update --init --checkout skse/extern/skse-test-kit (then scripts/build.ps1).'
 }
-& $kit -Mod (Split-Path -Parent $PSScriptRoot) @args
+if ($args -contains '-Mod') { & $kit @args } else { & $kit -Mod (Split-Path -Parent $PSScriptRoot) @args }
