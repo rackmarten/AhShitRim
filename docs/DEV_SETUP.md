@@ -177,6 +177,15 @@ never need it). To use it:
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
 
    `scenarios/test-kit-smoke.json` runs them all with checks.
+7. Look at it: `scripts/skytest.ps1 cmd screenshot` saves the frame as a PNG (Skyrim stays minimized), and
+   `scripts/skytest.ps1 shot <name> -Camera '<camera>' -Scene '<presets>'` from a shot camera in a scene, both into
+   `out/shots/`; the kit's `docs/COMMANDS.md` ("Screenshots") has the cameras and scenes. San Andreas's vehicles aren't
+   Skyrim references, so AhShitRim gives the cameras a target for them, `asr.vehicle:` (the one `asr.spawn` made
+   last; `asr.vehicle:<slot>` one slot, `asr.vehicle:driven` CJ's), facing the vehicle's way:
+   `-Camera 'orbit asr.vehicle: yaw=90 distance=550'` looks at its left side. Shots hide San Andreas's HUD with
+   Skyrim's unless `-Hud`. Named shot sets are in `shots/`: `scripts/skytest.ps1 shots` lists them,
+   `scripts/skytest.ps1 shots zr350` (a ZR-350 by day and at night, from behind, beside and above) writes
+   `out/shots/zr350/`.
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
