@@ -39,7 +39,8 @@ $config = Get-SkytestConfig $root
 if ($Dll) {
     if ($Keep) { throw '-Keep leaves the session running, and with -Dll it would run the other build as if it were this checkout''s: drop one.' }
     $Dll = (Resolve-Path $Dll).Path
-    # The session's own deploy (it keeps the games' files for the undeploy), with the other build.
+    # The session's own deploy (it keeps the games' files for the undeploy), with the other build: its named arguments.
+    if ($config.Deploy['Arguments'] -isnot [System.Collections.IDictionary]) { throw "-Dll needs skytest.psd1's Deploy Arguments as a hashtable (named), as test-deploy.ps1 takes them." }
     $config.Deploy = @{ Script = $config.Deploy['Script']; Arguments = @{} + $config.Deploy['Arguments'] + @{ SkseDll = $Dll } }
 }
 $folder = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\AhShitRim'

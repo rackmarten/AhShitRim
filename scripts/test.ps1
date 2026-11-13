@@ -37,7 +37,7 @@ if (Get-Module -ListAvailable Pester | Where-Object { $_.Version -ge [version] '
     $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     if ($PSVersionTable.PSEdition -eq 'Core' -and (Test-Path $windowsPowerShell)) {
         $pesterPath = (Get-Module Pester).Path
-        $paths = ($pester.Run.Path.Value | ForEach-Object { "'$_'" }) -join ', '
+        $paths = ($pester.Run.Path.Value | ForEach-Object { "'$($_ -replace "'", "''")'" }) -join ', '
         $command = "Import-Module '$pesterPath'; `$c = New-PesterConfiguration; `$c.Run.Path = @($paths); `$c.Run.Exit = `$true; `$c.Output.Verbosity = 'Normal'; Invoke-Pester -Configuration `$c"
         $modulePath = $env:PSModulePath
         try { $env:PSModulePath = $null; & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $command }

@@ -85,13 +85,19 @@ function Save-DeployStamps([string] $Store, [string[]] $Skip = @()) {
     [IO.File]::WriteAllText((Join-Path $Store 'deployed.json'), (ConvertTo-Json -InputObject $stamps), (New-Object Text.UTF8Encoding $false))
 }
 
-# The kept paths whose file isn't what the session's deploy wrote there.
+# The kept paths whose file is neither what the session's deploy wrote there nor already what a restore puts back (a
+# restore that stopped halfway, a file still locked, may go on).
 function Get-ChangedSinceDeploy([string] $Store) {
     $file = Join-Path $Store 'deployed.json'
     if (-not (Test-Path -LiteralPath $file)) { return @() }
     $stamps = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
+    $list = @(Read-SessionList $Store)
     foreach ($property in $stamps.PSObject.Properties) {
-        if ((Get-FileStamp $property.Name) -ne $property.Value) { $property.Name }
+        $now = Get-FileStamp $property.Name
+        if ($now -eq $property.Value) { continue }
+        $entry = @($list | Where-Object { $_.path -eq $property.Name }) | Select-Object -First 1
+        $restored = if (-not $entry) { $false } elseif ($entry.absent) { $now -eq '' } else { $now -eq (Get-FileStamp (Join-Path $Store $entry.copy)) }
+        if (-not $restored) { $property.Name }
     }
 }
 

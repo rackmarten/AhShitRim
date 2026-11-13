@@ -54,6 +54,20 @@ Describe 'Save-SessionFiles and Restore-SessionFiles' {
         [IO.File]::ReadAllText($ours) | Should -Be 'the player''s own'
     }
 
+    It 'goes on with a restore that stopped halfway' {
+        Save-SessionFiles $store -Keep @($ours, $absent) | Should -BeTrue
+        [IO.File]::WriteAllText($ours, 'the test build')
+        [IO.File]::WriteAllText($absent, 'symbols')
+        Save-DeployStamps $store
+        # The first try put ours back and deleted the other before a locked file stopped it.
+        [IO.File]::WriteAllText($ours, 'the player''s own')
+        Remove-Item $absent
+        @(Get-ChangedSinceDeploy $store).Count | Should -Be 0
+        [void] (Restore-SessionFiles $store)
+        [IO.File]::ReadAllText($ours) | Should -Be 'the player''s own'
+        Test-Path $store | Should -BeFalse
+    }
+
     It 'refuses to go on when a file it set aside is back' {
         Save-SessionFiles $store -Keep @($ours) -Move @($other) | Should -BeTrue
         [IO.File]::WriteAllText($other, 'put back by someone')

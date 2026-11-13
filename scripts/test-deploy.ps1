@@ -44,7 +44,8 @@ $ours = @(
     # dropping keys it doesn't know); the player's own comes back from here.
     (Join-Path $plugins 'AhShitRim.ini'),
     (Join-Path $sa 'scripts\AhShitRim.asi'),
-    (Join-Path $sa 'scripts\AhShitRim.pdb')) + $(if ($tracks) { @($tracks) + (Join-Path $station 'CREDITS.md') })
+    (Join-Path $sa 'scripts\AhShitRim.pdb'))
+if ($tracks) { $ours += @($tracks) + (Join-Path $station 'CREDITS.md') }
 $others = @($Aside | Where-Object { $_ } | ForEach-Object { (Join-Path $plugins "$_.dll"), (Join-Path $plugins "$_.pdb") })
 
 switch ($Mode) {
