@@ -50,8 +50,12 @@ function Save-SessionFiles([string] $Store, [string[]] $Keep = @(), [string[]] $
         $moved = @($Move) -contains $path
         $entry = @($list | Where-Object { $_.path -eq $path }) | Select-Object -First 1
         if ($entry) {
-            # Set aside before, and there again: someone put it back meanwhile, so the kept copy may be older.
-            if ($moved -and (Test-Path -LiteralPath $path)) { throw "$path was set aside by this test session and is back: look at it, then scripts/test-deploy.ps1 restore or forget." }
+            # Set aside before, and there again: its delete failed (a game still had it), or someone put it back meanwhile,
+            # so the kept copy may be older.
+            if ($moved -and (Test-Path -LiteralPath $path)) {
+                if ((Get-FileStamp $path) -eq (Get-FileStamp (Join-Path $Store $entry.copy))) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop; continue }
+                throw "$path was set aside by this test session and is back: look at it, then scripts/test-deploy.ps1 restore or forget."
+            }
             continue
         }
         if ($moved -and -not (Test-Path -LiteralPath $path)) { continue }  # not there: nothing to set aside
@@ -60,19 +64,27 @@ function Save-SessionFiles([string] $Store, [string[]] $Keep = @(), [string[]] $
             $entry.copy = "{0:D2}-{1}" -f $n++, (Split-Path -Leaf $path)
             $target = Join-Path $Store $entry.copy
             if ($moved) {
-                Copy-Item -LiteralPath $path $target  # the list names it before the original goes
+                Copy-Item -LiteralPath $path $target -ErrorAction Stop  # the list names it before the original goes
                 $list = @($list) + $entry
                 Write-SessionList $Store $list
-                Remove-Item -LiteralPath $path -Force
+                Remove-Item -LiteralPath $path -Force -ErrorAction Stop
                 continue
             }
-            Copy-Item -LiteralPath $path $target
+            Copy-Item -LiteralPath $path $target -ErrorAction Stop
         }
         $list = @($list) + $entry
         Write-SessionList $Store $list
     }
     if ($new -and -not @($list).Count) { Write-SessionList $Store @() }
     return $new
+}
+
+# Around the deploy itself: while the marker is there a deploy was started and hasn't finished (a file still locked by
+# a game just closed: the kit tries again), so the games hold a mix of the session's builds and nothing in them is
+# anyone else's; the change checks wait for the deploy that finishes.
+function Set-DeployInFlight([string] $Store, [bool] $On) {
+    $marker = Join-Path $Store 'deploying'
+    if ($On) { [IO.File]::WriteAllText($marker, '') } else { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue }
 }
 
 # After a deploy: what it wrote over the kept paths, so a later deploy or restore can tell whether anyone changed them.
@@ -89,7 +101,7 @@ function Save-DeployStamps([string] $Store, [string[]] $Skip = @()) {
 # restore that stopped halfway, a file still locked, may go on).
 function Get-ChangedSinceDeploy([string] $Store) {
     $file = Join-Path $Store 'deployed.json'
-    if (-not (Test-Path -LiteralPath $file)) { return @() }
+    if (-not (Test-Path -LiteralPath $file) -or (Test-Path -LiteralPath (Join-Path $Store 'deploying'))) { return @() }
     $stamps = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
     $list = @(Read-SessionList $Store)
     foreach ($property in $stamps.PSObject.Properties) {
@@ -114,13 +126,13 @@ function Restore-SessionFiles([string] $Store, [switch] $Force) {
     $done = @()
     foreach ($entry in $list) {
         if ($entry.absent) {
-            if (Test-Path -LiteralPath $entry.path) { Remove-Item -LiteralPath $entry.path -Force; $done += $entry.path }
+            if (Test-Path -LiteralPath $entry.path) { Remove-Item -LiteralPath $entry.path -Force -ErrorAction Stop; $done += $entry.path }
             continue
         }
         $copy = Join-Path $Store $entry.copy
         if (-not (Test-Path -LiteralPath $copy)) { throw "The kept copy of $($entry.path) is missing ($copy): left as it is." }
-        New-Item -ItemType Directory -Force (Split-Path $entry.path) | Out-Null
-        Copy-Item -LiteralPath $copy $entry.path -Force
+        New-Item -ItemType Directory -Force (Split-Path $entry.path) -ErrorAction Stop | Out-Null
+        Copy-Item -LiteralPath $copy $entry.path -Force -ErrorAction Stop
         $done += $entry.path
     }
     $dirsFile = Join-Path $Store 'dirs.json'

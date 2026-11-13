@@ -68,6 +68,27 @@ Describe 'Save-SessionFiles and Restore-SessionFiles' {
         Test-Path $store | Should -BeFalse
     }
 
+    It 'lets a deploy that stopped halfway try again, and restores after it' {
+        Save-SessionFiles $store -Keep @($ours, $absent) | Should -BeTrue
+        [IO.File]::WriteAllText($ours, 'build 1')
+        Save-DeployStamps $store
+        # A restart for build 2: its deploy writes ours, then stops on a locked file.
+        Save-SessionFiles $store -Keep @($ours, $absent) | Should -BeFalse
+        Set-DeployInFlight $store $true
+        [IO.File]::WriteAllText($ours, 'build 2')
+        { Save-SessionFiles $store -Keep @($ours, $absent) } | Should -Not -Throw
+        @(Get-ChangedSinceDeploy $store).Count | Should -Be 0
+        [void] (Restore-SessionFiles $store)
+        [IO.File]::ReadAllText($ours) | Should -Be 'the player''s own'
+    }
+
+    It 'takes away a file it set aside whose delete failed' {
+        Save-SessionFiles $store -Keep @($ours) -Move @($other) | Should -BeTrue
+        [IO.File]::WriteAllText($other, 'another mod')  # the same file, still there: its delete failed
+        Save-SessionFiles $store -Keep @($ours) -Move @($other) | Should -BeFalse
+        Test-Path $other | Should -BeFalse
+    }
+
     It 'refuses to go on when a file it set aside is back' {
         Save-SessionFiles $store -Keep @($ours) -Move @($other) | Should -BeTrue
         [IO.File]::WriteAllText($other, 'put back by someone')

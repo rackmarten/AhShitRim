@@ -50,18 +50,22 @@ $others = @($Aside | Where-Object { $_ } | ForEach-Object { (Join-Path $plugins 
 
 switch ($Mode) {
     'deploy' {
-        if (Save-SessionFiles $store -Keep $ours -Move $others -Dirs @($music, $station)) {
+        if (Save-SessionFiles $store -Keep $ours -Move $others -Dirs @((Split-Path $music), $music, $station)) {
             Write-Host "Kept the games' own files in $store$(if ($others) { "; set aside $(@($Aside) -join ', ')" })."
         } else {
             Write-Host "The games' own files from before this session are still kept in $store."
         }
         $deployArguments = @{}
         if ($SkseDll) { $deployArguments['SkseDll'] = $SkseDll }
+        Set-DeployInFlight $store $true
         & "$PSScriptRoot/deploy-local.ps1" @deployArguments
         Save-DeployStamps $store
+        Set-DeployInFlight $store $false
     }
     { $_ -in 'restore', 'restore-anyway' } {
         $back = Restore-SessionFiles $store -Force:($Mode -eq 'restore-anyway')
+        $parent = Split-Path $store  # %LOCALAPPDATA%\AhShitRim, made for the store: gone again when nothing else is in it
+        if ((Test-Path -LiteralPath $parent) -and -not (Get-ChildItem -LiteralPath $parent -Force | Select-Object -First 1)) { Remove-Item -LiteralPath $parent -Force }
         if ($back) { Write-Host "Put back the games' own files ($(@($back).Count))." } else { Write-Host 'Nothing kept to put back.' }
     }
     'forget' {
