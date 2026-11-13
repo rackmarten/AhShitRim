@@ -336,6 +336,9 @@ namespace AhShitRim::TestKit
                 { "fromFeet", Round(std::hypot(cam[0], cam[1]), 0.1) }, { "height", Round(cam[2], 0.1) },
                 { "forward3", JsonObject{ { "x", Round(body.cameraForward[0]) }, { "y", Round(body.cameraForward[1]) }, { "z", Round(body.cameraForward[2]) } } },
                 { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) } };
+            const auto scope = Weapons::ScopeOf(pose->cameraMode, (pose->flags & Protocol::kPlayerInVehicle) ? pose->vehicleModel : 0);
+            constexpr const char* kScopes[] = { "none", "sniper", "rocket", "rifle", "camera", "aim" };
+            out.Set("scope", static_cast<std::size_t>(scope) < std::size(kScopes) ? kScopes[static_cast<std::size_t>(scope)] : "?");
             if ((pose->flags & Protocol::kPlayerInVehicle) && pose->vehicleModel) {
                 const float h = pose->vehicleHeading;
                 const float rel[3] = { cam[0] - pose->vehicleOffset[0], cam[1] - pose->vehicleOffset[1], cam[2] - pose->vehicleOffset[2] };
@@ -1158,20 +1161,57 @@ namespace AhShitRim::TestKit
                 "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it)",
                 [](Call&) -> Json { return CameraNow(); });
 
-            SkseTestKit::AddTask("asr.view", "[settle=<seconds>]",
-                "Presses San Andreas's camera key once (V, select on its pad), as the player would, and answers settle seconds (1.5) later "
-                "with asr.camera's numbers",
+            SkseTestKit::AddTask("asr.view", "[settle=<seconds>] [untilFirstPerson=<bool>] [presses=<n>]",
+                "Presses San Andreas's camera key (V, select on its pad) once, as the player would, and answers settle seconds (1.5) later "
+                "with asr.camera's numbers, before (fromFeet's before the press) and changed (the camera moved more than 20 units). "
+                "untilFirstPerson=true presses again every settle seconds, up to presses (6) times, until the first-person view is up "
+                "(presses: how many it took), and fails when it never comes",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const double settle = a_call.Number("settle", 1.5);
-                    a_call.DefaultTimeout(settle + 10.0);
-                    return [settle](Call& a_call) -> std::optional<Json> {
-                        const bool press = a_call.Seconds() < 0.15;
-                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCameraView }) : std::nullopt);
-                        if (a_call.Seconds() < settle) {
-                            return std::nullopt;
+                    const bool   untilFirst = a_call.Flag("untilFirstPerson", false);
+                    const int    most = static_cast<int>(a_call.Number("presses", 6.0));
+                    a_call.DefaultTimeout(settle * (untilFirst ? most : 1) + 10.0);
+                    struct View
+                    {
+                        Json   before;
+                        int    pressed = 0;
+                        double pressedAt = -1.0;
+                    };
+                    auto view = std::make_shared<View>();
+                    view->before = CameraNow();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const double now = a_call.Seconds();
+                        if (view->pressedAt < 0.0 || (now - view->pressedAt >= settle)) {
+                            if (view->pressedAt >= 0.0) {
+                                auto after = CameraNow();
+                                const auto* first = after.AsObject().Find("firstPerson");
+                                const bool  done = !untilFirst || (first && first->AsBool());
+                                if (done) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    const auto num = [](const Json& a_json, std::string_view a_key) {
+                                        const auto* v = a_json.AsObject().Find(a_key);
+                                        return v && v->IsNumber() ? v->AsNumber() : 0.0;
+                                    };
+                                    const double moved = std::hypot(num(after, "fromFeet") - num(view->before, "fromFeet"), num(after, "height") - num(view->before, "height"),
+                                        num(after, "forward") - num(view->before, "forward"));
+                                    auto& out = after.AsObject();
+                                    out.Set("before", num(view->before, "fromFeet"));
+                                    out.Set("changed", moved > 20.0);
+                                    out.Set("presses", view->pressed);
+                                    return after;
+                                }
+                                if (view->pressed >= most) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    throw Error(std::format("no first-person view after {} presses", view->pressed));
+                                }
+                            }
+                            view->pressed++;
+                            view->pressedAt = now;
                         }
-                        return CameraNow();
+                        const bool press = now - view->pressedAt < 0.15;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCameraView }) : std::nullopt);
+                        return std::nullopt;
                     };
                 });
 
