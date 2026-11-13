@@ -1046,6 +1046,7 @@ namespace AhShitRim::TestKit
             std::chrono::steady_clock::time_point at{};
             std::uint32_t                         handover = 0;
             RE::FormID                            gunTarget = 0;  // the pad's gun lock (LockOn), 0 for none
+            int                                   padCheats = 0;  // console cheat sequences finished on the pad so far
         };
         std::optional<Mark>         g_mark;
         std::map<std::string, Json> g_kept;
@@ -1056,7 +1057,8 @@ namespace AhShitRim::TestKit
             if (!pose) {
                 throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
             }
-            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover(), .gunTarget = LockOn::DebugGunTarget() };
+            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover(), .gunTarget = LockOn::DebugGunTarget(),
+                .padCheats = PlayerSync::DebugPadCheats() };
         }
 
         // Since a_mark: seconds, metres moved (on the ground's plane) and climbed, degrees the camera turned (either way:
@@ -1080,7 +1082,8 @@ namespace AhShitRim::TestKit
                 { "ahead", Round(Ahead(a_now), 0.1) }, { "weaponFrom", a_mark.pose.weaponType }, { "weapon", a_now.weaponType },
                 { "weaponChanged", a_now.weaponType != a_mark.pose.weaponType }, { "radioFrom", a_mark.pose.radioStation },
                 { "radio", a_now.radioStation }, { "radioChanged", a_now.radioStation != a_mark.pose.radioStation },
-                { "gunTargetFrom", GunTarget(a_mark.gunTarget) }, { "gunTarget", GunTarget(gunTarget) }, { "gunTargetChanged", gunTarget != a_mark.gunTarget } };
+                { "gunTargetFrom", GunTarget(a_mark.gunTarget) }, { "gunTarget", GunTarget(gunTarget) }, { "gunTargetChanged", gunTarget != a_mark.gunTarget },
+                { "padCheats", PlayerSync::DebugPadCheats() - a_mark.padCheats } };
         }
 
         // keep=<name> keeps a_result; vs=<name> adds "vs": each of its numbers over the same one in the result kept as that
@@ -1115,7 +1118,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.pose", "",
                 "CJ as San Andreas has him now: on foot or in a vehicle (its model), getting in or out, grounded, crouching, where (units from the "
                 "handover's anchor), speed (km/h; ahead: along the way he faces), his (or his vehicle's) and the camera's heading and the camera's pitch (degrees), weapon, aiming, shots, radio "
-                "station; the pad's gun lock's target (gunTarget, a form id, null for none); the pitch of the vehicle he drives (vehiclePitch, degrees, nose up above 0); whether San Andreas has the player, and "
+                "station; the pad's gun lock's target (gunTarget, a form id, null for none); console cheat sequences finished on the pad (padCheats); the pitch of the vehicle he drives (vehiclePitch, degrees, nose up above 0); whether San Andreas has the player, and "
                 "Skyrim's open menus",
                 [](Call&) -> Json {
                     const auto pose = CjPose();
@@ -1123,6 +1126,7 @@ namespace AhShitRim::TestKit
                     out["cj"] = PlayerSync::DebugOwned();
                     out["posed"] = pose.has_value();
                     out["gunTarget"] = GunTarget(LockOn::DebugGunTarget());
+                    out["padCheats"] = PlayerSync::DebugPadCheats();
                     if (const auto pitch = VehiclePitch()) {
                         out["vehiclePitch"] = Round(*pitch, 0.1);
                     }
@@ -1137,7 +1141,7 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.since", "[keep=<name>] [vs=<name>]",
                 "What changed since asr.mark: seconds, moved and climbed (metres), turned (turnedBy: either way) and pitched (degrees, the camera), "
-                "bodyTurned (CJ's or his vehicle's heading), the gun lock's target then and now (gunTargetFrom, gunTarget, gunTargetChanged), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
+                "bodyTurned (CJ's or his vehicle's heading), the gun lock's target then and now (gunTargetFrom, gunTarget, gunTargetChanged), console cheat sequences finished on the pad (padCheats), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
                 "weapon and radio station then and now. keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
                 [](Call& a_call) -> Json {
                     if (!g_mark) {
