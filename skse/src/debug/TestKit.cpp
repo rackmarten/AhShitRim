@@ -1228,11 +1228,12 @@ namespace AhShitRim::TestKit
 
         void AddRespawnChecks()
         {
-            SkseTestKit::AddCommand("asr.kill", "<ref> [all=<radius>]",
+            SkseTestKit::AddTask("asr.kill", "<ref> [all=<radius>]",
                 "The player kills an actor, as CJ's blow would (the player's kill, Skyrim's death event); all=<radius> kills every living actor of "
-                "the same name within that many units of the player too. Answers each one's verdict (what Respawns says the death does) and "
-                "keeps them for asr.killed",
-                [](Call& a_call) -> Json {
+                "the same name within that many units of the player too. The kills run from SKSE's task queue (a kill from the kit's point in "
+                "the frame once waited on the engine for good); answers once all are dead, with each one's verdict (what Respawns says the "
+                "death does), and keeps them for asr.killed",
+                [](Call& a_call) -> Step {
                     auto* player = RE::PlayerCharacter::GetSingleton();
                     auto* first = SkseTestKit::FindRef(a_call.Text("ref"))->As<RE::Actor>();
                     if (!first || !player) {
@@ -1252,18 +1253,36 @@ namespace AhShitRim::TestKit
                             }
                         }
                     }
-                    JsonArray killed;
+                    auto killed = std::make_shared<JsonArray>();
+                    std::vector<std::uint32_t> ids;
                     for (auto* actor : targets) {
                         if (actor->IsDead()) {
                             throw Error(std::format("{} ({}) is dead already", actor->GetDisplayFullName(), SkseTestKit::FormId(actor->GetFormID())));
                         }
                         Victim victim{ actor->GetFormID(), actor->GetDisplayFullName(), Respawns::DryRun(actor, player) };
-                        actor->KillImpl(player, 100000.0f, true, true);
-                        killed.push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict } });
+                        killed->push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict } });
+                        ids.push_back(victim.id);
                         std::erase_if(g_victims, [&](const Victim& a_v) { return a_v.id == victim.id; });
                         g_victims.push_back(std::move(victim));
                     }
-                    return JsonObject{ { "count", killed.size() }, { "killed", std::move(killed) } };
+                    SKSE::GetTaskInterface()->AddTask([ids] {
+                        auto* killer = RE::PlayerCharacter::GetSingleton();
+                        for (const auto id : ids) {
+                            if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id); actor && killer && !actor->IsDead()) {
+                                actor->KillImpl(killer, 100000.0f, true, true);
+                            }
+                        }
+                    });
+                    a_call.DefaultTimeout(10.0);
+                    return [ids, killed](Call&) -> std::optional<Json> {
+                        for (const auto id : ids) {
+                            auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                            if (actor && !actor->IsDead()) {
+                                return std::nullopt;
+                            }
+                        }
+                        return JsonObject{ { "count", killed->size() }, { "killed", *killed } };
+                    };
                 });
 
             SkseTestKit::AddCommand("asr.judge", "<ref>", "What a kill of an actor by CJ would do, as Respawns judges it (nobody killed)", [](Call& a_call) -> Json {
@@ -1271,8 +1290,11 @@ namespace AhShitRim::TestKit
                 if (!actor) {
                     throw Error("not an actor");
                 }
+                auto*      player = RE::PlayerCharacter::GetSingleton();
+                const auto read = Respawns::DebugJudge(actor, player);
                 return JsonObject{ { "id", SkseTestKit::FormId(actor->GetFormID()) }, { "name", actor->GetDisplayFullName() },
-                    { "verdict", Respawns::DryRun(actor, RE::PlayerCharacter::GetSingleton()) } };
+                    { "verdict", Respawns::DryRun(actor, player) }, { "baseAggression", read.baseAggression }, { "aggression", read.aggression },
+                    { "reaction", read.reaction }, { "hostile", read.hostile }, { "lawful", read.lawful } };
             });
 
             SkseTestKit::AddCommand("asr.killed", "[forget=<bool>]",

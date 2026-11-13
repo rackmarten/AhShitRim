@@ -1,7 +1,7 @@
-// Coming back (docs/DESIGN.md): a Riverwood chicken and a Riverwood citizen killed by the player while CJ has it, out of
+// Coming back (docs/DESIGN.md): a Riverwood chicken and Faendal (at noon, outside by the mill) killed by the player while CJ has it, out of
 // the guards' sight, are noted to come back; an hour later they stay down while the camera looks at them, and get up at
 // their editor spots within a few seconds once it looks away (up at the sky, from above Riverwood: every body and spot
-// behind it). Respawns checks once a second, so 3 s is its check and a margin. Shots: the bodies, then both standing.
+// behind it). Respawns checks once a second, so 3 s is its check and a margin. Shots: the bodies, then both standing (from above, with what's within 380 units of the camera cut away: roofs, and anyone walking by).
 // asr.later moves the clock (the wait menu can't be driven from here); scenarios/wait-key.json checks the / key.
 // scripts/skytest.ps1 run scenarios/respawns.json (scenarios/README.md).
 {
@@ -15,21 +15,24 @@
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
     { "label": "nobody from an earlier run", "cmd": "asr.killed", "forget": true },
+    { "label": "noon: Faendal works outside, by the mill", "cmd": "time", "hour": 12 },
+    { "cmd": "wait", "seconds": 2 },
 
     { "label": "a chicken comes back", "cmd": "asr.judge", "ref": "0x001066DF", "expect": "verdict == back in a game hour" },
-    { "label": "so does Hilde", "cmd": "asr.judge", "ref": "0x00035534", "expect": "verdict == back in a game hour" },
+    { "label": "so does Faendal", "cmd": "asr.judge", "ref": "0x0001348C", "expect": "verdict == back in a game hour" },
     { "label": "the player kills the chicken", "cmd": "asr.kill", "ref": "0x001066DF", "expect": "killed.0.verdict == back in a game hour" },
-    { "label": "and Hilde", "cmd": "asr.kill", "ref": "0x00035534", "expect": "killed.0.verdict == back in a game hour" },
+    { "label": "and Faendal", "cmd": "asr.kill", "ref": "0x0001348C", "expect": "killed.0.verdict == back in a game hour" },
     { "label": "past the quest window", "cmd": "wait", "seconds": 3 },
     { "label": "both dead, both waiting", "cmd": "asr.killed", "expect": ["count == 2", "dead == 2", "waiting == 2"] },
     { "label": "no guard saw it", "cmd": "state", "ref": "0x0001B743", "expect": "combat == false" },
     { "label": "nor the other", "cmd": "state", "ref": "0x0001B747", "expect": "combat == false" },
     { "cmd": "screenshot", "name": "chicken-dead", "camera": "orbit 0x001066DF distance=250 pitch=30" },
-    { "cmd": "screenshot", "name": "hilde-dead", "camera": "orbit 0x00035534 distance=300 pitch=30" },
+    { "cmd": "screenshot", "name": "faendal-dead", "camera": "orbit 0x0001348C distance=300 pitch=30" },
 
     { "label": "an hour and a bit later", "cmd": "asr.later", "hours": 1.1 },
-    { "label": "the camera on Hilde's body", "cmd": "camera", "mode": "orbit", "at": "0x00035534", "distance": 300, "pitch": 30 },
+    { "label": "the camera on Faendal's body", "cmd": "camera", "mode": "orbit", "at": "0x0001348C", "distance": 300, "pitch": 30 },
     { "cmd": "wait", "seconds": 3 },
+    { "cmd": "screenshot", "name": "faendal-held" },
     { "label": "in view she stays down, held", "cmd": "asr.killed", "expect": ["victims.1.dead == true", "victims.1.held == true"] },
 
     { "label": "the camera looks away: up at the sky from above Riverwood", "cmd": "camera", "mode": "free", "at": "player", "height": 3000, "pitch": -60 },
@@ -37,8 +40,10 @@
     { "label": "alive at their editor spots", "cmd": "asr.killed",
       "expect": ["alive == 2", "waiting == 0", "victims.0.fromSpot < 150", "victims.1.fromSpot < 150"] },
     { "label": "the game's camera again", "cmd": "camera", "mode": "player" },
-    { "cmd": "screenshot", "name": "chicken-back", "camera": "orbit 0x001066DF distance=250 pitch=30" },
-    { "cmd": "screenshot", "name": "hilde-back", "camera": "orbit 0x00035534 distance=300 pitch=30" },
-    { "label": "alive, as the kit sees them", "cmd": "state", "ref": "0x00035534", "expect": "dead == false" }
+    { "label": "their 3D in at their spots", "cmd": "wait", "seconds": 2 },
+    { "cmd": "screenshot", "name": "chicken-back", "camera": "top 0x001066DF distance=450 near=380" },
+    { "cmd": "screenshot", "name": "faendal-back", "camera": "top 0x0001348C distance=450 near=380" },
+    { "cmd": "screenshot", "name": "faendal-back-side", "camera": "orbit 0x0001348C yaw=90 distance=250 pitch=10" },
+    { "label": "alive, as the kit sees them", "cmd": "state", "ref": "0x0001348C", "expect": "dead == false" }
   ]
 }

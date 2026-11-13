@@ -17,8 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves a quest on. Essential people NOMERCY let CJ kill still always come back.
-- For developers: `scenarios/respawns.json` checks it in a hidden test session.
+- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves on a quest you're in (one whose objectives you've seen). Essential people NOMERCY let CJ kill still always come back.
+- For developers: `scenarios/respawns.json` and `respawns-stay-dead.json` check it in a hidden test session (who comes back and when; bandits and a quest's kill target staying dead), with the kit's new `asr.kill`, `asr.judge`, `asr.killed`, `asr.later` and `asr.objectives`.
 
 ### Fixed
 
