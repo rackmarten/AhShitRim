@@ -47,8 +47,8 @@ namespace AhShitRim::SaHud
     void ShowZoneName(std::string a_name);
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();
-    void ShowHelp(std::string a_text, float a_seconds = 6.0f);
-    std::string DebugHelp();  // the test kit: the help box's text while it shows, else empty      // the box top left, with San Andreas's beep when it starts showing
+    void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left, with San Andreas's beep when it starts showing
+    std::string DebugHelp();  // the test kit: the help box's text while it shows, else empty
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
     void HoldSubtitle(std::string a_text);  // the subtitles, as long as it's called every frame with the line (Skyrim's subtitles, a scene's lines)
