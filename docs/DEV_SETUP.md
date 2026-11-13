@@ -186,12 +186,17 @@ never need it). To use it:
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
-   | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+   | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers, each with what he carries and runs (`gear`, `hands`, `weaponDrawn`, `followPackage`, `canTalk`, `rides`, `target`), and how many ride with CJ (`riding`) | `asr.crew recruit=3 thanes=2` |
+   | `asr.crewkey [at] [aim=]` | G as if pressed on foot: `aim` (true) says CJ aims along the way from the player to `at` (a target, `asr.homie:0`, `asr.free:0`), and the crew's own pick by the aim line decides; answers with how many follow and stand about, before and after | `asr.crewkey at=asr.free:0` |
+   | `asr.crewstats [reset=]` | the crew's counters since the last reset: Skyrim subtitles of theirs taken off (`hushedLines`, each a line Skyrim started), voices stopped, follow package puts, gear taken off, frames a homie had a Skyrim weapon drawn or in hand (`drawnFrames`), and everyone a follower had as his target (`targeted`) | `asr.crewstats reset=true` |
+   | `asr.enter` | CJ gets into the vehicle nearest him (the enter/exit key, as `asr.exit`); answers once he sits in it | `asr.enter` |
+   | `asr.hurt <ref> [damage=]` | CJ's pistol shot on an actor (`Shots::Hurt`, the player the aggressor): an animal runs from him | `asr.hurt name:Elk` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
    rearRight|rearLeft>[@slot]` (a vehicle's lamp dummy in its whole frame, slope included) and `asr.homie:<n>` (CJ's nth
-   follower, with his character controller's numbers in its details, since the kit records a target by its place).
+   follower, with his character controller's numbers and what he carries and runs in its details, since the kit records
+   a target by its place), and `asr.free:<n>` (the nth nearest homie standing about).
 
    `scenarios/test-kit-smoke.json` runs them all with checks. The in-game tests are scenarios too (`scenarios/README.md`
    lists them, their starts and saves); their commands (`skse/src/debug/`, game logic kept apart from the kit):

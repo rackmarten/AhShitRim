@@ -150,6 +150,8 @@ namespace AhShitRim::Homies
             std::vector<bool>        keys;  // G presses waiting for the next Update: whether the aim key was held
             RE::TESPackage*          follow = nullptr;  // kFollowPackage, or null to keep them in formation the old way
             unsigned                 followPuts = 0, gearStripped = 0;
+            unsigned                 drawnFrames = 0;  // the test kit: frames a homie had a Skyrim weapon drawn or in hand
+            std::vector<RE::FormID>  targeted;  // the test kit: everyone a follower has had as his target since asr.crewstats reset
             unsigned                 hushedLines = 0;   // subtitles of theirs taken off (a line each)
             unsigned                 hushedSounds = 0;  // their voice handles stopped
             std::uint32_t            handover = 0;
@@ -316,15 +318,18 @@ namespace AhShitRim::Homies
         // The soldier's Skyrim gear that could show or be used: his bow, quiver and arrows, any blade, shield or torch. Only
         // San Andreas's gun is his. His armour stays: it's hidden with the rest of his 3D and keeps him as tough as before.
         // His outfit comes back now and then (on his 3D loading, a reset), so Update looks every kGearEvery.
+        bool IsGear(RE::TESBoundObject& a_object)
+        {
+            if (a_object.IsWeapon() || a_object.IsAmmo() || a_object.Is(RE::FormType::Light)) {
+                return true;
+            }
+            const auto* armor = a_object.As<RE::TESObjectARMO>();
+            return armor && armor->IsShield();
+        }
+
         void Strip(RE::Actor* a_actor)
         {
-            auto gear = a_actor->GetInventory([](RE::TESBoundObject& a_object) {
-                if (a_object.IsWeapon() || a_object.IsAmmo() || a_object.Is(RE::FormType::Light)) {
-                    return true;
-                }
-                const auto* armor = a_object.As<RE::TESObjectARMO>();
-                return armor && armor->IsShield();
-            });
+            auto gear = a_actor->GetInventory([](RE::TESBoundObject& a_object) { return IsGear(a_object); });
             int removed = 0;
             for (auto& [object, entry] : gear) {
                 if (object && entry.first > 0) {
@@ -912,6 +917,9 @@ namespace AhShitRim::Homies
                 }
                 if (best) {
                     h.target = best->CreateRefHandle();
+                    if (std::find(state.targeted.begin(), state.targeted.end(), best->GetFormID()) == state.targeted.end() && state.targeted.size() < 64) {
+                        state.targeted.push_back(best->GetFormID());
+                    }
                 }
             }
         }
@@ -1133,6 +1141,9 @@ namespace AhShitRim::Homies
             }
             if (actor->Is3DLoaded()) {
                 Cull(h, actor, a_delta);
+            }
+            if (actor->AsActorState()->IsWeaponDrawn() || actor->GetEquippedObject(false) || actor->GetEquippedObject(true)) {
+                state.drawnFrames++;
             }
             if ((h.gearIn -= a_delta) <= 0.0f) {
                 h.gearIn = kGearEvery;
@@ -1373,6 +1384,64 @@ namespace AhShitRim::Homies
         a_nearest = marker->GetPosition();
         state.markers.push_back(marker->CreateRefHandle());
         return found;
+    }
+
+    void DebugKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
+    {
+        HandleKey(a_player, a_aiming, a_heading, a_target);
+    }
+
+    RE::Actor* DebugFree(RE::PlayerCharacter* a_player, int a_index)
+    {
+        std::vector<RE::Actor*> free;
+        for (const auto& h : state.homies) {
+            if (auto* actor = Get(h); actor && !h.follower && !actor->IsDead() && actor->Is3DLoaded()) {
+                free.push_back(actor);
+            }
+        }
+        const auto feet = a_player->GetPosition();
+        std::sort(free.begin(), free.end(), [&](RE::Actor* a, RE::Actor* b) { return a->GetPosition().GetDistance(feet) < b->GetPosition().GetDistance(feet); });
+        return a_index >= 0 && a_index < static_cast<int>(free.size()) ? free[a_index] : nullptr;
+    }
+
+    DebugProbe DebugProbeOf(RE::Actor* a_actor)
+    {
+        DebugProbe out;
+        if (!a_actor) {
+            return out;
+        }
+        for (auto& [object, entry] : a_actor->GetInventory([](RE::TESBoundObject& a_object) { return IsGear(a_object); })) {
+            if (object && entry.first > 0) {
+                out.gear.push_back(object->GetName());
+            }
+        }
+        for (const bool left : { false, true }) {
+            if (auto* hand = a_actor->GetEquippedObject(left)) {
+                out.hands.push_back(hand->GetName());
+            }
+        }
+        out.weaponDrawn = a_actor->AsActorState()->IsWeaponDrawn();
+        out.followPackage = state.follow && a_actor->GetCurrentPackage() == state.follow;
+        out.canTalk = a_actor->CanTalkToPlayer();
+        out.rides = Riders::Rides(a_actor->GetFormID());
+        for (const auto& h : state.homies) {
+            if (h.id == a_actor->GetFormID()) {
+                auto* target = h.target.get().get();
+                out.target = target ? target->GetFormID() : 0;
+                out.follower = h.follower;
+            }
+        }
+        return out;
+    }
+
+    DebugStats DebugStatsOf(bool a_reset)
+    {
+        DebugStats out{ state.hushedLines, state.hushedSounds, state.followPuts, state.gearStripped, state.drawnFrames, state.targeted };
+        if (a_reset) {
+            state.hushedLines = state.hushedSounds = state.followPuts = state.gearStripped = state.drawnFrames = 0;
+            state.targeted.clear();
+        }
+        return out;
     }
 
     RE::Actor* DebugFollower()

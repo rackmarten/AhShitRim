@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "../ahshitrim_protocol.h"
 
@@ -66,6 +68,27 @@ namespace AhShitRim::Homies
     bool       DebugTargets(const RE::Actor* a_actor);  // whether a follower has a_actor as his target
     unsigned   DebugHushed();        // their Skyrim subtitles taken off so far (a line each)
     unsigned   DebugHushedSounds();  // their Skyrim voice handles stopped so far
+
+    // The test kit's crew commands (skse/src/debug/TestKit.cpp): G as if pressed (a_aiming: CJ aims, along a_heading, his
+    // lock-on on a_target or 0), the a_index-th nearest homie standing about, what a homie carries and runs, and the
+    // crew's counters (a_reset: from zero again after).
+    void       DebugKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target);
+    RE::Actor* DebugFree(RE::PlayerCharacter* a_player, int a_index);
+    struct DebugProbe
+    {
+        std::vector<std::string> gear;    // Skyrim weapons, ammo, shields and torches in his inventory
+        std::vector<std::string> hands;   // what his hands hold, Skyrim's
+        bool                     weaponDrawn = false, followPackage = false, canTalk = true, rides = false, follower = false;
+        RE::FormID               target = 0;  // his crew target
+    };
+    DebugProbe DebugProbeOf(RE::Actor* a_actor);
+    struct DebugStats
+    {
+        unsigned                hushedLines = 0, hushedSounds = 0, followPuts = 0, gearStripped = 0;
+        unsigned                drawnFrames = 0;   // frames a homie had a Skyrim weapon drawn or in a hand
+        std::vector<RE::FormID> targeted;  // everyone a follower has had as his target
+    };
+    DebugStats DebugStatsOf(bool a_reset);
     float      DebugStray(RE::PlayerCharacter* a_player, float a_metres);  // a follower put on the navmesh that far behind; metres, -1 for none
     bool       DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest);  // the navmesh nearest the player
 
