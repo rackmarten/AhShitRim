@@ -1071,7 +1071,7 @@ namespace AhShitRim::PlayerSync
             }
             Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
-            // (#911) A vehicle's first-person view sits out in front of it (Camera::OutOfBox), and CJ isn't drawn in it: San
+            // A vehicle's first-person view sits out in front of it (Camera::OutOfBox), and CJ isn't drawn in it: San
             // Andreas puts it at his head (on a bike at his neck), where he would only be in the way.
             const bool bumper = valid && (pose.flags & Protocol::kPlayerInVehicle) && pose.cameraMode == Weapons::kCamFirstPerson;
             const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera || bumper;

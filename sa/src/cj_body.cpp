@@ -588,7 +588,7 @@ namespace AhShitRim::CjBody
             front = final.GetForward();
             camUp = final.at;
         }
-        // (#911) A vehicle's first-person view (MODE_1STPERSON) sits at its front seat, at head height, inside the
+        // A vehicle's first-person view (MODE_1STPERSON) sits at its front seat, at head height, inside the
         // vehicle: San Andreas doesn't draw its player's vehicle then, Skyrim does. So it moves out of the col model's
         // box the way it looks: in front of the bonnet, a bike's handlebars or an aircraft's nose.
         if (a_ped->bInVehicle && a_ped->m_pVehicle && cam.m_nMode == MODE_1STPERSON) {

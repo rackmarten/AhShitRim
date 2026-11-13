@@ -610,7 +610,7 @@ TEST_CASE("v23: the middle mouse button looks behind in a vehicle, both shoulder
     CHECK(b.Build(4, true, false).buttons == 0);  // a menu has the input
 }
 
-TEST_CASE("v23: V and Home change the camera distance in a vehicle, and (#911) on foot")
+TEST_CASE("v23: V and Home change the camera distance in a vehicle, and on foot")
 {
     CHECK(VehicleActionFromScanCode(kDikV) == Action::CameraView);
     CHECK(VehicleActionFromScanCode(kDikHome) == Action::CameraView);

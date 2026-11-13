@@ -205,7 +205,7 @@ namespace AhShitRim::Weapons
 
     // (v23) In the Hydra (520) or the Hunter (425), San Andreas's first-person camera puts the rocket sight's four
     // quarters in the middle of the screen as well, the same size (CHud::DrawCrossHairs' custom crosshair): the
-    // frame its heat-seeker lock shows inside. San Andreas draws it in those two only; (#911) the other armed
+    // frame its heat-seeker lock shows inside. San Andreas draws it in those two only; the other armed
     // aircraft, the Seasparrow (447) and the Rustler (476), get it too, to aim their guns by. a_vehicleModel is 0 on foot.
     constexpr Scope ScopeOf(std::uint8_t a_cameraMode, std::uint16_t a_vehicleModel)
     {
