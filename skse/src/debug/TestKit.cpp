@@ -510,9 +510,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>]",
+            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>] [untilZone=<bool>]",
                 "Walks CJ (San Andreas's stick, from its camera's view) through waypoints x,y; x,y; ... at a gait (run, the default, is San "
-                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s",
+                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s. "
+                "untilZone=true stops him and answers as soon as Skyrim names a location he walks into (San Andreas's zone name, zone: its "
+                "text), and fails when he reaches the last point without one",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const auto    points = ParseWaypoints(a_call.Text("points"));
@@ -527,6 +529,8 @@ namespace AhShitRim::TestKit
                     }
                     const float  arrive = static_cast<float>(a_call.Number("arrive", 100.0));
                     const double stuck = a_call.Number("stuck", 5.0);
+                    const bool   untilZone = a_call.Flag("untilZone", false);
+                    const auto   zonesBefore = SkyrimMessages::DebugCounted().zones;
                     double       length = 0.0;
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         Waypoint from{ player->GetPosition().x, player->GetPosition().y };
@@ -571,10 +575,20 @@ namespace AhShitRim::TestKit
                             walk->bestAt = a_call.Seconds();
                             if (walk->next == points.size()) {
                                 PlayerSync::DebugHold(std::nullopt);
+                                if (untilZone) {
+                                    throw Error("CJ reached the last point and Skyrim named no location on the way");
+                                }
                                 return JsonObject{ { "points", points.size() }, { "seconds", Round(a_call.Seconds()) }, { "path", Round(walk->path, 0.1) },
                                     { "at", Point(at) }, { "gait", gait } };
                             }
                             return std::nullopt;
+                        }
+                        if (untilZone) {
+                            if (const auto counts = SkyrimMessages::DebugCounted(); counts.zones != zonesBefore) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                return JsonObject{ { "zone", counts.lastZone }, { "rule", counts.lastRule }, { "seconds", Round(a_call.Seconds()) },
+                                    { "at", Point(at) } };
+                            }
                         }
                         if (d < walk->best - 10.0f) {
                             walk->best = d;
