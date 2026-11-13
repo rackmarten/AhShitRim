@@ -1,0 +1,69 @@
+// The gun lock on the pad (v40's increment 3, LockOn::GunLockOn): CJ with a pistol on the road below the Whiterun
+// stables, three guards standing 10 m ahead, one 12 degrees right of the camera's middle (the nearest to the
+// crosshair), one 35 degrees right and one 35 degrees left. LT held (the kit's pad command: Skyrim's own input events)
+// locks onto the nearest and turns the camera onto him by itself; the d-pad's right shifts the lock to the one on the
+// right and the left back, the weapon staying; the locked guards disabled from outside the player's update (the kit's
+// point of the frame, as a script or a cell change would) let the lock go and Skyrim keeps going; the right stick
+// pushed hard drops the lock to free aim while LT stays held. scripts/skytest.ps1 run scenarios/pad-lock.json
+// (scenarios/README.md).
+//
+// The limits (set from runs on the test desktop, measured values in the pull request): the camera turns at least 5
+// degrees onto the first guard within 2 s, the right stick untouched; each d-pad press changes the target within 1 s.
+{
+  "name": "pad-lock",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "label": "facing south, down the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "Skyrim's gamepad on, as a pad player has it", "cmd": "console", "command": "setini \"bGamepadEnable:Controls\" 1" },
+    { "label": "noon, for the shots", "cmd": "scene", "presets": "day clear" },
+    { "label": "CJ takes the player", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+    { "label": "a pistol", "cmd": "asr.give", "weapon": 22, "ammo": 200 },
+    { "label": "in his hands", "cmd": "asr.fire", "weapon": 22, "shots": 1 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "the pistol drawn, no lock", "cmd": "asr.pose", "expect": ["weapon == 22", "gunTarget missing"] },
+
+    { "label": "a guard 12 degrees right, the nearest to the crosshair", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 12 },
+    { "label": "one 35 degrees right", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 35 },
+    { "label": "one 35 degrees left", "cmd": "asr.place", "count": 1, "distance": 700, "angle": -35, "expect": "total == 3" },
+    { "cmd": "wait", "seconds": 2 },
+
+    { "cmd": "asr.mark" },
+    { "label": "LT held", "cmd": "pad", "buttons": "lt", "value": 0.9 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "the lock is on a guard and turned the camera right onto him", "cmd": "asr.since", "expect": ["gunTarget exists", "turned > 5"] },
+    { "label": "locked on", "cmd": "screenshot", "name": "locked", "hud": true },
+    { "cmd": "asr.mark" },
+    { "label": "the d-pad's right", "cmd": "pad", "buttons": "right", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "the lock shifted right, the weapon stayed", "cmd": "asr.since",
+      "expect": ["gunTarget exists", "gunTargetChanged == true", "weaponChanged == false", "turned > 3"] },
+    { "label": "shifted right", "cmd": "screenshot", "name": "shifted", "hud": true },
+    { "cmd": "asr.mark" },
+    { "label": "the d-pad's left", "cmd": "pad", "buttons": "left", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "the lock shifted back left", "cmd": "asr.since", "expect": ["gunTarget exists", "gunTargetChanged == true", "weaponChanged == false", "turned < -3"] },
+
+    { "label": "the guards disabled while locked", "cmd": "asr.place", "clear": true },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "the lock let go of them, Skyrim keeps going", "cmd": "asr.pose", "expect": ["gunTarget missing", "posed == true"] },
+    { "cmd": "ping" },
+
+    { "label": "another guard, ahead", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 5 },
+    { "label": "the lock takes him, LT still held", "cmd": "wait", "until": "gunTarget exists", "for": "asr.pose", "timeout": 5 },
+    { "label": "the right stick pushed hard", "cmd": "stick", "side": "right", "x": 1, "y": 0, "seconds": 0.5 },
+    { "label": "free aim: the lock dropped", "cmd": "asr.pose", "expect": ["gunTarget missing", "aiming == true"] },
+    { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "label": "the guard taken away", "cmd": "asr.place", "clear": true },
+    { "label": "nothing left held", "cmd": "input", "expect": "idle == true" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

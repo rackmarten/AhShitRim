@@ -10,6 +10,7 @@
 #include "hud/Overlay.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
+#include "player/LockOn.h"
 #include "player/Missions.h"
 #include "player/PlayerSync.h"
 #include "pose.h"
@@ -1010,6 +1011,22 @@ namespace AhShitRim::TestKit
             return open;
         }
 
+        // The pitch of the vehicle CJ drives, degrees (its nose up above 0: a wheelie; down below: a stoppie), from its frame;
+        // nullopt on foot.
+        std::optional<double> VehiclePitch()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState v{};
+                if (LinkService::Get().ReadVehicle(i, v) && (v.flags & Protocol::kBodyValid) && (v.flags & Protocol::kBodyDriven) &&
+                    v.handover == PlayerSync::DebugHandover()) {
+                    const auto& q = v.vehicleFrame.rotation;  // x, y, z, w; its Y axis is forward
+                    const double forwardZ = 2.0 * (q[1] * q[2] + q[3] * q[0]);
+                    return Degrees(static_cast<float>(std::asin(std::clamp(forwardZ, -1.0, 1.0))));
+                }
+            }
+            return std::nullopt;
+        }
+
         Json DescribePose(const Protocol::PlayerState& a_pose)
         {
             const bool inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
@@ -1028,6 +1045,7 @@ namespace AhShitRim::TestKit
             Protocol::PlayerState                 pose{};
             std::chrono::steady_clock::time_point at{};
             std::uint32_t                         handover = 0;
+            RE::FormID                            gunTarget = 0;  // the pad's gun lock (LockOn), 0 for none
         };
         std::optional<Mark>         g_mark;
         std::map<std::string, Json> g_kept;
@@ -1038,14 +1056,18 @@ namespace AhShitRim::TestKit
             if (!pose) {
                 throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
             }
-            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover() };
+            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover(), .gunTarget = LockOn::DebugGunTarget() };
         }
 
         // Since a_mark: seconds, metres moved (on the ground's plane) and climbed, degrees the camera turned (either way:
         // turnedBy) and pitched and CJ or his vehicle turned (bodyTurned), shots fired, the speed now (ahead: along the way
         // he faces), the weapon and radio station then and now.
+        // The pad's gun lock's target as a form id, null for none.
+        Json GunTarget(RE::FormID a_id) { return a_id ? Json(SkseTestKit::FormId(a_id)) : Json(); }
+
         JsonObject Since(const Mark& a_mark, const Protocol::PlayerState& a_now)
         {
+            const auto gunTarget = LockOn::DebugGunTarget();
             const float dx = a_now.offset[0] - a_mark.pose.offset[0], dy = a_now.offset[1] - a_mark.pose.offset[1];
             return JsonObject{ { "seconds", Round(std::chrono::duration<double>(std::chrono::steady_clock::now() - a_mark.at).count()) },
                 { "moved", Round(std::hypot(dx, dy) * Pose::kMetersPerUnit) },
@@ -1057,7 +1079,8 @@ namespace AhShitRim::TestKit
                 { "shots", static_cast<std::uint16_t>(a_now.shots - a_mark.pose.shots) }, { "speed", Round(KmH(a_now.velocity), 0.1) },
                 { "ahead", Round(Ahead(a_now), 0.1) }, { "weaponFrom", a_mark.pose.weaponType }, { "weapon", a_now.weaponType },
                 { "weaponChanged", a_now.weaponType != a_mark.pose.weaponType }, { "radioFrom", a_mark.pose.radioStation },
-                { "radio", a_now.radioStation }, { "radioChanged", a_now.radioStation != a_mark.pose.radioStation } };
+                { "radio", a_now.radioStation }, { "radioChanged", a_now.radioStation != a_mark.pose.radioStation },
+                { "gunTargetFrom", GunTarget(a_mark.gunTarget) }, { "gunTarget", GunTarget(gunTarget) }, { "gunTargetChanged", gunTarget != a_mark.gunTarget } };
         }
 
         // keep=<name> keeps a_result; vs=<name> adds "vs": each of its numbers over the same one in the result kept as that
@@ -1092,12 +1115,17 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.pose", "",
                 "CJ as San Andreas has him now: on foot or in a vehicle (its model), getting in or out, grounded, crouching, where (units from the "
                 "handover's anchor), speed (km/h; ahead: along the way he faces), his (or his vehicle's) and the camera's heading and the camera's pitch (degrees), weapon, aiming, shots, radio "
-                "station; whether San Andreas has the player, and Skyrim's open menus",
+                "station; the pad's gun lock's target (gunTarget, a form id, null for none); the pitch of the vehicle he drives (vehiclePitch, degrees, nose up above 0); whether San Andreas has the player, and "
+                "Skyrim's open menus",
                 [](Call&) -> Json {
                     const auto pose = CjPose();
                     Json       out = pose ? DescribePose(*pose) : Json(JsonObject{});
                     out["cj"] = PlayerSync::DebugOwned();
                     out["posed"] = pose.has_value();
+                    out["gunTarget"] = GunTarget(LockOn::DebugGunTarget());
+                    if (const auto pitch = VehiclePitch()) {
+                        out["vehiclePitch"] = Round(*pitch, 0.1);
+                    }
                     out["menus"] = Json(OpenMenus());
                     return out;
                 });
@@ -1109,7 +1137,7 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.since", "[keep=<name>] [vs=<name>]",
                 "What changed since asr.mark: seconds, moved and climbed (metres), turned (turnedBy: either way) and pitched (degrees, the camera), "
-                "bodyTurned (CJ's or his vehicle's heading), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
+                "bodyTurned (CJ's or his vehicle's heading), the gun lock's target then and now (gunTargetFrom, gunTarget, gunTargetChanged), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
                 "weapon and radio station then and now. keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
                 [](Call& a_call) -> Json {
                     if (!g_mark) {
@@ -1127,7 +1155,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
                 "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
                 "above where he started (metres), his top and lowest speed (km/h), the most the camera turned either way, whether he left the "
-                "ground, and the menus that were open. keep= and vs= as asr.since",
+                "ground, and the menus that were open; in a vehicle the most its nose went up and down (pitchUp, pitchDown, degrees). keep= and vs= as asr.since",
                 [](Call& a_call) -> Step {
                     const double seconds = a_call.Number("seconds", 1.0);
                     if (seconds <= 0.0 || seconds > 600.0) {
@@ -1142,6 +1170,8 @@ namespace AhShitRim::TestKit
                         double    low = 1e9;
                         double    left = 0.0;
                         double    right = 0.0;
+                        double    pitchUp = -1e9;    // the driven vehicle's pitch, its highest and lowest
+                        double    pitchDown = 1e9;
                         bool      airborne = false;
                         JsonArray menus;
                     };
@@ -1159,6 +1189,10 @@ namespace AhShitRim::TestKit
                         watch->left = (std::min)(watch->left, turned);
                         watch->right = (std::max)(watch->right, turned);
                         watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
+                        if (const auto pitch = VehiclePitch()) {
+                            watch->pitchUp = (std::max)(watch->pitchUp, *pitch);
+                            watch->pitchDown = (std::min)(watch->pitchDown, *pitch);
+                        }
                         for (auto& menu : OpenMenus()) {
                             if (std::ranges::find(watch->menus, menu) == watch->menus.end()) {
                                 watch->menus.push_back(std::move(menu));
@@ -1174,6 +1208,10 @@ namespace AhShitRim::TestKit
                         out["turnedLeft"] = Round(watch->left, 0.1);
                         out["turnedRight"] = Round(watch->right, 0.1);
                         out["airborne"] = watch->airborne;
+                        if (watch->pitchUp > -1e8) {
+                            out["pitchUp"] = Round(watch->pitchUp, 0.1);
+                            out["pitchDown"] = Round(watch->pitchDown, 0.1);
+                        }
                         out["menusSeen"] = Json(watch->menus);
                         Compare(out, a_call);
                         return Json(std::move(out));
