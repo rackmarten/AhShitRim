@@ -41,8 +41,9 @@ namespace AhShitRim::PlayerSync
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
     // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units), its heading (radians, Skyrim's:
-    // 0 north, clockwise) and the model drawn (ModelView's id). False when San Andreas hasn't the player or the slot draws nothing.
-    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr);
+    // 0 north, clockwise), the model drawn (ModelView's id) and its frame (BodyState.vehicleFrame's quaternion x, y, z, w). False when
+    // San Andreas hasn't the player or the slot draws nothing.
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr, float (*a_rotation)[4] = nullptr);
     void DebugToggle();
     void DebugType(const char* a_code);
 

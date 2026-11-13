@@ -12,6 +12,7 @@
 #include "player/Arms.h"
 #include "player/Missions.h"
 #include "player/PlayerSync.h"
+#include "ride.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
 #include "weapons.h"
@@ -137,6 +138,19 @@ namespace AhShitRim::TestKit
         }
 
         // ---- The feature checks (scenarios/vehicle-lights.json, muzzle-flash.json, crew-follow.json) ----
+
+        // The vehicle slot CJ drives in this handover, if any.
+        std::optional<std::uint32_t> DrivenSlot()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                    vehicle.handover == PlayerSync::DebugHandover()) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        }
 
         Json Point(const RE::NiPoint3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
         Json Point(const Body::Vec3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
@@ -1142,13 +1156,7 @@ namespace AhShitRim::TestKit
                         }
                         slot = g_spawned;
                     } else if (a_which == "driven") {
-                        for (std::uint32_t i = 0; i < Protocol::kVehicleMax && !slot; i++) {
-                            Protocol::BodyState vehicle{};
-                            if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
-                                vehicle.handover == PlayerSync::DebugHandover()) {
-                                slot = i;
-                            }
-                        }
+                        slot = DrivenSlot();
                         if (!slot) {
                             throw Error("CJ isn't driving");
                         }
@@ -1171,6 +1179,92 @@ namespace AhShitRim::TestKit
                     DescribeLamps(*slot, details, lights);
                     return SkseTestKit::Place{ .x = position.x, .y = position.y, .z = position.z, .heading = heading, .root = ModelView::Node(model),
                         .lights = std::move(lights), .details = std::move(details) };
+                });
+
+            // A scenario: CJ drives his vehicle with keys held, a row a frame, and how it rode (protocol/cpp/ride.h).
+            SkseTestKit::AddScenario("asr.drive", "[steer=<-1..1>] [gas=<forward|back|none>] [handbrake=<bool>] [seconds=<s>] [minSpeed=<m/s>]",
+                "Holds the driving keys for seconds (3): steer (-1 full left, A; 1 full right, D; 0), gas (forward W, back S, none) and the "
+                "handbrake (Space). A row a frame of the driven vehicle where it's drawn (its position, heading, pitch, roll, tilt, speed and "
+                "slip off its heading); answers with the leg: turned (degrees, right positive), path, moved, radius (units), top speed, mean, median "
+                "and max slip (degrees, counted while faster than minSpeed, 2 m/s), impacts (stopped short by something), max tilt, roll and pitch, the height range and the fastest rise",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const float steer = static_cast<float>(a_call.Number("steer", 0.0));
+                    if (!(steer >= -1.0f && steer <= 1.0f)) {
+                        throw Error("steer is -1 to 1");
+                    }
+                    const auto    gas = a_call.Text("gas", "forward");
+                    float         moveY = 0.0f;
+                    std::uint32_t buttons = 0;
+                    if (gas == "forward") {
+                        moveY = 1.0f;
+                        buttons = Protocol::kButtonAccelerate;
+                    } else if (gas == "back") {
+                        moveY = -1.0f;
+                        buttons = Protocol::kButtonBrake;
+                    } else if (gas != "none") {
+                        throw Error("gas is forward, back or none");
+                    }
+                    if (a_call.Flag("handbrake", false)) {
+                        buttons |= Protocol::kButtonHandbrake;
+                    }
+                    const double seconds = a_call.Number("seconds", 3.0);
+                    if (!(seconds > 0.0 && seconds <= 120.0)) {
+                        throw Error("seconds is over 0, up to 120");
+                    }
+                    const auto slot = DrivenSlot();
+                    if (!slot) {
+                        throw Error("CJ isn't driving (asr.spawn <model> in=true first)");
+                    }
+                    a_call.DefaultTimeout(seconds * 3.0 + 15.0);
+                    const PlayerSync::DebugInput input{ .moveX = steer, .moveY = moveY, .buttons = buttons };
+                    const double minSpeed = a_call.Number("minSpeed", 2.0);
+                    if (!(minSpeed > 0.0)) {
+                        throw Error("minSpeed is over 0 (m/s)");
+                    }
+                    auto leg = std::make_shared<Ride::Leg>(static_cast<float>(minSpeed) * Pose::kUnitsPerMeter);
+                    auto held = std::make_shared<double>(0.0);  // seconds held while the world ran
+                    auto last = std::make_shared<double>(a_call.Seconds());
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const double now = a_call.Seconds();
+                        const double step = now - *last;
+                        *last = now;
+                        if (SkseTestKit::Paused()) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return std::nullopt;
+                        }
+                        if (a_call.Frames() > 0) {
+                            *held += step;  // the time since the last sample: the first one is this one's own frame
+                        }
+                        RE::NiPoint3 at;
+                        float        heading = 0.0f;
+                        float        rotation[4]{};
+                        if (!PlayerSync::DebugVehicle(*slot, at, heading, nullptr, &rotation)) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error(std::format("vehicle slot {} isn't drawn any more", *slot));
+                        }
+                        Protocol::BodyBone frame{};
+                        std::copy(std::begin(rotation), std::end(rotation), std::begin(frame.rotation));
+                        const auto attitude = Ride::AttitudeOf(Body::ToMatrix(frame));
+                        leg->Add(*held, at.x, at.y, at.z, heading, attitude);
+                        a_call.Row(JsonObject{ { "t", Round(*held, 0.001) }, { "frame", a_call.Frames() }, { "x", Round(at.x, 0.1) }, { "y", Round(at.y, 0.1) },
+                            { "z", Round(at.z, 0.1) }, { "heading", Round(heading * Ride::kDegrees, 0.1) }, { "pitch", Round(attitude.pitch, 0.1) },
+                            { "roll", Round(attitude.roll, 0.1) }, { "tilt", Round(attitude.tilt, 0.1) }, { "speed", Round(leg->LastSpeed() / Pose::kUnitsPerMeter, 0.01) },
+                            { "slip", Round(leg->LastSlip(), 0.1) } });
+                        if (*held >= seconds) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            const float m = Pose::kUnitsPerMeter;
+                            return JsonObject{ { "slot", *slot }, { "samples", leg->Samples() }, { "turned", Round(leg->Turned(), 0.1) },
+                                { "path", Round(leg->Path(), 0.1) }, { "moved", Round(leg->Moved(), 0.1) }, { "radius", Round(leg->Radius(), 0.1) },
+                                { "radiusM", Round(leg->Radius() / m, 0.01) }, { "topSpeed", Round(leg->TopSpeed() / m, 0.01) },
+                                { "slip", Round(leg->MeanSlip(), 0.1) }, { "medianSlip", Round(leg->MedianSlip(), 0.1) }, { "maxSlip", Round(leg->MaxSlip(), 0.1) }, { "impacts", leg->Impacts() }, { "slipSamples", leg->SlipSamples() },
+                                { "maxTilt", Round(leg->MaxTilt(), 0.1) }, { "maxRoll", Round(leg->MaxRoll(), 0.1) }, { "maxPitch", Round(leg->MaxPitch(), 0.1) },
+                                { "heightRange", Round(leg->HeightRange() / m, 0.01) }, { "maxRise", Round(leg->MaxRise() / m, 0.01) },
+                                { "at", Point(at) }, { "heading", Round(heading * Ride::kDegrees, 0.1) } };
+                        }
+                        PlayerSync::DebugHold(input);
+                        return std::nullopt;
+                    };
                 });
 
             // A scenario: a row a frame, for skytest run's CSV.
