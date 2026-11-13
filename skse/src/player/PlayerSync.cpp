@@ -1911,6 +1911,30 @@ namespace AhShitRim::PlayerSync
 
     int DebugPadCheats() { return state.padCheatsDone; }
 
+    DebugLookState DebugLook()
+    {
+        return DebugLookState{ .mouse = state.mouseSensitivity ? state.mouseSensitivity->GetFloat() : 0.0f,
+            .pad = state.padSensitivity ? state.padSensitivity->GetFloat() : 0.0f, .mouseMin = state.mouseRange.min, .mouseMax = state.mouseRange.max,
+            .padMin = state.padRange.min, .padMax = state.padRange.max, .mouseScale = LookScale(state.mouseSensitivity, false),
+            .padScale = LookScale(state.padSensitivity, true) };
+    }
+
+    void DebugSetLook(float a_mouse, float a_pad)
+    {
+        if (a_mouse >= 0.0f && state.mouseSensitivity) {
+            state.mouseSensitivity->data.f = a_mouse;
+        }
+        if (a_pad >= 0.0f && state.padSensitivity) {
+            state.padSensitivity->data.f = a_pad;
+        }
+    }
+
+    void DebugResetLook()
+    {
+        Ini::Set("Input", "LookReset", "0", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)");
+        ResetLookOnce();
+    }
+
     void DebugStick(bool a_right, float a_x, float a_y)
     {
         state.pad.SetStick(a_right, a_x, a_y);

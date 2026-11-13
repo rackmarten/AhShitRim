@@ -186,6 +186,7 @@ never need it). To use it:
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
+   | `asr.look [mouse=] [pad=] [reset=] [mark=] [keep=] [vs=]` | Skyrim's look sensitivity sliders (live values, ends) and the scales CJ's look gets from them, `[Input] LookReset`; sets a slider, replays the one-time move to the middle (`reset=true`), and measures CJ's camera turn since `mark=true` (`vs=` over a kept one's) | `asr.look mouse=0.01` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
