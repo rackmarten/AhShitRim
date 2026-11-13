@@ -9,7 +9,7 @@
 // The limits (set from runs on the test desktop, measured values in the pull request): a light push of the left stick
 // walks (under 9 km/h) and full runs, at least half as fast again; A held sprints, at least 15 % faster than the run;
 // the right stick full right for a second turns the camera at least 30 degrees right; X leaves the ground and rises
-// 0.25 m; L3 crouches and stands; LB talks to a guard in front of CJ; the d-pad changes the weapon; LT aims and RT
+// 0.25 m; L3 crouches and stands; LB talks to Bjorlam in front of CJ (the log says Skyrim activated him for LB); the d-pad changes the weapon; LT aims and RT
 // fires a pistol; B held opens Skyrim's tween menu and Start its journal; Y gets CJ in and out of a car; Back held a second
 // hands the player over both ways.
 {
@@ -80,15 +80,17 @@
     { "label": "L3 again", "cmd": "pad", "buttons": "ls", "seconds": 0.15 },
     { "label": "CJ stands", "cmd": "wait", "until": "crouching == false", "for": "asr.pose", "timeout": 3 },
 
-    // LB activates what CJ faces, through Skyrim's own activation: a guard right in front of him talks.
-    { "label": "a guard in front of CJ", "cmd": "asr.place", "count": 1, "distance": 110, "expect": "placed.length == 1" },
-    { "cmd": "wait", "seconds": 2 },
+    // LB activates what CJ faces, through Skyrim's own activation: Bjorlam, the stables' carriage driver, brought in
+    // front of him, talks.
+    { "label": "Bjorlam in front of CJ", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "label": "the help box names LB", "cmd": "log", "lines": 1, "match": "activation: CJ (aims at|faces) 00013698 [(]LB: Talk Bjorlam[)]", "expect": "lines.length == 1" },
     { "label": "LB tapped", "cmd": "pad", "buttons": "lb", "seconds": 0.15 },
-    { "label": "the guard talks", "cmd": "wait", "until": "menus contains Dialogue Menu", "for": "asr.pose", "timeout": 5 },
+    { "label": "Skyrim's activation", "cmd": "log", "lines": 1, "match": "00013698 activated by the player [(]LB", "expect": "lines.length == 1" },
+    { "label": "Bjorlam talks", "cmd": "wait", "until": "menus contains Dialogue Menu", "for": "asr.pose", "timeout": 5 },
     { "label": "the dialogue", "cmd": "screenshot", "name": "dialogue", "hud": true },
     { "label": "B leaves it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
     { "label": "the dialogue closed", "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
-    { "label": "the guard taken away", "cmd": "asr.place", "clear": true },
 
     // Skyrim's menus on the pad while CJ has the player: B held the tween menu (a tap is Circle in a cheat sequence),
     // Start the journal; B closes both.
