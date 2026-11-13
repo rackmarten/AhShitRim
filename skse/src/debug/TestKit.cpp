@@ -1244,6 +1244,14 @@ namespace AhShitRim::TestKit
             return actor;
         }
 
+        // How far its head is above its feet, units; 0 without its 3D.
+        float HeadRise(RE::Actor* a_actor)
+        {
+            auto* root = a_actor->Get3D();
+            auto* head = root ? root->GetObjectByName("NPC Head [Head]") : nullptr;
+            return head ? head->world.translate.z - a_actor->GetPosition().z : 0.0f;
+        }
+
         float HealthOf(RE::Actor* a_actor) { return a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth); }
 
         // CJ crouched (San Andreas toggles it on the press) or standing, as Skyrim's player sneaks: presses crouch every
@@ -1352,7 +1360,8 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.seated", "[radius]",
                 "The nearest loaded person sitting on furniture within radius (4000) of the player that a stealth kill may take (not a "
-                "child, not essential; not a guard, who leans on a wall), with its sit state",
+                "child, not essential; not a guard, who leans on a wall; lowered onto a chair or a bench, not leaning on a counter), with its "
+                "sit state and how high its head is",
                 [](Call& a_call) -> Json {
                     auto*       player = RE::PlayerCharacter::GetSingleton();
                     auto*       lists = RE::ProcessLists::GetSingleton();
@@ -1372,6 +1381,13 @@ namespace AhShitRim::TestKit
                         if (std::string_view(actor->GetName()).find("Guard") != std::string_view::npos) {
                             continue;  // guards lean on walls, where nobody stands behind them
                         }
+                        // On a chair or a bench, not leaning on a counter or a wall (the same sit state): the head well
+                        // down from a standing one's.
+                        const float rise = HeadRise(actor.get());
+                        if (rise <= 0.0f || rise > 0.8f * actor->GetHeight()) {
+                            others += std::format("{}{} (not lowered onto a seat, head {:.0f} up)", others.empty() ? "" : ", ", actor->GetName(), rise);
+                            continue;
+                        }
                         if (const auto why = StealthKill::Excluded(Weapons::Knife, StealthKills::TargetOf(actor.get(), player)); why != StealthKill::Verdict::Yes) {
                             others += std::format("{}{} ({})", others.empty() ? "" : ", ", actor->GetName(), StealthKill::Why(why));
                             continue;
@@ -1388,6 +1404,7 @@ namespace AhShitRim::TestKit
                     g_victim = best->GetFormID();
                     return JsonObject{ { "ref", SkseTestKit::FormId(best->GetFormID()) }, { "name", best->GetName() }, { "at", Spot(best->GetPosition()) },
                         { "heading", Round(best->GetAngleZ()) }, { "sitState", static_cast<int>(best->AsActorState()->GetSitSleepState()) },
+                        { "headRise", Round(HeadRise(best), 1.0) }, { "standingHeight", Round(best->GetHeight(), 1.0) },
                         { "distance", Round(bestDistance, 1.0) } };
                 });
 
