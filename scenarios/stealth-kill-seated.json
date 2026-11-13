@@ -1,0 +1,35 @@
+// A knife stealth kill on someone in a seat's sit state (v36), from a fresh session. San Andreas only asks that a stealth
+// kill's victim has its head above its feet, so the seated are fair game, as Skyrim's guards and townspeople spend much
+// of the day so. Most who sit on a chair or a bench have a wall behind them, where nobody stands; at Whiterun's market at
+// 19:00 the stallholders lean on their counters in the same sit state, with room behind: asr.seated lean=true finds the
+// nearest one a stealth kill may take (no guard, no child, nobody essential), and CJ is put 1.05 m behind them. He
+// crouches, holds the right button and clicks the left one: the grab, then the stab, and they slump into a ragdoll, dead, CJ held a metre behind; paused on the grab and the stab for
+// shots. scripts/skytest.ps1 run scenarios/stealth-kill-seated.json (scenarios/README.md). Measured on the test desktop
+// (13 November 2026): Carlotta Valentia at her stall, grabbed at 0.70 to 0.86 m, CJ 1.01 m behind her at the stab.
+{
+  "name": "stealth-kill-seated",
+  "steps": [
+    { "label": "evening, when the market's stallholders are at their counters", "cmd": "scene", "presets": "19 clear" },
+    { "label": "to Whiterun", "cmd": "console", "command": "coc WhiterunOrigin" },
+    { "cmd": "wait", "seconds": 12 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "the nearest seated person a stealth kill may take", "cmd": "asr.seated", "radius": 6000, "lean": true, "expect": "sitState >= 1" },
+    { "label": "Skyrim's player behind them", "cmd": "asr.behind", "meters": 1.05 },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "the knife", "cmd": "asr.give", "weapon": 4, "ammo": 1, "expect": "weapon == 4" },
+    { "cmd": "screenshot", "name": "seated-before", "camera": "orbit asr.cj: yaw=0 distance=320 pitch=20 height=80" },
+    { "label": "the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true, "expect": ["cjToVictim < 1.3", "health > 0"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-grab", "camera": "orbit asr.cj: yaw=0 distance=320 pitch=20 height=80" },
+    "resume",
+    { "label": "the stab", "cmd": "asr.stealth", "until": "stab", "expect": ["cjToVictim ~ 1.0 +- 0.15", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-stab", "camera": "orbit asr.cj: yaw=0 distance=320 pitch=20 height=80" },
+    "resume",
+    { "label": "dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "ragdoll == true", "playerFromCj < 210"] },
+    { "cmd": "screenshot", "name": "seated-after", "camera": "orbit asr.cj: yaw=0 distance=320 pitch=20 height=80" },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
