@@ -1350,8 +1350,8 @@ namespace AhShitRim::TestKit
                 });
 
             SkseTestKit::AddCommand("asr.seated", "[radius]",
-                "The nearest loaded person sitting or leaning on furniture within radius (4000) of the player that a stealth kill may take "
-                "(not a child, not essential), with its sit state",
+                "The nearest loaded person sitting on furniture within radius (4000) of the player that a stealth kill may take (not a "
+                "child, not essential; not a guard, who leans on a wall), with its sit state",
                 [](Call& a_call) -> Json {
                     auto*       player = RE::PlayerCharacter::GetSingleton();
                     auto*       lists = RE::ProcessLists::GetSingleton();
@@ -1367,6 +1367,9 @@ namespace AhShitRim::TestKit
                         auto* state = actor ? actor->AsActorState() : nullptr;
                         if (!actor || actor.get() == player || !state || !StealthKill::Seated(static_cast<std::uint32_t>(state->GetSitSleepState()))) {
                             continue;
+                        }
+                        if (std::string_view(actor->GetName()).find("Guard") != std::string_view::npos) {
+                            continue;  // guards lean on walls, where nobody stands behind them
                         }
                         if (const auto why = StealthKill::Excluded(Weapons::Knife, StealthKills::TargetOf(actor.get(), player)); why != StealthKill::Verdict::Yes) {
                             others += std::format("{}{} ({})", others.empty() ? "" : ", ", actor->GetName(), StealthKill::Why(why));
