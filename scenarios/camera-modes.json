@@ -61,6 +61,10 @@
     { "label": "the Hunter's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
     { "cmd": "screenshot", "name": "hunter-first-person", "hud": true },
 
+    { "label": "Skyrim takes the player for the Hydra's spot", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "down the road past the cart: the Hydra's wings take room", "cmd": "console", "command": "player.setpos y -11918" },
+    { "cmd": "console", "command": "player.setpos z -4750" },
+    { "cmd": "wait", "seconds": 2 },
     { "label": "facing south along the road", "cmd": "console", "command": "player.setangle z 180" },
     { "label": "CJ in a Hydra there", "cmd": "asr.spawn", "model": 520, "in": true, "expect": "driven == true" },
     { "cmd": "wait", "seconds": 2 },
