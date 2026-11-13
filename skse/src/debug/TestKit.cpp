@@ -1298,6 +1298,10 @@ namespace AhShitRim::TestKit
                             if (!existing || count != 1.0) {
                                 throw Error("ref= moves one loaded reference (count 1)");
                             }
+                            if (existing->IsDisabled() || existing->IsDeleted() || !existing->Is3DLoaded()) {
+                                throw Error(std::format("{} is disabled, deleted or not loaded (console ref={} enable)", SkseTestKit::FormId(existing->GetFormID()),
+                                    SkseTestKit::FormId(existing->GetFormID())));
+                            }
                         }
                         const auto baseId = hex("base", Wanted::kHolds[0].guard);
                         auto*      base = RE::TESForm::LookupByID<RE::TESBoundObject>(baseId);
@@ -1317,7 +1321,7 @@ namespace AhShitRim::TestKit
                             // The pose's view heading is Skyrim's convention (0 north, clockwise).
                             const float h = pose->viewHeading + angle + (static_cast<float>(i) - static_cast<float>(n - 1) / 2.0f) * spread;
                             ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * distance, std::cos(h) * distance, 0.0f));
-                            ref->data.angle.z = h + std::numbers::pi_v<float>;  // facing CJ
+                            ref->SetAngle(RE::NiPoint3(0.0f, 0.0f, h + std::numbers::pi_v<float>));  // facing CJ
                             if (auto* actor = ref->As<RE::Actor>(); actor && combat) {
                                 actor->StartCombat(player);
                             }
