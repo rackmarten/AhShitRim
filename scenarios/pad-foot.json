@@ -16,7 +16,7 @@
   "name": "pad-foot",
   "steps": [
     { "label": "nothing held from before", "cmd": "input", "release": true },
-    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.pose", "expect": "menus.length == 0" },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
     { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
@@ -93,7 +93,7 @@
     { "label": "the dialogue closed", "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
 
     // Skyrim's menus on the pad while CJ has the player: B held the tween menu (a tap is Circle in a cheat sequence),
-    // Start the journal; B closes both.
+    // Start the journal; B closes the tween menu, Start the journal.
     { "label": "B held 0.5 s", "cmd": "pad", "buttons": "b", "seconds": 0.5 },
     { "label": "Skyrim's tween menu", "cmd": "wait", "until": "menus contains TweenMenu", "for": "asr.pose", "timeout": 5 },
     { "label": "the tween menu", "cmd": "screenshot", "name": "tween-menu", "hud": true },
@@ -102,7 +102,7 @@
     { "label": "Start tapped", "cmd": "pad", "buttons": "start", "seconds": 0.15 },
     { "label": "Skyrim's journal", "cmd": "wait", "until": "menus contains Journal Menu", "for": "asr.pose", "timeout": 5 },
     { "label": "the journal", "cmd": "screenshot", "name": "journal", "hud": true },
-    { "label": "B closes it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    { "label": "Start closes it", "cmd": "pad", "buttons": "start", "seconds": 0.15 },
     { "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
 
     // Weapons: the d-pad's right switches, LT aims, RT fires. asr.fire puts the pistol in his hands first (the mouse's
