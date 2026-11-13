@@ -71,4 +71,11 @@ namespace AhShitRim::Vehicles
 
     // The vehicle CJ is in, or nullptr.
     CVehicle* Driven(CPlayerPed* a_ped);
+
+    // Parked vehicles (v36, protocol/cpp/parked.h): once a frame after Update. Puts a spot's vehicle out as a mission
+    // vehicle in a free slot once CJ is within Parked::kSpawnRadius of it in its world (a_world, InputState.world) and
+    // the ground there is in, drops one nobody used once he is past Parked::kFarRadius, and tells the spots their
+    // vehicle was taken when CJ gets in, it is wrecked or it is gone. a_anchor: InputState.anchor; a_spawn and a_lift
+    // as for Update. Nothing happens unless a_active (San Andreas has CJ, the ground under him is in).
+    void UpdateParked(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, const float (&a_anchor)[3], std::uint8_t a_world, bool a_active);
 }

@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 35;
+    inline constexpr std::uint32_t kProtocolVersion = 36;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -182,7 +182,7 @@ namespace AhShitRim::Protocol
         std::uint8_t  spawnFlags;      // v22 (a reserved byte before): kSpawn*, how the spawn request with spawnCount wants spawnModel
         std::uint16_t cueCount;        // v24: counts sound cues Skyrim asks for; a new value plays cue, also while Skyrim has the player
         std::uint8_t  cue;             // v24: kCue*
-        std::uint8_t  reserved2;
+        std::uint8_t  world;           // v36 (a reserved byte before): kWorld*, the worldspace the player is in now (parked vehicles' spots, protocol/cpp/parked.h)
         std::uint16_t stealthKillCount;  // v29: counts kills the player made sneaking, unseen; a new value may have CJ say a stealth kill line (protocol/cpp/situations.h)
         std::uint16_t cashCount;         // v29: counts gold the player gained outside a shop; looting gold
         std::uint16_t shopBuyCount;      // v29: counts gold spent in barter or Ammu-Nation; buying
@@ -192,6 +192,9 @@ namespace AhShitRim::Protocol
     inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
     inline constexpr std::uint8_t kCueMissionPassed = 1;  // InputState.cue (v24): San Andreas's mission passed tune (PLAY_MISSION_PASSED_TUNE 1)
     inline constexpr std::uint8_t kCueIntroLine = 2;      // CJ's "Ah shit, here we go again." (the intro's voice-over, mission audio)
+    inline constexpr std::uint8_t kWorldNone = 0;      // InputState.world (v36): an interior, or a worldspace no spot table uses
+    inline constexpr std::uint8_t kWorldTamriel = 1;   // Skyrim's own land (Tamriel, 0x3C)
+    inline constexpr std::uint8_t kWorldWhiterun = 2;  // WhiterunWorld, the city behind its gate (0x1A26F)
 
     struct InputSlot
     {

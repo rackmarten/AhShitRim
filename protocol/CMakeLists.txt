@@ -82,6 +82,7 @@ add_executable(protocol_tests
     tests/cpp/test_air_spawn.cpp
     tests/cpp/test_missions.cpp
     tests/cpp/test_pickups.cpp
+    tests/cpp/test_parked.cpp
     tests/cpp/test_run_over.cpp
     tests/cpp/test_passengers.cpp
     tests/cpp/test_vehicle_hits.cpp
