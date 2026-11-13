@@ -46,8 +46,10 @@ namespace AhShitRim::LockOn
             const auto       verdict = StealthKill::Check(cj, a_weapon, target);
             if ((a_target->GetFormID() != state.judged || verdict != state.verdict) && state.loggedVerdicts < kLoggedVerdicts) {
                 state.loggedVerdicts++;
+                const auto why = verdict == StealthKill::Verdict::NotStanding ? std::format("{}: {}", StealthKill::Why(verdict), StealthKills::OffItsFeet(a_target)) :
+                                                                                 std::string(StealthKill::Why(verdict));
                 SKSE::log::info("lock-on: stealth kill on {} ({:08X}): {} ({:.2f} m, {}, detection {})", a_target->GetDisplayFullName(), a_target->GetFormID(),
-                    StealthKill::Why(verdict), StealthKill::Distance(cj, target.feet), StealthKill::Behind(cj, target.feet, target.heading) ? "back to CJ" : "facing him",
+                    why, StealthKill::Distance(cj, target.feet), StealthKill::Behind(cj, target.feet, target.heading) ? "back to CJ" : "facing him",
                     a_target->RequestDetectionLevel(a_player));
             }
             state.judged = a_target->GetFormID();
@@ -207,6 +209,13 @@ namespace AhShitRim::LockOn
                     }
                     SKSE::log::info("lock-on: nobody to shift the gun lock to on the {} ({} around, {} in front, {} in sight)", a_aim.shift > 0 ? "right" : "left",
                         all.size(), shown, seen);
+                    for (std::size_t i = 0; i < all.size(); i++) {
+                        const auto& c = all[i];
+                        if (c.screen.distance <= GunLock::kRange) {
+                            SKSE::log::info("lock-on:   {:08X}{}{}: screen {:.2f},{:.2f}{}, {:.1f} m, {}", c.id, i == current ? " (locked)" : "", c.hostile ? " hostile" : "",
+                                c.screen.x, c.screen.y, c.screen.visible ? "" : " (behind)", c.screen.distance, c.inSight ? "in sight" : "not in sight");
+                        }
+                    }
                 }
                 current = shifted;
             }

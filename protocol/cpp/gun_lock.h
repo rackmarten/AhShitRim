@@ -18,9 +18,16 @@ namespace AhShitRim::GunLock
 {
     inline constexpr float kRange = 45.0f;      // metres: nobody farther is locked on to
     inline constexpr float kRadius = 0.45f;     // screen heights from the crosshair a target is picked within
-    inline constexpr float kGain = 9.0f;        // of the offset closed a second (about a ninth of it a frame at 60 fps)
-    inline constexpr float kCountsPerScreen = 500.0f;  // mouse counts that turn San Andreas's camera about a screen width (its default sensitivity)
-    inline constexpr float kMaxCounts = 2400.0f;       // counts a second at most, so a lock never whips the camera round
+    // The steer is a closed loop through San Andreas and back: the counts sent this frame show in Skyrim's camera 3 or 4
+    // frames later. With that lag a loop closing more than about a third of the gap a frame overshoots further each
+    // time and never settles (the camera pitched up and down ever harder, the target off screen), so it closes at most a
+    // tenth a frame: it settles with up to 4 frames of lag (or 70 ms) and up to twice San Andreas's sensitivity as measured
+    // here, at 30 to 144 fps, within about half a second at 60 fps (test_gun_lock.cpp simulates it).
+    inline constexpr float kGain = 6.0f;               // of the offset closed a second (a tenth of it a frame at 60 fps)
+    inline constexpr float kMaxShare = 0.1f;           // and never more a frame, however long the frame: the lag counts frames
+    inline constexpr float kCountsPerWidth = 250.0f;   // mouse counts that turn San Andreas's camera a screen width (measured in game)
+    inline constexpr float kCountsPerHeight = 110.0f;  // and up or down a screen height (measured: its vertical turn is the quicker)
+    inline constexpr float kMaxCounts = 1200.0f;       // counts a second at most, so a lock never whips the camera round
     inline constexpr float kBreakStick = 0.8f;   // the right stick this far over...
     inline constexpr float kBreakSeconds = 0.25f;  // ...this long drops the lock
 
@@ -98,12 +105,11 @@ namespace AhShitRim::GunLock
     {
         double x = 0.0, y = 0.0;
     };
-    inline Counts Steer(float a_tx, float a_ty, float a_x, float a_y, float a_aspect, float a_seconds)
+    inline Counts Steer(float a_tx, float a_ty, float a_x, float a_y, [[maybe_unused]] float a_aspect, float a_seconds)
     {
-        const float aspect = std::isfinite(a_aspect) && a_aspect > 0.1f ? a_aspect : 16.0f / 9.0f;
-        const float share = (std::min)(kGain * a_seconds, 1.0f);
-        float       dx = (a_tx - a_x) * kCountsPerScreen * share;
-        float       dy = (a_ty - a_y) / aspect * kCountsPerScreen * share;  // a screen height is 1/aspect of a width's turn
+        const float share = (std::min)(kGain * a_seconds, kMaxShare);
+        float       dx = (a_tx - a_x) * kCountsPerWidth * share;
+        float       dy = (a_ty - a_y) * kCountsPerHeight * share;
         const float cap = kMaxCounts * a_seconds;
         const float len = std::hypot(dx, dy);
         if (len > cap && len > 0.0f) {

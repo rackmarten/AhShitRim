@@ -19,6 +19,7 @@
 
 #include "pickups.h"
 #include "vehicle.h"
+#include "vehicle_kinds.h"
 
 namespace AhShitRim::Parked
 {
@@ -62,17 +63,7 @@ namespace AhShitRim::Parked
     // San Andreas's models the table uses.
     inline constexpr std::uint16_t kSanchez = 468;
     inline constexpr std::uint16_t kBmx = 481;
-    inline constexpr std::uint16_t kRhino = 432;
-    inline constexpr std::uint16_t kPatriot = 470;
-    inline constexpr std::uint16_t kHunter = 425;
-    inline constexpr std::uint16_t kSeasparrow = 447;
-    inline constexpr std::uint16_t kMonster = 444;
     inline constexpr std::uint16_t kQuad = 471;
-    inline constexpr std::uint16_t kRomero = 442;
-    inline constexpr std::uint16_t kCombine = 532;
-    inline constexpr std::uint16_t kCropduster = 512;
-    inline constexpr std::uint16_t kCamper = 483;
-    inline constexpr std::uint16_t kDozer = 486;
     inline constexpr std::uint16_t kFreeway = 463;
 
     // A spot this far off the marker it stands by, clear of the pickups there (on the marker and 2 m to either side).
@@ -88,7 +79,7 @@ namespace AhShitRim::Parked
         { 5, kSanchez, Hold::Reach, World::Tamriel, { -169500.0f, 5650.0f, -4060.0f }, 6.14f, "the Markarth stables" },
 
         // A BMX in every village and small town.
-        { 20, kBmx, Hold::Whiterun, World::Tamriel, { 22243.0f, -44616.0f + kAside, -136.0f }, 0.0f, "Riverwood" },
+        { 20, kBmx, Hold::Whiterun, World::Tamriel, { 22808.0f, -44087.0f, -140.0f }, 0.75f, "Riverwood" },  // along the road by the Sleeping Giant Inn
         { 21, kBmx, Hold::Whiterun, World::Tamriel, { -83782.0f, 7902.0f + kAside, -4118.0f }, 0.0f, "Rorikstead" },
         { 22, kBmx, Hold::Rift, World::Tamriel, { 77183.0f, -65456.0f + kAside, 10869.0f }, 0.0f, "Ivarstead" },
         { 23, kBmx, Hold::Haafingar, World::Tamriel, { -101407.0f, 84423.0f + kAside, -12003.0f }, 0.0f, "Dragon Bridge" },
@@ -105,20 +96,39 @@ namespace AhShitRim::Parked
         { 34, kBmx, Hold::Pale, World::Tamriel, { 73031.0f, 45290.0f + kAside, -6517.0f }, 0.0f, "Heljarchen" },
 
         // Themed spots, in San Andreas's spirit.
-        { 50, kRhino, Hold::Whiterun, World::Tamriel, { -13759.0f + kAside, -8448.0f, -5552.0f }, 1.57f, "Fort Greymoor: a tank at the fort" },
-        { 51, kPatriot, Hold::Falkreath, World::Tamriel, { -67967.0f, -51506.0f + kAside, 512.0f }, 0.0f, "the Imperial camp in Falkreath: an army jeep" },
-        { 52, kHunter, Hold::Falkreath, World::Tamriel, { 1482.0f, -41162.0f - kAside, 5727.0f }, 3.14f, "Bleak Falls Barrow: a gunship on the heights over Riverwood" },
-        { 53, kSeasparrow, Hold::Haafingar, World::Tamriel, { -47782.0f, 128632.0f - kAside, -12908.0f }, 3.14f, "the Solitude Lighthouse: a seaplane helicopter by the sea" },
-        { 54, kMonster, Hold::Whiterun, World::Tamriel, { 1539.0f + kAside, 1306.0f, -5796.0f }, 1.57f, "Bleakwind Basin: a monster truck at the giants' camp" },
         { 55, kQuad, Hold::Falkreath, World::Tamriel, { -56672.0f + kAside, -54925.0f, 1559.0f }, 1.57f, "Hunter's Rest: a quad at the hunters' camp" },
-        { 56, kRomero, Hold::Falkreath, World::Tamriel, { -30566.0f - kAside, -86850.0f, -3124.0f }, 4.71f, "Falkreath: a hearse in the town of graves" },
-        { 57, kCombine, Hold::Whiterun, World::Tamriel, { 19072.0f, -18080.0f - kAside, -4360.0f }, 3.14f, "Pelagia Farm: a combine harvester in the fields" },
-        { 58, kCropduster, Hold::Whiterun, World::Tamriel, { -84151.0f, 5351.0f - kAside, -4199.0f }, 3.14f, "the Rorikstead farms: a crop duster" },
-        { 59, kCamper, Hold::Falkreath, World::Tamriel, { -43534.0f + kAside, -59851.0f, 992.0f }, 1.57f, "Half-Moon Mill: a camper van by Lake Ilinalta" },
-        { 60, kDozer, Hold::Reach, World::Tamriel, { -165398.0f + kAside, 861.0f, -4501.0f }, 1.57f, "Left Hand Mine: a dozer at the mine" },
         { 61, kFreeway, Hold::Reach, World::Tamriel, { -114906.0f, -7748.0f - kAside, -5452.0f }, 3.14f, "Old Hroldan: a chopper outside the roadside inn" },
     };
     // clang-format on
+
+    // ---- Only two wheels and the quad ----
+    //
+    // A parked car, truck, tank or aircraft blocks a road or a gate, or can't get out past the walls round it, wherever
+    // it stands in Skyrim. A bicycle, a motorbike or the quad fits anywhere and rides off, so those are all that waits
+    // parked. The rest come by other ways (the dev spawn keys for now).
+    constexpr bool MayPark(std::uint16_t a_model)
+    {
+        using VehicleKinds::Kind;
+        switch (VehicleKinds::KindOf(a_model)) {
+        case Kind::Bicycle:
+        case Kind::Bike:
+        case Kind::Quad:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    constexpr bool AllMayPark()
+    {
+        for (const auto& spot : kSpots) {
+            if (!MayPark(spot.model)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    static_assert(AllMayPark(), "a parked spot holds a model bigger than a bike or the quad");
 
     inline const Spot* SpotById(std::uint16_t a_id)
     {

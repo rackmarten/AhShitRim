@@ -16,9 +16,10 @@
 // The radio (#907): no station on the BMX, and the station dialed in one vehicle comes on in the next, Radio Sovngarde
 // included, with San Andreas's own radio getting to a station dialed after (its retune ends before the 3 s it may take,
 // 2.6 s after the wheel's last step here).
-// AHSHITRIM_ONLY=cheats, =cliff, =pickups, =radio, =handling or =exit runs only those (handling: how the Rhino turns and rides, on
+// AHSHITRIM_ONLY=cheats, =cliff, =pickups, =radio, =handling, =exit or =drive runs only those (handling: how the Rhino turns and rides, on
 // flat ground, humps and boulders, next to a Sandking; AHSHITRIM_GROUND=flat, rocks or boulders for one; exit: CJ's body every
-// frame while he gets out of a car and a bike, which must go out through the door smoothly).
+// frame while he gets out of a car and a bike, which must go out through the door smoothly; drive: his body in the vehicle
+// every frame while he drives, which must stay in his seat).
 
 #include <algorithm>
 #include <array>
@@ -29,6 +30,7 @@
 #include <cstring>
 #include <format>
 #include <optional>
+#include <tuple>
 #include <set>
 #include <string>
 #include <thread>
@@ -614,6 +616,163 @@ int main()
         return bad;
     };
 
+    // CJ's body's middle (his skinned vertices' average, what Skyrim draws) in vehicle a_slot's frame (X right, Y forward,
+    // Z up), metres, once per San Andreas frame (a_lastFrame: the last one seen). Only from a body and a vehicle San
+    // Andreas published in the same frame: one frame apart is half a metre at speed.
+    std::optional<SkinModel::Model> cjMesh;
+    std::uint32_t                   cjMeshModel = 0;
+    const auto middleOf = [&](const Protocol::BodyState& body, const Protocol::BodyState& car) -> std::optional<Pose::Vec3> {
+        if (body.model != cjMeshModel || !cjMesh) {
+            cjMeshModel = body.model;
+            cjMesh = received.Model(body.model);
+            if (!cjMesh) {
+                return std::nullopt;
+            }
+        }
+        std::vector<Body::Matrix34> bones;
+        for (std::uint32_t i = 0; i < body.boneCount; i++) {
+            bones.push_back(Body::ToMatrix(body.bones[i]));
+        }
+        double      sx = 0.0, sy = 0.0, sz = 0.0;
+        std::size_t n = 0;
+        for (const auto& mesh : cjMesh->meshes) {
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++, n++) {
+                Body::Vec3 at, nrm;
+                Body::Skin(bones.data(), body.boneCount, mesh.Vertex(i), at, nrm);
+                sx += at.x;
+                sy += at.y;
+                sz += at.z;
+            }
+        }
+        if (!n) {
+            return std::nullopt;
+        }
+        const Pose::Vec3 d{ body.feet[0] + static_cast<float>(sx / n) - car.feet[0], body.feet[1] + static_cast<float>(sy / n) - car.feet[1],
+            body.feet[2] + static_cast<float>(sz / n) - car.feet[2] };
+        const auto local = Passengers::Unrotate(Passengers::QuatOf(car.vehicleFrame), d);
+        return Pose::Vec3{ local.x * Pose::kMetersPerUnit, local.y * Pose::kMetersPerUnit, local.z * Pose::kMetersPerUnit };
+    };
+    const auto middleIn = [&](int a_slot, std::uint32_t& a_lastFrame) -> std::optional<Pose::Vec3> {
+        Protocol::BodyState body{}, car{};
+        if (!link.ReadBody(body) || !(body.flags & Protocol::kBodyValid) || body.frame == a_lastFrame || !link.ReadVehicle(a_slot, car) ||
+            !(car.flags & Protocol::kBodyValid) || car.frame != body.frame) {
+            return std::nullopt;
+        }
+        a_lastFrame = body.frame;
+        return middleOf(body, car);
+    };
+
+    // AHSHITRIM_ONLY=drive: CJ drives a Sandking for 60 s and a Sanchez for 20 s (gas, steering both ways, the handbrake,
+    // braking, coasting), his body's middle in the vehicle's frame every San Andreas frame, and as Skyrim draws them (each
+    // smoothed). He must stay in his seat: no jump, in a car no frame off where he sat more than CarExit::kRideMaxOff, no
+    // getting-in-or-out flag (CarExit::Seated).
+    const auto drives = [&] {
+        int bad = 0;
+        for (const auto& [model, name, seconds] : { std::tuple{ std::uint16_t{ 495 }, "SANDKIN", 60.0 }, std::tuple{ std::uint16_t{ 468 }, "SANCHEZ", 20.0 } }) {
+            fresh();
+            Protocol::BodyState car{};
+            const int slot = spawn(model, name, car);
+            if (slot < 0 || !board(name)) {
+                bad++;
+                continue;
+            }
+            // One leg after another, round and round: which keys, for how long.
+            struct Leg
+            {
+                std::vector<std::uint32_t> keys;
+                double                     seconds;
+            };
+            const Leg legs[] = { { { Input::kDikW }, 4.0 }, { { Input::kDikW, Input::kDikD }, 2.5 }, { { Input::kDikW }, 3.0 },
+                { { Input::kDikW, Input::kDikA }, 2.5 }, { { Input::kDikW, Input::kDikD, Input::kDikSpace }, 1.5 }, { { Input::kDikS }, 1.5 },
+                { {}, 1.0 }, { { Input::kDikW, Input::kDikA }, 3.0 } };
+            std::vector<CarExit::Sample> samples;
+            std::uint32_t                lastFrame = 0;
+            std::size_t                  flagged = 0, out = 0, legIndex = 0;
+            const std::uint64_t          startMs = ms();
+            std::uint64_t                legUntil = 0;
+            CarExit::Ride                ride;
+            // And as Skyrim draws them: CJ and the vehicle each smoothed by its own Body::Interpolator, the vehicle drawn at
+            // CJ's moment (Body::Follow), as PlayerSync's DrawCj and DrawVehicles do, every frame here as Skyrim does every one of its own.
+            Body::Interpolator           drawnBody, drawnCar;
+            Body::Follow                 follow;
+            std::vector<CarExit::Sample> drawn;
+            CarExit::Ride                drawnRide;
+            std::size_t                  behind = 0;  // reads where the vehicle was 2 or more San Andreas frames ahead of CJ's body
+            std::printf("drive %s: ms, middle x (right), y (forward), z (up) in the vehicle's frame, m, off the seat, m, speed m/s\n", name);
+            run(seconds, [&] {
+                if (ms() >= legUntil) {
+                    for (const auto& l : legs) {
+                        for (auto key : l.keys) {
+                            input.SetKey(key, false);
+                        }
+                    }
+                    const Leg& l = legs[legIndex++ % std::size(legs)];
+                    for (auto key : l.keys) {
+                        input.SetKey(key, true);
+                    }
+                    legUntil = ms() + static_cast<std::uint64_t>(l.seconds * 1000);
+                }
+                {
+                    const double        now = static_cast<double>(ms());
+                    Protocol::BodyState body{}, car{}, b{}, c{};
+                    if (link.ReadBody(body) && (body.flags & Protocol::kBodyValid) && body.handover == handoverId) {
+                        drawnBody.Push(body, now);
+                    }
+                    if (link.ReadVehicle(slot, car) && (car.flags & Protocol::kBodyValid) && car.handover == handoverId) {
+                        drawnCar.Push(car, now);
+                    }
+                    if ((body.flags & Protocol::kBodyValid) && (car.flags & Protocol::kBodyValid) && car.frame >= body.frame + 2) {
+                        behind++;
+                        std::printf("drive %s: %5llu CJ's body at frame %u, the vehicle at %u\n", name, static_cast<unsigned long long>(ms() - startMs), body.frame,
+                            car.frame);
+                    }
+                    if (drawnBody.Sample(now, b) && follow.Sample(drawnBody, drawnBody.TimeAt(now), drawnCar, now, c)) {
+                        if (const auto at = middleOf(b, c)) {
+                            drawn.push_back({ *at, true });
+                            drawnRide = CarExit::CheckRide(drawn);
+                            if (drawnRide.lastOff > 0.05f) {
+                                std::printf("drive %s: %5llu drawn %6.2f %6.2f %6.2f %5.2f off\n", name, static_cast<unsigned long long>(ms() - startMs), at->x,
+                                    at->y, at->z, drawnRide.lastOff);
+                            }
+                        }
+                    }
+                }
+                const auto local = middleIn(slot, lastFrame);
+                if (!local) {
+                    return false;
+                }
+                const auto p = player();
+                const bool in = (p.flags & Protocol::kPlayerInVehicle) != 0;
+                flagged += (p.flags & Protocol::kPlayerGettingInOut) != 0;
+                out += !in;
+                samples.push_back({ *local, in });
+                ride = CarExit::CheckRide(samples);
+                const float off = ride.lastOff;
+                // Every 10th frame, and every frame he is off his seat by more than a few centimetres.
+                if (samples.size() % 10 == 1 || off > 0.05f) {
+                    std::printf("drive %s: %5llu %6.2f %6.2f %6.2f %5.2f %5.1f%s%s\n", name, static_cast<unsigned long long>(ms() - startMs), local->x, local->y,
+                        local->z, off, std::hypot(p.velocity[0], p.velocity[1]) * Pose::kMetersPerUnit, in ? "" : " out",
+                        (p.flags & Protocol::kPlayerGettingInOut) ? " getting in/out" : "");
+                }
+                return false;
+            });
+            input.ReleaseAll();
+            const bool bike = model == 468;
+            const bool seated = CarExit::Seated(ride, bike) && !flagged && !out;
+            std::printf("drive %s: %zu frames in %.0f s, off the seat at most %.3f m (frame %zu), biggest step %.3f m, %zu frames getting in/out, %zu out: %s\n",
+                name, ride.samples, (ms() - startMs) / 1000.0, ride.maxOff, ride.worstAt, ride.maxStep, flagged, out, seated ? "seated" : "NOT SEATED");
+            const bool drawnSeated = CarExit::Seated(drawnRide, bike);
+            std::printf("drive %s: as Skyrim draws them, %zu frames, off the seat at most %.3f m (frame %zu), biggest step %.3f m: %s\n", name, drawnRide.samples,
+                drawnRide.maxOff, drawnRide.worstAt, drawnRide.maxStep, drawnSeated ? "seated" : "NOT SEATED");
+            bad += !drawnSeated;
+            std::printf("drive %s: CJ's body 2 or more frames behind the vehicle in %zu reads\n", name, behind);
+            bad += behind > 0;
+            bad += !seated;
+        }
+        fresh();
+        return bad;
+    };
+
     // AHSHITRIM_ONLY=exit: CJ gets out of a Sandking, a ZR-350 and a Sanchez, his body's middle (his skinned vertices'
     // average, what Skyrim draws) logged every San Andreas frame in the vehicle's frame from the press of F until a
     // second after San Andreas let go of him. It must move out through the door with no jump and not come back into the
@@ -629,54 +788,22 @@ int main()
                 bad++;
                 continue;
             }
-            std::optional<SkinModel::Model> cj;
-            std::uint32_t                   cjModel = 0;
-            std::vector<CarExit::Sample>    samples;
-            std::uint32_t                   lastFrame = 0;
-            std::uint64_t                   releasedMs = 0;
-            const std::uint64_t             startMs = ms();
+            std::vector<CarExit::Sample> samples;
+            std::uint32_t                lastFrame = 0;
+            std::uint64_t                releasedMs = 0;
+            const std::uint64_t          startMs = ms();
             input.SetKey(Input::kDikF, true);
             std::printf("exit %s: ms, middle x (out), y (forward), z (up) in the vehicle's frame, m, in the vehicle\n", name);
             run(8.0, [&] {
                 if (ms() - startMs > 300) {
                     input.SetKey(Input::kDikF, false);
                 }
-                Protocol::BodyState body{}, now{};
-                if (!link.ReadBody(body) || !(body.flags & Protocol::kBodyValid) || body.frame == lastFrame || link.ReadVehicle(slot, now) == false ||
-                    !(now.flags & Protocol::kBodyValid)) {
+                const auto local = middleIn(slot, lastFrame);
+                if (!local) {
                     return false;
                 }
-                lastFrame = body.frame;
-                if (body.model != cjModel || !cj) {
-                    cjModel = body.model;
-                    cj = received.Model(body.model);
-                    if (!cj) {
-                        return false;
-                    }
-                }
-                std::vector<Body::Matrix34> bones;
-                for (std::uint32_t i = 0; i < body.boneCount; i++) {
-                    bones.push_back(Body::ToMatrix(body.bones[i]));
-                }
-                double      sx = 0.0, sy = 0.0, sz = 0.0;
-                std::size_t n = 0;
-                for (const auto& mesh : cj->meshes) {
-                    for (std::uint32_t i = 0; i < mesh.vertexCount; i++, n++) {
-                        Body::Vec3 at, nrm;
-                        Body::Skin(bones.data(), body.boneCount, mesh.Vertex(i), at, nrm);
-                        sx += at.x;
-                        sy += at.y;
-                        sz += at.z;
-                    }
-                }
-                if (!n) {
-                    return false;
-                }
-                const Pose::Vec3 d{ body.feet[0] + static_cast<float>(sx / n) - now.feet[0], body.feet[1] + static_cast<float>(sy / n) - now.feet[1],
-                    body.feet[2] + static_cast<float>(sz / n) - now.feet[2] };
-                const auto local = Passengers::Unrotate(Passengers::QuatOf(now.vehicleFrame), d);
                 const bool in = inVehicle();
-                samples.push_back({ { local.x * Pose::kMetersPerUnit, local.y * Pose::kMetersPerUnit, local.z * Pose::kMetersPerUnit }, in });
+                samples.push_back({ *local, in });
                 const auto& s = samples.back();
                 std::printf("exit %s: %5llu %6.2f %6.2f %6.2f %s\n", name, static_cast<unsigned long long>(ms() - startMs), s.at.x, s.at.y, s.at.z, in ? "in" : "out");
                 if (!in && !releasedMs) {
@@ -816,11 +943,12 @@ int main()
     if (const char* only = std::getenv("AHSHITRIM_ONLY"); only && std::string(only) == "cheats") {
         failed += cheats();
     } else if (only && (std::string(only) == "cliff" || std::string(only) == "pickups" || std::string(only) == "radio" || std::string(only) == "handling" ||
-                           std::string(only) == "exit")) {
+                           std::string(only) == "exit" || std::string(only) == "drive")) {
         failed += std::string(only) == "cliff"    ? cliff() :
                   std::string(only) == "radio"    ? radio() :
                   std::string(only) == "handling" ? handling() :
                   std::string(only) == "exit"     ? exits() :
+                  std::string(only) == "drive"    ? drives() :
                                                     pickupModels() + jetpackDrop();
         publish(false);
         link.Tick(ms());

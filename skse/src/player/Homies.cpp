@@ -5,6 +5,7 @@
 #include "body/ModelView.h"
 #include "crew.h"
 #include "hud/SaHud.h"
+#include "melee.h"
 #include "link/LinkService.h"
 #include "player/Riders.h"
 #include "wanted.h"
@@ -32,10 +33,17 @@ namespace AhShitRim::Homies
         constexpr float      kLookEvery = 0.25f;         // seconds between the followers' looks for a target
         constexpr float      kScanEvery = 1.0f;          // seconds between looks for spots
         constexpr float      kThanesEvery = 10.0f;       // seconds between reads of the Thane titles
-        constexpr float      kOffsetEvery = 5.0f;        // seconds between telling a follower his place again
+        constexpr float      kOffsetEvery = 5.0f;        // seconds between telling a follower his place again ([Crew] FollowPackage=0)
+        constexpr RE::FormID kFollowPackage = 0x0005C84B;  // Skyrim.esm's PlayerFollowerPackage: Lydia's, the player 256 to 384 units off
+        constexpr float      kFollowEvery = 1.0f;        // seconds between checks that a follower still runs it
+        constexpr float      kGearEvery = 1.0f;          // seconds between looks for Skyrim gear on a homie (his outfit comes back)
+        constexpr float      kCullEvery = 0.5f;          // seconds between hiding his 3D again (a weapon drawn or a quiver adds shapes)
         constexpr float      kDeadFor = 60.0f;           // a dead homie lies there this long (or until out of reach)
         constexpr float      kTargetRange = 50.0f;       // metres from CJ an enemy may be to be shot at
         constexpr int        kMakesPerFrame = 2;
+        constexpr int        kRegroupTries = 5;          // spots behind CJ tried to put a straggler back on
+        constexpr float      kRegroupRise = 300.0f;      // units: a spot this far above or below the player is a ledge
+        constexpr float      kRegroupGain = 10.0f;       // metres nearer CJ a straggler must come to be moved at all
         constexpr std::uint32_t kCopyBase = 0x6A000000;  // even ids for the homies' copies of San Andreas's models
 
         // The stables and the open towns' ways in (Skyrim.esm's spots, as the parked vehicles' table has them), in
@@ -95,11 +103,12 @@ namespace AhShitRim::Homies
             std::uint64_t   spot = 0;  // where he stood, 0 for none
             float           deadFor = -1.0f;
             float           offsetIn = 0.0f;
+            float           gearIn = 0.0f, cullIn = 0.0f;
             Crew::Burst     burst;
+            Crew::Straggler straggler;
             RE::ActorHandle target;
             bool            aiming = false, firing = false;
             RE::NiPoint3    aim;
-            RE::NiAVObject* culled = nullptr;  // the root whose shapes are culled
             Body::Interpolator body, gun;
         };
 
@@ -138,12 +147,17 @@ namespace AhShitRim::Homies
             std::vector<RE::ObjectRefHandle> markers;  // ground probes, deleted the next frame
             std::vector<Bound>       bound;
             std::uint32_t            roll = 0x9E3779B9u;
-            int                      key = 0;  // 1 G, 2 H, waiting for the next Update
+            std::vector<bool>        keys;  // G presses waiting for the next Update: whether the aim key was held
+            RE::TESPackage*          follow = nullptr;  // kFollowPackage, or null to keep them in formation the old way
+            unsigned                 followPuts = 0, gearStripped = 0;
+            unsigned                 hushedLines = 0;   // subtitles of theirs taken off (a line each)
+            unsigned                 hushedSounds = 0;  // their voice handles stopped
             std::uint32_t            handover = 0;
             std::uint32_t            freshFor = 0;
             float                    reanchorWait = 0.0f;
             float                    fresh = 0.0f;  // seconds left in which spots fill in view: the loading screen just went
             unsigned                 made = 0, drawn = 0;
+            unsigned                 regroupMisses = 0, regrouped = 0;
             float                    statIn = 5.0f;
         } state;
 
@@ -254,10 +268,25 @@ namespace AhShitRim::Homies
 
         // ---- Making and taking out ----
 
-        RE::NiPointer<RE::TESObjectREFR> Create(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, float a_heading)
+        // The loaded cell a_at is in, in the player's worldspace, else the player's own. A reference belongs in the cell
+        // it stands in: a probe's navmesh search (MoveToNearestNavmesh) only looks at its own cell's navmesh, and the
+        // player's cell, with CJ walking where Skyrim has none (up against Whiterun's walls), had none in reach.
+        RE::TESObjectCELL* CellAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at)
+        {
+            auto* own = a_player->GetParentCell();
+            if (!own || own->IsInteriorCell()) {
+                return own;
+            }
+            auto* tes = RE::TES::GetSingleton();
+            auto* cell = tes ? tes->GetCell(a_at) : nullptr;
+            return cell && cell->IsAttached() && !cell->IsInteriorCell() && cell->GetRuntimeData().worldSpace == a_player->GetWorldspace() ? cell : own;
+        }
+
+        RE::NiPointer<RE::TESObjectREFR> Create(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_base, const RE::NiPoint3& a_at, float a_heading,
+            RE::TESObjectCELL* a_cell = nullptr)
         {
             auto* data = RE::TESDataHandler::GetSingleton();
-            auto* cell = a_player->GetParentCell();
+            auto* cell = a_cell ? a_cell : CellAt(a_player, a_at);
             if (!data || !a_base || !cell) {
                 return {};
             }
@@ -268,7 +297,7 @@ namespace AhShitRim::Homies
         }
 
         // The nearest navmesh to a_at, on loaded ground close to it (Police's probe: a marker, deleted the next frame).
-        bool GroundAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, RE::NiPoint3& a_out)
+        bool GroundAt(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at, RE::NiPoint3& a_out, RE::NiPointer<RE::TESObjectREFR>* a_marker = nullptr)
         {
             auto marker = Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), a_at, 0.0f);
             if (!marker) {
@@ -277,8 +306,49 @@ namespace AhShitRim::Homies
             const bool found = marker->MoveToNearestNavmesh();
             a_out = marker->GetPosition();
             state.markers.push_back(marker->CreateRefHandle());
+            if (a_marker) {
+                *a_marker = marker;
+            }
             auto* cell = marker->GetParentCell();
             return found && std::hypot(a_out.x - a_at.x, a_out.y - a_at.y) <= kSnapFar && cell && cell->IsAttached();
+        }
+
+        // The soldier's Skyrim gear that could show or be used: his bow, quiver and arrows, any blade, shield or torch. Only
+        // San Andreas's gun is his. His armour stays: it's hidden with the rest of his 3D and keeps him as tough as before.
+        // His outfit comes back now and then (on his 3D loading, a reset), so Update looks every kGearEvery.
+        void Strip(RE::Actor* a_actor)
+        {
+            auto gear = a_actor->GetInventory([](RE::TESBoundObject& a_object) {
+                if (a_object.IsWeapon() || a_object.IsAmmo() || a_object.Is(RE::FormType::Light)) {
+                    return true;
+                }
+                const auto* armor = a_object.As<RE::TESObjectARMO>();
+                return armor && armor->IsShield();
+            });
+            int removed = 0;
+            for (auto& [object, entry] : gear) {
+                if (object && entry.first > 0) {
+                    a_actor->RemoveItem(object, entry.first, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+                    removed += entry.first;
+                }
+            }
+            if (removed && state.gearStripped++ % 20 == 0) {
+                SKSE::log::info("homies: {:08X}'s Skyrim gear taken off: {} item(s) ({} times so far)", a_actor->GetFormID(), removed, state.gearStripped);
+            }
+            if (removed && a_actor->AsActorState()->IsWeaponDrawn()) {
+                a_actor->DrawWeaponMagicHands(false);
+            }
+        }
+
+        // His soldier's hellos to the player ("Hmm?", "Out with it.", "I'm waiting.", as CJ comes near or looks at him)
+        // never start: Skyrim only greets the player from an actor that may talk to him, a race's Allow PC Dialogue,
+        // which ExtraCanTalkToPlayer overrides for this one actor (Papyrus's AllowPCDialogue). Hush still stops anything
+        // else of Skyrim's he says. E never picks a homie, so nothing is lost.
+        void Mute(RE::Actor* a_actor)
+        {
+            if (a_actor->CanTalkToPlayer()) {
+                a_actor->AllowPCDialogue(false);
+            }
         }
 
         // A homie at a_at: the soldier in nobody's faction but the player's, with San Andreas's Families model and gun.
@@ -286,7 +356,7 @@ namespace AhShitRim::Homies
             float a_healthShare = 1.0f)
         {
             auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(kBase);
-            auto  ref = Create(a_player, base, a_at, a_heading);
+            auto  ref = Create(a_player, base, a_at, a_heading, a_player->GetParentCell());  // Skyrim moves an actor on to the cell he walks into
             auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
             if (!actor) {
                 if (ref) {
@@ -316,6 +386,9 @@ namespace AhShitRim::Homies
                 av->DamageActorValue(RE::ActorValue::kHealth, state.health * (1.0f - (std::max)(0.05f, a_healthShare)));
             }
             actor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+            actor->SetDisplayName(RE::BSFixedString(std::string(Crew::kHomieName).c_str()), true);  // not "Imperial Soldier"
+            Strip(actor);
+            Mute(actor);
             Homie h;
             h.handle = actor->CreateRefHandle();
             h.id = actor->GetFormID();
@@ -338,6 +411,9 @@ namespace AhShitRim::Homies
             if (auto* actor = Get(a_homie)) {
                 CallActor(actor, "ClearKeepOffsetFromActor");
                 actor->GetActorRuntimeData().boolBits.reset(RE::Actor::BOOL_BITS::kPlayerTeammate);
+                if (state.follow && actor->GetCurrentPackage() == state.follow) {
+                    actor->EvaluatePackage(true, false);  // off the follow package, onto his own
+                }
                 state.leaving.push_back(actor->CreateRefHandle());
             }
             Unbind(a_homie.id);
@@ -579,9 +655,76 @@ namespace AhShitRim::Homies
             if (!actor) {
                 return;
             }
+            if (state.follow) {
+                // Skyrim's own follower package: he paths after the player round rocks and walls as Lydia does, keeps 4 to
+                // 5.5 m off and stops there. Put on him as a temporary package, which his AI drops when it re-evaluates
+                // (a fight called off, a door): looked at again every kFollowEvery.
+                a_homie.offsetIn = kFollowEvery;
+                if (actor->GetCurrentPackage() == state.follow) {
+                    return;
+                }
+                actor->PutCreatedPackage(state.follow, true, false, true);
+                if (state.followPuts++ % 20 == 0) {
+                    auto* now = actor->GetCurrentPackage();
+                    SKSE::log::info("homies: {:08X} put on the follow package ({} so far); he runs {:08X}{}", a_homie.id, state.followPuts,
+                        now ? now->GetFormID() : 0, now == state.follow ? "" : ": NOT the follow package");
+                }
+                return;
+            }
             const auto offset = Crew::FormationOffset(a_homie.formation);
-            CallActor(actor, "KeepOffsetFromActor", static_cast<RE::Actor*>(a_player), offset.x, offset.y, 0.0f, 0.0f, 0.0f, 0.0f, 300.0f, 60.0f);
+            if (!CallActor(actor, "KeepOffsetFromActor", static_cast<RE::Actor*>(a_player), offset.x, offset.y, 0.0f, 0.0f, 0.0f, 0.0f, 300.0f, 60.0f)) {
+                SKSE::log::warn("homies: {:08X} couldn't be told his place (KeepOffsetFromActor didn't go)", a_homie.id);
+            }
             a_homie.offsetIn = kOffsetEvery;
+        }
+
+        // A follower whose AI found no way to CJ (Crew::Straggler): put on the navmesh behind CJ, out of view, near enough
+        // to come up to his place (Wanted::SpawnSpot's near ring, straight behind first, then round to either side).
+        void Regroup(RE::PlayerCharacter* a_player, Homie& a_homie, RE::Actor* a_actor, float a_viewHeading)
+        {
+            const auto  feet = a_player->GetPosition();
+            const auto  camera = Wanted::CameraOf(Flat(feet), a_viewHeading);
+            const float was = a_actor->GetPosition().GetDistance(feet) / Crew::kMeter;
+            for (int i = 0; i < kRegroupTries; i++) {
+                const auto   spot = Wanted::SpawnSpot(Flat(feet), a_viewHeading, i, Wanted::kSpawnNear + 100.0f);
+                RE::NiPoint3                     at;
+                RE::NiPointer<RE::TESObjectREFR> marker;
+                if (!GroundAt(a_player, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), at, &marker) || std::abs(at.z - feet.z) > kRegroupRise ||
+                    Wanted::InView(camera, a_viewHeading, Flat(at))) {
+                    continue;
+                }
+                a_actor->MoveTo(marker.get());  // into the marker's cell, which SetPosition wouldn't change
+                TellPlace(a_player, a_homie);
+                state.regrouped++;
+                SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back {:.0f} m behind him", a_homie.id, was, at.GetDistance(feet) / Crew::kMeter);
+                return;
+            }
+            // None there (CJ in a cell with no navmesh at all): the navmesh nearest CJ in the follower's own cell, as close
+            // as his AI can get, if that's out of view and kRegroupGain nearer.
+            auto*       own = CellAt(a_player, a_actor->GetPosition());
+            std::string why = own && own->IsAttached() ? "no navmesh in his cell" : "his cell isn't loaded";
+            auto        marker = own && own->IsAttached() ? Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), feet, 0.0f, own) : nullptr;
+            if (marker) {
+                state.markers.push_back(marker->CreateRefHandle());
+                if (marker->MoveToNearestNavmesh()) {
+                    const auto  at = marker->GetPosition();
+                    const float off = at.GetDistance(feet) / Crew::kMeter;
+                    const bool  seen = Wanted::InView(camera, a_viewHeading, Flat(at));
+                    if (was - off >= kRegroupGain && std::abs(at.z - feet.z) <= kRegroupRise && !seen) {
+                        a_actor->MoveTo(marker.get());
+                        TellPlace(a_player, a_homie);
+                        state.regrouped++;
+                        SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back on the navmesh nearest him, {:.0f} m off", a_homie.id, was, off);
+                        return;
+                    }
+                    why = std::format("the nearest in his cell {:.0f} m from CJ{}{}", off, seen ? ", in view" : "",
+                        std::abs(at.z - feet.z) > kRegroupRise ? ", too high or low" : "");
+                }
+            }
+            if (state.regroupMisses++ % 10 == 0) {
+                SKSE::log::info("homies: {:08X} is {:.0f} m off and no navmesh behind CJ out of view to put him back on ({}; tried again every {:.0f} s)", a_homie.id,
+                    was, why, Crew::kRegroupWait);
+            }
         }
 
         void Join(RE::PlayerCharacter* a_player, Homie& a_homie)
@@ -612,62 +755,123 @@ namespace AhShitRim::Homies
             Leave(a_homie, "dismissed");
         }
 
-        std::vector<Crew::Candidate> Candidates(bool a_followers, RE::FormID a_target)
+        // Every living homie, followers and not, for G: the one CJ's lock-on is on, or, aiming a gun, the one nearest his
+        // crosshair (as LockOn marks an enemy), flagged.
+        std::vector<Crew::Candidate> Candidates(RE::FormID a_target)
         {
+            float x = 0.0f, y = 0.0f, aspect = 0.0f;
+            auto* camera = RE::Main::WorldRootCamera();
+            const bool crosshair = camera && SaHud::AimCrosshair(x, y, aspect);
             std::vector<Crew::Candidate> out;
+            std::vector<Melee::OnScreen> shown;
             for (const auto& h : state.homies) {
                 auto* actor = Get(h);
-                if (!actor || actor->IsDead() || h.follower != a_followers) {
+                if (!actor || actor->IsDead()) {
                     continue;
                 }
                 out.push_back({ h.id, V(actor->GetPosition()), h.id == a_target });
+                Melee::OnScreen on;
+                if (crosshair) {
+                    float depth = 0.0f;
+                    on.visible = camera->WorldPtToScreenPt3(actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 0.65f * actor->GetHeight()), on.x, on.y, depth, 1e-5f);
+                    on.y = 1.0f - on.y;  // Skyrim's screen points go up
+                    on.distance = actor->GetPosition().GetDistance(RE::PlayerCharacter::GetSingleton()->GetPosition()) / Crew::kMeter;
+                }
+                shown.push_back(on);
+            }
+            if (crosshair) {
+                if (const auto closest = Melee::NearCrosshair(shown, x, y, aspect); !closest.empty()) {
+                    out[closest.front()].targeted = true;
+                }
             }
             return out;
         }
 
-        void HandleKey(RE::PlayerCharacter* a_player, int a_key, float a_heading, RE::FormID a_target)
+        // G: only while CJ aims, at the homie he aims at (Crew::AimPick). One standing about joins, one of the crew
+        // leaves. Typed in a cheat, with no aim, it does nothing.
+        void HandleKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
         {
-            const auto feet = V(a_player->GetPosition());
-            if (a_key == 1) {
-                const auto pick = Crew::Pick(feet, a_heading, Candidates(false, a_target));
-                if (!pick) {
-                    for (auto& h : state.homies) {
-                        if (h.follower) {
-                            TellPlace(a_player, h);  // G with nobody near: everyone back in formation
-                        }
-                    }
-                    return;
-                }
-                if (Titles() == 0) {
-                    SaHud::ShowHelp(std::string(Crew::kNoThaneLine), 4.0f);
-                    return;
-                }
-                if (Followers() >= Crew::SizeFor(Titles())) {
-                    SaHud::ShowHelp(std::string(Crew::kFullLine), 4.0f);
-                    SKSE::log::info("homies: the crew is full at {}", Crew::SizeFor(Titles()));
-                    return;
-                }
-                for (auto& h : state.homies) {
-                    if (h.id == pick) {
-                        Join(a_player, h);
-                        break;
-                    }
-                }
+            if (!a_aiming) {
                 return;
             }
-            const auto pick = Crew::Pick(feet, a_heading, Candidates(true, a_target));
-            for (auto it = state.homies.begin(); it != state.homies.end();) {
-                if (it->follower && (!pick || it->id == pick)) {
-                    Dismiss(*it);
-                    it = state.homies.erase(it);
-                } else {
-                    ++it;
+            const auto pick = Crew::AimPick(V(a_player->GetPosition()), a_heading, Candidates(a_target));
+            auto       it = std::find_if(state.homies.begin(), state.homies.end(), [&](const Homie& a_h) { return a_h.id == pick; });
+            if (!pick || it == state.homies.end()) {
+                SKSE::log::info("homies: G while aiming, at no homie");
+                return;
+            }
+            if (it->follower) {
+                Dismiss(*it);
+                state.homies.erase(it);
+                return;
+            }
+            if (Titles() == 0) {
+                SaHud::ShowHelp(std::string(Crew::kNoThaneLine), 4.0f);
+                return;
+            }
+            if (Followers() >= Crew::SizeFor(Titles())) {
+                SaHud::ShowHelp(std::string(Crew::kFullLine), 4.0f);
+                SKSE::log::info("homies: the crew is full at {}", Crew::SizeFor(Titles()));
+                return;
+            }
+            Join(a_player, *it);
+        }
+
+        // Their soldier's Skyrim lines (greetings, idle chatter, combat calls): a homie says nothing of Skyrim's. His
+        // voice is stopped as it starts and its subtitle taken off.
+        void Hush()
+        {
+            for (auto& h : state.homies) {
+                auto* actor = Get(h);
+                auto* process = actor ? actor->GetActorRuntimeData().currentProcess : nullptr;
+                auto* high = process ? process->high : nullptr;
+                if (!high) {
+                    continue;
+                }
+                for (auto& sound : high->soundHandles) {
+                    if (sound.IsPlaying()) {
+                        sound.Stop();
+                        if (state.hushedSounds++ % 20 == 0) {
+                            SKSE::log::info("homies: a homie's Skyrim voice stopped ({} so far)", state.hushedSounds);
+                        }
+                    }
+                }
+            }
+            if (auto* manager = RE::SubtitleManager::GetSingleton(); manager && !state.homies.empty()) {
+                RE::BSSpinLockGuard guard(manager->lock);
+                for (auto it = manager->subtitles.begin(); it != manager->subtitles.end();) {
+                    auto speaker = it->speaker.get();
+                    if (speaker && IsHomie(speaker.get())) {
+                        if (state.hushedLines++ < 10) {
+                            SKSE::log::info("homies: a homie's Skyrim subtitle taken off: \"{}\"", it->subtitle.c_str());
+                        }
+                        it = manager->subtitles.erase(it);
+                    } else {
+                        ++it;
+                    }
                 }
             }
         }
 
-        // The followers' targets: the nearest enemy of the player's (or one fighting him or the crew) in sight and in his
-        // gun's range. Skyrim's own fights are called off: theirs are picked here.
+        // Whether a_actor is one the followers shoot (Crew::IsFoe): hostile to the player, or fighting him or the crew
+        // without fleeing; never an animal that isn't aggressive (an elk running from CJ has him as its combat target).
+        bool IsFoe(RE::PlayerCharacter* a_player, RE::Actor* a_actor)
+        {
+            auto*       foe = a_actor->GetActorRuntimeData().currentCombatTarget.get().get();
+            const bool  hostile = a_actor->IsHostileToActor(a_player);
+            const bool  fightsUs = foe == a_player || (foe && IsHomie(foe));
+            if (!hostile && !fightsUs) {
+                return false;  // the common case, before the keyword scan
+            }
+            const auto* combat = a_actor->GetActorRuntimeData().combatController;
+            const bool  fleeing = combat && combat->state && combat->IsFleeing();
+            const bool  animal = a_actor->HasKeywordString("ActorTypeAnimal");
+            const bool  aggressive = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAggression) > 0.0f;
+            return Crew::IsFoe(hostile, fightsUs, fleeing, animal, aggressive);
+        }
+
+        // The followers' targets: the nearest foe (IsFoe) in sight and in his gun's range. Skyrim's own fights are
+        // called off: theirs are picked here.
         void Look(RE::PlayerCharacter* a_player)
         {
             auto* lists = RE::ProcessLists::GetSingleton();
@@ -683,8 +887,7 @@ namespace AhShitRim::Homies
                     actor->IsPlayerTeammate() || actor->GetPosition().GetDistance(cj) > kTargetRange * Crew::kMeter) {
                     continue;
                 }
-                auto* foe = actor->GetActorRuntimeData().currentCombatTarget.get().get();
-                if (actor->IsHostileToActor(a_player) || foe == a_player || (foe && IsHomie(foe))) {
+                if (IsFoe(a_player, actor)) {
                     enemies.push_back(actor);
                 }
             }
@@ -719,17 +922,21 @@ namespace AhShitRim::Homies
             return a_actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, height * 0.65f);
         }
 
-        void Cull(Homie& a_homie, RE::Actor* a_actor)
+        // His Skyrim 3D hidden, shape by shape (the skeleton stays for his AI), again every kCullEvery: a drawn weapon, a
+        // quiver or an outfit put back adds shapes to it after the first pass.
+        void Cull(Homie& a_homie, RE::Actor* a_actor, float a_delta)
         {
             auto* root = a_actor->Get3D();
-            if (!root || root == a_homie.culled) {
+            if (!root || (a_homie.cullIn -= a_delta) > 0.0f) {
                 return;
             }
+            a_homie.cullIn = kCullEvery;
             RE::BSVisit::TraverseScenegraphGeometries(root, [](RE::BSGeometry* a_shape) {
-                a_shape->SetAppCulled(true);
+                if (!a_shape->GetAppCulled()) {
+                    a_shape->SetAppCulled(true);
+                }
                 return RE::BSVisit::BSVisitControl::kContinue;
             });
-            a_homie.culled = root;
         }
 
         std::uint32_t CopyId(std::uint32_t a_slot, std::uint32_t a_of, bool a_gun)
@@ -814,6 +1021,14 @@ namespace AhShitRim::Homies
         state.health = (std::max)(10.0f, number("Crew", "Health", 150.0f));
         state.damageFactor = (std::max)(0.0f, number("Crew", "DamageFactor", Crew::kDamageFactor));
         state.forcedThanes = static_cast<int>(number("Debug", "CrewThanes", -1.0f));
+        state.follow = nullptr;
+        if (number("Crew", "FollowPackage", 1.0f) != 0.0f) {
+            state.follow = RE::TESForm::LookupByID<RE::TESPackage>(kFollowPackage);
+            if (!state.follow) {
+                SKSE::log::warn("homies: no follow package {:08X} (PlayerFollowerPackage): the followers keep to their formation instead", kFollowPackage);
+            }
+        }
+        SKSE::log::info("homies: the followers {}", state.follow ? "follow with Skyrim's follower package" : "keep to San Andreas's formation (KeepOffsetFromActor)");
         SKSE::log::info("homies: the crew {} ({} homies a hold, health {:.0f}, their shots {:.2f} of CJ's{})", state.enabled ? "is on" : "is off ([Crew] Enabled=0)",
             state.spotHomies, state.health, state.damageFactor, state.forcedThanes >= 0 ? std::format(", [Debug] CrewThanes={}", state.forcedThanes) : "");
     }
@@ -855,8 +1070,12 @@ namespace AhShitRim::Homies
         if (settled) {
             Tend(a_player, viewHeading);
         }
-        if (const int key = std::exchange(state.key, 0); key && a_onFoot) {
-            HandleKey(a_player, key, a_pose ? a_pose->heading : a_player->GetAngleZ(), a_target);
+        Hush();
+        for (const bool aimHeld : std::exchange(state.keys, {})) {
+            if (a_onFoot) {
+                const bool aiming = aimHeld || (a_pose && (a_pose->weaponFlags & Protocol::kWeaponAiming));
+                HandleKey(a_player, aiming, a_pose ? a_pose->heading : a_player->GetAngleZ(), a_target);
+            }
         }
         if ((state.lookIn -= a_delta) <= 0.0f) {
             state.lookIn = kLookEvery;
@@ -864,7 +1083,8 @@ namespace AhShitRim::Homies
         }
 
         // Each homie: dead, lost, his fight, his place, his 3D hidden, then San Andreas's input and his drawing.
-        const auto cj = a_player->GetPosition();
+        const auto  cj = a_player->GetPosition();
+        const float cjHeading = a_pose ? a_pose->heading : a_player->GetAngleZ();
         Protocol::CrewInput input{};
         input.frame = static_cast<std::uint32_t>(RE::GetDurationOfApplicationRunTime());
         input.handover = a_handover;
@@ -897,12 +1117,27 @@ namespace AhShitRim::Homies
                     it = state.homies.erase(it);
                     continue;
                 }
-                if ((h.offsetIn -= a_delta) <= 0.0f) {
-                    TellPlace(a_player, h);
+                // Put back only on foot (a car's passengers are Riders'), in the player's worldspace (a load door or fast
+                // travel is Remake's), and not while a remake or a load's first moments are under way.
+                auto*      at = actor->GetParentCell();
+                const bool here = at && at->IsAttached() && actor->GetWorldspace() == a_player->GetWorldspace() &&
+                                  (!at->IsInteriorCell() || at == cell);
+                if (!a_onFoot || !settled || !here || state.remakePending || state.fresh > 0.0f || Riders::Rides(h.id)) {
+                    h.straggler.Hold();
+                } else if (h.straggler.Update(distance, a_delta)) {
+                    Regroup(a_player, h, actor, viewHeading);
+                }
+                if ((h.offsetIn -= a_delta) <= 0.0f && !Riders::Rides(h.id)) {
+                    TellPlace(a_player, h);  // not while he rides with CJ: Riders seats him
                 }
             }
             if (actor->Is3DLoaded()) {
-                Cull(h, actor);
+                Cull(h, actor, a_delta);
+            }
+            if ((h.gearIn -= a_delta) <= 0.0f) {
+                h.gearIn = kGearEvery;
+                Strip(actor);
+                Mute(actor);
             }
             // His fight: aim at his target and fire in bursts.
             auto* target = h.target.get().get();
@@ -939,7 +1174,15 @@ namespace AhShitRim::Homies
                 m.feet[0] = feet.x;
                 m.feet[1] = feet.y;
                 m.feet[2] = feet.z;
-                m.heading = h.aiming ? Pose::HeadingOf(h.aim.x - actor->GetPosition().x, h.aim.y - actor->GetPosition().y) : actor->GetAngleZ();
+                // Which way he faces standing: his aim, CJ's way for a follower on foot, else his own. San Andreas
+                // turns him the way he goes while he walks or runs (Crew::Facing).
+                if (h.aiming) {
+                    m.heading = Pose::HeadingOf(h.aim.x - actor->GetPosition().x, h.aim.y - actor->GetPosition().y);
+                } else if (h.follower && !Riders::Rides(h.id)) {
+                    m.heading = cjHeading;
+                } else {
+                    m.heading = actor->GetAngleZ();
+                }
                 const auto aim = (h.aiming ? h.aim : actor->GetPosition() + RE::NiPoint3(std::sin(m.heading), std::cos(m.heading), 0.0f) * 500.0f) - a_anchor;
                 m.aim[0] = aim.x;
                 m.aim[1] = aim.y;
@@ -998,10 +1241,14 @@ namespace AhShitRim::Homies
         }
     }
 
-    void OnKey(bool a_recruit) { state.key = a_recruit ? 1 : 2; }
+    void OnKey(bool a_aiming)
+    {
+        state.keys.push_back(a_aiming);
+    }
 
     void OnRelease(bool a_loading)
     {
+        state.keys.clear();
         if (a_loading) {
             // The world goes with the load: nothing of it is touched. The save being loaded says who comes back.
             state.homies.clear();
@@ -1077,9 +1324,66 @@ namespace AhShitRim::Homies
         return joined;
     }
 
+    bool DebugTargets(const RE::Actor* a_actor)
+    {
+        for (const auto& h : state.homies) {
+            if (h.follower && a_actor && h.target.get().get() == a_actor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    unsigned DebugHushed() { return state.hushedLines; }
+    unsigned DebugHushedSounds() { return state.hushedSounds; }
+
     int DebugCount(bool a_followers)
     {
         return a_followers ? Followers() : static_cast<int>(state.homies.size());
+    }
+
+    std::vector<RE::Actor*> DebugFollowers()
+    {
+        std::vector<RE::Actor*> out;
+        for (const auto& h : state.homies) {
+            if (auto* actor = h.follower ? Get(h) : nullptr) {
+                out.push_back(actor);
+            }
+        }
+        return out;
+    }
+
+    int DebugRegrouped() { return static_cast<int>(state.regrouped); }
+
+    float DebugStray(RE::PlayerCharacter* a_player, float a_metres)
+    {
+        auto* follower = DebugFollower();
+        if (!follower) {
+            return -1.0f;
+        }
+        const auto feet = a_player->GetPosition();
+        for (int i = 0; i < 8; i++) {
+            const auto                       spot = Wanted::SpawnSpot(Flat(feet), a_player->GetAngleZ(), i, a_metres * Crew::kMeter);
+            RE::NiPoint3                     at;
+            RE::NiPointer<RE::TESObjectREFR> marker;
+            if (GroundAt(a_player, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), at, &marker) && std::abs(at.z - feet.z) <= kRegroupRise) {
+                follower->MoveTo(marker.get());
+                return at.GetDistance(feet) / Crew::kMeter;
+            }
+        }
+        return -1.0f;
+    }
+
+    bool DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest)
+    {
+        auto marker = Create(a_player, RE::TESForm::LookupByID<RE::TESBoundObject>(kXMarker), a_player->GetPosition(), 0.0f);
+        if (!marker) {
+            return false;
+        }
+        const bool found = marker->MoveToNearestNavmesh();
+        a_nearest = marker->GetPosition();
+        state.markers.push_back(marker->CreateRefHandle());
+        return found;
     }
 
     RE::Actor* DebugFollower()

@@ -31,7 +31,9 @@ add_executable(protocol_tests
     tests/cpp/test_handshake.cpp
     tests/cpp/test_vehicle_kinds.cpp
     tests/cpp/test_parachute.cpp
+    tests/cpp/test_ini_text.cpp
     tests/cpp/test_input.cpp
+    tests/cpp/test_look_sensitivity.cpp
     tests/cpp/test_pad.cpp
     tests/cpp/test_pad_cheats.cpp
     tests/cpp/test_gun_lock.cpp

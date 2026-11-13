@@ -149,6 +149,38 @@ namespace AhShitRim::Aim
     // the barrel down by its angle, 15 degrees for the sawn-off.
     inline Vec3 BarrelLine(const Vec3& a_muzzle, const Vec3& a_target) { return Body::Normalize(Body::Sub(a_target, a_muzzle), { 0.0f, 1.0f, 0.0f }); }
 
+    // How far a gun is rolled over about its barrel, seen from behind it: the angle from straight up to its top
+    // (a_top), positive with the top leaning to the right. 0 for a barrel straight up or down.
+    inline float RollOf(const Vec3& a_barrel, const Vec3& a_top)
+    {
+        const Vec3 b = Body::Normalize(a_barrel, {});
+        const Vec3 up{ 0.0f, 0.0f, 1.0f };
+        const Vec3 u = Body::Sub(up, Body::Scale(b, Body::Dot(b, up)));
+        const Vec3 t = Body::Sub(a_top, Body::Scale(b, Body::Dot(b, a_top)));
+        if (Body::Dot(u, u) < 1e-6f || Body::Dot(t, t) < 1e-6f) {
+            return 0.0f;
+        }
+        return std::atan2(Body::Dot(b, Body::Cross(u, t)), Body::Dot(u, t));
+    }
+
+    // A gun's top square to its barrel, rolled a_roll over (RollOf's sense). Straight up for a barrel straight
+    // up or down (no roll to speak of).
+    inline Vec3 RolledTop(const Vec3& a_barrel, float a_roll)
+    {
+        const Vec3 b = Body::Normalize(a_barrel, {});
+        const Vec3 u = Body::Normalize(Body::Sub({ 0.0f, 0.0f, 1.0f }, Body::Scale(b, b.z)), {});
+        if (Body::Dot(u, u) < 0.5f) {
+            return { 0.0f, 0.0f, 1.0f };
+        }
+        return Body::Add(Body::Scale(u, std::cos(a_roll)), Body::Scale(Body::Cross(b, u), std::sin(a_roll)));
+    }
+
+    // The right gun's roll about its barrel: leaning in toward his middle, as the left gun of a pair leans. San
+    // Andreas's stance rolls the left gun's top to the right (in), but the right hand's own pose rolls its gun right
+    // too (out), alone or as the right one of a pair. So a pair's right gun takes the left one's roll mirrored, and a
+    // gun on its own its own lean turned in, as the right one of a pair (a_twin, a_leftRoll: the left gun's roll).
+    inline float RightGunRoll(float a_rightRoll, bool a_twin, float a_leftRoll) { return a_twin ? -a_leftRoll : -std::abs(a_rightRoll); }
+
     // ---- His head ----
 
     // Aiming a gun with his arm, San Andreas also turns his head to the aim point (CTaskSimpleUseGun::AimGun's

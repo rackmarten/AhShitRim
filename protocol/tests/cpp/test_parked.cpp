@@ -65,11 +65,41 @@ TEST_CASE("the parked vehicles' spot table")
         riverwood |= spot.model == kBmx && spot.name == "Riverwood";
     }
     CHECK(riverwood);
-    // About ten themed ones, the rest.
-    const int themed = static_cast<int>(std::size(kSpots)) - Count(kSanchez) - Count(kBmx);
-    CHECK(themed >= 10);
-    CHECK(Count(kRhino) == 1);
+    // The themed ones: the quad at Hunter's Rest, the chopper at Old Hroldan.
+    CHECK(Count(kQuad) == 1);
+    CHECK(Count(kFreeway) == 1);
+    CHECK(std::size(kSpots) == static_cast<std::size_t>(Count(kSanchez) + Count(kBmx) + 2));
     CHECK(SpotById(9999) == nullptr);
+}
+
+TEST_CASE("only bicycles, motorbikes and the quad wait parked")
+{
+    // Two wheels and the quad may.
+    for (const std::uint16_t model : { kSanchez, kBmx, kQuad, kFreeway, std::uint16_t{ 509 }, std::uint16_t{ 510 }, std::uint16_t{ 522 }, std::uint16_t{ 462 } }) {
+        CHECK(MayPark(model));
+    }
+    // Cars, vans, trucks, the Rhino, monster trucks, aircraft and boats don't.
+    for (const std::uint16_t model : { std::uint16_t{ 400 }, std::uint16_t{ 470 }, std::uint16_t{ 483 }, std::uint16_t{ 403 }, std::uint16_t{ 432 }, std::uint16_t{ 444 },
+             std::uint16_t{ 425 }, std::uint16_t{ 447 }, std::uint16_t{ 512 }, std::uint16_t{ 532 }, std::uint16_t{ 486 }, std::uint16_t{ 453 } }) {
+        CHECK_FALSE(MayPark(model));
+    }
+    CHECK_FALSE(MayPark(399));  // not a vehicle
+    CHECK(AllMayPark());
+
+    const Vec3 riverwoodMarker{ 22243.0f, -44616.0f, -136.0f };
+    for (const auto& spot : kSpots) {
+        INFO(spot.name);
+        CHECK(MayPark(spot.model));
+        // Clear of the pickups.
+        for (const auto& pickup : Pickups::kSpots) {
+            if (pickup.world == spot.world) {
+                CHECK(std::hypot(pickup.at.x - spot.at.x, pickup.at.y - spot.at.y) > 5.0f * kMeter);
+            }
+        }
+    }
+    // Riverwood's BMX stands in the village, by its road.
+    const auto& riverwood = Find(20);
+    CHECK(std::hypot(riverwood.at.x - riverwoodMarker.x, riverwood.at.y - riverwoodMarker.y) / kMeter < 20.0f);
 }
 
 TEST_CASE("a spot is only near CJ in its own world")

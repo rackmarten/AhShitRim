@@ -1,21 +1,24 @@
 // The Grove Street crew (v39), the game-free half: how many homies CJ may lead, where the followers walk, where the
-// homies stand about at a hold's spots, when one opens fire, which one G picks, and what CJ's own hits on them do.
-// Header-only and free of game types, so the protocol tests cover it. Skyrim's half is skse/src/player/Crew.cpp (the
-// actors, the keys, the following and the fights), San Andreas's sa/src/crew.cpp (the puppets).
+// homies stand about at a hold's spots, when one opens fire, which one G picks, what CJ's own hits on them do, and which
+// way a puppet faces. Header-only and free of game types, so the protocol tests cover it. Skyrim's half is
+// skse/src/player/Homies.cpp (the actors, the keys, the following and the fights), San Andreas's
+// sa/src/crew_puppets.cpp (the puppets).
 //
 // Positions here are Skyrim units (70 to the metre) and Skyrim headings (radians, 0 north, clockwise) unless a name says
-// metres.
+// metres or San Andreas.
 
 #pragma once
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <vector>
 
 #include "pose.h"
+#include "scene.h"
 
 namespace AhShitRim::Crew
 {
@@ -28,6 +31,9 @@ namespace AhShitRim::Crew
     // San Andreas's Grove Street Families peds (PED_TYPE_GANG2): fam1, fam2 and fam3.
     inline constexpr std::array<std::uint16_t, 3> kModels = { 105, 106, 107 };
     inline constexpr std::uint16_t ModelFor(std::uint32_t a_roll) { return kModels[a_roll % kModels.size()]; }
+
+    // The name Skyrim shows for one (his health bar when CJ aims at him), instead of his soldier's.
+    inline constexpr std::string_view kHomieName = "Grove Street Homie";
 
     // ---- How many follow ----
 
@@ -165,9 +171,39 @@ namespace AhShitRim::Crew
         return { a_leader.x + o.x * c + o.y * s, a_leader.y - o.x * s + o.y * c, a_leader.z };
     }
 
-    // A follower this far from CJ (metres, across) is put back behind him; this far he is lost and leaves.
+    // A follower this far from CJ (metres, across) is put back near him (Straggler); this far he is lost and leaves.
     inline constexpr float kRegroupAfter = 40.0f;
     inline constexpr float kLostAfter = 300.0f;
+    inline constexpr float kRegroupWait = 2.0f;  // seconds past kRegroupAfter before he's put back, and between tries
+
+    // San Andreas's ground isn't Skyrim's: CJ walks where Skyrim has no navmesh (up a rock, through a wall San Andreas
+    // doesn't have), and a follower's AI that finds no way there leaves him standing at the nearest place it can reach
+    // while CJ goes on. Once he has been over kRegroupAfter off for kRegroupWait he's to be put back near CJ, and again
+    // every kRegroupWait while he stays that far (no spot found for him).
+    class Straggler
+    {
+    public:
+        // Each frame with his distance from CJ (metres, across) and the frame's seconds: whether to put him back now.
+        bool Update(float a_distance, float a_seconds)
+        {
+            if (a_distance <= kRegroupAfter) {
+                _for = 0.0f;
+                return false;
+            }
+            _for += a_seconds;
+            if (_for < kRegroupWait) {
+                return false;
+            }
+            _for = 0.0f;
+            return true;
+        }
+
+        // While he can't be put back (CJ in a vehicle, a load or a remake under way): the wait starts again after.
+        void Hold() { _for = 0.0f; }
+
+    private:
+        float _for = 0.0f;
+    };
 
     // ---- Spots ----
     //
@@ -251,33 +287,40 @@ namespace AhShitRim::Crew
     {
         std::uint32_t id = 0;
         Vec3          at;
-        bool          targeted = false;  // CJ's lock-on or aim is on him
+        bool          targeted = false;  // CJ's lock-on or crosshair is on him
     };
 
-    inline constexpr float kRecruitReach = 8.0f;    // metres
-    inline constexpr float kRecruitCone = 60.0f;    // degrees either side of CJ's facing
+    inline constexpr float kAimReach = 20.0f;  // metres: a homie further than this isn't picked by CJ's aim alone
+    inline constexpr float kAimWidth = 0.6f;   // metres either side of CJ's aim line a homie may stand
+    inline constexpr float kAimCone = 6.0f;    // degrees either side of it, for those further off
 
-    // The homie G recruits (or H dismisses): the one CJ targets, else the nearest within reach in front of him. 0 for none.
-    inline std::uint32_t Pick(const Vec3& a_cj, float a_heading, const std::vector<Candidate>& a_candidates)
+    // The homie G acts on while CJ aims (G does nothing else, so typing a cheat never sends anyone off): the one his
+    // lock-on or crosshair is on, else the one nearest CJ's aim line (a_heading) within kAimReach, kAimWidth either side
+    // of it close up and kAimCone further off. 0 for none.
+    inline std::uint32_t AimPick(const Vec3& a_cj, float a_heading, const std::vector<Candidate>& a_candidates)
     {
+        const float   ax = std::sin(a_heading), ay = std::cos(a_heading);  // Skyrim's heading (Pose::HeadingOf): 0 north, clockwise
         std::uint32_t best = 0;
-        float         bestDistance = kRecruitReach * kMeter;
+        float         bestAngle = INFINITY;
         for (const auto& c : a_candidates) {
             const float dx = c.at.x - a_cj.x, dy = c.at.y - a_cj.y;
             const float d = std::hypot(dx, dy);
             if (c.targeted && d <= 30.0f * kMeter) {
                 return c.id;
             }
-            if (d > bestDistance) {
+            const float along = dx * ax + dy * ay;
+            const float side = std::abs(dx * ay - dy * ax);
+            if (along <= 0.0f || d > kAimReach * kMeter) {
                 continue;
             }
-            float off = std::abs(Pose::HeadingOf(dx, dy) - a_heading);
-            off = (std::min)(off, 2.0f * Pose::kPi - off);
-            if (d > 1.0f * kMeter && off > kRecruitCone * Pose::kPi / 180.0f) {
+            const float angle = std::atan2(side, along);
+            if (side > kAimWidth * kMeter && angle > kAimCone * Pose::kPi / 180.0f) {
                 continue;
             }
-            best = c.id;
-            bestDistance = d;
+            if (angle < bestAngle) {
+                best = c.id;
+                bestAngle = angle;
+            }
         }
         return best;
     }
@@ -322,6 +365,17 @@ namespace AhShitRim::Crew
     inline bool MayShoot(float a_distanceMeters, std::uint8_t a_weapon, bool a_lineOfSight)
     {
         return a_lineOfSight && a_distanceMeters <= RangeOf(a_weapon);
+    }
+
+    // Whom the followers shoot: one hostile to CJ, or one fighting CJ or the crew who stands and fights. Not one
+    // fleeing (Skyrim's deer and elk run from CJ in a fight of their own, CJ their target), and never an animal that
+    // isn't aggressive (Skyrim's Aggression 0: elk, deer, horses, goats), whatever it does. Nobody else either.
+    inline constexpr bool IsFoe(bool a_hostile, bool a_fightsUs, bool a_fleeing, bool a_animal, bool a_aggressive)
+    {
+        if (a_animal && !a_aggressive) {
+            return false;
+        }
+        return a_hostile || (a_fightsUs && !a_fleeing);
     }
 
     // ShotEvent.shooter: 0 CJ, slot + 1 a homie.
@@ -417,4 +471,138 @@ namespace AhShitRim::Crew
         std::array<std::uint32_t, Protocol::kCrewMax> _ids{};
         std::array<float, Protocol::kCrewMax>         _rest{};
     };
+
+    // ---- The puppet (San Andreas side) ----
+
+    // Which way a homie's puppet faces, a San Andreas heading. While he walks or runs he faces the way he goes, as San
+    // Andreas's peds turn into their walk: his velocity smoothed, turned toward at a ped's rate. Standing he turns to
+    // a_still (CJ's heading for a follower, his own at a spot), and aiming he faces a_still, his aim, even on the move.
+    class Facing
+    {
+    public:
+        static constexpr float kTurnRate = 2.0f * Pose::kPi;  // rad/s
+        static constexpr float kMinSpeed = 0.5f;              // m/s: slower, the velocity gives no direction
+        static constexpr float kSmoothing = 0.25f;            // s
+        static constexpr float kJump = 5.0f;                  // m: a load or a move, not a step
+
+        // a_feet: where his feet are, metres; a_moving: he walks or runs (Scene::MotionTracker).
+        float Update(const Pose::Vec3& a_feet, float a_seconds, float a_still, bool a_moving, bool a_aiming)
+        {
+            const float dx = a_feet.x - _last.x;
+            const float dy = a_feet.y - _last.y;
+            const bool  jumped = !_have || std::hypot(dx, dy) > kJump;
+            _last = a_feet;
+            if (jumped) {
+                _have = true;
+                _vx = _vy = 0.0f;
+                _heading = a_still;
+                return _heading;
+            }
+            if (a_seconds > 0.0f) {
+                const float k = a_seconds / (a_seconds + kSmoothing);
+                _vx += (dx / a_seconds - _vx) * k;
+                _vy += (dy / a_seconds - _vy) * k;
+            }
+            float goal = a_still;
+            if (a_moving && !a_aiming && Speed() >= kMinSpeed) {
+                goal = Travel();
+            }
+            _heading = Scene::TurnToward(_heading, goal, kTurnRate * a_seconds);
+            return _heading;
+        }
+
+        float Speed() const { return std::hypot(_vx, _vy); }
+        float Travel() const { return Pose::SanAndreasHeading(Pose::HeadingOf(_vx, _vy)); }  // the way he goes
+
+    private:
+        bool       _have = false;
+        Pose::Vec3 _last;
+        float      _vx = 0.0f;
+        float      _vy = 0.0f;
+        float      _heading = 0.0f;
+    };
+
+    // How a homie's puppet steps. San Andreas's walk and run carry a ped along at their own pace (ped.ifp's root motion:
+    // WALK_gang1 1.12 m/s, fam2's; WALK_gang2 0.99, fam1's and fam3's; run_gang1 4.40, all three's), but Skyrim moves
+    // him at its own (a follower catching up runs at 5.7 m/s, and walks or jogs anything between). Played at their own
+    // pace his feet slid. So each plays at the rate that keeps his feet on the ground (kMinRate to kMaxRate), and he
+    // takes to the run where a sped-up walk and a slowed run are equally off (2.1 m/s, the paces' geometric mean)
+    // rather than at Scene::MotionTracker's 3.5 m/s, with a margin each way so he doesn't flip between the two.
+    namespace Stride
+    {
+        inline constexpr float kWalkGang1 = 1.117f;  // m/s
+        inline constexpr float kWalkGang2 = 0.992f;
+        inline constexpr float kRunGang = 4.396f;
+        inline constexpr float kRunFrom = 2.4f;
+        inline constexpr float kWalkBelow = 1.9f;
+        inline constexpr float kMinRate = 0.4f;
+        inline constexpr float kMaxRate = 2.5f;
+
+        // The pace a_motion carries model a_model at when played at rate 1 (0 for one that stands).
+        constexpr float Natural(std::uint16_t a_model, Scene::Motion a_motion)
+        {
+            switch (a_motion) {
+            case Scene::Motion::Walk: return a_model == 106 ? kWalkGang1 : kWalkGang2;  // fam2 walks as gang1, fam1 and fam3 as gang2
+            case Scene::Motion::Run: return kRunGang;
+            default: return 0.0f;
+            }
+        }
+
+        // His gait at a_speed (m/s, smoothed: Scene::MotionTracker::Speed), from a_now.
+        constexpr Scene::Motion Next(Scene::Motion a_now, float a_speed)
+        {
+            using M = Scene::Motion;
+            constexpr float idleBelow = Scene::MotionTracker::kIdleBelow;
+            constexpr float walkFrom = Scene::MotionTracker::kWalkFrom;
+            switch (a_now) {
+            case M::Run: return a_speed < idleBelow ? M::Idle : a_speed < kWalkBelow ? M::Walk : M::Run;
+            case M::Walk: return a_speed < idleBelow ? M::Idle : a_speed >= kRunFrom ? M::Run : M::Walk;
+            default: return a_speed >= kRunFrom ? M::Run : a_speed >= walkFrom ? M::Walk : M::Idle;
+            }
+        }
+
+        // The rate a_motion plays at for model a_model going at a_speed m/s (1 for one that stands).
+        constexpr float Rate(std::uint16_t a_model, Scene::Motion a_motion, float a_speed)
+        {
+            const float natural = Natural(a_model, a_motion);
+            if (natural <= 0.0f) {
+                return 1.0f;
+            }
+            const float rate = a_speed / natural;
+            return rate < kMinRate ? kMinRate : rate > kMaxRate ? kMaxRate : rate;
+        }
+    }
+
+    // One animation on a clump, as San Andreas's CAnimBlendAssociation has it.
+    struct Blend
+    {
+        float amount = 0.0f;        // m_fBlendAmount
+        float delta = 0.0f;         // m_fBlendDelta, per second
+        bool  deleteFaded = false;  // flag kBlendDeleteFaded: taken out once it has faded to nothing
+        bool  sequences = true;     // its hierarchy has its sequences (its anim block is in memory)
+    };
+
+    inline constexpr std::uint16_t kBlendDeleteFaded = 0x4;
+
+    // Whether a_blend is still on its clump after an update of a_step seconds and gives that update a node
+    // (CAnimBlendAssociation::UpdateBlend takes out one faded to nothing with its delete flag set; one without sequences
+    // gives no node).
+    constexpr bool Outlives(const Blend& a_blend, float a_step)
+    {
+        const bool goes = a_blend.deleteFaded && a_blend.delta < 0.0f && a_blend.amount + a_blend.delta * a_step <= 0.0f;
+        return !goes && a_blend.sequences;
+    }
+
+    // Whether RpAnimBlendClumpUpdateAnimations may run on a clump with these animations. San Andreas reads the first of
+    // the nodes it gathers without looking, so a clump whose last animation fades out in that very update crashes it (a
+    // homie's walk fading out before anything started his run).
+    inline bool LeavesANode(const Blend* a_blends, std::size_t a_count, float a_step)
+    {
+        for (std::size_t i = 0; i < a_count; i++) {
+            if (Outlives(a_blends[i], a_step)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -2,6 +2,8 @@
 
 #include "../../cpp/gun_lock.h"
 
+#include <cmath>
+#include <utility>
 #include <vector>
 
 using namespace AhShitRim;
@@ -56,19 +58,71 @@ TEST_CASE("the steer closes the gap a share at a time, capped, toward the target
     const auto right = Steer(0.6f, 0.45f, 0.5f, 0.45f, kAspect, 1.0f / 60.0f);
     CHECK(right.x > 0.0);
     CHECK(right.y == doctest::Approx(0.0));
-    CHECK(right.x == doctest::Approx(0.1 * kCountsPerScreen * kGain / 60.0).epsilon(0.01));
+    CHECK(right.x == doctest::Approx(0.1 * kCountsPerWidth * kGain / 60.0).epsilon(0.01));
     const auto below = Steer(0.5f, 0.6f, 0.5f, 0.45f, kAspect, 1.0f / 60.0f);
     CHECK(below.y > 0.0);  // the target below: the mouse moves down
-    // A big gap in a long frame: no more than the cap.
-    const auto whip = Steer(1.0f, 0.45f, 0.0f, 0.45f, kAspect, 0.05f);
-    CHECK(std::hypot(whip.x, whip.y) == doctest::Approx(kMaxCounts * 0.05f).epsilon(0.01));
-    // Converges: the remaining gap shrinks each frame when the camera turns by what was sent.
-    float target = 0.7f;
-    for (int i = 0; i < 120; ++i) {
-        const auto c = Steer(target, 0.45f, 0.5f, 0.45f, kAspect, 1.0f / 60.0f);
-        target -= static_cast<float>(c.x) / kCountsPerScreen;
+    CHECK(below.y == doctest::Approx(0.15 * kCountsPerHeight * kGain / 60.0).epsilon(0.01));
+    // A long frame closes no more than kMaxShare of the gap.
+    const auto slow = Steer(0.6f, 0.45f, 0.5f, 0.45f, kAspect, 0.1f);
+    CHECK(slow.x == doctest::Approx(0.1 * kCountsPerWidth * kMaxShare).epsilon(0.01));
+    // A target a screen width away: no more than the cap.
+    const auto whip = Steer(1.0f, 0.45f, 0.0f, 0.45f, kAspect, 1.0f / 60.0f);
+    CHECK(std::hypot(whip.x, whip.y) == doctest::Approx(kMaxCounts / 60.0f).epsilon(0.01));
+}
+
+namespace
+{
+    // The lock's loop through San Andreas and back: the counts sent show in the camera a_lag frames later, turning it
+    // a_sensitivity times what Steer expects. Returns the largest gap over the last of a_seconds, and the final one.
+    struct Settled
+    {
+        float worst = 0.0f;
+        float last = 0.0f;
+    };
+    Settled Simulate(float a_fps, int a_lag, float a_sensitivity, float a_gapX, float a_gapY, float a_seconds = 3.0f)
+    {
+        const float                          dt = 1.0f / a_fps;
+        std::vector<Counts>                  inFlight(static_cast<std::size_t>(a_lag));
+        float                                tx = 0.5f + a_gapX, ty = 0.4f + a_gapY;
+        Settled                              out;
+        const int                            frames = static_cast<int>(a_seconds * a_fps);
+        for (int i = 0; i < frames; i++) {
+            inFlight.push_back(Steer(tx, ty, 0.5f, 0.4f, kAspect, dt));
+            const auto seen = inFlight.front();
+            inFlight.erase(inFlight.begin());
+            tx -= static_cast<float>(seen.x) * a_sensitivity / kCountsPerWidth;  // the camera turns right: the target moves left
+            ty -= static_cast<float>(seen.y) * a_sensitivity / kCountsPerHeight;
+            const float gap = std::hypot((tx - 0.5f) * kAspect, ty - 0.4f);
+            if (i >= frames - static_cast<int>(a_fps)) {
+                out.worst = (std::max)(out.worst, gap);
+            }
+            out.last = gap;
+        }
+        return out;
     }
-    CHECK(target == doctest::Approx(0.5f).epsilon(0.01));
+}
+
+TEST_CASE("the steer settles with San Andreas's lag, at any frame rate, up to twice the measured sensitivity")
+{
+    // In game the camera pitched up and down ever harder with the lock on (a gain of 9 a second, 500 counts a screen):
+    // 3 or 4 frames of lag made the loop overshoot further each time.
+    for (const float fps : { 30.0f, 60.0f, 144.0f }) {
+        for (const int lag : { 1, 2, 3, 4, static_cast<int>(std::ceil(0.067f * fps)) }) {
+            for (const float sensitivity : { 0.5f, 1.0f, 2.0f }) {
+                for (const auto gap : { std::pair{ 0.1f, 0.15f }, std::pair{ -0.4f, -0.3f } }) {
+                    const auto s = Simulate(fps, lag, sensitivity, gap.first, gap.second);
+                    CAPTURE(fps);
+                    CAPTURE(lag);
+                    CAPTURE(sensitivity);
+                    CAPTURE(gap.first);
+                    CHECK(s.worst < 0.03f);  // settled in the last second, not swinging
+                    CHECK(s.last < 0.02f);
+                }
+            }
+        }
+    }
+    // Without the lag the gap is closed within about half a second.
+    CHECK(Simulate(60.0f, 0, 1.0f, 0.1f, 0.15f, 0.6f).last < 0.01f);
 }
 
 TEST_CASE("the right stick pushed hard for a moment drops the lock")

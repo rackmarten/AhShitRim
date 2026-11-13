@@ -132,6 +132,10 @@ namespace AhShitRim::Vitals
             return;
         }
         state.counting = a_counting;
+        // San Andreas's hunger: after 48 game hours without eating (CPlayerInfo::Process, which Idle runs next) CJ's stomach
+        // rumbles each game hour and it takes 2 points of his health (his armour first, here) or his muscle. Nothing in Skyrim
+        // feeds CJ and its days pass fast, so he is never hungry.
+        CWorld::Players[0].m_nNumHoursDidntEat = 0;
         a_ped->m_fMaxHealth = Health::kSaHealth;
         a_ped->m_fHealth = Health::kSaHealth;
         a_ped->m_fArmour = 0.0f;

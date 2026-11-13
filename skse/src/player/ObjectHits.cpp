@@ -3,6 +3,7 @@
 #include "collision/CollisionSampler.h"
 #include "explosives.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <format>
@@ -22,7 +23,34 @@ namespace AhShitRim::ObjectHits
             double                           lastCone = 0.0;
             std::vector<RE::ObjectRefHandle> oil;  // the oil pools round the player, looked for every Traps::kOilScanEvery
             double                           oilScanned = -1e9;
+            std::vector<std::uint32_t>       alight;  // the pools CJ has lit, by form id: lit once
         } state;
+
+        bool HasScript(RE::TESObjectREFR* a_ref, const char* a_name);
+
+        const char* NameOf(Traps::Hit a_hit)
+        {
+            return a_hit == Traps::Hit::Bullet ? "bullet" : a_hit == Traps::Hit::Blow ? "blow" : a_hit == Traps::Hit::Fire ? "fire" : "blast";
+        }
+
+        // Oil (traps.h, OilDamage): lit directly as TrapExplosiveGas's GasExplode lights it, the player its cause, not
+        // through the pool's script answering the hit. Its first stage ignores damage from outside, so CJ's damage
+        // (DamageObject's second argument false) never reached it.
+        void LightOil(RE::PlayerCharacter* a_player, RE::TESObjectREFR* a_ref, Traps::Hit a_hit, std::uint8_t a_weapon)
+        {
+            const auto id = a_ref->GetFormID();
+            const bool alight = std::find(state.alight.begin(), state.alight.end(), id) != state.alight.end();
+            const float damage = Traps::OilDamage(a_hit, alight);
+            if (damage <= 0.0f) {
+                return;
+            }
+            state.alight.push_back(id);
+            if (auto* cause = a_player->GetActorCause()) {
+                a_ref->SetActorCause(cause);
+            }
+            a_ref->DamageObject(damage, true);  // true: past its first stage's "ignore external damage", as the script's own call
+            SKSE::log::info("object hits: the oil {:08X} lit by CJ's {} of weapon {}", id, NameOf(a_hit), a_weapon);
+        }
 
         double NowSeconds()
         {
@@ -58,6 +86,10 @@ namespace AhShitRim::ObjectHits
             if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
                 events->SendEvent(&event);
             }
+            if (BaseOf(base) == Traps::Base::Activator && HasScript(a_ref, Traps::kOilScript)) {
+                LightOil(a_player, a_ref, a_hit, a_weapon);  // and no damage of CJ's own
+                return;
+            }
             const float damage = destructible ? Traps::ObjectDamage(a_hit, a_skyrimDamage) : 0.0f;
             if (damage > 0.0f) {
                 a_ref->DamageObject(damage, false);
@@ -66,7 +98,7 @@ namespace AhShitRim::ObjectHits
             if (state.logged < kLogged) {
                 state.logged++;
                 SKSE::log::info("object hits: {} ({:08X}, {}) hit by CJ's {} of weapon {}{}", a_ref->GetDisplayFullName(), a_ref->GetFormID(),
-                    RE::FormTypeToString(base->GetFormType()), a_hit == Traps::Hit::Bullet ? "bullet" : a_hit == Traps::Hit::Blow ? "blow" : a_hit == Traps::Hit::Fire ? "fire" : "blast",
+                    RE::FormTypeToString(base->GetFormType()), NameOf(a_hit),
                     a_weapon, damage > 0.0f ? std::format(", {:.0f} damage to it", damage) : "");
             }
         }
@@ -183,9 +215,9 @@ namespace AhShitRim::ObjectHits
             if (Traps::InOil({ a_at.x, a_at.y, a_at.z }, { bound.center.x, bound.center.y, bound.center.z }, bound.radius) &&
                 state.scorched.Takes(ref->GetFormID(), now)) {
                 if (state.logged < kLogged) {
-                    SKSE::log::info("object hits: CJ's bullet of weapon {} landed in the oil {:08X}, sent to it as fire", a_weapon, ref->GetFormID());
+                    SKSE::log::info("object hits: CJ's bullet of weapon {} landed in the oil {:08X}", a_weapon, ref->GetFormID());
                 }
-                Land(a_player, ref.get(), Traps::Hit::Fire, a_weapon, 0.0f);
+                Land(a_player, ref.get(), Traps::Hit::Bullet, a_weapon, 0.0f);
             }
         }
     }
@@ -216,5 +248,6 @@ namespace AhShitRim::ObjectHits
         state.scorched.Clear();
         state.oil.clear();
         state.oilScanned = -1e9;
+        state.alight.clear();
     }
 }
