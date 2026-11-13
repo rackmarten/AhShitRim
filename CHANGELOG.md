@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- For developers: `scripts/launch-sa.ps1` waits up to 15 s for a San Andreas that's still exiting (closed by the test session just before) instead of refusing at once, so a test session started right after another one's `stop` no longer fails with "San Andreas is already running".
 - A character who never went through Helgen (an alternate start, a `coc` from the main menu) could die while CJ had the player, and Skyrim then loaded the last save, instead of CJ being Wasted. The player is mortal while CJ has it only while Helgen's Unbound really runs; the check took a quest that was never started for one that runs.
 - San Andreas no longer takes the foreground when it starts: its window is created hidden and never activated, and it no longer turns off Windows' foreground lock for the whole desktop.
 

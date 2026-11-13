@@ -16,7 +16,13 @@ param(
 $sa = Get-RequiredSetting (Get-LocalConfig) 'SaPath'
 $exe = Join-Path $sa 'gta_sa.exe'
 if (-not (Test-Path $exe)) { throw "gta_sa.exe not found in SaPath ($sa)." }
-if (Get-Process gta_sa -ErrorAction SilentlyContinue) { throw 'San Andreas is already running.' }
+# One closed just before (a test session's stop, a restart) can stay listed for a few seconds while it exits: wait for
+# that rather than refuse. One that's still running after 15 s is someone's game.
+$waitUntil = (Get-Date).AddSeconds(15)
+while (@(Get-Process gta_sa -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited }).Count) {
+    if ((Get-Date) -gt $waitUntil) { throw 'San Andreas is already running.' }
+    Start-Sleep -Milliseconds 500
+}
 
 $log = Join-Path $sa 'scripts/AhShitRim.log'
 $launched = Get-Date
