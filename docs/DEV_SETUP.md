@@ -86,7 +86,7 @@ scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait 
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/fake-weapons.ps1           # with San Andreas running and Skyrim closed: give the weapon sets, switch through every weapon on the mouse wheel, aim and fire each, and check the weapon is in CJ's hand with its model, the shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent
 scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX (and bunny hop it on Left Ctrl), see a boat refused, fly a Hunter (its weapons on the mouse and on Left Alt and Left Ctrl) and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute, then ram a parked car with BSXSGGC on and spawn four planes flying with AIR (AHSHITRIM_ONLY=cheats runs only those; AHSHITRIM_ONLY=handling drives the Rhino and a Sandking over flat ground, humps and boulders and prints how they turn and ride)
-scripts/hit-test.ps1               # both games, nobody at the keys: loads the most recent save, CJ in a Sandking at Riverwood, a giant and two guards on him (-Scenario hits) or two stars (bust); prints the logs, closes both, never saves
+scripts/hit-test.ps1               # on a hidden test session (see Test sessions): CJ in a Sandking at Riverwood, a giant and two guards on him (-Scenario hits) or two stars (bust); checks, CSV results and the logs, never saves
 scripts/restart-games.ps1          # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim (-NoBuild skips the build)
 scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
 scripts/radar-map.ps1              # paint the radar's map of Skyrim from your plugins into Documents\My Games\AhShitRim (-Force to paint it again, -NoMods for the base game only)
@@ -131,14 +131,123 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 ### Load test
 
-`scripts/load-test.ps1` runs hundreds of loads unattended and counts the crashes: copy any two saves to `StressA` and
-`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it (it closes and starts both games
-itself, so nobody else may be using them). The SKSE plugin's load test (`[Debug] LoadTest` in `AhShitRim.ini`, which the
-script sets) alternates loads between the two saves and runs one scenario per cycle (idle, people scared, a 6-star chase
-loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before each load.
-A crash, a hang or Skyrim gone is recorded with its cycle, the games are started again and the test goes on. Results:
+`scripts/load-test.ps1` runs hundreds of loads unattended on a hidden test session (see Test sessions; it takes the
+games lock, so nobody else may be using the games) and counts the crashes: copy any two saves to `StressA` and
+`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it. It starts a session into `StressA`
+and runs cycle after cycle of the plugin's `asr.load` (`skse/src/debug/LoadTest.cpp`): the other save loaded through
+the console, the game settled, the player handed to San Andreas, then one scenario per cycle (idle, people scared, a
+6-star chase loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before
+each load. A crash (a new crash log), a hang (no frame for `-HangSeconds`, 180) or Skyrim gone is recorded with its
+cycle and the plugin's last step, the session is started again and the test goes on. Results:
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
-`-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit; the games' own files
+come back at the end, as after any session); `-SaveAs <name>` saves the last cycle's game under that name once its load has settled (a
+save cleaned of the police's leftovers); `-Keep` leaves the session up. A start that fails (it loads a save, which can
+crash too) is recorded and tried again, up to five times.
+
+### Test sessions
+
+`scripts/skytest.ps1` starts Skyrim hidden and never focused, straight into a test state, with San Andreas beside it,
+so an agent (or you) can check a change without Skyrim taking over the desktop. It comes from
+[skse-test-kit](https://github.com/rackmarten/skse-test-kit), a submodule at `skse/extern/skse-test-kit` that clones
+never fetch by themselves (`update = none` in `.gitmodules`; the kit is private for now, so CI and the release build
+never need it). To use it:
+
+1. Fetch the kit: `git submodule update --init --checkout skse/extern/skse-test-kit`.
+2. In `local.props`, `GamesLock` names the folder every session on this machine locks the games with (see
+   `local.props.example`). Without it the kit uses its own default under `%LOCALAPPDATA%`, which other test sessions
+   share but scripts that lock the games another way don't.
+3. `scripts/build.ps1`: with the submodule there, the SKSE plugin links the kit (the CMake option
+   `AHSHITRIM_TEST_KIT`, `-NoTestKit` to leave it out). The kit does nothing unless `AhShitRim.ini` has a `[Test]`
+   section, which only `skytest` writes, and takes out again as soon as Skyrim has read it.
+4. `scripts/skytest.ps1 start`: takes the games lock, deploys (`scripts/test-deploy.ps1`: the games' own files kept,
+   then `scripts/deploy-local.ps1`), starts San Andreas hidden
+   (`scripts/launch-sa.ps1`) and Skyrim hidden into `coc:Riverwood` with a new character, hands the player to San
+   Andreas (`[Test] CJ=1`) and returns once CJ has it, about 20 s after the command. `-Start save:<name>` (or
+   `save:latest`, `cow:<worldspace> <x> <y>`, `newgame`, `menu`) starts elsewhere, `-NoPartner` leaves San Andreas
+   out, `-Set CJ=0` keeps the player in Skyrim, `-Lean` renders one frame in 30.
+5. Work with it running: `scripts/skytest.ps1 session` does the start once per build and reuses the session after
+   that, until `skytest.psd1`'s `Build` files (the SKSE plugin and the ASI) change. `scripts/skytest.ps1 status` shows
+   its state, `scripts/skytest.ps1 stop` closes both games and releases the lock.
+6. Drive it with commands, each answered in a frame (about 16 ms): `scripts/skytest.ps1 cmd <command>` prints the
+   answer as one line of JSON, `scripts/skytest.ps1 run scenarios/<file>.json` runs a file of steps and checks and
+   writes `out/<time>-<name>/results.csv`. The kit's own commands (`state`, `node`, `console`, `wait`, `time`,
+   `weather`, `pause`, `step`, ...) are in its `docs/COMMANDS.md`. AhShitRim adds (`skse/src/debug/TestKit.cpp`):
+
+   | Command | What it does | Example |
+   |---|---|---|
+   | `asr.cj [on]` | hands the player to San Andreas (or back, `on=false`) as F10 does; answers once done | `asr.cj` |
+   | `asr.spawn <model> [in=<bool>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one); answers with its slot and offset from the player | `asr.spawn 562` |
+   | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
+   | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
+   | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
+   | `asr.walk <points> [gait=] [arrive=] [stuck=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
+   | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
+   | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
+   | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
+   | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
+   | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+
+   Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
+   light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
+   rearRight|rearLeft>[@slot]` (a vehicle's lamp dummy in its whole frame, slope included) and `asr.homie:<n>` (CJ's nth
+   follower, with his character controller's numbers in its details, since the kit records a target by its place).
+
+   `scenarios/test-kit-smoke.json` runs them all with checks. The in-game tests are scenarios too (`scenarios/README.md`
+   lists them, their starts and saves); their commands (`skse/src/debug/`, game logic kept apart from the kit):
+
+   | Command | What it does | Example |
+   |---|---|---|
+   | `asr.hits [bust=<bool>] [seconds=<s>]` | the hit test: with CJ in a vehicle, a giant and two guards set on him, or two stars (`bust=true`) so a guard busts him at the door; a row every 2 s (car and player health, in the car, wasted, busted), then the attackers go | `asr.hits seconds=60` |
+   | `asr.load <save> <scenario> [saveAs=<name>]` | one load-test cycle: the save loaded through the console, settled, handed to San Andreas, then `idle`, `flee`, `chase`, `asnaeb`, `travel`, `aezakmi` or `handback`; a row per step | `asr.load StressB chase` |
+   | `asr.stream <speed> [heading=] [height=] [seconds=]` | flies Skyrim's player (`asr.cj on=false` first) at speed m/s; a row a second: frames, the worst frame, the land loaded under and ahead | `asr.stream 87 heading=45 seconds=38` |
+   | `asr.intro` | CJ's intro line, as if Ralof's had just ended; answers with the cue San Andreas was given | `asr.intro` |
+   | `asr.quest <command...>` | runs a console command and answers once San Andreas's HUD shows the mission title or mission passed, with the quest's name and the cue | `asr.quest setstage MQ103 10` |
+
+   `scripts/skytest.ps1 run scenarios/<file>.json` exits 0 when every check passed, 1 when one failed, 2 when Skyrim
+   crashed, exited or hung on the way (the kit names the crash log). Check in-game behaviour this way, with a scenario
+   file of your own when it's worth keeping, rather than by hand or with `restart-games.ps1`.
+7. Look at it: `scripts/skytest.ps1 cmd screenshot` saves the frame as a PNG (Skyrim stays minimized), and
+   `scripts/skytest.ps1 shot <name> -Camera '<camera>' -Scene '<presets>'` from a shot camera in a scene, both into
+   `out/shots/`; the kit's `docs/COMMANDS.md` ("Screenshots") has the cameras and scenes. San Andreas's vehicles aren't
+   Skyrim references, so AhShitRim gives the cameras a target for them, `asr.vehicle:` (the one `asr.spawn` made
+   last; `asr.vehicle:<slot>` one slot, `asr.vehicle:driven` CJ's), facing the vehicle's way:
+   `-Camera 'orbit asr.vehicle: yaw=90 distance=550'` looks at its left side. Shots hide San Andreas's HUD with
+   Skyrim's unless `-Hud`. Named shot sets are in `shots/`: `scripts/skytest.ps1 shots` lists them,
+   `scripts/skytest.ps1 shots zr350` (a ZR-350 by day and at night, from behind, beside and above) writes
+   `out/shots/zr350/`.
+8. Measure it: the kit's probes (its `docs/COMMANDS.md`, "Probes") take `asr.vehicle:` too, with the 3D ModelView draws
+   the vehicle under: `cmd node asr.vehicle:` lists its shapes, `cmd probe effects asr.vehicle:` its glowing ones,
+   `cmd probe lights asr.vehicle: radius=600` the lights round it, and `offset=<forward>,<right>,<up>` points at a part
+   of it in `project`, `pixels`, `compare` and `ab` (`at=asr.vehicle: offset=-200,0,40` is about the ZR-350's back).
+   `record start player,asr.vehicle:` records it as it moves. The answers carry its `details`: slot, model, wrecked, and with the headlights (v36) its lamps (which burn, the dummies) and its two scene lights with where they sit in its frame.
+
+The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
+in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
+`SkyrimPrefs.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a test session's runs
+(someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
+
+The games come back as they were. `skytest.psd1`'s `Deploy` is `scripts/test-deploy.ps1 deploy`: before
+`deploy-local.ps1` writes over them it keeps a copy of every file it writes (`AhShitRim.dll`, its `.pdb` and
+`AhShitRim.ini` in `Data/SKSE/Plugins`, Sweetroll FM's tracks in `Data/Music/AhShitRim`, `AhShitRim.asi` and its `.pdb`
+in San Andreas's `scripts`), notes the ones that weren't there, and sets PerkeleRim's SKSE plugin aside (both mods take
+over the player). Its `Undeploy`, `test-deploy.ps1 restore`, puts all of it back once no Skyrim runs: on `stop`, after a
+failed start, and on the next `stop` after a shell that was killed mid-session (a `start` in between keeps the first
+copies). That matters for `AhShitRim.ini`: `deploy-local.ps1` rewrites it and drops keys it doesn't know (one a held
+branch added), and the kit puts back only what the deploy wrote. The copies are in
+`%LOCALAPPDATA%\AhShitRim\test-session` until then; a session restarted for a new build keeps the first ones, and the
+folders the deploy made go again once empty. Should the games' files change while a session is deployed (someone
+installed another AhShitRim before `stop`), the restore refuses and says so: look, then `scripts/test-deploy.ps1
+restore-anyway` (the old ones back all the same) or `forget` (keep what's there). `scripts/test-deploy.ps1 status` lists
+what's kept.
+`restart-games.ps1` and a plain `deploy-local.ps1` still deploy straight into the games, for playing.
+Neither game takes the foreground: San Andreas's window is created hidden and never activated (`sa/src/window.cpp`),
+as Skyrim's is.
+`hit-test.ps1` and `load-test.ps1` run on test sessions and take the games lock; `restart-games.ps1` (the play loop)
+doesn't: don't run it while a test session holds the lock.
+
+A release never carries the kit: CI never fetches the submodule, and `scripts/package.ps1` builds the SKSE plugin
+again with `-NoTestKit` and refuses a DLL that still has the kit's strings in it.
 
 ### Testing on Skyrim Special Edition 1.5.97
 
@@ -148,7 +257,7 @@ The same `AhShitRim.dll` loads on SE 1.5.97 and AE (CommonLibSSE-NG picks each a
 2. In the copy: SKSE64's **Special Edition build** (2.0.20, `skse64_1_5_97.dll`) instead of the AE one, and Address Library's **Special Edition** file (`version-1-5-97-0.bin` in `Data\SKSE\Plugins`).
 3. Point `SkyrimPath` in `local.props` at the copy and run `scripts/restart-games.ps1` (it deploys there). Set `SkyrimPath` back when you're done. Other SKSE plugins in the copy (PerkeleRim's) load too; move them out for a clean test. SE and AE share `Documents\My Games\Skyrim Special Edition`, so saves and logs land in the same place, and AE saves with Creation Club content may not load on SE: use an SE save or a new game.
 4. Run the release launcher against the copy once: it must name `version-1-5-97-0.bin`, not `versionlib-*`, if Address Library is missing.
-5. `scripts/hit-test.ps1 -NewGame` (and `-Scenario bust -NewGame`) runs the hit test on SE without a save: it starts a new game in Riverwood from the main menu instead of loading the most recent save, which is an AE one. Keep Skyrim's window in front: it pauses while it isn't, and the test then times out. A new level 1 character can die from the giant's first blow in the `hits` scenario; `bust` gets through.
+5. The test kit (and so `scripts/hit-test.ps1`) runs on AE only: on SE, check Skyrim's hits on CJ's car and the bust at its door by hand (CJ in a car near Whiterun's guards, two stars).
 
 Then check:
 

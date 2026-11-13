@@ -1,0 +1,17 @@
+// The bust at the door (v31): CJ wanted (two stars) in a stopped Sandking; a guard puts his weapon away, runs to the
+// driver's door and busts him. scripts/hit-test.ps1 -Scenario bust runs it, or scripts/skytest.ps1 run
+// scenarios/bust.json in a running session (scenarios/README.md).
+{
+  "name": "bust",
+  "steps": [
+    // Riverwood's road, wherever an earlier test left the player (Wasted wakes CJ at a temple), CJ on foot there.
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "CJ in a new Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "two stars for 60 s", "cmd": "asr.hits", "bust": true, "seconds": 60, "expect": ["busted == true"] }
+  ]
+}

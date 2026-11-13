@@ -5,11 +5,13 @@
     San Andreas's fonts and HUD sprites, and keeping its [Input] KeyLayout), Sweetroll FM's tracks
     (music/sweetrollfm/*.xwm and music/CREDITS.md, once scripts/encode-music.ps1 made them) into
     Data/Music/AhShitRim/SweetrollFM, the ASI into San Andreas's scripts folder.
-    Run scripts/build.ps1 first. Close both games before deploying.
+    Run scripts/build.ps1 first. Close both games before deploying. -SkseDll deploys another build of the SKSE plugin
+    (scripts/load-test.ps1 -Dll compares builds), with its .pdb when one is beside it.
 #>
 param(
     [ValidateSet('all', 'skse', 'sa')] [string] $Target = 'all',
-    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release'
+    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release',
+    [string] $SkseDll = ''
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -32,7 +34,13 @@ function Copy-WithPdb($binary, $destDir) {
 if ($Target -in 'all', 'skse') {
     $skyrim = Get-RequiredSetting $config 'SkyrimPath'
     $plugins = Join-Path $skyrim 'Data/SKSE/Plugins'
-    Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
+    if ($SkseDll) {
+        if ((Split-Path -Leaf $SkseDll) -ne 'AhShitRim.dll') { throw "-SkseDll names an AhShitRim.dll, got $SkseDll." }
+        Remove-Item -ErrorAction SilentlyContinue (Join-Path $plugins 'AhShitRim.pdb')  # the build's own, which wouldn't match
+        Copy-WithPdb $SkseDll $plugins
+    } else {
+        Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
+    }
     $ini = Join-Path $plugins 'AhShitRim.ini'
     # The key layout, the misc quests' odd jobs and the compass are the player's choice: what the ini already has stays.
     $layout = 'Modern'
