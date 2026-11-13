@@ -479,7 +479,10 @@ namespace AhShitRim::PlayerSync
             }
             Protocol::BodyState pose{};
             if (state.body.Count() > 0) {
-                state.bodyTime = state.body.TimeAt(now);
+                // Never past his newest frame: Sample holds him there, and a vehicle that already has the next frame would be drawn
+                // a frame or two ahead of him. San Andreas writes at 30 fps, Skyrim reads at 60, and about once a second a read
+                // lands on the write and his frame comes a frame late: he dropped 0.3 m back in his seat at 18 m/s.
+                state.bodyTime = (std::min)(state.body.TimeAt(now), static_cast<double>(state.body.Frame(state.body.Count() - 1).timeMs));
                 state.haveBodyTime = true;
             }
             // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
