@@ -12,6 +12,7 @@
 #include "player/Arms.h"
 #include "player/Headlights.h"
 #include "player/Missions.h"
+#include "player/ObjectHits.h"
 #include "player/PlayerSync.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
@@ -496,6 +497,91 @@ namespace AhShitRim::TestKit
                         }
                         return JsonObject{ { "lampsOff", g_lampsOff }, { "braking", g_braking ? Json(*g_braking) : Json() } };
                     }
+                });
+
+            SkseTestKit::AddTask("asr.oil", "[seconds=<s>]",
+                "Oil burning GTA style: places three fresh oil pools (TrapOilPool01) at three of the pools on Bleak Falls Barrow's "
+                "first floor (the player there first: coc BleakFallsBarrow01, player.moveto 0009B0E6), lights the first by a "
+                "bullet landing, the second by a Molotov's burst and the third by a rocket's blast, through what CJ's own "
+                "shots and projectiles call (ObjectHits), and answers once all three burnt out, or after seconds (30): per "
+                "pool its lowest health (of 100; it bursts into flame at 94 and is gone at 7) and whether it burned",
+                [](Call& a_call) -> Step {
+                    constexpr std::uint32_t kOilPool = 0x000862CC;
+                    constexpr std::uint32_t kSpots[3] = { 0x0009B0E6, 0x0009B0E0, 0x0009B0DE };
+                    const char*             by[3] = { "a bullet", "a Molotov", "a rocket" };
+                    auto*                   base = RE::TESForm::LookupByID<RE::TESBoundObject>(kOilPool);
+                    if (!base) {
+                        throw Error("no TrapOilPool01 (000862CC)");
+                    }
+                    struct Pool
+                    {
+                        RE::ObjectRefHandle ref;
+                        const char*         by = "";
+                        float               lowest = 100.0f;
+                        bool                burned = false;
+                        bool                gone = false;
+                    };
+                    auto pools = std::make_shared<std::vector<Pool>>();
+                    for (int i = 0; i < 3; i++) {
+                        auto* at = RE::TESForm::LookupByID<RE::TESObjectREFR>(kSpots[i]);
+                        auto  made = at ? at->PlaceObjectAtMe(base, false) : nullptr;
+                        if (!made) {
+                            throw Error(std::format("couldn't place oil at {:08X}: not in Bleak Falls Barrow (coc BleakFallsBarrow01)?", kSpots[i]));
+                        }
+                        pools->push_back({ made->GetHandle(), by[i] });
+                    }
+                    const double seconds = a_call.Number("seconds", 30.0);
+                    a_call.DefaultTimeout(seconds + 15.0);
+                    auto lit = std::make_shared<bool>(false);
+                    const auto health = [](RE::TESObjectREFR* a_ref) {
+                        const auto* extra = a_ref->extraList.GetByType<RE::ExtraObjectHealth>();
+                        return extra ? extra->health : 100.0f;
+                    };
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        if (!*lit) {
+                            if (a_call.Seconds() < 4.0) {
+                                return std::nullopt;  // the pools' 3D loads
+                            }
+                            for (std::size_t i = 0; i < pools->size(); i++) {
+                                auto  ref = (*pools)[i].ref.get();
+                                auto* root = ref ? ref->Get3D() : nullptr;
+                                if (!root) {
+                                    throw Error(std::format("the oil for {} has no 3D", (*pools)[i].by));
+                                }
+                                const auto at = root->worldBound.center;
+                                if (i == 0) {
+                                    ObjectHits::BulletLanded(player, at, Weapons::Pistol);
+                                } else {
+                                    ObjectHits::Around(player, at, 5.0f, i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);  // just this pool
+                                }
+                            }
+                            *lit = true;
+                            return std::nullopt;
+                        }
+                        bool all = true;
+                        for (auto& pool : *pools) {
+                            const auto ref = pool.ref.get();
+                            if (!ref || ref->IsDisabled()) {
+                                pool.gone = true;
+                                continue;
+                            }
+                            const float h = health(ref.get());
+                            pool.lowest = (std::min)(pool.lowest, h);
+                            pool.burned = pool.burned || (h < 94.0f && h > 7.0f);
+                            all = false;
+                        }
+                        if (!all && a_call.Seconds() < seconds + 4.0) {
+                            return std::nullopt;
+                        }
+                        JsonArray out;
+                        int       burned = 0;
+                        for (const auto& pool : *pools) {
+                            burned += pool.burned ? 1 : 0;
+                            out.push_back(JsonObject{ { "by", pool.by }, { "lowest", Round(pool.lowest, 0.1) }, { "burned", pool.burned }, { "gone", pool.gone } });
+                        }
+                        return JsonObject{ { "pools", std::move(out) }, { "burned", burned }, { "seconds", Round(a_call.Seconds()) } };
+                    };
                 });
 
             SkseTestKit::AddCommand("asr.lamptune", "[key] [value]",
