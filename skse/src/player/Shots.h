@@ -12,7 +12,8 @@
 //  - hurts them through Skyrim's own hit (HitData, the player as the aggressor: kill credit, crime, aggro)
 //    by Damage::ToSkyrim times [Balance] (CJDamage, and Skyrim's difficulty when FollowDifficulty is on, Balance),
 //  - plays Skyrim's impacts: the race's blood on actors, the surface's effect and sound on statics,
-//  - hands the flamethrower's puffs (v15) to Projectiles,
+//  - hands the flamethrower's puffs (v15) to Projectiles, and the knife stealth kill's grab and stab (v36) to StealthKills,
+//  - a crouched knife blow on someone who doesn't detect the player is Skyrim's 3x sneak attack (v36, Damage::SneakMultiplier),
 //  - counts the hits per weapon and sends them back as Hit commands, which raise San Andreas's skills.
 // Main thread only.
 namespace AhShitRim::Shots
@@ -34,6 +35,24 @@ namespace AhShitRim::Shots
     void Hurt(RE::PlayerCharacter* a_player, RE::Actor* a_actor, std::uint8_t a_weapon, float a_saDamage, const RE::NiPoint3& a_at,
         const RE::NiPoint3& a_dir, bool a_blood);
 
+    // Kills a_actor through Skyrim's own hit, a blow of a_weapon for all its health (as IAVENJQ's), the player the
+    // aggressor: the knife stealth kill's stab (StealthKills). Counts as a stealth kill for CJ's chatter, and as a hit
+    // for his skill. An essential actor kneels instead, as from any blow.
+    void Kill(RE::PlayerCharacter* a_player, RE::Actor* a_actor, std::uint8_t a_weapon, const RE::NiPoint3& a_at, const RE::NiPoint3& a_dir);
+
     // Who a_actor is to the damage table: a giant or mammoth, a dragon, or anyone else.
     Damage::Class ClassOf(RE::Actor* a_actor);
+
+    // The test kit (debug): CJ's blows landed so far, and the last one's victim, weapon, sneak attack multiplier (1
+    // without one), how well it landed (Damage::Blows) and San Andreas's damage after both.
+    struct BlowDebug
+    {
+        int          blows = 0;
+        RE::FormID   victim = 0;
+        std::uint8_t weapon = 0;
+        float        sneak = 1.0f;
+        float        landed = 0.0f;
+        float        saDamage = 0.0f;
+    };
+    BlowDebug DebugLastBlow();
 }

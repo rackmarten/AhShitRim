@@ -22,8 +22,10 @@ namespace AhShitRim::CarHits
     void Queue(const std::uint8_t* a_data, std::uint32_t a_size);
 
     // Every frame San Andreas has the player: a_inVehicle while CJ drives or rides something, a_onFoot while he walks
-    // (not in a scene, nor dying or arrested); a_target the actor he locks on to on foot, 0 for none.
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle, bool a_onFoot, RE::FormID a_target);
+    // (not in a scene, nor dying or arrested); a_target the actor he locks on to on foot, 0 for none, and a_stealth
+    // (v36) when that's a knife lock on someone he can stealth kill.
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle, bool a_onFoot, RE::FormID a_target,
+        bool a_stealth);
 
     // Every frame San Andreas has the player: a_held while CJ drives and the horn key is down (no menu has the input).
     // a_vehicleAt is where his vehicle is, a_velocity how fast it goes (units a second), a_heading where its nose

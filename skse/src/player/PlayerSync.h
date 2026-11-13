@@ -37,12 +37,18 @@ namespace AhShitRim::PlayerSync
     // once the game is up), and a new game or a load starting over.
     void Snapshot(Cosave::Record& a_out);
 
+    // Seconds since CJ was last seen crouching (Skyrim's player sneaking for him), -1 when never: Shots' sneak attack
+    // counts a knife blow swung from a crouch that stood him up (Damage::CrouchedBlow).
+    float SinceCrouched();
+
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
     // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units), its heading (radians, Skyrim's:
     // 0 north, clockwise) and the model drawn (ModelView's id). False when San Andreas hasn't the player or the slot draws nothing.
     bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr);
+    // The test kit: CJ's feet in Skyrim's world (where his last pose puts him) and his heading. False when San Andreas hasn't the player.
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading);
     void DebugToggle();
     void DebugType(const char* a_code);
 

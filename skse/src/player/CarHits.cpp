@@ -86,8 +86,8 @@ namespace AhShitRim::CarHits
         // Who San Andreas tests CJ's vehicle against: the living, loaded actors nearest the player, not its
         // passengers, nor children (Skyrim never lets them come to harm), nor anyone riding (the mount is hit).
         // On foot (a_onFoot), who CJ bumps into: the nearest within Melee::kFootRange, children too, followers
-        // not (they'd hem him in), and a_target, his lock-on, flagged among them.
-        void SendProxies(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_onFoot, RE::FormID a_target)
+        // not (they'd hem him in), and a_target, his lock-on, flagged among them (with a_stealth, v36: a knife stealth kill).
+        void SendProxies(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_onFoot, RE::FormID a_target, bool a_stealth)
         {
             auto* lists = RE::ProcessLists::GetSingleton();
             if (!lists) {
@@ -126,7 +126,7 @@ namespace AhShitRim::CarHits
                 auto&       proxy = out.proxies[out.count++];
                 proxy.id = actor->GetFormID();
                 proxy.flags = static_cast<std::uint8_t>((shape.heavy ? Protocol::kProxyHeavy : 0) | (build == RunOver::Build::Person ? Protocol::kProxyPerson : 0) |
-                                                        (i == target ? Protocol::kProxyTarget : 0));
+                                                        (i == target ? Protocol::kProxyTarget | (a_stealth ? Protocol::kProxyStealthKill : 0) : 0));
                 proxy.a[0] = capsule.a.x;
                 proxy.a[1] = capsule.a.y;
                 proxy.a[2] = capsule.a.z;
@@ -243,10 +243,10 @@ namespace AhShitRim::CarHits
         state.queue.push_back(pending);
     }
 
-    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle, bool a_onFoot, RE::FormID a_target)
+    void Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_anchor, std::uint32_t a_handover, bool a_inVehicle, bool a_onFoot, RE::FormID a_target, bool a_stealth)
     {
         if (a_inVehicle || a_onFoot) {
-            SendProxies(a_player, a_anchor, a_handover, !a_inVehicle, a_target);
+            SendProxies(a_player, a_anchor, a_handover, !a_inVehicle, a_target, a_stealth);
         } else if (state.sending) {
             LinkService::Get().WriteProxies(Protocol::ProxyState{});
             state.sending = false;

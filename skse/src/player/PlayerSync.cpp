@@ -40,6 +40,7 @@
 #include "player/Riders.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
+#include "player/StealthKills.h"
 #include "player/VehicleFx.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
@@ -119,6 +120,8 @@ namespace AhShitRim::PlayerSync
             std::uint32_t lastPoseFrame = 0;
 
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::optional<std::chrono::steady_clock::time_point> crouchedAt;  // CJ last seen crouching (SinceCrouched)
+            std::optional<std::pair<RE::NiPoint3, float>> debugCj;  // CJ's feet in Skyrim's world and his heading, from the last pose (DebugCj)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
@@ -584,6 +587,7 @@ namespace AhShitRim::PlayerSync
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
             state.sneak = false;
+            state.crouchedAt.reset();
             KeepAwake::Display(false);
             if (state.wasThirdPerson) {
                 if (auto* camera = RE::PlayerCamera::GetSingleton()) {
@@ -765,6 +769,9 @@ namespace AhShitRim::PlayerSync
             // are both kept in step, and the event is sent again if the graph ignored it.
             const bool sneak = (a_pose.flags & Protocol::kPlayerCrouching) != 0;
             auto*      actorState = a_player->AsActorState();
+            if (sneak) {
+                state.crouchedAt = std::chrono::steady_clock::now();
+            }
             if (actorState && sneak != state.sneak) {
                 state.sneak = sneak;
                 a_player->NotifyAnimationGraph(sneak ? "SneakStart"sv : "SneakStop"sv);
@@ -1039,6 +1046,7 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
+            state.debugCj = valid ? std::optional(std::pair(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]), pose.heading)) : std::nullopt;
             if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
@@ -1088,12 +1096,16 @@ namespace AhShitRim::PlayerSync
             if (onFoot && !MenuHasInput()) {
                 aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
                 aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
-                aim.aim = state.input.Aiming();
-                aim.fire = state.input.Firing();
+                // The test kit's held buttons (DebugHold) count as the mouse's, so its lock-on and stealth kill go as a player's.
+                const std::uint32_t kit = state.debugInput ? state.debugInput->buttons : 0u;
+                aim.aim = state.input.Aiming() || (kit & Protocol::kButtonAim) != 0;
+                aim.fire = state.input.Firing() || (kit & Protocol::kButtonFire) != 0;
                 aim.heading = pose.heading;
+                aim.weapon = pose.weaponType;
             }
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target.id, target.stealth);
+            StealthKills::Update(a_player, a_delta);
             // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
             const bool honking = valid && (pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput() && state.input.HornHeld();
             CarHits::Horn(a_player, honking, cjFeet + RE::NiPoint3(pose.vehicleOffset[0], pose.vehicleOffset[1], pose.vehicleOffset[2]),
@@ -1579,6 +1591,21 @@ namespace AhShitRim::PlayerSync
     bool DebugOwned() { return state.owned; }
 
     std::uint32_t DebugHandover() { return state.handover; }
+
+    float SinceCrouched()
+    {
+        return state.crouchedAt ? std::chrono::duration<float>(std::chrono::steady_clock::now() - *state.crouchedAt).count() : -1.0f;
+    }
+
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading)
+    {
+        if (!state.owned || !state.debugCj) {
+            return false;
+        }
+        a_feet = state.debugCj->first;
+        a_heading = state.debugCj->second;
+        return true;
+    }
 
     bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
     {

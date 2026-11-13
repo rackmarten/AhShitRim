@@ -319,6 +319,23 @@ namespace AhShitRim::Damage
         return a_type == Weapons::Chainsaw ? kChainsawPerSecond * a_landed : a_damage * kMeleeScale * a_landed;
     }
 
+    // Skyrim's sneak attack (v36), unperked as for a one-handed blade: a knife blow while the player sneaks (CJ
+    // crouches) on someone who doesn't detect the player does kSneakAttack times its damage. Only the knife.
+    inline constexpr float kSneakAttack = 3.0f;
+
+    constexpr float SneakMultiplier(std::uint8_t a_type, bool a_sneaking, bool a_detected)
+    {
+        return a_type == Weapons::Knife && a_sneaking && !a_detected ? kSneakAttack : 1.0f;
+    }
+
+    // San Andreas stands CJ up as he swings from a crouch, so by the time the blow lands Skyrim's player may have
+    // stopped sneaking: a blow swung crouched is one landing within kCrouchedBlow s of CJ last seen crouching (his
+    // knife's swing lands in under half a second after he stands; the test kit saw the blow land either side of the
+    // sneak's end). Standing up and swinging within the second counts too, still only on someone who doesn't detect him.
+    inline constexpr float kCrouchedBlow = 1.0f;
+
+    constexpr bool CrouchedBlow(bool a_sneaking, float a_sinceCrouched) { return a_sneaking || (a_sinceCrouched >= 0.0f && a_sinceCrouched <= kCrouchedBlow); }
+
     // The chance a landed blow staggers its target (Skyrim's stagger): the heavier the weapon the likelier; the
     // chainsaw always, so whoever it cuts can't fight back.
     constexpr float StaggerChance(std::uint8_t a_type)
