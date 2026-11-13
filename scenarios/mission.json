@@ -1,0 +1,34 @@
+// Quests as San Andreas's missions (v24): CJ's intro line, a quest's title and "mission passed" with its tune, first
+// while CJ has the player and then while Skyrim has it (San Andreas is heard for as long as a cue plays). Screenshots
+// with the HUD go next to the results. scripts/skytest.ps1 run scenarios/mission.json in a running session
+// (scenarios/README.md). San Andreas's own log (scripts/logs.ps1 -Target sa) says when each sound played.
+{
+  "name": "mission",
+  "steps": [
+    // Riverwood, Skyrim's player healthy (a hurt one gets Skyrim's "Health Low" tutorial when it has the player back).
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "CJ has the player", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "CJ's intro line", "cmd": "asr.intro", "expect": ["cue contains line", "cj == true"] },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "cmd": "screenshot", "name": "cj-intro", "hud": true },
+    { "cmd": "console", "command": "resetquest MQ103" },
+    { "label": "a quest started: its mission title", "cmd": "asr.quest", "command": "setstage MQ103 10", "expect": ["shown == title", "name exists"] },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "cmd": "screenshot", "name": "cj-title", "hud": true },
+    { "label": "the quest completed: mission passed", "cmd": "asr.quest", "command": "completequest MQ103",
+      "expect": ["shown contains mission passed", "cue contains passed"] },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "cmd": "screenshot", "name": "cj-passed", "hud": true },
+
+    { "label": "Skyrim has the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ's intro line, Skyrim's player", "cmd": "asr.intro", "expect": ["cue contains line", "cj == false"] },
+    { "cmd": "console", "command": "resetquest MQ103" },
+    { "label": "its title, Skyrim's player", "cmd": "asr.quest", "command": "setstage MQ103 10", "expect": ["shown == title"] },
+    { "label": "mission passed, Skyrim's player", "cmd": "asr.quest", "command": "completequest MQ103", "expect": ["shown contains mission passed", "cue contains passed"] },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "cmd": "screenshot", "name": "skyrim-passed", "hud": true },
+    { "label": "CJ has the player again", "cmd": "asr.cj", "expect": "cj == true" }
+  ]
+}

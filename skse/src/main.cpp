@@ -57,11 +57,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
             AhShitRim::CollisionSampler::OnDataLoaded();
             AhShitRim::SaHud::Load();
             AhShitRim::Audio::OnDataLoaded();
-            AhShitRim::StreamTest::OnDataLoaded();
-            AhShitRim::HitTest::OnDataLoaded();
-            AhShitRim::LoadTest::OnDataLoaded();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
+            AhShitRim::HitTest::OnPostLoadGame();
             AhShitRim::StreamTest::OnPostLoadGame();
             AhShitRim::LoadTest::OnPostLoadGame();
             AhShitRim::Police::OnPostLoadGame();
