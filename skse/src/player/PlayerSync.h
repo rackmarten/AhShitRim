@@ -1,5 +1,12 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
+
+#include "../ahshitrim_protocol.h"
+
 // Hands the Skyrim player to San Andreas and back (F10), as in PerkeleRim. While San Andreas owns
 // the player:
 //  - keyboard and mouse go to San Andreas as an InputState (WASD, mouse look, sprint, jump, crouch,
@@ -49,4 +56,20 @@ namespace AhShitRim::PlayerSync
     // The test kit (debug): asks San Andreas for a vehicle of model a_model in front of CJ, as typing its name does. Why
     // it can't, or nothing.
     std::string DebugSpawn(std::uint16_t a_model);
+
+    // The test kit (debug): input held for CJ on top of the keyboard's while San Andreas has the player and no menu has
+    // the input: the stick (moveX right, moveY forward, -1 to 1; San Andreas moves CJ that way from its camera's view)
+    // and Protocol::kButton* bits. nullopt lets go; so does 0.3 s without another call (a test whose request went away).
+    struct DebugInput
+    {
+        float         moveX = 0.0f;
+        float         moveY = 0.0f;
+        std::uint32_t buttons = 0;
+    };
+    void DebugHold(const std::optional<DebugInput>& a_input);
+
+    // The test kit (debug): called for each vehicle about to be drawn this frame, with its smoothed pose (which it may
+    // change, for what's drawn this frame only) and its position in Skyrim's world. An empty function takes it out.
+    using DebugVehicleHook = std::function<void(std::uint32_t a_slot, Protocol::BodyState& a_pose, const RE::NiPoint3& a_feet)>;
+    void SetDebugVehicleHook(DebugVehicleHook a_hook);
 }

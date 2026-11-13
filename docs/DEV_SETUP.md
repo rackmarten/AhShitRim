@@ -180,6 +180,17 @@ never need it). To use it:
    | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
+   | `asr.walk <points> [gait=] [arrive=] [stuck=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
+   | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
+   | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
+   | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
+   | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
+   | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+
+   Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
+   light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
+   rearRight|rearLeft>[@slot]` (a vehicle's lamp dummy in its whole frame, slope included) and `asr.homie:<n>` (CJ's nth
+   follower, with his character controller's numbers in its details, since the kit records a target by its place).
 
    `scenarios/test-kit-smoke.json` runs them all with checks. The in-game tests are scenarios too (`scenarios/README.md`
    lists them, their starts and saves); their commands (`skse/src/debug/`, game logic kept apart from the kit):
@@ -208,7 +219,7 @@ never need it). To use it:
    the vehicle under: `cmd node asr.vehicle:` lists its shapes, `cmd probe effects asr.vehicle:` its glowing ones,
    `cmd probe lights asr.vehicle: radius=600` the lights round it, and `offset=<forward>,<right>,<up>` points at a part
    of it in `project`, `pixels`, `compare` and `ab` (`at=asr.vehicle: offset=-200,0,40` is about the ZR-350's back).
-   `record start player,asr.vehicle:` records it as it moves. The answers carry its `details` (slot, model).
+   `record start player,asr.vehicle:` records it as it moves. The answers carry its `details`: slot, model, wrecked, and with the headlights (v36) its lamps (which burn, the dummies) and its two scene lights with where they sit in its frame.
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's

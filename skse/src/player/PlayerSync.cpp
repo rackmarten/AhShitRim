@@ -117,6 +117,10 @@ namespace AhShitRim::PlayerSync
             int           newPoses = 0;
             int           drawn = 0;
             std::uint32_t lastPoseFrame = 0;
+
+            std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
+            DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
 
         double NowMs()
@@ -204,6 +208,14 @@ namespace AhShitRim::PlayerSync
                 std::copy(std::begin(state.carRequest.colours), std::end(state.carRequest.colours), input.carColours);
                 std::copy(std::begin(state.carRequest.offset), std::end(state.carRequest.offset), input.carOffset);
                 input.carHeading = state.carRequest.heading;
+            }
+            if (state.debugInput && std::chrono::steady_clock::now() > state.debugInputUntil) {
+                state.debugInput.reset();
+            }
+            if (state.owned && state.debugInput && !a_menu && !wasted && !AmmuNation::IsOpen()) {
+                input.moveX = state.debugInput->moveX;
+                input.moveY = state.debugInput->moveY;
+                input.buttons |= state.debugInput->buttons;
             }
             input.handover = state.handover;
             input.heading = state.heading;
@@ -485,6 +497,9 @@ namespace AhShitRim::PlayerSync
                 Protocol::BodyState pose{};
                 if (state.vehicles[i].Sample(now, pose)) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                    if (state.debugVehicle) {
+                        state.debugVehicle(i, pose, feet);
+                    }
                     ModelView::Show(pose, feet);
                     // Its heading from its frame (X right, Y forward, Z up): the turned Y axis, by the quaternion.
                     const float* q = pose.vehicleFrame.rotation;
@@ -1586,6 +1601,18 @@ namespace AhShitRim::PlayerSync
         } else if (player) {
             TakeOver(player);
         }
+    }
+
+    void DebugHold(const std::optional<DebugInput>& a_input)
+    {
+        state.debugInput = a_input;
+        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        Publish();
+    }
+
+    void SetDebugVehicleHook(DebugVehicleHook a_hook)
+    {
+        state.debugVehicle = std::move(a_hook);
     }
 
     void DebugType(const char* a_code)
