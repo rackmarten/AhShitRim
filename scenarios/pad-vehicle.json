@@ -12,7 +12,7 @@
 // road meets a signpost and rocks, which 3 s at full throttle reached at 75 km/h); the left stick full left while driving turns it at least 15
 // degrees left; LT held brakes it to a stop within 8 s, and from a standstill backs it up (ahead below -3 km/h within 3 s); X held turns the camera (Skyrim's, following San Andreas's) at least
 // 120 degrees (looking behind); the d-pad's up changes the radio station. RT half pulled moves the Sandking (top speed past
-// 3 km/h) and RT full reaches a top speed at least 1.3 times half's in the same 3 s; the Sanchez's nose rises at least
+// 3 km/h) and RT full reaches a top speed at least 1.3 times half's in the same 2 s; the Sanchez's nose rises at least
 // 3 degrees with the stick half back and 1.2 times that full back, and drops at least 2 degrees half forward and 1.2
 // times that full forward.
 {
@@ -81,7 +81,7 @@
     { "cmd": "wait", "seconds": 3 },
     { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
     { "label": "RT half pulled", "cmd": "pad", "buttons": "rt", "value": 0.5 },
-    { "label": "half throttle", "cmd": "asr.watch", "seconds": 3, "keep": "half", "expect": ["topSpeed > 3", "ahead > 0"] },
+    { "label": "half throttle", "cmd": "asr.watch", "seconds": 2, "keep": "half", "expect": ["topSpeed > 3", "ahead > 0"] },
     { "cmd": "pad", "buttons": "rt", "value": 0 },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "cmd": "console", "command": "player.setpos x 17521" },
@@ -93,7 +93,7 @@
     { "cmd": "wait", "seconds": 3 },
     { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
     { "label": "RT full", "cmd": "pad", "buttons": "rt", "value": 1 },
-    { "label": "full throttle: faster than half", "cmd": "asr.watch", "seconds": 3, "vs": "half", "expect": ["vs.topSpeed > 1.3", "vs.moved > 1.3"] },
+    { "label": "full throttle: faster than half", "cmd": "asr.watch", "seconds": 2, "vs": "half", "expect": ["vs.topSpeed > 1.3", "vs.moved > 1.3"] },
     { "cmd": "pad", "buttons": "rt", "value": 0 },
 
     // The Sanchez's lean (v40, analog): launched at full throttle with the left stick back (a wheelie) or forward (a
