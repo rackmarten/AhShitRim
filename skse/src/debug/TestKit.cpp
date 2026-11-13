@@ -321,6 +321,74 @@ namespace AhShitRim::TestKit
             return pose;
         }
 
+        // How far the camera sees along San Andreas's camera's forward before something solid (land, a tree, a building;
+        // not people, the hidden player among them), from the camera the frame is rendered with; a_max when nothing is.
+        float ClearAhead(const float a_forward[3], float a_max)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* camera = RE::Main::WorldRootCamera();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!camera || !world) {
+                return -1.0f;
+            }
+            const auto&              from = camera->world.translate;
+            const RE::NiPoint3       to = from + RE::NiPoint3(a_forward[0], a_forward[1], a_forward[2]) * a_max;
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               start = 0.0f;
+            for (int i = 0; i < 4 && start < 1.0f; i++) {
+                const RE::NiPoint3 a = from + (to - from) * start;
+                input.from = RE::hkVector4(a.x * scale, a.y * scale, a.z * scale, 0.0f);
+                input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return a_max;
+                }
+                const float at = start + (1.0f - start) * output.hitFraction;
+                auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
+                if (!hit || !hit->IsActor()) {
+                    return at * a_max;
+                }
+                start = at + 1.0f / a_max;
+            }
+            return a_max;
+        }
+
+        // asr.camera: San Andreas's camera against CJ and his vehicle, from the pose and the body (both relative to the
+        // handover's anchor, Skyrim units).
+        Json CameraNow()
+        {
+            const auto pose = CjPose();
+            Protocol::BodyState body{};
+            if (!pose || !LinkService::Get().ReadBody(body) || (body.flags & Protocol::kBodyValid) == 0) {
+                throw Error("San Andreas has no pose or camera for CJ (asr.cj first)");
+            }
+            const float cam[3] = { body.cameraPosition[0] - pose->offset[0], body.cameraPosition[1] - pose->offset[1],
+                body.cameraPosition[2] - pose->offset[2] };  // from CJ's feet
+            JsonObject out{ { "mode", static_cast<int>(pose->cameraMode) }, { "firstPerson", pose->cameraMode == Weapons::kCamFirstPerson },
+                { "fromFeet", Round(std::hypot(cam[0], cam[1]), 0.1) }, { "height", Round(cam[2], 0.1) },
+                { "forward3", JsonObject{ { "x", Round(body.cameraForward[0]) }, { "y", Round(body.cameraForward[1]) }, { "z", Round(body.cameraForward[2]) } } },
+                { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) },
+                { "ahead", Round(ClearAhead(body.cameraForward, 3000.0f), 1.0) } };
+            const auto scope = Weapons::ScopeOf(pose->cameraMode, (pose->flags & Protocol::kPlayerInVehicle) ? pose->vehicleModel : 0);
+            constexpr const char* kScopes[] = { "none", "sniper", "rocket", "rifle", "camera", "aim" };
+            out.Set("scope", static_cast<std::size_t>(scope) < std::size(kScopes) ? kScopes[static_cast<std::size_t>(scope)] : "?");
+            if ((pose->flags & Protocol::kPlayerInVehicle) && pose->vehicleModel) {
+                const float h = pose->vehicleHeading;
+                const float rel[3] = { cam[0] - pose->vehicleOffset[0], cam[1] - pose->vehicleOffset[1], cam[2] - pose->vehicleOffset[2] };
+                out.Set("forward", Round(rel[0] * std::sin(h) + rel[1] * std::cos(h), 0.1));
+                out.Set("right", Round(rel[0] * std::cos(h) - rel[1] * std::sin(h), 0.1));
+                out.Set("up", Round(rel[2], 0.1));
+                out.Set("looksAhead", Round(body.cameraForward[0] * std::sin(h) + body.cameraForward[1] * std::cos(h)));
+            }
+            return out;
+        }
+
         std::uint32_t HandOf(Call& a_call)
         {
             const double hand = a_call.Number("hand", 0.0);
@@ -1126,6 +1194,66 @@ namespace AhShitRim::TestKit
                 calendar->gameHour->value = static_cast<float>(hour);
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
+
+            SkseTestKit::AddCommand("asr.camera", "",
+                "San Andreas's camera now: its mode (eCamMode), where it is from CJ's feet (distance on the ground, height) and, in a "
+                "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it); its scope; and ahead: how far "
+                "the rendered camera sees that way before land, a tree or a building (3000 for nothing within 3000 units)",
+                [](Call&) -> Json { return CameraNow(); });
+
+            SkseTestKit::AddTask("asr.view", "[settle=<seconds>] [untilFirstPerson=<bool>] [presses=<n>]",
+                "Presses San Andreas's camera key (V, select on its pad) once, as the player would, and answers settle seconds (1.5) later "
+                "with asr.camera's numbers, before (fromFeet's before the press) and changed (the camera moved more than 20 units). "
+                "untilFirstPerson=true presses again every settle seconds, up to presses (6) times, until the first-person view is up "
+                "(presses: how many it took), and fails when it never comes",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double settle = a_call.Number("settle", 1.5);
+                    const bool   untilFirst = a_call.Flag("untilFirstPerson", false);
+                    const int    most = static_cast<int>(a_call.Number("presses", 6.0));
+                    a_call.DefaultTimeout(settle * (untilFirst ? most : 1) + 10.0);
+                    struct View
+                    {
+                        Json   before;
+                        int    pressed = 0;
+                        double pressedAt = -1.0;
+                    };
+                    auto view = std::make_shared<View>();
+                    view->before = CameraNow();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const double now = a_call.Seconds();
+                        if (view->pressedAt < 0.0 || (now - view->pressedAt >= settle)) {
+                            if (view->pressedAt >= 0.0) {
+                                auto after = CameraNow();
+                                const auto* first = after.AsObject().Find("firstPerson");
+                                const bool  done = !untilFirst || (first && first->AsBool());
+                                if (done) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    const auto num = [](const Json& a_json, std::string_view a_key) {
+                                        const auto* v = a_json.AsObject().Find(a_key);
+                                        return v && v->IsNumber() ? v->AsNumber() : 0.0;
+                                    };
+                                    const double moved = std::hypot(num(after, "fromFeet") - num(view->before, "fromFeet"), num(after, "height") - num(view->before, "height"),
+                                        num(after, "forward") - num(view->before, "forward"));
+                                    auto& out = after.AsObject();
+                                    out.Set("before", num(view->before, "fromFeet"));
+                                    out.Set("changed", moved > 20.0);
+                                    out.Set("presses", view->pressed);
+                                    return after;
+                                }
+                                if (view->pressed >= most) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    throw Error(std::format("no first-person view after {} presses", view->pressed));
+                                }
+                            }
+                            view->pressed++;
+                            view->pressedAt = now;
+                        }
+                        const bool press = now - view->pressedAt < 0.15;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCameraView }) : std::nullopt);
+                        return std::nullopt;
+                    };
+                });
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit
