@@ -10,6 +10,12 @@
 // within 8 (11 cm); across, off the barrel's line through the muzzle, under 6 (9 cm). Measured on the test desktop
 // with every class standing still: along -4.6 to +4.4, across 0.5 to 4.4 (the shotgun's, whose muzzle ring takes in
 // the tube under its barrel). A flash at CJ's hand, or one a frame behind a moving gun, is 15 to 60 off.
+//
+// Then the one-handed guns' lean: a single Tec-9, pistol and sawn-off aimed, and with Hitman skill (the NCSGDAG cheat)
+// twin pistols and twin sawn-offs, each flash at its own gun's muzzle. weapon.roll is the degrees the gun's top leans
+// right of up about its barrel: leaning in toward CJ's middle is -10 to -60 for the right gun (and a single one), +10
+// to +60 for the left. Measured: -35 to -42 right or single, +29 to +33 left. The sawn-off's model faces back along
+// its barrel, which asr.muzzle reads turned round (weapon.turned).
 {
   "name": "muzzle-flash",
   "steps": [
@@ -67,7 +73,7 @@
 
     { "label": "a Tec-9, one gun", "cmd": "asr.give", "weapon": 32, "ammo": 300, "expect": "weapon == 32" },
     { "label": "a single Tec-9 aimed leans in (its top to the left) and flashes at its muzzle", "cmd": "asr.fire", "weapon": 32, "hold": true,
-      "expect": ["weaponType == 32", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
+      "expect": ["weaponType == 32", "twin == false", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
     "pause",
     { "cmd": "screenshot", "name": "tec9-behind", "camera": "orbit asr.weapon: yaw=0 distance=60 pitch=5" },
     { "cmd": "screenshot", "name": "tec9-side", "camera": "orbit asr.weapon: yaw=60 distance=220 pitch=10" },
@@ -75,7 +81,7 @@
     "resume",
 
     { "label": "a single pistol aimed leans in too", "cmd": "asr.fire", "weapon": 22, "hold": true,
-      "expect": ["weaponType == 22", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
+      "expect": ["weaponType == 22", "twin == false", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
     "pause",
     { "cmd": "screenshot", "name": "pistol-behind", "camera": "orbit asr.weapon: yaw=0 distance=60 pitch=5" },
     { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
@@ -83,7 +89,7 @@
 
     { "label": "a sawn-off", "cmd": "asr.give", "weapon": 26, "ammo": 100, "expect": "weapon == 26" },
     { "label": "a single sawn-off aimed leans in and flashes at its muzzle (its model faces back: weapon.turned)", "cmd": "asr.fire", "weapon": 26, "hold": true,
-      "expect": ["weaponType == 26", "weapon.turned == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
+      "expect": ["weaponType == 26", "twin == false", "weapon.turned == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
     "pause",
     { "cmd": "screenshot", "name": "sawnoff-side", "camera": "orbit asr.weapon: yaw=60 distance=230 pitch=10" },
     { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
@@ -92,7 +98,7 @@
     { "label": "Hitman in every weapon (NCSGDAG): twin guns", "cmd": "asr.cheat", "code": "NCSGDAG" },
     { "cmd": "wait", "seconds": 1 },
     { "label": "twin pistols: the right gun leans in and flashes at its own muzzle", "cmd": "asr.fire", "weapon": 22, "hand": 0, "hold": true,
-      "expect": ["weaponType == 22", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
+      "expect": ["weaponType == 22", "twin == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
     "pause",
     { "label": "and the left gun leans in the other way", "cmd": "asr.muzzle", "hand": 1, "expect": ["weapon.roll > 10", "weapon.roll < 60"] },
     { "cmd": "screenshot", "name": "twin-pistols-behind", "camera": "orbit asr.weapon: yaw=0 distance=90 pitch=5" },
@@ -100,20 +106,20 @@
     { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
     "resume",
     { "label": "twin pistols: the left gun flashes at its own muzzle", "cmd": "asr.fire", "weapon": 22, "hand": 1, "hold": true,
-      "expect": ["flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll > 10", "weapon.roll < 60"] },
+      "expect": ["weaponType == 22", "twin == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll > 10", "weapon.roll < 60"] },
     "pause",
     { "cmd": "screenshot", "name": "twin-pistols-left", "camera": "orbit asr.weapon:1 yaw=60 distance=220 pitch=10" },
     { "label": "the flash let go", "cmd": "asr.muzzle", "hand": 1, "release": true },
     "resume",
 
     { "label": "twin sawn-offs: the right one leans in and flashes at its own muzzle", "cmd": "asr.fire", "weapon": 26, "hand": 0, "hold": true,
-      "expect": ["weaponType == 26", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
+      "expect": ["weaponType == 26", "twin == true", "weapon.turned == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll < -10", "weapon.roll > -60"] },
     "pause",
     { "cmd": "screenshot", "name": "twin-sawnoffs-right", "camera": "orbit asr.weapon: yaw=60 distance=230 pitch=10" },
     { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
     "resume",
     { "label": "twin sawn-offs: the left one leans in and flashes at its own muzzle", "cmd": "asr.fire", "weapon": 26, "hand": 1, "hold": true,
-      "expect": ["flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll > 10", "weapon.roll < 60"] },
+      "expect": ["weaponType == 26", "twin == true", "weapon.turned == true", "flash.shown == true", "along > -8", "along < 8", "across < 6", "weapon.roll > 10", "weapon.roll < 60"] },
     "pause",
     { "cmd": "screenshot", "name": "twin-sawnoffs-left", "camera": "orbit asr.weapon:1 yaw=60 distance=230 pitch=10" },
     { "label": "the flash let go", "cmd": "asr.muzzle", "hand": 1, "release": true },

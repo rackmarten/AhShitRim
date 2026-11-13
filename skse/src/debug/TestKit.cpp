@@ -358,7 +358,8 @@ namespace AhShitRim::TestKit
             out.frame = VehicleHits::FrameOf(out.pose.bones[0], { feet.x + t[0], feet.y + t[1], feet.z + t[2] });
             // A model whose first part faces back along the barrel (the sawn-off's) is turned round about its Z, so its
             // X points where San Andreas's camera looks, the way the gun fires: otherwise its stock would read as the muzzle.
-            if (const auto pose = CjPose()) {
+            // Only while he aims: then the gun points where the camera looks, hanging down or from the hip it needn't.
+            if (const auto pose = CjPose(); pose && (pose->weaponFlags & Protocol::kWeaponAiming) != 0) {
                 const auto& b = out.frame.right;
                 if (b.x * std::sin(pose->viewHeading) + b.y * std::cos(pose->viewHeading) < 0.0f) {
                     out.frame.right = Body::Scale(out.frame.right, -1.0f);
@@ -607,7 +608,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.muzzle", "[hand] [release=<bool>]",
                 "The weapon drawn in a hand (0 right, 1 left) against its muzzle flash: the barrel's end (its farthest vertex along the "
                 "barrel), the flash as last shown (shown in the last frame, seconds left, where), along (units the flash is past the "
-                "muzzle's end) and across (off the barrel's line), and weapon.roll (degrees its top leans right of up about the barrel). release=true lets go of a flash asr.fire hold=true kept, after measuring",
+                "muzzle's end) and across (off the barrel's line), and weapon.roll (degrees its top leans right of up about the barrel; weapon.turned: a model whose first part faces back, read turned round while he aims). release=true lets go of a flash asr.fire hold=true kept, after measuring",
                 [](Call& a_call) -> Json {
                     auto out = MuzzleCheck(HandOf(a_call));
                     if (a_call.Flag("release", false)) {
@@ -672,6 +673,7 @@ namespace AhShitRim::TestKit
                             auto out = MuzzleCheck(hand);
                             out["weaponType"] = static_cast<int>(pose->weaponType);
                             out["aimed"] = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+                            out["twin"] = (pose->weaponFlags & Protocol::kWeaponTwin) != 0;
                             out["shots"] = flash.fired - fire->firedBefore;
                             return out;
                         }
