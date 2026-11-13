@@ -1010,6 +1010,22 @@ namespace AhShitRim::TestKit
             return open;
         }
 
+        // The pitch of the vehicle CJ drives, degrees (its nose up above 0: a wheelie; down below: a stoppie), from its frame;
+        // nullopt on foot.
+        std::optional<double> VehiclePitch()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState v{};
+                if (LinkService::Get().ReadVehicle(i, v) && (v.flags & Protocol::kBodyValid) && (v.flags & Protocol::kBodyDriven) &&
+                    v.handover == PlayerSync::DebugHandover()) {
+                    const auto& q = v.vehicleFrame.rotation;  // x, y, z, w; its Y axis is forward
+                    const double forwardZ = 2.0 * (q[1] * q[2] + q[3] * q[0]);
+                    return Degrees(static_cast<float>(std::asin(std::clamp(forwardZ, -1.0, 1.0))));
+                }
+            }
+            return std::nullopt;
+        }
+
         Json DescribePose(const Protocol::PlayerState& a_pose)
         {
             const bool inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
@@ -1092,12 +1108,16 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.pose", "",
                 "CJ as San Andreas has him now: on foot or in a vehicle (its model), getting in or out, grounded, crouching, where (units from the "
                 "handover's anchor), speed (km/h; ahead: along the way he faces), his (or his vehicle's) and the camera's heading and the camera's pitch (degrees), weapon, aiming, shots, radio "
-                "station; whether San Andreas has the player, and Skyrim's open menus",
+                "station; the pitch of the vehicle he drives (vehiclePitch, degrees, nose up above 0); whether San Andreas has the player, and "
+                "Skyrim's open menus",
                 [](Call&) -> Json {
                     const auto pose = CjPose();
                     Json       out = pose ? DescribePose(*pose) : Json(JsonObject{});
                     out["cj"] = PlayerSync::DebugOwned();
                     out["posed"] = pose.has_value();
+                    if (const auto pitch = VehiclePitch()) {
+                        out["vehiclePitch"] = Round(*pitch, 0.1);
+                    }
                     out["menus"] = Json(OpenMenus());
                     return out;
                 });
@@ -1127,7 +1147,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
                 "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
                 "above where he started (metres), his top and lowest speed (km/h), the most the camera turned either way, whether he left the "
-                "ground, and the menus that were open. keep= and vs= as asr.since",
+                "ground, and the menus that were open; in a vehicle the most its nose went up and down (pitchUp, pitchDown, degrees). keep= and vs= as asr.since",
                 [](Call& a_call) -> Step {
                     const double seconds = a_call.Number("seconds", 1.0);
                     if (seconds <= 0.0 || seconds > 600.0) {
@@ -1142,6 +1162,8 @@ namespace AhShitRim::TestKit
                         double    low = 1e9;
                         double    left = 0.0;
                         double    right = 0.0;
+                        double    pitchUp = -1e9;    // the driven vehicle's pitch, its highest and lowest
+                        double    pitchDown = 1e9;
                         bool      airborne = false;
                         JsonArray menus;
                     };
@@ -1159,6 +1181,10 @@ namespace AhShitRim::TestKit
                         watch->left = (std::min)(watch->left, turned);
                         watch->right = (std::max)(watch->right, turned);
                         watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
+                        if (const auto pitch = VehiclePitch()) {
+                            watch->pitchUp = (std::max)(watch->pitchUp, *pitch);
+                            watch->pitchDown = (std::min)(watch->pitchDown, *pitch);
+                        }
                         for (auto& menu : OpenMenus()) {
                             if (std::ranges::find(watch->menus, menu) == watch->menus.end()) {
                                 watch->menus.push_back(std::move(menu));
@@ -1174,6 +1200,10 @@ namespace AhShitRim::TestKit
                         out["turnedLeft"] = Round(watch->left, 0.1);
                         out["turnedRight"] = Round(watch->right, 0.1);
                         out["airborne"] = watch->airborne;
+                        if (watch->pitchUp > -1e8) {
+                            out["pitchUp"] = Round(watch->pitchUp, 0.1);
+                            out["pitchDown"] = Round(watch->pitchDown, 0.1);
+                        }
                         out["menusSeen"] = Json(watch->menus);
                         Compare(out, a_call);
                         return Json(std::move(out));
