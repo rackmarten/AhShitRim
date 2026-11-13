@@ -52,12 +52,13 @@ namespace AhShitRim::Headlights
             { "BrakeRadius", &VehicleLights::Tuning::brakeRadius, Pose::kUnitsPerMeter },
             { "BrakeIntensity", &VehicleLights::Tuning::brakeIntensity, 1.0f },
             { "TailDrop", &VehicleLights::Tuning::tailDrop, Pose::kUnitsPerMeter },
+            { "TailBack", &VehicleLights::Tuning::tailBack, Pose::kUnitsPerMeter },
             { "LampGlow", &VehicleLights::Tuning::lampGlow, 1.0f },
             { "BrakeGlow", &VehicleLights::Tuning::brakeGlow, 1.0f },
         };
 
         // [Headlights] in AhShitRim.ini, each optional: Ahead, Raise, Radius (metres) and Intensity for the headlights'
-        // light on the road; TailDrop, TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights';
+        // light on the road; TailDrop, TailBack, TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights';
         // LampGlow and BrakeGlow for the lamps' meshes. Read once.
         const VehicleLights::Tuning& Tuning()
         {

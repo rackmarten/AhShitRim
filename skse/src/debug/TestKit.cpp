@@ -499,7 +499,7 @@ namespace AhShitRim::TestKit
                 });
 
             SkseTestKit::AddCommand("asr.lamptune", "[key] [value]",
-                "Sets one of AhShitRim.ini's [Headlights] values (Intensity, Radius, Ahead, Raise, TailRadius, TailIntensity, TailDrop, "
+                "Sets one of AhShitRim.ini's [Headlights] values (Intensity, Radius, Ahead, Raise, TailRadius, TailIntensity, TailDrop, TailBack, "
                 "BrakeRadius, BrakeIntensity, LampGlow, BrakeGlow; metres for the distances) until the game closes, for trying values; "
                 "answers every value as it is now",
                 [](Call& a_call) -> Json {
