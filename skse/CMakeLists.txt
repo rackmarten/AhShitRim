@@ -24,7 +24,7 @@ add_commonlibsse_plugin(
     ${PROJECT_NAME}
     NAME "AhShitRim"
     AUTHOR "Marek Uncik"
-    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/Chatter.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Missions.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/CombatBalance.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/Shouting.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/WorldPickups.cpp src/player/VehicleFx.cpp src/player/CarHits.cpp src/player/LockOn.cpp src/player/Riders.cpp src/player/Hitboxes.cpp src/player/Puffs.cpp src/player/Particles.cpp src/player/ObjectHits.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/SkyrimMessages.cpp src/hud/RadarScene.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp src/power/KeepAwake.cpp src/debug/MissionTest.cpp src/debug/HitTest.cpp src/debug/LoadTest.cpp ../protocol/cpp/link.cpp
+    SOURCES src/main.cpp src/link/LinkService.cpp src/player/PlayerSync.cpp src/player/Activation.cpp src/player/Conversation.cpp src/player/Chatter.cpp src/player/AmmuNation.cpp src/player/Looting.cpp src/player/GunRewards.cpp src/player/Missions.cpp src/player/Respawns.cpp src/player/Vitals.cpp src/player/CombatBalance.cpp src/player/SaveState.cpp src/player/Arms.cpp src/player/CheatCodes.cpp src/player/Police.cpp src/player/Shots.cpp src/player/Shouting.cpp src/player/People.cpp src/player/Projectiles.cpp src/player/WorldPickups.cpp src/player/VehicleFx.cpp src/player/CarHits.cpp src/player/LockOn.cpp src/player/Riders.cpp src/player/Hitboxes.cpp src/player/Puffs.cpp src/player/Particles.cpp src/player/ObjectHits.cpp src/body/MuzzleFlash.cpp src/collision/CollisionSampler.cpp src/collision/StaticMeshes.cpp src/body/ModelView.cpp src/hud/SaHud.cpp src/hud/SkyrimMessages.cpp src/hud/RadarScene.cpp src/hud/Overlay.cpp src/audio/SaAudio.cpp src/debug/StreamTest.cpp src/power/KeepAwake.cpp src/debug/HitTest.cpp src/debug/LoadTest.cpp ../protocol/cpp/link.cpp
 )
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
@@ -37,3 +37,31 @@ set_source_files_properties(../protocol/cpp/link.cpp PROPERTIES SKIP_PRECOMPILE_
 set_source_files_properties(src/hud/Overlay.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 # And the display request, which needs <Windows.h> for its power API.
 set_source_files_properties(src/power/KeepAwake.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+# skse-test-kit (docs/DEV_SETUP.md, "Test sessions"): agent-driven test sessions, in dev builds only. scripts/build.ps1
+# turns it on when the submodule is there; CI and scripts/package.ps1 leave it off, so a release DLL never has it. The
+# submodule is never fetched by a plain or recursive clone (update = none in .gitmodules); without it a dev build
+# goes on without the kit and says so.
+option(AHSHITRIM_TEST_KIT "Link skse-test-kit for test sessions (dev builds only)" OFF)
+set(AHSHITRIM_TEST_KIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/skse-test-kit" CACHE PATH "The skse-test-kit checkout")
+set(AHSHITRIM_WITH_TEST_KIT OFF)
+if(AHSHITRIM_TEST_KIT)
+    if(EXISTS "${AHSHITRIM_TEST_KIT_DIR}/CMakeLists.txt")
+        add_subdirectory("${AHSHITRIM_TEST_KIT_DIR}" skse-test-kit)
+        set(AHSHITRIM_WITH_TEST_KIT ON)
+    else()
+        message(WARNING "AHSHITRIM_TEST_KIT is on, but ${AHSHITRIM_TEST_KIT_DIR} is empty: building without the test kit. "
+            "Fetch it with: git submodule update --init --checkout skse/extern/skse-test-kit")
+    endif()
+endif()
+if(AHSHITRIM_WITH_TEST_KIT)
+    # Only TestKit.cpp sees the kit's headers and the library file is linked as it is (CommonLib is already linked),
+    # so turning the option on or off rebuilds that file and the link, not every source.
+    target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKit.cpp)
+    set_source_files_properties(src/debug/TestKit.cpp PROPERTIES INCLUDE_DIRECTORIES "${AHSHITRIM_TEST_KIT_DIR}/include")
+    add_dependencies(${PROJECT_NAME} skse_test_kit)
+    target_link_libraries(${PROJECT_NAME} PRIVATE "$<TARGET_FILE:skse_test_kit>")
+    message(STATUS "AhShitRim: with skse-test-kit (${AHSHITRIM_TEST_KIT_DIR})")
+else()
+    target_sources(${PROJECT_NAME} PRIVATE src/debug/TestKitOff.cpp)
+endif()

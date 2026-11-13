@@ -1,0 +1,87 @@
+// The muzzle flash (v12) against the gun CJ holds, for each class of gun: CJ aims (the right button) and fires one
+// shot; in the frame of the flash asr.fire measures the flash against the drawn gun's muzzle (the end of its barrel:
+// the vertex farthest along the barrel, at the middle of the ring round it). Then the world is paused on the flash
+// for a close shot from the gun's side and a wider one (asr.fire hold=true keeps the flash from running out until the
+// pause arrives; asr.muzzle release=true lets it go), and the flash's light is probed. At night, so the flash and
+// its light show. Last, after a trip into an interior and back (Riverwood's inn), the flash's light must still be among
+// the renderer's lights. scripts/skytest.ps1 run scenarios/muzzle-flash.json (scenarios/README.md).
+//
+// The limits (units; 1 unit is 1.43 cm), adjustable: along, the flash past the muzzle's end (+) or short of it (-),
+// within 8 (11 cm); across, off the barrel's line through the muzzle, under 6 (9 cm). Measured on the test desktop
+// with every class standing still: along -4.6 to +4.4, across 0.5 to 4.4 (the shotgun's, whose muzzle ring takes in
+// the tube under its barrel). A flash at CJ's hand, or one a frame behind a moving gun, is 15 to 60 off.
+{
+  "name": "muzzle-flash",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "night", "cmd": "scene", "presets": "night clear" },
+    "wait frames=45",
+
+    { "label": "a pistol", "cmd": "asr.give", "weapon": 22, "ammo": 100, "expect": "weapon == 22" },
+    { "label": "the pistol's flash at its muzzle", "cmd": "asr.fire", "weapon": 22, "hold": true,
+      "expect": ["weaponType == 22", "flash.shown == true", "along > -8", "along < 8", "across < 6"] },
+    "pause",
+    { "label": "paused on the pistol's flash", "cmd": "asr.muzzle", "expect": ["flash.shown == true", "flash.light.fade > 0"] },
+    { "label": "the flash's light", "cmd": "probe", "kind": "lights", "at": "asr.flash:", "radius": 30,
+      "expect": "lights.0.on == true" },
+    { "cmd": "screenshot", "name": "pistol-close", "camera": "orbit asr.weapon: yaw=90 distance=70 pitch=10" },
+    { "cmd": "screenshot", "name": "pistol-side", "camera": "orbit asr.weapon: yaw=60 distance=220 pitch=10" },
+    { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
+    "resume",
+
+    { "label": "a shotgun", "cmd": "asr.give", "weapon": 25, "ammo": 100, "expect": "weapon == 25" },
+    { "label": "the shotgun's flash at its muzzle", "cmd": "asr.fire", "weapon": 25, "hold": true,
+      "expect": ["weaponType == 25", "flash.shown == true", "along > -8", "along < 8", "across < 6"] },
+    "pause",
+    { "label": "paused on the shotgun's flash", "cmd": "asr.muzzle", "expect": ["flash.shown == true", "flash.light.fade > 0"] },
+    { "cmd": "screenshot", "name": "shotgun-close", "camera": "orbit asr.weapon: yaw=90 distance=90 pitch=10" },
+    { "cmd": "screenshot", "name": "shotgun-side", "camera": "orbit asr.weapon: yaw=60 distance=250 pitch=10" },
+    { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
+    "resume",
+
+    { "label": "an SMG", "cmd": "asr.give", "weapon": 29, "ammo": 100, "expect": "weapon == 29" },
+    { "label": "the SMG's flash at its muzzle", "cmd": "asr.fire", "weapon": 29, "hold": true,
+      "expect": ["weaponType == 29", "flash.shown == true", "along > -8", "along < 8", "across < 6"] },
+    "pause",
+    { "label": "paused on the SMG's flash", "cmd": "asr.muzzle", "expect": ["flash.shown == true", "flash.light.fade > 0"] },
+    { "cmd": "screenshot", "name": "smg-close", "camera": "orbit asr.weapon: yaw=90 distance=80 pitch=10" },
+    { "cmd": "screenshot", "name": "smg-side", "camera": "orbit asr.weapon: yaw=60 distance=230 pitch=10" },
+    { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
+    "resume",
+
+    { "label": "a rifle (the M4)", "cmd": "asr.give", "weapon": 31, "ammo": 100, "expect": "weapon == 31" },
+    { "label": "the rifle's flash at its muzzle", "cmd": "asr.fire", "weapon": 31, "hold": true,
+      "expect": ["weaponType == 31", "flash.shown == true", "along > -8", "along < 8", "across < 6"] },
+    "pause",
+    { "label": "paused on the rifle's flash", "cmd": "asr.muzzle", "expect": ["flash.shown == true", "flash.light.fade > 0"] },
+    { "cmd": "screenshot", "name": "rifle-close", "camera": "orbit asr.weapon: yaw=90 distance=100 pitch=10" },
+    { "cmd": "screenshot", "name": "rifle-side", "camera": "orbit asr.weapon: yaw=60 distance=260 pitch=10" },
+    { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
+    "resume",
+
+    { "label": "nobody about turned on CJ", "cmd": "state", "ref": "player", "expect": ["dead == false"] },
+
+    { "label": "into the inn", "cmd": "console", "command": "coc RiverwoodSleepingGiantInn" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "and out to the road", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "the pistol again", "cmd": "asr.give", "weapon": 22, "ammo": 100, "expect": "weapon == 22" },
+    { "label": "its flash after an interior", "cmd": "asr.fire", "weapon": 22, "hold": true, "expect": ["flash.shown == true", "along > -8", "along < 8", "across < 6"] },
+    "pause",
+    { "label": "after an interior the flash's light still lights the scene", "cmd": "probe", "kind": "lights", "at": "asr.flash:", "radius": 30,
+      "expect": "lights.0.on == true" },
+    { "cmd": "screenshot", "name": "pistol-after-interior", "camera": "orbit asr.weapon: yaw=60 distance=220 pitch=10" },
+    { "label": "the flash let go", "cmd": "asr.muzzle", "release": true },
+    "resume",
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
