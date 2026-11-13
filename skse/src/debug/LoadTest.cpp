@@ -64,7 +64,7 @@ namespace AhShitRim::LoadTest
             bool             travelled = false;
             std::deque<Note> notes;
             std::string      saveAs;  // saved once the load has settled, before the handover
-            std::chrono::steady_clock::time_point polled;
+            int              unpolled = 0;  // player updates since its notes were last asked for
         } state;
 
         void Say(const std::string& a_what)
@@ -226,7 +226,6 @@ namespace AhShitRim::LoadTest
         state = State{};
         state.save = a_save;
         state.saveAs = a_saveAs;
-        state.polled = std::chrono::steady_clock::now();
         state.scenario = *scenario;
         Census();
         Say("load");
@@ -251,7 +250,7 @@ namespace AhShitRim::LoadTest
 
     std::optional<Note> NextNote()
     {
-        state.polled = std::chrono::steady_clock::now();
+        state.unpolled = 0;
         if (state.notes.empty()) {
             return std::nullopt;
         }
@@ -284,7 +283,7 @@ namespace AhShitRim::LoadTest
         if (state.phase == Phase::Off || state.phase == Phase::Done || a_delta <= 0.0f) {
             return;
         }
-        if (std::chrono::steady_clock::now() - state.polled > std::chrono::seconds(60)) {
+        if (++state.unpolled > 3600) {  // 60 s at 60 fps
             Say("stopped: nobody asked for its notes (the request went away)");
             state.phase = Phase::Off;
             return;

@@ -7,6 +7,7 @@
     // Riverwood's road, wherever an earlier test left the player (Wasted wakes CJ at a temple), CJ on foot there.
     { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
     { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
     { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },

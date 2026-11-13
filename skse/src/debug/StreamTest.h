@@ -8,8 +8,8 @@
 // outdoors, it carries the player in a straight line (heading degrees from north) height metres over where it starts,
 // at speed metres a second for seconds, and logs every second and at the end: the frame times and stalls, and how
 // often the land under the player and 1 s and 2 s ahead of it was loaded (its cell attached, with collision) and had a
-// height. It ends early when San Andreas takes the player, a game loads, or nobody has asked for its seconds for 10 s (the
-// kit's request went away). Nothing is saved. Main thread only.
+// height. It ends early when San Andreas takes the player, a game loads, or nobody has asked for its seconds for 600
+// frames, 10 s (the kit's request went away). Nothing is saved. Main thread only.
 namespace AhShitRim::StreamTest
 {
     struct Second

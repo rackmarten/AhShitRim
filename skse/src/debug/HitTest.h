@@ -10,8 +10,8 @@
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,
 // and samples the car's and the player's health every 2 s for the seconds asked. At the end the attackers go and the
-// stars are cleared, so the session goes on without them; also when nobody has asked for its samples for 10 s (the
-// kit's request went away). Nothing is saved. Main thread only.
+// stars are cleared, so the session goes on without them; also when nobody has asked for its samples for 600 player
+// updates, 10 s (the kit's request went away). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {
     struct Sample

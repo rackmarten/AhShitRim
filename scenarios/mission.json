@@ -5,6 +5,10 @@
 {
   "name": "mission",
   "steps": [
+    // Riverwood, Skyrim's player healthy (a hurt one gets Skyrim's "Health Low" tutorial when it has the player back).
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
     { "label": "CJ has the player", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "CJ's intro line", "cmd": "asr.intro", "expect": ["cue contains line", "cj == true"] },
     { "cmd": "wait", "seconds": 1.5 },

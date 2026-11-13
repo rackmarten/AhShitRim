@@ -77,6 +77,7 @@ function Open-Session([int] $Cycle) {
             $script:watch = New-SessionWatch $config -HangSeconds $HangSeconds
             return
         } catch {
+            if ($_.Exception.Message -like 'The games are locked by*') { throw }  # someone else's session: no point retrying
             $counts.start++
             Record 'start' $Cycle "try $try`: $($_.Exception.Message)"
             if ($try -ge 5) { throw }

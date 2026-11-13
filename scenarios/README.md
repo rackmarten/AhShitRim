@@ -18,13 +18,13 @@ crash log in its last line and in `summary.json`'s `Fault`). Each run writes `re
 | File | What it checks | Rows | Time |
 |---|---|---|---|
 | `hits.json` | Skyrim's attacks on CJ's vehicle (v31): CJ in a Sandking in Riverwood, a giant and two guards set on him for 90 s; the car takes the damage (`carLost > 0`, `scripts/hit-test.ps1` prints this run's `car hits:` lines). The car usually burns and blows up, and CJ is Wasted (and wakes at a temple). `scripts/hit-test.ps1` runs it | the car's and the player's health, in the car, wasted, busted, every 2 s | 100 s |
-| `bust.json` | The bust at the door (v31): two stars on CJ in a stopped Sandking; a guard runs to the driver's door and busts him (`busted == true`) | the same, for 60 s | 72 s |
-| `mission.json` | Quests as missions (v24): CJ's intro line, a quest's title (Bleak Falls Barrow, `MQ103`) and "mission passed" with its tune, first while CJ has the player, then while Skyrim has it; four screenshots with the HUD | | 25 s |
-| `stream.json` | Skyrim's streaming at a Hydra's 87 m/s (v19): the player flown 3.3 km north-east from Riverwood, 30 m up; no frame over 50 ms, and the land under it and 1 s ahead always loaded with collision | per second: frames, the worst frame, land loaded under, 1 s and 2 s ahead | 58 s |
+| `bust.json` | The bust at the door (v31): two stars on CJ in a stopped Sandking; a guard runs to the driver's door and busts him (`busted == true`) | the same, for 60 s | 80 s |
+| `mission.json` | Quests as missions (v24): CJ's intro line, a quest's title (Bleak Falls Barrow, `MQ103`) and "mission passed" with its tune, first while CJ has the player, then while Skyrim has it; four screenshots with the HUD | | 33 s |
+| `stream.json` | Skyrim's streaming at a Hydra's 87 m/s (v19): the player flown 3.3 km north-east from Riverwood, 30 m up; no frame over 50 ms, and the land under it and 1 s ahead always loaded with collision | per second: frames, the worst frame, land loaded under, 1 s and 2 s ahead | 62 s |
 | `test-kit-smoke.json` | AhShitRim's kit commands themselves: handovers, the night, a weapon, a spawned Elegy, a tracked second, exact steps | CJ, a row a frame | 6 s |
 
-Every scenario starts by putting the session where it needs it (most with a `coc Riverwood` and a new handover), so
-they run in any order in one session. Times are on the test desktop, from a running session.
+Every scenario starts by putting the session where it needs it (a `coc Riverwood`, Skyrim's player healed, most with a
+new handover), so they run in any order in one session. Times are on the test desktop, from a running session.
 
 ## Starts and saves
 

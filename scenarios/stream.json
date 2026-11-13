@@ -12,6 +12,7 @@
   "steps": [
     { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
     { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
     { "label": "Skyrim has the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "a Hydra's speed, north-east, 3.3 km", "cmd": "asr.stream", "speed": 87, "heading": 45, "height": 30, "seconds": 38,
       "expect": ["underAttached == 100", "underLand == 100", "ahead1Attached == 100", "ahead1Land == 100", "over50 == 0"] },

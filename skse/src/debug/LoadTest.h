@@ -11,8 +11,8 @@
 //   (6 stars, cleared with the cheat), travel (a coc to Riverwood, its load screen), handback (F10 hands it back).
 // Every step is logged ("load test: ...") and kept as a note for the kit's rows. With a_saveAs the game is saved under
 // that name once the load has settled (after the police took out copies left in the save), before the handover;
-// nothing else is ever saved. A cycle nobody has asked for notes for 60 s (the kit's request went away) stops. Main
-// thread only.
+// nothing else is ever saved. A cycle nobody has asked for notes for 3600 player updates (60 s: the kit's request went
+// away) stops. Main thread only.
 namespace AhShitRim::LoadTest
 {
     struct Note

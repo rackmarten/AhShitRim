@@ -3,7 +3,6 @@
 #include "player/PlayerSync.h"
 #include "pose.h"
 
-#include <chrono>
 #include <deque>
 
 namespace AhShitRim::StreamTest
@@ -37,7 +36,7 @@ namespace AhShitRim::StreamTest
             float                 secondTime = 0.0f;
             std::deque<Second>    done;
             std::optional<Second> result;
-            std::chrono::steady_clock::time_point polled;
+            int                   unpolled = 0;  // frames since its seconds were last asked for
         } state;
 
         void End(const char* a_why)
@@ -93,7 +92,6 @@ namespace AhShitRim::StreamTest
         state.seconds = a_seconds;
         state.from = player->GetPosition() + RE::NiPoint3(0.0f, 0.0f, a_heightMetres * Pose::kUnitsPerMeter);
         state.flying = true;
-        state.polled = std::chrono::steady_clock::now();
         SKSE::log::info("stream test: flying from ({:.0f},{:.0f},{:.0f}) in {:08X} at {} m/s, heading {:.0f}, {} m up, for {} s", state.from.x, state.from.y,
             state.from.z, cell->GetFormID(), a_speed, a_headingDegrees, a_heightMetres, a_seconds);
         return {};
@@ -109,7 +107,7 @@ namespace AhShitRim::StreamTest
     {
         if (state.flying && PlayerSync::DebugOwned()) {
             End("San Andreas took the player");
-        } else if (state.flying && std::chrono::steady_clock::now() - state.polled > std::chrono::seconds(10)) {
+        } else if (state.flying && ++state.unpolled > 600) {  // 10 s at 60 fps
             End("nobody asked for its seconds (the request went away)");
         }
         return state.flying;
@@ -117,7 +115,7 @@ namespace AhShitRim::StreamTest
 
     std::optional<Second> NextSecond()
     {
-        state.polled = std::chrono::steady_clock::now();
+        state.unpolled = 0;
         if (state.done.empty()) {
             return std::nullopt;
         }
