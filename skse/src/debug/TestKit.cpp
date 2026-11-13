@@ -1003,9 +1003,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>]",
+            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>] [tries=<n>]",
                 "Spawns a San Andreas vehicle by model id (400 to 611) where San Andreas puts a cheat's vehicle, in front of CJ; in=true puts CJ "
-                "in a new one where he stands (handing him the player if he hasn't it). Answers with its slot and where it is from the player",
+                "in a new one where he stands (handing him the player if he hasn't it). San Andreas spawns nothing without a flat, clear spot "
+                "in front of him: with tries (1) over 1, CJ walks on a second and it's asked for again. Answers with its slot and where it is "
+                "from the player",
                 [](Call& a_call) -> Step {
                     const double number = a_call.Number("model");
                     if (number < 400 || number > 611 || number != std::floor(number)) {
@@ -1028,8 +1030,16 @@ namespace AhShitRim::TestKit
                         throw Error(refusal);
                     }
                     const auto handover = PlayerSync::DebugHandover();
-                    a_call.DefaultTimeout(20.0);
-                    return [model, before, in, handover](Call& a_call) -> std::optional<Json> {
+                    const int  tries = (std::max)(1, static_cast<int>(a_call.Number("tries", 1.0)));
+                    a_call.DefaultTimeout(20.0 + 7.0 * (tries - 1));
+                    struct Retry
+                    {
+                        int    tried = 1;
+                        double askedAt = 0.0;
+                        double walkUntil = -1.0;
+                    };
+                    auto retry = std::make_shared<Retry>();
+                    return [model, before, in, handover, tries, retry](Call& a_call) -> std::optional<Json> {
                         if (PlayerSync::DebugHandover() != handover) {
                             throw Error("the handover changed while waiting (a load door, fast travel, F10): its vehicles are gone");
                         }
@@ -1067,8 +1077,27 @@ namespace AhShitRim::TestKit
                         if (!found) {
                             // San Andreas answers in a few frames; when it finds no flat, clear spot in front of CJ (another
                             // vehicle in the way) it spawns nothing and only its own log says so.
-                            if (!in && a_call.Seconds() > 5.0) {
-                                throw Error("San Andreas spawned nothing in 5 s: no clear spot in front of CJ? (its AhShitRim.log says why)");
+                            if (!in && retry->walkUntil >= 0.0) {
+                                if (a_call.Seconds() < retry->walkUntil) {
+                                    PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveY = 1.0f });
+                                    return std::nullopt;
+                                }
+                                PlayerSync::DebugHold(std::nullopt);
+                                retry->walkUntil = -1.0;
+                                retry->askedAt = a_call.Seconds();
+                                retry->tried++;
+                                if (const auto refusal = PlayerSync::DebugSpawn(model); !refusal.empty()) {
+                                    throw Error(refusal);
+                                }
+                                SKSE::log::info("test kit: asr.spawn: nothing spawned, CJ walked on and asked again ({} of {})", retry->tried, tries);
+                                return std::nullopt;
+                            }
+                            if (!in && a_call.Seconds() - retry->askedAt > 5.0) {
+                                if (retry->tried < tries) {
+                                    retry->walkUntil = a_call.Seconds() + 1.0;  // a second on, then again
+                                    return std::nullopt;
+                                }
+                                throw Error(std::format("San Andreas spawned nothing in 5 s, {} time(s): no clear spot in front of CJ? (its AhShitRim.log says why)", tries));
                             }
                             return std::nullopt;
                         }

@@ -40,7 +40,7 @@
     { "label": "the Tec-9 in his hand", "cmd": "asr.hold", "weapon": 32, "expect": "weapon == 32" },
     { "label": "watching every frame", "cmd": "asr.watch", "what": "start" },
 
-    { "label": "a Sanchez", "cmd": "asr.spawn", "model": 468, "expect": "model == 468" },
+    { "label": "a Sanchez", "cmd": "asr.spawn", "model": 468, "tries": 4, "expect": "model == 468" },
     // Shots on the fly from a held camera: never paused while he gets on or off, which San Andreas plays on through a
     // pause, so the frames after one would jump.
     { "cmd": "camera", "mode": "orbit", "at": "player", "yaw": 90, "distance": 260, "pitch": 10 },
@@ -71,7 +71,7 @@
 
     { "label": "away from the bike, so the car is the one he gets into", "cmd": "asr.ahead", "distance": 1000 },
     { "label": "the pistol in his hand", "cmd": "asr.hold", "weapon": 22, "expect": "weapon == 22" },
-    { "label": "a Sandking (off-road: the tundra round the stables)", "cmd": "asr.spawn", "model": 495, "expect": "model == 495" },
+    { "label": "a Sandking (off-road: the tundra round the stables)", "cmd": "asr.spawn", "model": 495, "tries": 4, "expect": "model == 495" },
     { "label": "Lydia with him (after the Sandking: standing in front of him she takes its spot)", "cmd": "asr.follower", "expect": "ref exists" },
     { "cmd": "camera", "mode": "orbit", "at": "player", "yaw": 90, "distance": 300, "pitch": 10 },
     "wait frames=10",

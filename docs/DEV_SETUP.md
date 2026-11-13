@@ -177,7 +177,7 @@ never need it). To use it:
    | Command | What it does | Example |
    |---|---|---|
    | `asr.cj [on]` | hands the player to San Andreas (or back, `on=false`) as F10 does; answers once done | `asr.cj` |
-   | `asr.spawn <model> [in=<bool>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one); answers with its slot and offset from the player | `asr.spawn 562` |
+   | `asr.spawn <model> [in=<bool>] [tries=<n>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one; `tries`: with no clear spot there, CJ walks on a second and it's asked for again); answers with its slot and offset from the player | `asr.spawn 562` |
    | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
