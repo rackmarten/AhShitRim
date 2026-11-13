@@ -329,8 +329,9 @@ namespace AhShitRim::Damage
     }
 
     // San Andreas stands CJ up as he swings from a crouch, so by the time the blow lands Skyrim's player may have
-    // stopped sneaking: a blow swung crouched is one landing within kCrouchedBlow s of CJ last crouching (his knife's
-    // swing lands in under half a second; the test kit saw the sneak end 0.8 s after the crouch, the blow either side).
+    // stopped sneaking: a blow swung crouched is one landing within kCrouchedBlow s of CJ last seen crouching (his
+    // knife's swing lands in under half a second after he stands; the test kit saw the blow land either side of the
+    // sneak's end). Standing up and swinging within the second counts too, still only on someone who doesn't detect him.
     inline constexpr float kCrouchedBlow = 1.0f;
 
     constexpr bool CrouchedBlow(bool a_sneaking, float a_sinceCrouched) { return a_sneaking || (a_sinceCrouched >= 0.0f && a_sinceCrouched <= kCrouchedBlow); }

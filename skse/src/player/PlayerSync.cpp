@@ -587,6 +587,7 @@ namespace AhShitRim::PlayerSync
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
             state.sneak = false;
+            state.crouchedAt.reset();
             KeepAwake::Display(false);
             if (state.wasThirdPerson) {
                 if (auto* camera = RE::PlayerCamera::GetSingleton()) {
