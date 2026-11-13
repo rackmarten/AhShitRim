@@ -1190,7 +1190,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
                 "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
                 "above where he started (metres), his top and lowest speed (km/h), the most the camera turned either way, whether he left the "
-                "ground, and the menus that were open; in a vehicle the most its nose went up and down (pitchUp, pitchDown, degrees). keep= and vs= as asr.since",
+                "ground, and the menus that were open; in a vehicle the most its nose went up and down from where it was when the watch started (pitchUp, pitchDown, degrees). keep= and vs= as asr.since",
                 [](Call& a_call) -> Step {
                     const double seconds = a_call.Number("seconds", 1.0);
                     if (seconds <= 0.0 || seconds > 600.0) {
@@ -1205,8 +1205,9 @@ namespace AhShitRim::TestKit
                         double    low = 1e9;
                         double    left = 0.0;
                         double    right = 0.0;
-                        double    pitchUp = -1e9;    // the driven vehicle's pitch, its highest and lowest
+                        double    pitchUp = -1e9;    // the driven vehicle's pitch, its highest and lowest, from where it started
                         double    pitchDown = 1e9;
+                        std::optional<double> pitchFrom;
                         bool      airborne = false;
                         JsonArray menus;
                     };
@@ -1225,8 +1226,12 @@ namespace AhShitRim::TestKit
                         watch->right = (std::max)(watch->right, turned);
                         watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
                         if (const auto pitch = VehiclePitch()) {
-                            watch->pitchUp = (std::max)(watch->pitchUp, *pitch);
-                            watch->pitchDown = (std::min)(watch->pitchDown, *pitch);
+                            // From its pitch when the watch started, so the road's slope doesn't count.
+                            if (!watch->pitchFrom) {
+                                watch->pitchFrom = *pitch;
+                            }
+                            watch->pitchUp = (std::max)(watch->pitchUp, *pitch - *watch->pitchFrom);
+                            watch->pitchDown = (std::min)(watch->pitchDown, *pitch - *watch->pitchFrom);
                         }
                         for (auto& menu : OpenMenus()) {
                             if (std::ranges::find(watch->menus, menu) == watch->menus.end()) {
