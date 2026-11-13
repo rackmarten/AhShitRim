@@ -57,9 +57,10 @@
     { "label": "nobody aimed at the elk", "cmd": "asr.crewstats", "expect": "targeted.length == 0" },
     { "label": "CJ shoots it, it runs", "cmd": "asr.hurt", "ref": "name:Elk", "damage": 2 },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "the shot elk is no foe", "cmd": "asr.foe", "ref": "name:Elk", "expect": "foe == false" },
+    { "label": "why the crew leaves the shot elk be (for the record: it may turn to CJ a moment before it runs)", "cmd": "asr.foe", "ref": "name:Elk" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "still nobody aimed at the elk", "cmd": "asr.crewstats", "expect": "targeted.length == 0" },
+    { "label": "the elk lives", "cmd": "state", "ref": "name:Elk", "expect": "dead == false" },
 
     { "label": "two wolves", "cmd": "console", "command": "player.placeatme 23ABE 2" },
     { "cmd": "wait", "seconds": 2 },

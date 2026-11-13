@@ -154,6 +154,7 @@ namespace AhShitRim::Homies
             unsigned                 drawnFrames = 0;  // the test kit: frames a homie had a Skyrim weapon in hand
             unsigned                 fistsFrames = 0;  // the test kit: frames one had his (empty) hands raised for a Skyrim fight
             unsigned                 unwaited = 0;     // followers told to stop waiting (WaitingForPlayer)
+            std::vector<std::pair<RE::FormID, float>> animalsFighting;  // animals that fight the crew, and since when (game seconds)
             std::vector<RE::FormID>  targeted;  // the test kit: everyone a follower has had as his target since asr.crewstats reset
             unsigned                 hushedLines = 0;   // subtitles of theirs taken off (a line each)
             unsigned                 hushedSounds = 0;  // their voice handles stopped
@@ -779,11 +780,11 @@ namespace AhShitRim::Homies
 
         // Every living homie, followers and not, for G: the one CJ's lock-on is on, or, aiming a gun, the one nearest his
         // crosshair (as LockOn marks an enemy), flagged.
-        std::vector<Crew::Candidate> Candidates(RE::FormID a_target)
+        std::vector<Crew::Candidate> Candidates(RE::FormID a_target, bool a_crosshair)
         {
             float x = 0.0f, y = 0.0f, aspect = 0.0f;
             auto* camera = RE::Main::WorldRootCamera();
-            const bool crosshair = camera && SaHud::AimCrosshair(x, y, aspect);
+            const bool crosshair = a_crosshair && camera && SaHud::AimCrosshair(x, y, aspect);
             std::vector<Crew::Candidate> out;
             std::vector<Melee::OnScreen> shown;
             for (const auto& h : state.homies) {
@@ -811,12 +812,13 @@ namespace AhShitRim::Homies
 
         // G: only while CJ aims, at the homie he aims at (Crew::AimPick). One standing about joins, one of the crew
         // leaves. Typed in a cheat, with no aim, it does nothing.
-        void HandleKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
+        // a_crosshair: the camera's crosshair counts (in play CJ aims where it is; the test kit gives an aim line instead).
+        void HandleKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target, bool a_crosshair = true)
         {
             if (!a_aiming) {
                 return;
             }
-            const auto pick = Crew::AimPick(V(a_player->GetPosition()), a_heading, Candidates(a_target));
+            const auto pick = Crew::AimPick(V(a_player->GetPosition()), a_heading, Candidates(a_target, a_crosshair));
             auto       it = std::find_if(state.homies.begin(), state.homies.end(), [&](const Homie& a_h) { return a_h.id == pick; });
             if (!pick || it == state.homies.end()) {
                 SKSE::log::info("homies: G while aiming, at no homie");
@@ -927,6 +929,8 @@ namespace AhShitRim::Homies
             }
             const auto                   cj = a_player->GetPosition();
             std::vector<RE::Actor*>      enemies;
+            const float                  now = RE::GetDurationOfApplicationRunTime() / 1000.0f;
+            std::vector<std::pair<RE::FormID, float>> animals;
             for (auto& handle : lists->highActorHandles) {
                 auto  ptr = handle.get();
                 auto* actor = ptr.get();
@@ -934,10 +938,22 @@ namespace AhShitRim::Homies
                     actor->IsPlayerTeammate() || actor->GetPosition().GetDistance(cj) > kTargetRange * Crew::kMeter) {
                     continue;
                 }
-                if (IsFoe(a_player, actor)) {
-                    enemies.push_back(actor);
+                if (!IsFoe(a_player, actor)) {
+                    continue;
                 }
+                if (actor->HasKeywordString("ActorTypeAnimal")) {
+                    // An animal only once it has kept up its fight (Crew::kAnimalFightsFor): prey turns before it runs.
+                    const auto was = std::find_if(state.animalsFighting.begin(), state.animalsFighting.end(),
+                        [&](const auto& a_entry) { return a_entry.first == actor->GetFormID(); });
+                    const float since = was != state.animalsFighting.end() ? was->second : now;
+                    animals.emplace_back(actor->GetFormID(), since);
+                    if (now - since < Crew::kAnimalFightsFor) {
+                        continue;
+                    }
+                }
+                enemies.push_back(actor);
             }
+            state.animalsFighting = std::move(animals);  // one that stopped fighting starts over
             for (auto& h : state.homies) {
                 auto* actor = Get(h);
                 h.target = {};
@@ -1484,7 +1500,7 @@ namespace AhShitRim::Homies
 
     void DebugKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
     {
-        HandleKey(a_player, a_aiming, a_heading, a_target);
+        HandleKey(a_player, a_aiming, a_heading, a_target, false);
     }
 
     RE::Actor* DebugFree(RE::PlayerCharacter* a_player, int a_index)
