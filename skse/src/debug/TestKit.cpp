@@ -3,9 +3,13 @@
 
 #include "Ini.h"
 #include "body/ModelView.h"
+#include "debug/HitTest.h"
+#include "debug/LoadTest.h"
+#include "debug/StreamTest.h"
 #include "hud/Overlay.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
+#include "player/Missions.h"
 #include "player/PlayerSync.h"
 #include "vehicle_kinds.h"
 #include "weapons.h"
@@ -30,6 +34,19 @@ namespace AhShitRim::TestKit
         bool g_cj = false;
         int  g_wait = 0;  // frames until the next try at the handover
         std::optional<std::uint32_t> g_spawned;  // the slot asr.spawn found last, for the asr.vehicle target
+
+        void RunConsole(const std::string& a_command)
+        {
+            auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+            auto* script = factory ? factory->Create() : nullptr;
+            if (!script) {
+                throw Error("no console script to run it with");
+            }
+            script->SetCommand(a_command);
+            script->CompileAndRun(nullptr);
+            delete script;
+            SKSE::log::info("test kit: asr ran '{}'", a_command);
+        }
 
         void Arrived(const SkseTestKit::Settings& a_settings)
         {
@@ -81,6 +98,149 @@ namespace AhShitRim::TestKit
             if (!PlayerSync::DebugOwned()) {
                 throw Error("San Andreas doesn't have the player: asr.cj first");
             }
+        }
+
+        const char* CueName(std::uint8_t a_cue)
+        {
+            switch (a_cue) {
+            case Protocol::kCueMissionPassed: return "mission passed tune";
+            case Protocol::kCueIntroLine: return "intro line";
+            default: return "";
+            }
+        }
+
+        Json Percent(int a_part, int a_whole) { return a_whole ? std::round(a_part * 1000.0 / a_whole) / 10.0 : 0.0; }
+
+        Json DescribeSecond(const StreamTest::Second& a_s)
+        {
+            return JsonObject{ { "at", a_s.at }, { "frames", a_s.frames }, { "fps", a_s.window > 0.0f ? a_s.frames / a_s.window : 0.0f },
+                { "worstMs", a_s.worst * 1000.0f }, { "over50", a_s.over50 }, { "over100", a_s.over100 },
+                { "underAttached", Percent(a_s.underAttached, a_s.samples) }, { "underLand", Percent(a_s.underLand, a_s.samples) },
+                { "ahead1Attached", Percent(a_s.ahead1Attached, a_s.samples) }, { "ahead1Land", Percent(a_s.ahead1Land, a_s.samples) },
+                { "ahead2Attached", Percent(a_s.ahead2Attached, a_s.samples) }, { "ahead2Land", Percent(a_s.ahead2Land, a_s.samples) } };
+        }
+
+        // AhShitRim's in-game tests (scenarios/README.md): each a scenario whose rows go to
+        // skytest run's CSV; the game logic is in skse/src/debug/ (HitTest, LoadTest, StreamTest) and Missions.
+        void AddTests()
+        {
+            SkseTestKit::AddScenario("asr.hits", "[bust=<bool>] [seconds=<s>]",
+                "The hit test: with CJ in a vehicle (asr.spawn 495 in=true), a giant and two guards set on him (or two stars with bust=true, "
+                "so a guard runs to the door to bust him) for seconds (90) of game time; a row every 2 s (car and player health, in the car, "
+                "wasted, busted), then the attackers go and the stars are cleared",
+                [](Call& a_call) -> Step {
+                    const double seconds = a_call.Number("seconds", 90.0);
+                    if (seconds < 1.0 || seconds > 1800.0) {
+                        throw Error("seconds is 1 to 1800");
+                    }
+                    if (const auto refusal = HitTest::Begin(a_call.Flag("bust", false), static_cast<float>(seconds)); !refusal.empty()) {
+                        throw Error(refusal);
+                    }
+                    a_call.DefaultTimeout(seconds * 2.0 + 60.0);  // game seconds: a pausing menu stops them
+                    return [](Call& a_call) -> std::optional<Json> {
+                        while (const auto s = HitTest::NextSample()) {
+                            a_call.Row(JsonObject{ { "seconds", s->seconds }, { "carHealth", s->carHealth }, { "playerHealth", s->playerHealth },
+                                { "inCar", s->inCar }, { "wasted", s->wasted }, { "busted", s->busted } });
+                        }
+                        if (HitTest::Running()) {
+                            return std::nullopt;
+                        }
+                        const auto& r = HitTest::Last();
+                        if (!r.done) {
+                            throw Error(r.stopped.empty() ? "the hit test was stopped before its end" : r.stopped);
+                        }
+                        return JsonObject{ { "seconds", r.seconds }, { "attackers", r.attackers }, { "carStart", r.carStart }, { "carMin", r.carMin },
+                            { "carEnd", r.carEnd }, { "carLost", r.carStart - r.carMin },
+                            { "playerMin", r.playerMin }, { "inCarAtEnd", r.inCarAtEnd }, { "wasted", r.wasted }, { "busted", r.busted } };
+                    };
+                });
+
+            SkseTestKit::AddScenario("asr.load", "<save> <scenario>",
+                "One cycle of the load test: loads the save (Saves/<save>.ess) through the console's load, lets it settle, hands the player to "
+                "San Andreas, then the scenario (" + LoadTest::Scenarios() + "); a row per step. scripts/load-test.ps1 runs hundreds",
+                [](Call& a_call) -> Step {
+                    LoadTest::Stop();  // a cycle whose request went away
+                    if (const auto refusal = LoadTest::Begin(a_call.Text("save"), a_call.Text("scenario")); !refusal.empty()) {
+                        throw Error(refusal);
+                    }
+                    a_call.DefaultTimeout(180.0);
+                    return [save = a_call.Text("save"), scenario = a_call.Text("scenario")](Call& a_call) -> std::optional<Json> {
+                        while (const auto note = LoadTest::NextNote()) {
+                            a_call.Row(JsonObject{ { "time", note->time }, { "seconds", note->seconds }, { "what", note->what } });
+                        }
+                        if (LoadTest::Done()) {
+                            return JsonObject{ { "save", save }, { "scenario", scenario }, { "cj", PlayerSync::DebugOwned() } };
+                        }
+                        if (!LoadTest::Running()) {
+                            throw Error("the cycle was stopped");
+                        }
+                        // The player died and Skyrim had no save to load: the cycle would wait for nothing.
+                        if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::MainMenu::MENU_NAME) && a_call.Seconds() > 5.0) {
+                            LoadTest::Stop();
+                            throw Error("Skyrim is back at its main menu (the player died?)");
+                        }
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddScenario("asr.stream", "<speed> [heading=<degrees>] [height=<metres>] [seconds=<s>]",
+                "The stream test: carries the player (Skyrim's: asr.cj on=false first) in a straight line at speed m/s, heading degrees from "
+                "north (0), height metres up (30), for seconds (60); a row a second (frames, the worst frame, the land loaded under and ahead), "
+                "the whole flight as the answer",
+                [](Call& a_call) -> Step {
+                    const double seconds = a_call.Number("seconds", 60.0);
+                    if (const auto refusal = StreamTest::Begin(static_cast<float>(a_call.Number("speed")), static_cast<float>(a_call.Number("heading", 0.0)),
+                            static_cast<float>(a_call.Number("height", 30.0)), static_cast<float>(seconds));
+                        !refusal.empty()) {
+                        throw Error(refusal);
+                    }
+                    a_call.DefaultTimeout(seconds * 2.0 + 60.0);
+                    return [](Call& a_call) -> std::optional<Json> {
+                        while (const auto s = StreamTest::NextSecond()) {
+                            a_call.Row(DescribeSecond(*s));
+                        }
+                        if (StreamTest::Running()) {
+                            return std::nullopt;
+                        }
+                        const auto total = StreamTest::Total();
+                        if (!total) {
+                            throw Error("the stream test was stopped before its end");
+                        }
+                        return DescribeSecond(*total);
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.intro", "",
+                "CJ's intro line, as if Ralof's line in the cart had just ended; answers once San Andreas was given the cue to play it",
+                [](Call& a_call) -> Step {
+                    const auto before = Missions::DebugShown().cues;
+                    Missions::TestIntro();
+                    a_call.DefaultTimeout(10.0);
+                    return [before](Call&) -> std::optional<Json> {
+                        const auto& shown = Missions::DebugShown();
+                        if (shown.cues == before) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "cue", CueName(shown.cue) }, { "cj", PlayerSync::DebugOwned() } };
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.quest", "<command...>",
+                "Runs a console command (setstage MQ103 10, completequest MQ103) and answers once San Andreas's HUD shows what Skyrim announced: "
+                "the mission title or mission passed, with the quest's name and the cue it started",
+                [](Call& a_call) -> Step {
+                    const auto before = Missions::DebugShown();
+                    RunConsole(a_call.Text("command"));
+                    a_call.DefaultTimeout(20.0);
+                    return [before](Call&) -> std::optional<Json> {
+                        const auto& shown = Missions::DebugShown();
+                        if (shown.steps == before.steps) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "shown", shown.last }, { "name", shown.name },
+                            { "cue", shown.cues != before.cues ? Json(CueName(shown.cue)) : Json() }, { "cj", PlayerSync::DebugOwned() } };
+                    };
+                });
         }
 
         // AhShitRim's commands on the kit's command pipe (docs/DEV_SETUP.md, "Test sessions").
@@ -327,6 +487,7 @@ namespace AhShitRim::TestKit
         const SkseTestKit::Hooks hooks{ .arrived = &Arrived, .ready = &CjReady, .hud = [](bool a_visible) { Overlay::SetHidden(!a_visible); } };
         if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = hooks })) {
             AddCommands();
+            AddTests();
         }
     }
 

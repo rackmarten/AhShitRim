@@ -1,17 +1,13 @@
 #include "debug/LoadTest.h"
 
-#include "Ini.h"
 #include "player/People.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 
 #include <chrono>
-#include <filesystem>
+#include <deque>
 #include <format>
-#include <fstream>
 #include <string>
-#include <thread>
-#include <vector>
 
 namespace AhShitRim::LoadTest
 {
@@ -20,7 +16,6 @@ namespace AhShitRim::LoadTest
         enum class Phase
         {
             Off,
-            MainMenu,  // waiting for the main menu, to load the first save
             Loading,   // a load asked for, until it's done (kPostLoadGame)
             Settling,  // the loading screen gone, the player in: a few seconds
             Handing,   // the player to San Andreas
@@ -60,49 +55,21 @@ namespace AhShitRim::LoadTest
 
         struct State
         {
-            Phase                    phase = Phase::Off;
-            int                      cycles = 0;
-            int                      cycle = 0;  // the one running (from 1)
-            std::vector<std::string> saves{ "StressA", "StressB" };
-            std::vector<Scenario>    scenarios{ std::begin(kScenarios), std::end(kScenarios) };  // LoadTestScenarios, in turn
-            Scenario                 scenario = Scenario::Idle;
-            float                    timer = 0.0f;
-            int                      step = 0;
-            bool                     travelled = false;
-            std::string              saveAs;  // LoadTestSaveAs: saved once, after the first load has settled
+            Phase            phase = Phase::Off;
+            std::string      save;
+            Scenario         scenario = Scenario::Idle;
+            float            timer = 0.0f;
+            float            clock = 0.0f;  // for the notes
+            int              step = 0;
+            bool             travelled = false;
+            std::deque<Note> notes;
         } state;
 
-        std::filesystem::path Folder()
+        void Say(const std::string& a_what)
         {
-            const auto dir = SKSE::log::log_directory();
-            // .../My Games/Skyrim Special Edition/SKSE -> .../My Games/AhShitRim
-            return dir ? dir->parent_path().parent_path() / "AhShitRim" : std::filesystem::path("AhShitRim");
-        }
-
-        int ReadProgress()
-        {
-            std::ifstream in(Folder() / "loadtest-progress.txt");
-            int           done = 0;
-            in >> done;
-            return in ? done : 0;
-        }
-
-        void WriteProgress(int a_done)
-        {
-            std::error_code error;
-            std::filesystem::create_directories(Folder(), error);
-            std::ofstream(Folder() / "loadtest-progress.txt", std::ios::trunc) << a_done << "\n";
-        }
-
-        void Note(const std::string& a_what)
-        {
-            std::error_code error;
-            std::filesystem::create_directories(Folder(), error);
-            const auto now = std::chrono::system_clock::now();
-            std::ofstream(Folder() / "loadtest.csv", std::ios::app)
-                << std::format("{:%F %T},{},{},{},{}\n", std::chrono::floor<std::chrono::seconds>(now), state.cycle, state.saves[state.cycle % state.saves.size()],
-                       NameOf(state.scenario), a_what);
-            SKSE::log::info("load test: cycle {} ({}): {}", state.cycle, NameOf(state.scenario), a_what);
+            SKSE::log::info("load test: {} ({}): {}", state.save, NameOf(state.scenario), a_what);
+            const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+            state.notes.push_back({ std::format("{:%F %T}", now), state.clock, a_what });
         }
 
         void RunConsole(const std::string& a_command)
@@ -143,48 +110,17 @@ namespace AhShitRim::LoadTest
             SKSE::log::info("load test: {} in a fight as the load goes", fighting);
         }
 
-        // The next cycle: counted first (a crash in it isn't run again), then its save loaded.
-        void NextCycle()
-        {
-            state.cycle = ReadProgress() + 1;
-            if (state.cycle > state.cycles) {
-                state.phase = Phase::Done;
-                SKSE::log::info("load test: all {} cycles done", state.cycles);
-                return;
-            }
-            WriteProgress(state.cycle);
-            state.scenario = state.scenarios[static_cast<std::size_t>(state.cycle - 1) % state.scenarios.size()];
-            state.travelled = false;
-            if (state.cycle > 1) {
-                Census();
-            }
-            Note("load");
-            state.phase = Phase::Loading;
-            state.timer = 0.0f;
-            RunConsole("load " + state.saves[state.cycle % state.saves.size()]);
-        }
-
-        class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
-        {
-        public:
-            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
-            {
-                if (state.phase == Phase::MainMenu && a_event && a_event->opening && a_event->menuName == RE::MainMenu::MENU_NAME) {
-                    state.phase = Phase::Loading;
-                    std::thread([] {
-                        std::this_thread::sleep_for(std::chrono::seconds(4));
-                        SKSE::GetTaskInterface()->AddUITask([] { NextCycle(); });  // as the console's own commands run
-                    }).detach();
-                }
-                return RE::BSEventNotifyControl::kContinue;
-            }
-        } menuSink;
-
         bool Settled(RE::PlayerCharacter* a_player)
         {
             auto* ui = RE::UI::GetSingleton();
             auto* cell = a_player->GetParentCell();
             return !(ui && (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) || ui->GameIsPaused())) && a_player->Is3DLoaded() && cell && cell->IsAttached();
+        }
+
+        void Finish()
+        {
+            Say("ok");
+            state.phase = Phase::Done;
         }
 
         void Act(RE::PlayerCharacter* a_player)
@@ -210,7 +146,7 @@ namespace AhShitRim::LoadTest
             case Scenario::Flee:
                 if (at(0.0f)) {
                     People::Blast(a_player->GetPosition());
-                    Note("blast");
+                    Say("blast");
                 }
                 finished = t >= 8.0f;
                 break;
@@ -218,7 +154,7 @@ namespace AhShitRim::LoadTest
                 if (at(0.0f)) {
                     PlayerSync::DebugType("BAGUVIX");
                     Police::CheatStars(2);
-                    Note("six stars, loading with the force out");
+                    Say("six stars, loading with the force out");
                 }
                 finished = t >= 18.0f;
                 break;
@@ -227,15 +163,15 @@ namespace AhShitRim::LoadTest
                 if (at(0.0f)) {
                     PlayerSync::DebugType("BAGUVIX");
                     Police::CheatStars(2);
-                    Note("six stars");
+                    Say("six stars");
                 }
                 if (then(1, 15.0f)) {
                     if (state.scenario == Scenario::Asnaeb) {
                         Police::CheatStars(0);
-                        Note("ASNAEB");
+                        Say("ASNAEB");
                     } else {
                         PlayerSync::DebugType("AEZAKMI");
-                        Note("AEZAKMI");
+                        Say("AEZAKMI");
                     }
                 }
                 if (state.scenario == Scenario::Aezakmi && then(2, 18.0f)) {
@@ -246,7 +182,7 @@ namespace AhShitRim::LoadTest
             case Scenario::Travel:
                 if (!state.travelled && at(0.0f)) {
                     state.travelled = true;
-                    Note("coc Riverwood");
+                    Say("coc Riverwood");
                     RunConsole("coc Riverwood");
                     state.phase = Phase::Settling;  // its load screen, then the cycle ends
                     state.timer = 0.0f;
@@ -257,61 +193,76 @@ namespace AhShitRim::LoadTest
             case Scenario::Handback:
                 if (at(1.0f) && PlayerSync::DebugOwned()) {
                     PlayerSync::DebugToggle();
-                    Note("F10: back to Skyrim");
+                    Say("F10: back to Skyrim");
                 }
                 finished = t >= 5.0f;
                 break;
             }
             if (finished) {
-                Note("ok");
-                NextCycle();
+                Finish();
             }
         }
     }
 
-    void OnDataLoaded()
+    std::string Begin(const std::string& a_save, const std::string& a_scenario)
     {
-        const auto cycles = Ini::Value("Debug", "LoadTest");
-        try {
-            state.cycles = cycles.empty() ? 0 : std::stoi(cycles);
-        } catch (...) {
-            state.cycles = 0;
+        if (Running()) {
+            return "a cycle is still going";
         }
-        if (state.cycles <= 0) {
-            return;
+        if (a_save.empty() || a_save.find_first_of(" \t\"';") != std::string::npos) {
+            return "save is a save's file name without spaces or quotes";
         }
-        if (const auto saves = Ini::Value("Debug", "LoadTestSaves"); !saves.empty()) {
-            state.saves.clear();
-            for (std::size_t from = 0; from <= saves.size();) {
-                const auto comma = saves.find(',', from);
-                const auto name = saves.substr(from, comma == std::string::npos ? std::string::npos : comma - from);
-                if (!name.empty()) {
-                    state.saves.push_back(name);
-                }
-                from = comma == std::string::npos ? saves.size() + 1 : comma + 1;
+        std::optional<Scenario> scenario;
+        for (const auto s : kScenarios) {
+            if (a_scenario == NameOf(s)) {
+                scenario = s;
             }
         }
-        if (const auto names = Ini::Value("Debug", "LoadTestScenarios"); !names.empty()) {
-            std::vector<Scenario> picked;
-            for (const auto scenario : kScenarios) {
-                if (names.find(NameOf(scenario)) != std::string::npos) {
-                    picked.push_back(scenario);
-                }
-            }
-            if (!picked.empty()) {
-                state.scenarios = picked;
-            }
+        if (!scenario) {
+            return "scenario is one of " + Scenarios();
         }
-        state.saveAs = Ini::Value("Debug", "LoadTestSaveAs");
-        if (state.saves.empty() || ReadProgress() >= state.cycles) {
-            SKSE::log::info("load test: on, but all {} cycles are done", state.cycles);
-            return;
+        state = State{};
+        state.save = a_save;
+        state.scenario = *scenario;
+        Census();
+        Say("load");
+        state.phase = Phase::Loading;
+        // As the console's own commands run (its UI task), not from the middle of a frame (the test kit's command point):
+        // a load begun there crashed in the actors' update after it.
+        SKSE::GetTaskInterface()->AddUITask([command = "load " + a_save] { RunConsole(command); });
+        return {};
+    }
+
+    void Stop()
+    {
+        if (Running()) {
+            Say("stopped");
         }
-        state.phase = Phase::MainMenu;
-        if (auto* ui = RE::UI::GetSingleton()) {
-            ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
+        state.phase = Phase::Off;
+    }
+
+    bool Running() { return state.phase != Phase::Off && state.phase != Phase::Done; }
+
+    bool Done() { return state.phase == Phase::Done; }
+
+    std::optional<Note> NextNote()
+    {
+        if (state.notes.empty()) {
+            return std::nullopt;
         }
-        SKSE::log::info("load test: on, cycle {} of {} next, between {} saves", ReadProgress() + 1, state.cycles, state.saves.size());
+        auto note = state.notes.front();
+        state.notes.pop_front();
+        return note;
+    }
+
+    std::string Scenarios()
+    {
+        std::string names;
+        for (const auto s : kScenarios) {
+            names += names.empty() ? "" : ", ";
+            names += NameOf(s);
+        }
+        return names;
     }
 
     void OnPostLoadGame()
@@ -319,13 +270,13 @@ namespace AhShitRim::LoadTest
         if (state.phase == Phase::Loading) {
             state.phase = Phase::Settling;
             state.timer = 0.0f;
-            Note("loaded");
+            Say("loaded");
         }
     }
 
     void Update(RE::PlayerCharacter* a_player, float a_delta)
     {
-        if (state.phase == Phase::Off || state.phase == Phase::Done || state.phase == Phase::MainMenu || state.phase == Phase::Loading || a_delta <= 0.0f) {
+        if (state.phase == Phase::Off || state.phase == Phase::Done || state.phase == Phase::Loading || a_delta <= 0.0f) {
             return;
         }
         if (!Settled(a_player)) {
@@ -333,23 +284,12 @@ namespace AhShitRim::LoadTest
             return;
         }
         state.timer += a_delta;
+        state.clock += a_delta;
         switch (state.phase) {
         case Phase::Settling:
-            if (state.timer >= kSettleSeconds && !state.saveAs.empty() && state.cycle == state.cycles) {
-                // After a load the police takes out copies left in the save (3 s settled, then a step a frame): a moment
-                // more, then this game is saved under its own name, without them.
-                if (state.timer >= kSettleSeconds + 4.0f) {
-                    Note("save " + state.saveAs);
-                    RunConsole("save " + state.saveAs);
-                    state.saveAs.clear();
-                    state.timer = 0.0f;
-                }
-                return;
-            }
             if (state.timer >= kSettleSeconds) {
                 if (state.travelled) {
-                    Note("ok");
-                    NextCycle();
+                    Finish();
                     return;
                 }
                 state.phase = state.scenario == Scenario::Handback || PlayerSync::DebugOwned() ? Phase::Acting : Phase::Handing;
@@ -357,7 +297,7 @@ namespace AhShitRim::LoadTest
                 state.step = 0;
                 if (state.phase == Phase::Handing) {
                     PlayerSync::DebugToggle();
-                    Note("F10: to San Andreas");
+                    Say("F10: to San Andreas");
                 }
             }
             break;
@@ -366,7 +306,7 @@ namespace AhShitRim::LoadTest
                 state.phase = Phase::Acting;
                 state.timer = 0.0f;
                 state.step = 0;
-                Note(PlayerSync::DebugOwned() ? "San Andreas has the player" : "no handover, on anyway");
+                Say(PlayerSync::DebugOwned() ? "San Andreas has the player" : "no handover, on anyway");
             }
             break;
         case Phase::Acting: Act(a_player); break;

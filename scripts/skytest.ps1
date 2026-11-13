@@ -16,3 +16,4 @@ if (-not (Test-Path $kit)) {
     throw 'skse-test-kit is not checked out: git submodule update --init --checkout skse/extern/skse-test-kit (then scripts/build.ps1).'
 }
 if ($args -contains '-Mod') { & $kit @args } else { & $kit -Mod (Split-Path -Parent $PSScriptRoot) @args }
+exit $LASTEXITCODE  # the kit's: run and cmd exit 1 on a failed check, 2 on a crash or hang

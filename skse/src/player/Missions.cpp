@@ -24,6 +24,7 @@ namespace AhShitRim::Missions
             Intro             intro;     // main thread
             CueTimer          cue;       // main thread
             std::atomic<bool> cuePlaying = false;
+            Shown             shown;     // main thread
         } state;
 
         class TopicSink : public RE::BSTEventSink<RE::TESTopicInfoEvent>
@@ -114,9 +115,15 @@ namespace AhShitRim::Missions
         std::uint8_t cue = 0;
         if (const auto step = state.sequence.Tick(a_delta); step.notice == Notice::Title) {
             SaHud::ShowMissionTitle(step.name);
+            state.shown.steps++;
+            state.shown.last = "title";
+            state.shown.name = step.name;
         } else if (IsPassed(step.notice)) {
             SaHud::ShowBigMessage(step.notice == Notice::OddJob ? SaHud::BigMessage::OddJobPassed : SaHud::BigMessage::MissionPassed, kPassedSeconds);
             cue = Protocol::kCueMissionPassed;
+            state.shown.steps++;
+            state.shown.last = step.notice == Notice::OddJob ? "odd job passed" : "mission passed";
+            state.shown.name = step.name;
         }
         // One cue a frame: CJ's line waits a frame for the tune.
         if (!cue && state.intro.Tick(a_delta)) {
@@ -126,6 +133,8 @@ namespace AhShitRim::Missions
         state.cue.Tick(a_delta);
         if (cue) {
             state.cue.Start(cue);
+            state.shown.cues++;
+            state.shown.cue = cue;
         }
         state.cuePlaying = state.cue.Playing();
         return cue;
@@ -136,9 +145,12 @@ namespace AhShitRim::Missions
     void TestIntro()
     {
         SKSE::log::info("missions: test: as if Ralof's line had ended");
+        state.intro.Clear();  // CJ says it once a game: a test asks again (main thread, as Update)
         std::scoped_lock guard(state.lock);
         state.ralofDone = true;
     }
+
+    const Shown& DebugShown() { return state.shown; }
 
     void OnGameLoad()
     {

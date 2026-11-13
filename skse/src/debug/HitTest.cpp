@@ -1,92 +1,30 @@
 #include "debug/HitTest.h"
 
-#include "Ini.h"
 #include "link/LinkService.h"
-#include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/Vitals.h"
 #include "wanted.h"
 
-#include <chrono>
-#include <thread>
+#include <deque>
 
 namespace AhShitRim::HitTest
 {
     namespace
     {
-        enum class Phase
-        {
-            Off,
-            MainMenu,  // waiting for it to load the most recent save
-            Loading,
-            Going,     // the coc to the start
-            Arriving,
-            Handing,   // CJ comes, in the Sandking
-            Watching,
-            Done,
-        };
-
-        constexpr std::uint16_t kSandking = 495;
-        constexpr float         kAhead = 840.0f;  // 12 m: where the attackers are placed
+        constexpr float kAhead = 840.0f;  // 12 m: where the attackers are placed
 
         struct State
         {
-            Phase              phase = Phase::Off;
-            bool               bust = false;  // the scenario: bust, else hits
-            std::string        start = "Riverwood";
-            float              seconds = 90.0f;
-            float              timer = 0.0f;
-            float              logTimer = 0.0f;
-            float              combatTimer = 0.0f;
-            bool               newGame = false;  // a new game at the start instead of the most recent save
+            bool                             running = false;
+            bool                             bust = false;
+            float                            seconds = 90.0f;
+            float                            timer = 0.0f;
+            float                            logTimer = 0.0f;
+            float                            combatTimer = 0.0f;
             std::vector<RE::ObjectRefHandle> attackers;
+            std::deque<Sample>               samples;
+            Result                           result;
         } state;
-
-        void RunConsole(const std::string& a_command)
-        {
-            auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-            auto* script = factory ? factory->Create() : nullptr;
-            if (!script) {
-                return;
-            }
-            script->SetCommand(a_command);
-            script->CompileAndRun(nullptr);
-            delete script;
-            SKSE::log::info("hit test: ran '{}'", a_command);
-        }
-
-        void TryLoad(int a_try)
-        {
-            std::thread([a_try] {
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-                SKSE::GetTaskInterface()->AddTask([a_try] {
-                    auto* saves = RE::BGSSaveLoadManager::GetSingleton();
-                    if (state.newGame) {
-                        RunConsole("coc " + state.start);  // from the main menu: a new game there
-                    } else if (saves && saves->PopulateSaveList() && saves->LoadMostRecentSaveGame()) {
-                        SKSE::log::info("hit test: loading the most recent save");
-                    } else if (a_try < 10) {
-                        TryLoad(a_try + 1);
-                    } else {
-                        SKSE::log::info("hit test: could not load the most recent save");
-                        state.phase = Phase::Done;
-                    }
-                });
-            }).detach();
-        }
-
-        class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
-        {
-        public:
-            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
-            {
-                if (state.phase == Phase::MainMenu && a_event && a_event->opening && a_event->menuName == RE::MainMenu::MENU_NAME) {
-                    state.phase = Phase::Loading;
-                    TryLoad(1);
-                }
-                return RE::BSEventNotifyControl::kContinue;
-            }
-        } menuSink;
 
         bool InVehicle()
         {
@@ -124,6 +62,7 @@ namespace AhShitRim::HitTest
                 state.attackers.push_back(ref->GetHandle());
                 SKSE::log::info("hit test: placed {} ({:08X}) {:.0f} units ahead", ref->GetName(), ref->GetFormID(), kAhead);
             }
+            state.result.attackers = static_cast<int>(state.attackers.size());
         }
 
         void SetOn(RE::PlayerCharacter* a_player)
@@ -136,98 +75,124 @@ namespace AhShitRim::HitTest
                 }
             }
         }
+
+        void TakeSample(RE::PlayerCharacter* a_player)
+        {
+            Sample sample{ .seconds = state.timer, .carHealth = CarHealth(), .playerHealth = a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth),
+                .inCar = InVehicle(), .wasted = Vitals::IsWasted(), .busted = Police::IsBusted() };
+            auto& r = state.result;
+            if (sample.carHealth >= 0.0f) {
+                r.carMin = r.carMin < 0.0f ? sample.carHealth : (std::min)(r.carMin, sample.carHealth);
+            }
+            r.carEnd = sample.carHealth;
+            r.playerMin = (std::min)(r.playerMin, sample.playerHealth);
+            r.inCarAtEnd = sample.inCar;
+            r.wasted = r.wasted || sample.wasted;
+            r.busted = r.busted || sample.busted;
+            r.seconds = state.timer;
+            SKSE::log::info("hit test: {:.0f} s: car health {:.0f}, player health {:.0f}{}{}{}", sample.seconds, sample.carHealth, sample.playerHealth,
+                sample.inCar ? ", CJ in the car" : ", CJ on foot", sample.wasted ? ", wasted" : "", sample.busted ? ", busted" : "");
+            state.samples.push_back(sample);
+        }
     }
 
-    void OnDataLoaded()
+    std::string Begin(bool a_bust, float a_seconds)
     {
-        const auto scenario = Ini::Value("Debug", "HitTest");
-        if (scenario != "hits" && scenario != "bust") {
-            return;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !player->Is3DLoaded() || !player->GetParentCell()) {
+            return "the player isn't in the world";
         }
-        state.bust = scenario == "bust";
-        if (const auto start = Ini::Value("Debug", "HitTestStart"); !start.empty()) {
-            state.start = start;
+        if (!InVehicle()) {
+            return "CJ isn't in a vehicle (asr.spawn 495 in=true puts him in a Sandking)";
         }
-        if (const auto seconds = Ini::Value("Debug", "HitTestSeconds"); !seconds.empty()) {
-            try {
-                state.seconds = std::stof(seconds);
-            } catch (...) {
+        Stop();
+        state = State{};
+        state.running = true;
+        state.bust = a_bust;
+        state.seconds = a_seconds;
+        state.result.carStart = state.result.carMin = state.result.carEnd = CarHealth();
+        state.result.playerMin = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+        state.result.inCarAtEnd = true;
+        SKSE::log::info("hit test: CJ is in his vehicle (health {:.0f}), the {} begin, for {:.0f} s", state.result.carStart, a_bust ? "stars" : "attackers",
+            a_seconds);
+        if (a_bust) {
+            Police::CheatStars(1);
+        } else {
+            PlaceAttackers(player);
+        }
+        return {};
+    }
+
+    void Stop()
+    {
+        // Out of the fight and disabled; never deleted here: an actor deleted while its movement still runs on a job
+        // thread crashes the game. Placed references are temporary and go with their cell.
+        for (const auto& handle : state.attackers) {
+            if (auto ref = handle.get()) {
+                if (auto* actor = ref->As<RE::Actor>()) {
+                    actor->StopCombat();
+                }
+                ref->Disable();
             }
         }
-        state.newGame = Ini::Value("Debug", "HitTestNewGame") == "1";
-        state.phase = Phase::MainMenu;
-        if (auto* ui = RE::UI::GetSingleton()) {
-            ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
+        if (state.running || !state.attackers.empty()) {
+            SKSE::log::info("hit test: over, {} attackers taken away{}", state.attackers.size(), state.bust ? ", stars cleared" : "");
         }
-        SKSE::log::info("hit test: on ({}), from {} for {:.0f} s{}", scenario, state.start, state.seconds, state.newGame ? ", a new game" : "");
+        if (state.bust && state.running) {
+            Police::CheatStars(0);
+        }
+        state.attackers.clear();
+        state.running = false;
     }
+
+    bool Running() { return state.running; }
+
+    void OnPostLoadGame()
+    {
+        if (state.running) {
+            state.result.stopped = "a game was loaded halfway (the player died, and Skyrim loaded the most recent save?)";
+            SKSE::log::warn("hit test: {}", state.result.stopped);
+            Stop();
+        }
+    }
+
+    std::optional<Sample> NextSample()
+    {
+        if (state.samples.empty()) {
+            return std::nullopt;
+        }
+        auto sample = state.samples.front();
+        state.samples.pop_front();
+        return sample;
+    }
+
+    const Result& Last() { return state.result; }
 
     void Update(RE::PlayerCharacter* a_player, float a_delta)
     {
-        if (state.phase == Phase::Off || state.phase == Phase::Done || a_delta <= 0.0f) {
+        if (!state.running || a_delta <= 0.0f) {
             return;
         }
         auto* ui = RE::UI::GetSingleton();
         if ((ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) || !a_player->Is3DLoaded() || !a_player->GetParentCell()) {
-            state.timer = 0.0f;
             return;
         }
         state.timer += a_delta;
-        switch (state.phase) {
-        case Phase::MainMenu:
-        case Phase::Loading:
-            if (state.timer >= 4.0f) {
-                RunConsole("coc " + state.start);
-                state.phase = Phase::Going;
-                state.timer = 0.0f;
-            }
-            break;
-        case Phase::Going:
-            state.phase = Phase::Arriving;  // the coc's load screen comes and goes; timer counts from after it
-            state.timer = 0.0f;
-            break;
-        case Phase::Arriving:
-            if (state.timer >= 6.0f) {
-                SKSE::log::info("hit test: in {:08X}, handing the player over with CJ in a Sandking", a_player->GetParentCell()->GetFormID());
-                PlayerSync::TakeOverInVehicle(kSandking);
-                state.phase = Phase::Handing;
-                state.timer = 0.0f;
-            }
-            break;
-        case Phase::Handing:
-            if (InVehicle()) {
-                SKSE::log::info("hit test: CJ is in the Sandking (health {:.0f}), the {} begin", CarHealth(), state.bust ? "stars" : "attackers");
-                if (state.bust) {
-                    Police::CheatStars(1);
-                } else {
-                    PlaceAttackers(a_player);
-                }
-                state.phase = Phase::Watching;
-                state.timer = state.logTimer = state.combatTimer = 0.0f;
-            } else if (state.timer > 30.0f) {
-                SKSE::log::info("hit test: CJ never got into the Sandking, stopping");
-                state.phase = Phase::Done;
-            }
-            break;
-        case Phase::Watching:
-            state.combatTimer += a_delta;
-            if (!state.bust && state.combatTimer >= 1.5f) {
-                state.combatTimer = 0.0f;
-                SetOn(a_player);
-            }
-            state.logTimer += a_delta;
-            if (state.logTimer >= 2.0f) {
-                state.logTimer = 0.0f;
-                SKSE::log::info("hit test: {:.0f} s: car health {:.0f}, player health {:.0f}{}{}{}", state.timer, CarHealth(),
-                    a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth), InVehicle() ? ", CJ in the car" : ", CJ on foot",
-                    Vitals::IsWasted() ? ", wasted" : "", Police::IsBusted() ? ", busted" : "");
-            }
-            if (state.timer >= state.seconds) {
-                SKSE::log::info("hit test: done after {:.0f} s", state.timer);
-                state.phase = Phase::Done;
-            }
-            break;
-        default: break;
+        state.combatTimer += a_delta;
+        if (!state.bust && state.combatTimer >= 1.5f) {
+            state.combatTimer = 0.0f;
+            SetOn(a_player);
+        }
+        state.logTimer += a_delta;
+        if (state.logTimer >= 2.0f) {
+            state.logTimer = 0.0f;
+            TakeSample(a_player);
+        }
+        if (state.timer >= state.seconds) {
+            TakeSample(a_player);
+            SKSE::log::info("hit test: done after {:.0f} s", state.timer);
+            state.result.done = true;
+            Stop();
         }
     }
 }
