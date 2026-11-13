@@ -1,0 +1,116 @@
+// The vehicles' headlights and tail lights (v36): CJ in a ZR-350 on Riverwood's road at 23:00. Its four lamps burn and
+// glow, its two scene lights are on (the headlights' on the road ahead, the tail lights' behind it), and two A/B pairs
+// say what they light: each a shot with the lamps as San Andreas has them and one with asr.lamps off (the same frame
+// but for the lamps: both shots are taken with the clock and the weather held and the car standing, a few frames
+// apart), compared region by region. By day the lamps are out; blown up, they're out too. Last, after a trip into an
+// interior and back (Riverwood's inn), a new ZR-350's lights must still be among the renderer's (on: lighting shapes).
+// scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md). Needs the headlights (protocol v36; until
+// they are on main, scenarios/README.md says how to run it).
+//
+// The limits, adjustable (luma, 0 to 255): each tail lamp's lens 15 darker with the lamps off, and 20 less red (measured
+// 39 and 39 darker, red 75 less),
+// the road behind the car 1.5 (measured 4.2, red), each front lamp 10, the road ahead 5 in the middle of the
+// headlights' light (measured 13 to 18), the whole picture and a patch of ground beside the car within 3 (measured 1.0
+// and 0.9: the eye adaptation follows the lamps a little).
+{
+  "name": "vehicle-lights",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "the lamps as San Andreas has them (a run that stopped halfway may have left them off)", "cmd": "asr.lamps", "state": "on" },
+    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    "wait frames=45",
+    { "label": "CJ in a ZR-350, its engine running", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
+
+    { "label": "at night all four lamps burn, both lights on", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 4", "at.details.wrecked == false", "at.details.lights.length == 2",
+                 "at.details.lights.0.fade > 0", "at.details.lights.1.fade > 0"] },
+    { "label": "the lamps' meshes glow", "cmd": "probe", "kind": "effects", "at": "asr.vehicle:", "radius": 5,
+      "expect": ["shaderCount >= 4", "shaders.0.strength > 0"] },
+
+    { "label": "the tail lights: from behind", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 600, "pitch": 15 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "tail-on" },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "label": "off, no glow and no light", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.forcedOff == true", "at.details.lights.0.fade == 0", "at.details.lights.1.fade == 0"] },
+    { "cmd": "screenshot", "name": "tail-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "the tail lamps glow red and light the road behind", "cmd": "compare", "a": "tail-on", "b": "tail-off",
+      "regions": [ { "name": "lensLeft", "at": "asr.lamp:rearLeft", "worldRadius": 15 },
+                   { "name": "lensRight", "at": "asr.lamp:rearRight", "worldRadius": 15 },
+                   { "name": "roadBehind", "at": "asr.vehicle:", "offset": "-280,0,-58", "worldRadius": 50 },
+                   { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
+      "expect": ["regions.0.delta < -15", "regions.1.delta < -15", "regions.0.color.r < -20", "regions.1.color.r < -20",
+                 "regions.2.delta < -1.5", "regions.3.delta > -3", "whole.delta > -3"] },
+
+    { "label": "the road ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 900, "pitch": 35 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "road-on" },
+    { "label": "the headlights: from the front", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 180, "distance": 500, "pitch": 10 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "front-on" },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "front-off" },
+    { "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 900, "pitch": 35 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "road-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "cmd": "camera", "mode": "player" },
+    { "label": "the headlights light the road ahead", "cmd": "compare", "a": "road-on", "b": "road-off",
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "350,0,-58", "worldRadius": 100 },
+                   { "name": "mid", "at": "asr.vehicle:", "offset": "650,0,-58", "worldRadius": 150 },
+                   { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
+      "expect": ["regions.0.delta < -5", "regions.1.delta < -5", "regions.2.delta > -3", "whole.delta > -3"] },
+    { "label": "the front lamps glow", "cmd": "compare", "a": "front-on", "b": "front-off",
+      "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 20 },
+                   { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 20 } ],
+      "expect": ["regions.0.delta < -10", "regions.1.delta < -10", "whole.delta > -3"] },
+
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    "wait frames=60",
+    { "label": "San Andreas switches them off", "cmd": "wait", "seconds": 2 },
+    { "label": "by day no lamp burns, both lights out", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 0", "at.details.lights.0.fade == 0", "at.details.lights.1.fade == 0"] },
+    { "cmd": "screenshot", "name": "day-behind", "camera": "orbit asr.vehicle: yaw=0 distance=600 pitch=15" },
+
+    { "label": "night again", "cmd": "scene", "presets": "night clear" },
+    "wait frames=60",
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "lit again", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500, "expect": "at.details.lamps.litCount == 4" },
+    { "label": "CJ gets out", "cmd": "asr.exit" },
+    { "label": "the engine runs on: still lit", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500, "expect": "at.details.lamps.litCount == 4" },
+    { "label": "CJ runs well clear of it", "cmd": "asr.walk", "points": "16700,-47150; 16100,-47050", "gait": "sprint" },
+    { "label": "every vehicle blows up", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 4 },
+    { "label": "the wreck shows no lamp and no light", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.wrecked == true", "at.details.lamps.litCount == 0", "at.details.lights.0.fade == 0", "at.details.lights.1.fade == 0"] },
+    { "cmd": "screenshot", "name": "wreck-behind", "camera": "orbit asr.vehicle: yaw=0 distance=600 pitch=15" },
+    { "label": "CJ came through (not Wasted to a temple)", "cmd": "state", "ref": "player", "expect": ["interior == false", "dead == false"] },
+
+    { "label": "into the inn", "cmd": "console", "command": "coc RiverwoodSleepingGiantInn" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "and out to the road", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    "wait frames=45",
+    { "label": "CJ in another ZR-350", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "cmd": "wait", "seconds": 2 },
+    { "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 600, "pitch": 15 },
+    "wait frames=30",
+    { "label": "after an interior its lights still light the scene", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 4", "lights.0.on == true", "lights.1.on == true"] },
+    { "cmd": "screenshot", "name": "after-interior-behind" },
+    { "cmd": "camera", "mode": "player" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

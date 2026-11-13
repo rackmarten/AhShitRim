@@ -102,6 +102,7 @@ While CJ has the player (F10), the keys follow San Andreas's keyboard layout, mo
 | Left Ctrl or numpad 0 | Left Ctrl or numpad 0 | Left Ctrl: crouch (modern layout) | Same as the right mouse button |
 | Left mouse button | Left mouse button | Fire (a melee weapon attacks, turning CJ to the nearest enemy in reach in front); with the parachute in the air, open it | The vehicle's weapon: the Hunter's rockets (heat-seeking once Space has locked on, as the Hydra's), the Hydra's flares, the Rhino's cannon (its turret follows the camera); a car's nitro |
 | Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
+| G | G | Grove Street crew, while aiming (right mouse button) at a homie: recruit him (they stand about at the way into a hold's capital where the Dragonborn is Thane), or send him off if he's of the crew. Without aiming G does nothing | |
 | X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
 | Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |
 | V or Home | V or Home | Change the camera distance: San Andreas's three chase distances (San Andreas's camera key) | Change the camera distance; one step is the view from the front of the vehicle, with San Andreas's crosshair in the Hunter, Hydra, Seasparrow and Rustler |
