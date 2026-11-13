@@ -37,4 +37,8 @@ namespace AhShitRim::MuzzleFlash
         RE::NiPointLight* light = nullptr;
     };
     DebugFlash Debug(std::uint32_t a_hand);
+
+    // The test kit (debug): while held, a flash that shows doesn't fade or run out (its seconds stop counting down), so a
+    // test can pause on it however long its pause takes to arrive. Let go by the next DebugHold(false) or Reset.
+    void DebugHold(bool a_hold);
 }

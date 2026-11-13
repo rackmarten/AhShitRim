@@ -6,7 +6,8 @@
 // interior and back (Riverwood's inn), a new ZR-350's lights must still be among the renderer's (on: lighting shapes).
 // scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md). Needs the headlights (protocol v36).
 //
-// The limits, adjustable (luma, 0 to 255): each tail lamp's lens 15 darker with the lamps off (measured 34 and 49),
+// The limits, adjustable (luma, 0 to 255): each tail lamp's lens 15 darker with the lamps off, and 20 less red (measured
+// 39 and 39 darker, red 75 less),
 // the road behind the car 1.5 (measured 4.2, red), each front lamp 10, the road ahead 5 in the middle of the
 // headlights' light (measured 13 to 18), the whole picture and a patch of ground beside the car within 3 (measured 1.0
 // and 0.9: the eye adaptation follows the lamps a little).

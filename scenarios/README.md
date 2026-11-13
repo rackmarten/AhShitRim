@@ -28,7 +28,7 @@ crash log in its last line and in `summary.json`'s `Fault`). Each run writes `re
 
 Every scenario starts by putting the session where it needs it (a `coc Riverwood`, Skyrim's player healed, most with a
 new handover), so they run in any order in one session. Times are on the test desktop, from a running session. The
-last three check features that came after the kit (the headlights, the crew): on a build without them their first
+last two check features that came after the kit (the headlights, the crew): on a build without them their first
 step that needs them fails, saying so. Their limits are in each file's opening comment, with what they were set from.
 `crew-follow.json` leaves its three homies following CJ: run it last, or `skytest stop` before the others.
 

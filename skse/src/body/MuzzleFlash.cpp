@@ -22,6 +22,7 @@ namespace AhShitRim::MuzzleFlash
             std::uint32_t             frame = 0;
             DebugFlash                debug[Protocol::kWeaponHandMax];  // the test kit's look at each hand's
             bool                      showing[Protocol::kWeaponHandMax] = {};  // shown this frame (debug.shown once it ends)
+            bool                      held = false;  // DebugHold: the flashes don't count down
         } state;
 
         bool EnsureModel(std::uint32_t a_hand)
@@ -112,7 +113,9 @@ namespace AhShitRim::MuzzleFlash
             return;
         }
         const float strength = (std::min)(1.0f, state.left[a_hand] / kSeconds);
-        state.left[a_hand] -= a_delta;
+        if (!state.held) {
+            state.left[a_hand] -= a_delta;
+        }
 
         Protocol::BodyState flash{};
         flash.frame = ++state.frame;
@@ -161,10 +164,16 @@ namespace AhShitRim::MuzzleFlash
 
     void Reset()
     {
+        state.held = false;
         for (auto& left : state.left) {
             left = 0.0f;
         }
         EndFrame();
+    }
+
+    void DebugHold(bool a_hold)
+    {
+        state.held = a_hold;
     }
 
     DebugFlash Debug(std::uint32_t a_hand)

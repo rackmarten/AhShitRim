@@ -22,7 +22,7 @@
     { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
-    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["worldspace contains Tamriel", "dead == false"] },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },

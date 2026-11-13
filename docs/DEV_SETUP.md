@@ -181,8 +181,8 @@ never need it). To use it:
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
    | `asr.walk <points> [gait=] [arrive=] [stuck=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
-   | `asr.fire [weapon] [hand=] [aim=] [shots=]` | CJ takes the weapon, aims a second and fires; answers in the flash's frame with `asr.muzzle`'s numbers | `asr.fire weapon=22` |
-   | `asr.muzzle [hand]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units | `asr.muzzle` |
+   | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
+   | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |

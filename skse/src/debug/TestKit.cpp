@@ -17,7 +17,7 @@
 #include "weapons.h"
 
 // The Grove Street crew's command builds once the crew is in (player/Homies.h, protocol v39); before, asr.crew isn't
-// there and scenarios/crew-follow.json fails at its first step.
+// there and scenarios/crew-follow.json fails at its first asr.crew step.
 #if __has_include("player/Homies.h")
 #    include "player/Homies.h"
 #    define AHSHITRIM_TEST_CREW 1
@@ -205,8 +205,9 @@ namespace AhShitRim::TestKit
         }
 
         // Vehicle slot a_slot's scene lights: AhShitRim's headlight and tail light point lights (named so by
-        // player/Headlights.cpp), which hang in the world's scene graph, not under the vehicle's node. Each light goes to
-        // the drawn vehicle it fits best, so a car parked beside this one keeps its own.
+        // player/Headlights.cpp), which hang in the world's scene graph, not under the vehicle's node. A slot has one of
+        // each; the lights of other slots stay where they were last put (out, once their vehicle goes), so of each name
+        // the one that fits this vehicle best, and only one no other drawn vehicle fits better.
         std::vector<RE::NiPointLight*> LampLightsOf(std::uint32_t a_slot)
         {
             std::vector<RE::NiPointLight*> out;
@@ -214,31 +215,62 @@ namespace AhShitRim::TestKit
             if (!scene || !g_seen[a_slot].on) {
                 return out;
             }
-            for (auto& child : scene->GetChildren()) {
-                auto* light = child ? netimmerse_cast<RE::NiPointLight*>(child.get()) : nullptr;
-                if (!light) {
-                    continue;
-                }
-                const std::string_view name = light->name.c_str();
-                if (name != "AhShitRimHeadlight" && name != "AhShitRimTailLight") {
-                    continue;
-                }
-                const double fit = LampFit(g_seen[a_slot].frame, light->world.translate);
-                bool         best = fit < 400.0;
-                for (std::uint32_t other = 0; best && other < Protocol::kVehicleMax; other++) {
-                    RE::NiPoint3 position;
-                    float        heading = 0.0f;
-                    if (other != a_slot && g_seen[other].on && PlayerSync::DebugVehicle(other, position, heading) &&
-                        LampFit(g_seen[other].frame, light->world.translate) < fit) {
-                        best = false;
+            for (const std::string_view wanted : { std::string_view("AhShitRimHeadlight"), std::string_view("AhShitRimTailLight") }) {
+                RE::NiPointLight* best = nullptr;
+                double            bestFit = 400.0;
+                for (auto& child : scene->GetChildren()) {
+                    auto* light = child ? netimmerse_cast<RE::NiPointLight*>(child.get()) : nullptr;
+                    if (!light || std::string_view(light->name.c_str()) != wanted) {
+                        continue;
+                    }
+                    const double fit = LampFit(g_seen[a_slot].frame, light->world.translate);
+                    if (fit >= bestFit) {
+                        continue;
+                    }
+                    bool theirs = false;
+                    for (std::uint32_t other = 0; !theirs && other < Protocol::kVehicleMax; other++) {
+                        RE::NiPoint3 position;
+                        float        heading = 0.0f;
+                        theirs = other != a_slot && g_seen[other].on && PlayerSync::DebugVehicle(other, position, heading) &&
+                                 LampFit(g_seen[other].frame, light->world.translate) < fit;
+                    }
+                    if (!theirs) {
+                        best = light;
+                        bestFit = fit;
                     }
                 }
                 if (best) {
-                    out.push_back(light);
+                    out.push_back(best);
                 }
             }
             return out;
         }
+
+        // A whole number from a target's argument text ("" or anything else after the number refuses).
+        std::optional<std::uint32_t> WholeNumber(std::string_view a_text)
+        {
+            std::uint32_t n = 0;
+            const auto [end, error] = std::from_chars(a_text.data(), a_text.data() + a_text.size(), n);
+            if (a_text.empty() || error != std::errc{} || end != a_text.data() + a_text.size()) {
+                return std::nullopt;
+            }
+            return n;
+        }
+
+        // A hand from a target's argument: "" or 0 the right, 1 the left.
+        std::uint32_t HandOfTarget(std::string_view a_text)
+        {
+            if (a_text.empty()) {
+                return 0;
+            }
+            const auto hand = WholeNumber(a_text);
+            if (!hand || *hand > 1) {
+                throw Error("the hand is 0 (right) or 1 (left)");
+            }
+            return *hand;
+        }
+
+        std::array<RE::FormID, 8> g_homies{};  // asr.homie:<n>'s follower, pinned the first time it's found (asr.crew lets go)
 
         Json LampNames(std::uint8_t a_bits)
         {
@@ -413,6 +445,9 @@ namespace AhShitRim::TestKit
                 const auto end = a_text.find(';');
                 const auto point = a_text.substr(0, end);
                 a_text = end == std::string_view::npos ? std::string_view{} : a_text.substr(end + 1);
+                if (point.find_first_not_of(' ') == std::string_view::npos) {
+                    continue;  // a trailing ';'
+                }
                 const auto comma = point.find(',');
                 if (comma == std::string_view::npos) {
                     throw Error("points are x,y; x,y; ...");
@@ -554,21 +589,30 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddCommand("asr.muzzle", "[hand]",
+            SkseTestKit::AddCommand("asr.muzzle", "[hand] [release=<bool>]",
                 "The weapon drawn in a hand (0 right, 1 left) against its muzzle flash: the barrel's end (its farthest vertex along the "
                 "barrel), the flash as last shown (shown in the last frame, seconds left, where), along (units the flash is past the "
-                "muzzle's end) and across (off the barrel's line)",
-                [](Call& a_call) -> Json { return MuzzleCheck(HandOf(a_call)); });
+                "muzzle's end) and across (off the barrel's line). release=true lets go of a flash asr.fire hold=true kept, after measuring",
+                [](Call& a_call) -> Json {
+                    auto out = MuzzleCheck(HandOf(a_call));
+                    if (a_call.Flag("release", false)) {
+                        MuzzleFlash::DebugHold(false);
+                    }
+                    return out;
+                });
 
-            SkseTestKit::AddTask("asr.fire", "[weapon] [hand=<0|1>] [aim=<bool>] [shots=<n>] [settle=<seconds>]",
+            SkseTestKit::AddTask("asr.fire", "[weapon] [hand=<0|1>] [aim=<bool>] [shots=<n>] [settle=<seconds>] [hold=<bool>]",
                 "CJ fires: takes the weapon (a type he carries: asr.give first) if given, aims (the right button, aim=true) for settle (1) s, "
-                "then holds fire until shots (1) shots flashed, and answers in the frame of the last flash with asr.muzzle's numbers",
+                "then holds fire until shots (1) shots flashed, and answers in the frame of the last flash with asr.muzzle's numbers. "
+                "hold=true keeps that flash from running out (for a pause and shots of it) until asr.muzzle release=true or the next asr.fire",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const auto   hand = HandOf(a_call);
                     const bool   aim = a_call.Flag("aim", true);
                     const auto   shots = static_cast<std::uint32_t>((std::max)(1.0, a_call.Number("shots", 1.0)));
                     const double settle = a_call.Number("settle", 1.0);
+                    const bool   hold = a_call.Flag("hold", false);
+                    MuzzleFlash::DebugHold(false);
                     std::uint8_t weapon = 0;
                     if (a_call.Has("weapon")) {
                         const double number = a_call.Number("weapon");
@@ -609,6 +653,7 @@ namespace AhShitRim::TestKit
                         const auto flash = MuzzleFlash::Debug(hand);
                         if (flash.fired - fire->firedBefore >= shots && flash.shown) {
                             PlayerSync::DebugHold(std::nullopt);
+                            MuzzleFlash::DebugHold(hold);
                             auto out = MuzzleCheck(hand);
                             out["weaponType"] = static_cast<int>(pose->weaponType);
                             out["aimed"] = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
@@ -630,7 +675,9 @@ namespace AhShitRim::TestKit
                     std::uint32_t slot = 0;
                     if (at != std::string_view::npos) {
                         const auto number = a_spec.substr(at + 1);
-                        if (std::from_chars(number.data(), number.data() + number.size(), slot).ec != std::errc{} || slot >= Protocol::kVehicleMax) {
+                        const auto whole = WholeNumber(number);
+                        slot = whole.value_or(Protocol::kVehicleMax);
+                        if (slot >= Protocol::kVehicleMax) {
                             throw Error("asr.lamp:<lamp>@<slot>, the slot 0 to " + std::to_string(Protocol::kVehicleMax - 1));
                         }
                     } else if (g_spawned) {
@@ -666,7 +713,7 @@ namespace AhShitRim::TestKit
             // Cameras and probes at the flash and at the gun's muzzle.
             SkseTestKit::AddTarget("asr.flash", "[hand]", "A hand's muzzle flash where it was last shown, facing along the barrel (its model and light inside)",
                 [](std::string_view a_hand) -> SkseTestKit::Place {
-                    const std::uint32_t hand = a_hand == "1" ? 1 : 0;
+                    const std::uint32_t hand = HandOfTarget(a_hand);
                     const auto          flash = MuzzleFlash::Debug(hand);
                     if (flash.fired == 0) {
                         throw Error("CJ hasn't fired yet");
@@ -686,7 +733,7 @@ namespace AhShitRim::TestKit
                 });
             SkseTestKit::AddTarget("asr.weapon", "[hand]", "The muzzle of the weapon drawn in a hand, facing along its barrel (the gun's model inside)",
                 [](std::string_view a_hand) -> SkseTestKit::Place {
-                    const auto barrel = BarrelOf(a_hand == "1" ? 1 : 0);
+                    const auto barrel = BarrelOf(HandOfTarget(a_hand));
                     return SkseTestKit::Place{ .x = barrel.tip.x, .y = barrel.tip.y, .z = barrel.tip.z, .heading = barrel.heading,
                         .root = ModelView::Node(barrel.pose.model), .details = JsonObject{ { "model", std::format("{:08X}", barrel.pose.model) } } };
                 });
@@ -699,6 +746,7 @@ namespace AhShitRim::TestKit
                     RequireCj();
                     const int recruit = static_cast<int>(a_call.Number("recruit", 2.0));
                     Homies::DebugThanes(static_cast<int>(a_call.Number("thanes", 1.0)));
+                    g_homies = {};
                     a_call.DefaultTimeout(40.0);
                     auto joined = std::make_shared<std::optional<int>>();
                     return [recruit, joined](Call& a_call) -> std::optional<Json> {
@@ -735,28 +783,38 @@ namespace AhShitRim::TestKit
             // asr.homie:0 is the follower with the lowest form id. A target is sampled for its place alone, so its details
             // carry what the recorder reads of a reference's character controller (want, got, obstacle: asked for over 30
             // units/s and moving at under half of it), its AI package and whether it fights.
-            SkseTestKit::AddTarget("asr.homie", "<n>", "The nth (from 0) of CJ's crew following him, by form id: where he is, facing his way",
+            SkseTestKit::AddTarget("asr.homie", "<n>",
+                "The nth (from 0) of CJ's crew following him, by form id when first asked for (the same homie after that, until asr.crew): "
+                "where he is, facing his way",
                 [](std::string_view a_index) -> SkseTestKit::Place {
-                    std::uint32_t n = 0;
-                    if (std::from_chars(a_index.data(), a_index.data() + a_index.size(), n).ec != std::errc{}) {
-                        throw Error("asr.homie:<n>, n from 0");
+                    const auto n = WholeNumber(a_index);
+                    if (!n || *n >= g_homies.size()) {
+                        throw Error(std::format("asr.homie:<n>, n from 0 to {}", g_homies.size() - 1));
                     }
-                    std::vector<RE::Actor*> crew;
-                    if (auto* processes = RE::ProcessLists::GetSingleton()) {
-                        for (auto& handle : processes->highActorHandles) {
-                            auto actor = handle.get();
-                            if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
-                                crew.push_back(actor.get());
+                    auto& pinned = g_homies[*n];
+                    if (!pinned) {
+                        std::vector<RE::Actor*> crew;
+                        if (auto* processes = RE::ProcessLists::GetSingleton()) {
+                            for (auto& handle : processes->highActorHandles) {
+                                auto actor = handle.get();
+                                if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
+                                    crew.push_back(actor.get());
+                                }
                             }
                         }
+                        std::sort(crew.begin(), crew.end(), [](const RE::Actor* a, const RE::Actor* b) { return a->GetFormID() < b->GetFormID(); });
+                        if (*n >= crew.size()) {
+                            throw Error(std::format("{} follow CJ: no asr.homie:{}", crew.size(), *n));
+                        }
+                        pinned = crew[*n]->GetFormID();
                     }
-                    std::sort(crew.begin(), crew.end(), [](const RE::Actor* a, const RE::Actor* b) { return a->GetFormID() < b->GetFormID(); });
-                    if (n >= crew.size()) {
-                        throw Error(std::format("{} follow CJ: no asr.homie:{}", crew.size(), n));
+                    auto* actor = RE::TESForm::LookupByID<RE::Actor>(pinned);
+                    if (!actor || !actor->Is3DLoaded()) {
+                        throw Error(std::format("asr.homie:{} ({}) isn't loaded any more", *n, SkseTestKit::FormId(pinned)));
                     }
-                    auto*      actor = crew[n];
                     const auto at = actor->GetPosition();
-                    JsonObject details{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "combat", actor->IsInCombat() } };
+                    JsonObject details{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "following", actor->IsPlayerTeammate() },
+                        { "dead", actor->IsDead() }, { "combat", actor->IsInCombat() } };
                     if (auto* package = actor->GetCurrentPackage()) {
                         details.Set("package", static_cast<int>(package->packData.packType.get()));
                     }
@@ -906,6 +964,7 @@ namespace AhShitRim::TestKit
                 "Hands the player to San Andreas (on=true, the default) or back to Skyrim, as F10 does; answers once it's done",
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
+                    g_lampsOff = false;  // a run that stopped between asr.lamps off and on leaves nothing behind a new handover
                     if (want && !PlayerSync::DebugOwned() && !LinkService::Get().IsUp()) {
                         throw Error("San Andreas isn't linked (not running, or still starting): nothing to hand the player to");
                     }
