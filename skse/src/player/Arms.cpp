@@ -34,6 +34,13 @@ namespace AhShitRim::Arms
             bool               haveShots = false;
             unsigned           nextHand = 0;
             std::vector<std::pair<std::uint8_t, std::uint32_t>> gifts;  // weapons and rounds bought or earned, for San Andreas once it shows the loadout
+            struct Drawn
+            {
+                bool                on = false;
+                Protocol::BodyState pose{};
+                RE::NiPoint3        feet;
+            };
+            Drawn drawn[Protocol::kWeaponHandMax];  // what each hand drew this frame (the test kit's muzzle check)
         } state;
 
         Protocol::WeaponCommand SetCommand(const Cosave::Arms& a_arms)
@@ -204,12 +211,14 @@ namespace AhShitRim::Arms
                 }
             }
             Protocol::BodyState pose{};
+            state.drawn[hand].on = false;
             const bool sampled = a_body ? state.follow[hand].Sample(*a_body, a_bodyTime, state.hands[hand], a_nowMs, pose) : state.hands[hand].Sample(a_nowMs, pose);
             if (a_hide || !sampled || pose.boneCount == 0) {
                 continue;
             }
             const RE::NiPoint3 feet = a_anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
             if (ModelView::Show(pose, feet)) {
+                state.drawn[hand] = { true, pose, feet };
                 MuzzleFlash::Show(hand, feet, a_pose.muzzle[hand], pose.bones[0].rotation, a_delta);
             }
         }
@@ -226,6 +235,31 @@ namespace AhShitRim::Arms
         }
         MuzzleFlash::Reset();
         state.haveShots = false;
+        for (auto& drawn : state.drawn) {
+            drawn.on = false;
+        }
+    }
+
+    bool DebugHoldWeapon(std::uint8_t a_type)
+    {
+        for (std::uint32_t slot = 0; slot < Protocol::kWeaponSlotCount; ++slot) {
+            if (state.known.entries[slot].type == a_type && a_type != 0) {
+                state.known.slot = static_cast<std::uint8_t>(slot);
+                state.pending = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool DebugWeapon(std::uint32_t a_hand, Protocol::BodyState& a_pose, RE::NiPoint3& a_feet)
+    {
+        if (a_hand >= Protocol::kWeaponHandMax || !state.drawn[a_hand].on) {
+            return false;
+        }
+        a_pose = state.drawn[a_hand].pose;
+        a_feet = state.drawn[a_hand].feet;
+        return true;
     }
 
     void Snapshot(Cosave::Arms& a_out)
