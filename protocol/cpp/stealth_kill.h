@@ -64,7 +64,7 @@ namespace AhShitRim::StealthKill
         bool  dead = false;
         bool  mounted = false;
         bool  standing = true;    // on its feet: not lying in bed, knocked down, ragdolled or bleeding out (SA: head above its feet)
-        bool  seated = false;     // sitting or leaning on furniture: on its feet as SA sees it
+        bool  seated = false;     // sitting or leaning on furniture: on its feet as SA sees it, but no kill move (a standing one)
         bool  sneaking = false;   // SA: not ducking
         bool  running = false;    // running or sprinting (SA: move state under PEDMOVE_RUN)
         bool  fighting = false;   // in combat with the player, or the player its combat target (SA: not attacking CJ)
@@ -126,12 +126,6 @@ namespace AhShitRim::StealthKill
         const float dx = a_target.x - a_cj.x, dy = a_target.y - a_cj.y;
         return dx * std::sin(a_heading) + dy * std::cos(a_heading) > 0.0f;
     }
-
-    // Skyrim's SIT_SLEEP_STATE (kNormal 0, sitting 1 to 4, sleeping 5 to 8) against SA's TestForStealthKill,
-    // which only asks that the head is above the feet: sitting or leaning on furniture (where Skyrim's guards and
-    // townspeople spend much of the day) still counts as on its feet; lying down to sleep doesn't.
-    constexpr bool Upright(std::uint32_t a_sitSleepState) { return a_sitSleepState <= 4; }
-    constexpr bool Seated(std::uint32_t a_sitSleepState) { return a_sitSleepState >= 1 && a_sitSleepState <= 4; }
 
     // Who can't be killed at all, whatever CJ does: the full test, as San Andreas makes it at the stab
     // (TestForStealthKill(target, true): on foot, alive, on its feet), with Skyrim's exclusions.
@@ -244,6 +238,44 @@ namespace AhShitRim::StealthKill
             return cj ? (std::min)(a_victimAnim, a_cjAnim) : a_victimAnim;
         }
         return cj ? a_cjAnim * kStabShare : kStabDefault;
+    }
+
+    // ---- The victim's half: Skyrim's own sneak kill move ----
+
+    // Skyrim.esm's paired idles the player plays on the victim, the first that plays: the one-handed sneak kill from
+    // behind (the dagger's), then the one-handed back stab. The player is hidden (CJ is drawn from San Andreas), so
+    // only the victim's half shows.
+    struct KillMove
+    {
+        std::uint32_t    formId;    // in Skyrim.esm
+        std::string_view editorId;  // for the logs
+    };
+    inline constexpr KillMove kKillMoves[] = {
+        { 0x000F4679, "pa_1HMSneakKillBackA" },    // event pa_KillMoveSneakBackA
+        { 0x000F465A, "pa_1HMKillMoveBackStab" },  // event pa_KillMove1HMBackStab
+    };
+
+    inline constexpr float kKillMoveStep = 0.35f;     // metres of height between CJ and the victim a kill move still plays on (a slope or a stair past it ragdolls)
+    inline constexpr float kKillMoveConfirm = 0.5f;   // s after PlayIdle by which the victim must be in the kill move, else the ragdoll
+    inline constexpr float kKillMoveMax = 8.0f;       // s the player is held for one at most
+    inline constexpr float kKillMoveStray = 3.0f;     // m the hidden player may be from CJ in one before it's put back at his feet
+
+    // Skyrim's SIT_SLEEP_STATE (kNormal 0, sitting 1 to 4, sleeping 5 to 8) against SA's TestForStealthKill,
+    // which only asks that the head is above the feet: sitting or leaning on furniture (where Skyrim's guards and
+    // townspeople spend much of the day) still counts as on its feet; lying down to sleep doesn't.
+    constexpr bool Upright(std::uint32_t a_sitSleepState) { return a_sitSleepState <= 4; }
+    constexpr bool Seated(std::uint32_t a_sitSleepState) { return a_sitSleepState >= 1 && a_sitSleepState <= 4; }
+
+    // Whether the kill move may play on a victim at a_victim with CJ at a_cj (feet, Skyrim units): level enough
+    // ground between them, and not seated (Skyrim's sneak kill from behind is a standing one). Anything else (a
+    // race without it, no room) shows as Skyrim not starting it.
+    inline bool KillMoveFits(const Vec3& a_cj, const Vec3& a_victim, bool a_seated = false)
+    {
+        if (a_seated) {
+            return false;
+        }
+        const float dz = std::fabs(a_victim.z - a_cj.z) * Pose::kMetersPerUnit;
+        return std::isfinite(dz) && dz <= kKillMoveStep;
     }
 
     // How long CJ's kill runs: his anim, at most kKillMax; kStabDefault's anim when it isn't known.
