@@ -8,10 +8,12 @@
 // The limits, from the playtest's report (the guard walked forward in the move, CJ once thrown 100 m) and San
 // Andreas's own stealth kill (CTaskSimpleStealthKill moves only CJ, holding him a metre behind the victim, 5 cm a
 // step): Skyrim's sneak kill from behind (pa_1HMSneakKillBackA) on the guard by the stab; the guard pinned where CJ
-// grabbed him (his feet under 5 units off at the stab, under 10 when it's over, his recorded path under 20); CJ 1.0 m
+// grabbed him (his feet under 5 units off at the stab, under 10 when it's over; his recorded path under 60, which
+// takes in his body's fall after the move, about 30); CJ 1.0 m
 // (within 0.1) behind him from the stab on, his path under 40 units (the hold may pull him back to it from a closer
 // grab, never carry him on); the move about as long as CJ's anim (2.7 s, within 0.4); the hidden player never 3 m from
-// CJ (the teleport was 100 m); the guard dead. Measured on the test desktop (13 November 2026): the guard's path 0.2,
+// CJ (the teleport was 100 m); the guard dead. Measured on the test desktop (13 November 2026, four kills): the guard's path through the move 0.0 to 0.2 (27 to 31 more
+// as his body falls after it),
 // CJ pulled back 22 units from a 0.68 m grab to 1.00 m, the move 2.57 s, the hidden player at most 18.5 from CJ.
 {
   "name": "stealth-kill",
@@ -45,7 +47,7 @@
       "expect": ["moveSeconds ~ 2.7 +- 0.4", "victimDead == true", "victimMoved < 10", "cjToVictim ~ 1.0 +- 0.1", "cjMoved < 40", "playerFromCj < 210"] },
     { "cmd": "screenshot", "name": "after", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
     { "label": "the tracks: the guard pinned, CJ held, the hidden player by him", "cmd": "record", "action": "stop",
-      "expect": ["tracks.0.pathLength < 20", "tracks.1.pathLength < 40", "tracks.2.leader.max < 210"] },
+      "expect": ["tracks.0.pathLength < 60", "tracks.1.pathLength < 40", "tracks.2.leader.max < 210"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]
