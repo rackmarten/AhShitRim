@@ -1130,6 +1130,27 @@ namespace AhShitRim::TestKit
                     return out;
                 });
 
+            SkseTestKit::AddTask("asr.menus", "[close=<bool>]",
+                "Skyrim's menus a pad opens that are open now (as asr.pose's menus); close=true closes them first, as their own close does "
+                "(a run that stopped early leaves one open, and a menu pauses San Andreas), answering once they're gone",
+                [](Call& a_call) -> Step {
+                    if (a_call.Flag("close", false)) {
+                        if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                            for (const auto& menu : OpenMenus()) {
+                                queue->AddMessage(menu.AsString(), RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                            }
+                        }
+                    }
+                    a_call.DefaultTimeout(5.0);
+                    return [close = a_call.Flag("close", false)](Call&) -> std::optional<Json> {
+                        auto open = OpenMenus();
+                        if (close && !open.empty()) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "menus", Json(std::move(open)) } };
+                    };
+                });
+
             SkseTestKit::AddCommand("asr.mark", "", "Marks CJ's pose now, for asr.since", [](Call&) -> Json {
                 g_mark = TakeMark();
                 return DescribePose(g_mark->pose);
