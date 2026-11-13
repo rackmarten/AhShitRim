@@ -9,7 +9,10 @@
 // left to settle, the player handed to San Andreas, then one scenario:
 //   idle, flee (a blast scares the people about), chase (6 stars, the next load with the force out), asnaeb and aezakmi
 //   (6 stars, cleared with the cheat), travel (a coc to Riverwood, its load screen), handback (F10 hands it back).
-// Every step is logged ("load test: ...") and kept as a note for the kit's rows. Nothing is saved. Main thread only.
+// Every step is logged ("load test: ...") and kept as a note for the kit's rows. With a_saveAs the game is saved under
+// that name once the load has settled (after the police took out copies left in the save), before the handover;
+// nothing else is ever saved. A cycle nobody has asked for notes for 60 s (the kit's request went away) stops. Main
+// thread only.
 namespace AhShitRim::LoadTest
 {
     struct Note
@@ -20,7 +23,7 @@ namespace AhShitRim::LoadTest
     };
 
     // Starts a cycle; a reason when it can't (a scenario it doesn't know, a cycle still going).
-    std::string Begin(const std::string& a_save, const std::string& a_scenario);
+    std::string Begin(const std::string& a_save, const std::string& a_scenario, const std::string& a_saveAs = {});
 
     // Ends a cycle still going (nothing more is done for it).
     void Stop();
@@ -28,7 +31,7 @@ namespace AhShitRim::LoadTest
     bool Running();
     bool Done();  // the last cycle got through its scenario
 
-    // The next note since the last call, in order.
+    // The next note since the last call, in order. Calling it is what keeps a cycle going (see above).
     std::optional<Note> NextNote();
 
     // The scenarios' names, for the usage: "idle, flee, ...".

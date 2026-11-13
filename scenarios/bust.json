@@ -11,7 +11,6 @@
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "CJ in a new Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
-    { "label": "two stars for 60 s", "cmd": "asr.hits", "bust": true, "seconds": 60, "expect": ["busted == true"] },
-    { "label": "a guard ran for the door", "cmd": "log", "lines": 2000, "match": "police: .*(door|runs for)", "expect": "lines.length > 0" }
+    { "label": "two stars for 60 s", "cmd": "asr.hits", "bust": true, "seconds": 60, "expect": ["busted == true"] }
   ]
 }

@@ -5,6 +5,7 @@
 #include "player/Vitals.h"
 #include "wanted.h"
 
+#include <chrono>
 #include <deque>
 
 namespace AhShitRim::HitTest
@@ -12,6 +13,7 @@ namespace AhShitRim::HitTest
     namespace
     {
         constexpr float kAhead = 840.0f;  // 12 m: where the attackers are placed
+        constexpr auto  kOrphaned = std::chrono::seconds(10);  // no one has asked for the samples this long: stop
 
         struct State
         {
@@ -24,6 +26,7 @@ namespace AhShitRim::HitTest
             std::vector<RE::ObjectRefHandle> attackers;
             std::deque<Sample>               samples;
             Result                           result;
+            std::chrono::steady_clock::time_point polled;
         } state;
 
         bool InVehicle()
@@ -108,6 +111,7 @@ namespace AhShitRim::HitTest
         Stop();
         state = State{};
         state.running = true;
+        state.polled = std::chrono::steady_clock::now();
         state.bust = a_bust;
         state.seconds = a_seconds;
         state.result.carStart = state.result.carMin = state.result.carEnd = CarHealth();
@@ -152,12 +156,15 @@ namespace AhShitRim::HitTest
         if (state.running) {
             state.result.stopped = "a game was loaded halfway (the player died, and Skyrim loaded the most recent save?)";
             SKSE::log::warn("hit test: {}", state.result.stopped);
-            Stop();
         }
+        // The attackers and the stars were the game that's gone: nothing of it to touch.
+        state.attackers.clear();
+        state.running = false;
     }
 
     std::optional<Sample> NextSample()
     {
+        state.polled = std::chrono::steady_clock::now();
         if (state.samples.empty()) {
             return std::nullopt;
         }
@@ -171,6 +178,12 @@ namespace AhShitRim::HitTest
     void Update(RE::PlayerCharacter* a_player, float a_delta)
     {
         if (!state.running || a_delta <= 0.0f) {
+            return;
+        }
+        if (std::chrono::steady_clock::now() - state.polled > kOrphaned) {
+            state.result.stopped = "nobody asked for its samples (the request went away)";
+            SKSE::log::info("hit test: {}", state.result.stopped);
+            Stop();
             return;
         }
         auto* ui = RE::UI::GetSingleton();

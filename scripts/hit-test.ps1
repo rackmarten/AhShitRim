@@ -4,9 +4,10 @@
     (v31). Makes sure a test session runs (scripts/skytest.ps1 session: Riverwood with CJ there, San Andreas beside
     it; one already up for this build is reused), then runs scenarios/hits.json (CJ in a Sandking, a giant and two guards
     set on him; the car must take the blows) or scenarios/bust.json (two stars; a guard must run to the door and bust
-    him) with skytest run, and prints the log lines that tell the story. Results in out/<time>-<scenario>/: results.csv
-    (a row per check), step-<n>-rows.csv (the car's and the player's health every 2 s), summary.json. A session this
-    script started is stopped at the end (-Keep leaves it up); one it found running is left running.
+    him) with skytest run, and prints this run's log lines that tell the story. Results in out/<time>-<scenario>/:
+    results.csv (a row per check), step-<n>-rows.csv (the car's and the player's health every 2 s), summary.json. A
+    session this script started (none ran, or the one running was of another build or start) is stopped at the end
+    (-Keep leaves it up); one it could reuse is left running.
     Exit code: 0 passed, 1 a check failed, 2 Skyrim crashed, exited or hung (the crash log is named).
 .EXAMPLE
     scripts/hit-test.ps1
@@ -17,7 +18,7 @@ param(
     [ValidateSet('hits', 'bust')] [string] $Scenario = 'hits',
     [int] $Seconds = 0,          # game seconds of attacks or stars (the scenario's own: 90 for hits, 60 for bust)
     [string] $Start = '',        # the session's start (skytest's -Start): skytest.psd1's own by default
-    [int] $TimeoutSeconds = 300,
+    [int] $TimeoutSeconds = 300,  # for each step; asr.hits gets at least twice its seconds and a minute and a half
     [switch] $Keep
 )
 
@@ -46,7 +47,8 @@ $code = 1
 try {
     $skse = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\Skyrim Special Edition\SKSE\AhShitRim.log'
     $from = if (Test-Path $skse) { @(Get-Content $skse).Count } else { 0 }  # this run's lines only
-    & $skytest run $file -Timeout $TimeoutSeconds
+    $seconds = if ($Seconds -gt 0) { $Seconds } elseif ($Scenario -eq 'bust') { 60 } else { 90 }
+    & $skytest run $file -Timeout ([math]::Max($TimeoutSeconds, 2 * $seconds + 90))
     $code = $LASTEXITCODE
     Write-Host "--- Skyrim ($skse)"
     Get-Content $skse -ErrorAction SilentlyContinue | Select-Object -Skip $from |

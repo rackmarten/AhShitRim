@@ -3,6 +3,7 @@
 #include "player/PlayerSync.h"
 #include "pose.h"
 
+#include <chrono>
 #include <deque>
 
 namespace AhShitRim::StreamTest
@@ -36,7 +37,16 @@ namespace AhShitRim::StreamTest
             float                 secondTime = 0.0f;
             std::deque<Second>    done;
             std::optional<Second> result;
+            std::chrono::steady_clock::time_point polled;
         } state;
+
+        void End(const char* a_why)
+        {
+            if (state.flying) {
+                SKSE::log::info("stream test: stopped, {}", a_why);
+            }
+            state.flying = false;
+        }
 
         // Whether the land at a_at is in an attached cell (Havok has it, so the sampler can read it), and has a height.
         void Look(const RE::NiPoint3& a_at, int& a_attached, int& a_land)
@@ -83,17 +93,31 @@ namespace AhShitRim::StreamTest
         state.seconds = a_seconds;
         state.from = player->GetPosition() + RE::NiPoint3(0.0f, 0.0f, a_heightMetres * Pose::kUnitsPerMeter);
         state.flying = true;
+        state.polled = std::chrono::steady_clock::now();
         SKSE::log::info("stream test: flying from ({:.0f},{:.0f},{:.0f}) in {:08X} at {} m/s, heading {:.0f}, {} m up, for {} s", state.from.x, state.from.y,
             state.from.z, cell->GetFormID(), a_speed, a_headingDegrees, a_heightMetres, a_seconds);
         return {};
     }
 
-    void Stop() { state.flying = false; }
+    void Stop() { End("asked to"); }
 
-    bool Running() { return state.flying; }
+    void OnPostLoadGame() { End("a game was loaded"); }
+
+    // Every frame (PlayerSync's frame.busy), whoever has the player: a flight nobody watches, or one San Andreas took the
+    // player from, ends here (Update only runs while Skyrim has the player).
+    bool Running()
+    {
+        if (state.flying && PlayerSync::DebugOwned()) {
+            End("San Andreas took the player");
+        } else if (state.flying && std::chrono::steady_clock::now() - state.polled > std::chrono::seconds(10)) {
+            End("nobody asked for its seconds (the request went away)");
+        }
+        return state.flying;
+    }
 
     std::optional<Second> NextSecond()
     {
+        state.polled = std::chrono::steady_clock::now();
         if (state.done.empty()) {
             return std::nullopt;
         }

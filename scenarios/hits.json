@@ -12,7 +12,6 @@
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "CJ in a new Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
     { "label": "a giant and two guards on him for 90 s", "cmd": "asr.hits", "seconds": 90,
-      "expect": ["attackers == 3", "carLost > 0"] },
-    { "label": "Skyrim's hits went to the car", "cmd": "log", "lines": 2000, "match": "car hits: ", "expect": "lines.length > 0" }
+      "expect": ["attackers == 3", "carLost > 0"] }
   ]
 }

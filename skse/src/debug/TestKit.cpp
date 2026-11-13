@@ -155,12 +155,13 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddScenario("asr.load", "<save> <scenario>",
+            SkseTestKit::AddScenario("asr.load", "<save> <scenario> [saveAs=<name>]",
                 "One cycle of the load test: loads the save (Saves/<save>.ess) through the console's load, lets it settle, hands the player to "
-                "San Andreas, then the scenario (" + LoadTest::Scenarios() + "); a row per step. scripts/load-test.ps1 runs hundreds",
+                "San Andreas, then the scenario (" + LoadTest::Scenarios() + "); a row per step. saveAs saves the settled game under that name "
+                "first. scripts/load-test.ps1 runs hundreds",
                 [](Call& a_call) -> Step {
                     LoadTest::Stop();  // a cycle whose request went away
-                    if (const auto refusal = LoadTest::Begin(a_call.Text("save"), a_call.Text("scenario")); !refusal.empty()) {
+                    if (const auto refusal = LoadTest::Begin(a_call.Text("save"), a_call.Text("scenario"), a_call.Text("saveAs")); !refusal.empty()) {
                         throw Error(refusal);
                     }
                     a_call.DefaultTimeout(180.0);

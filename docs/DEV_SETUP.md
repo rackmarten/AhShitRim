@@ -140,8 +140,10 @@ the console, the game settled, the player handed to San Andreas, then one scenar
 each load. A crash (a new crash log), a hang (no frame for `-HangSeconds`, 180) or Skyrim gone is recorded with its
 cycle and the plugin's last step, the session is started again and the test goes on. Results:
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
-`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit); `-SaveAs <name>`
-saves the game after the last cycle; `-Keep` leaves the session up.
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit; this checkout's is
+deployed again at the end); `-SaveAs <name>` saves the last cycle's game under that name once its load has settled (a
+save cleaned of the police's leftovers); `-Keep` leaves the session up. A start that fails (it loads a save, which can
+crash too) is recorded and tried again, up to five times.
 
 ### Test sessions
 
@@ -185,7 +187,7 @@ never need it). To use it:
    | Command | What it does | Example |
    |---|---|---|
    | `asr.hits [bust=<bool>] [seconds=<s>]` | the hit test: with CJ in a vehicle, a giant and two guards set on him, or two stars (`bust=true`) so a guard busts him at the door; a row every 2 s (car and player health, in the car, wasted, busted), then the attackers go | `asr.hits seconds=60` |
-   | `asr.load <save> <scenario>` | one load-test cycle: the save loaded through the console, settled, handed to San Andreas, then `idle`, `flee`, `chase`, `asnaeb`, `travel`, `aezakmi` or `handback`; a row per step | `asr.load StressB chase` |
+   | `asr.load <save> <scenario> [saveAs=<name>]` | one load-test cycle: the save loaded through the console, settled, handed to San Andreas, then `idle`, `flee`, `chase`, `asnaeb`, `travel`, `aezakmi` or `handback`; a row per step | `asr.load StressB chase` |
    | `asr.stream <speed> [heading=] [height=] [seconds=]` | flies Skyrim's player (`asr.cj on=false` first) at speed m/s; a row a second: frames, the worst frame, the land loaded under and ahead | `asr.stream 87 heading=45 seconds=38` |
    | `asr.intro` | CJ's intro line, as if Ralof's had just ended; answers with the cue San Andreas was given | `asr.intro` |
    | `asr.quest <command...>` | runs a console command and answers once San Andreas's HUD shows the mission title or mission passed, with the quest's name and the cue | `asr.quest setstage MQ103 10` |

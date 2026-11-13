@@ -2,7 +2,8 @@
 // from Riverwood north-east, 30 m up, for 38 s: 3.3 km, over land up to the north coast. A row a second (frames, the
 // worst frame, how often the land under the player and 1 s and 2 s ahead was loaded, with collision, and had a height),
 // the whole flight as the answer. The checks are what the Hydra's design rests on (docs/DESIGN.md, "Ground ahead of
-// fast vehicles"): over land 60 fps, and the ground under the player and 1 s ahead always there (2 s ahead about 40%).
+// fast vehicles"): over land no frame over 50 ms, and the ground under the player and 1 s ahead always there (2 s ahead
+// attached about 40% of the time on the test desktop today).
 // Past the coast, over the Sea of Ghosts, it drops to about 5 fps (seconds=60 shows it). scripts/skytest.ps1 run
 // scenarios/stream.json in a running session (scenarios/README.md); a session renders every frame while hidden, so the
 // frame times are a hidden game's.

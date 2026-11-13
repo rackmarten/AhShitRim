@@ -10,7 +10,7 @@
     the plugin's last step, the session is started again, and the test goes on with the next cycle. Each run's events
     go to Documents/My Games/AhShitRim/loadtest-results.csv, every cycle's steps to loadtest.csv beside it (the one
     before is kept with its time in its name). Exit code: 0 when no cycle crashed, hung or got stuck, 1 otherwise.
-    Never saves, unless -SaveAs.
+    Never saves, unless -SaveAs. With -Dll this checkout's build is deployed again at the end.
 .EXAMPLE
     scripts/load-test.ps1 -Cycles 70 -Label after
     scripts/load-test.ps1 -Cycles 40 -Scenarios chase -Label chase-only
@@ -24,8 +24,8 @@ param(
     [string] $Dll = '',               # deploy this SKSE plugin instead of this checkout's last build (it must link the kit)
     [string] $Results = '',
     [int] $HangSeconds = 180,         # a load's own pauses are long: no frame for this long is a hang
-    [string] $SaveAs = '',            # after the last cycle, save the game under this name (a save cleaned of the police)
-    [switch] $Keep                    # leave the session running at the end (scripts/skytest.ps1 stop ends it)
+    [string] $SaveAs = '',            # the last cycle saves its loaded game under this name once settled (a save cleaned of the police)
+    [switch] $Keep                    # leave the session running at the end (scripts/skytest.ps1 stop ends it); not with -Dll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +37,7 @@ if (-not (Test-Path $module)) {
 Import-Module $module -Force
 $config = Get-SkytestConfig $root
 if ($Dll) {
+    if ($Keep) { throw '-Keep leaves the session running, and with -Dll it would run the other build as if it were this checkout''s: drop one.' }
     $Dll = (Resolve-Path $Dll).Path
     $config.Deploy = @{ Script = 'scripts/deploy-local.ps1'; Arguments = @('-SkseDll', $Dll) }
 }
@@ -63,32 +64,45 @@ function Get-LastStep {
 
 $script:connection = $null
 $script:watch = $null
-function Open-Session {
+# A session into the first save, tried again (a start can crash too: it loads a save) up to 5 times; each failure is
+# recorded against the cycle that comes next.
+function Open-Session([int] $Cycle) {
     Disconnect-Skytest $script:connection
     $script:connection = $null
-    $started = Start-SkyrimTest -Config $config -Start "save:$($saveList[0])"
-    Write-Host "Session up: Skyrim ready $($started.Timings.launchToReady) s after its launch."
-    $script:connection = Connect-Skytest $config
-    $script:watch = New-SessionWatch $config -HangSeconds $HangSeconds
+    for ($try = 1; ; $try++) {
+        try {
+            $started = Start-SkyrimTest -Config $config -Start "save:$($saveList[0])" -HangSeconds $HangSeconds
+            Write-Host "Session up: Skyrim ready $($started.Timings.launchToReady) s after its launch."
+            $script:connection = Connect-Skytest $config
+            $script:watch = New-SessionWatch $config -HangSeconds $HangSeconds
+            return
+        } catch {
+            $counts.start++
+            Record 'start' $Cycle "try $try`: $($_.Exception.Message)"
+            if ($try -ge 5) { throw }
+            Start-Sleep -Seconds (5 * $try)
+        }
+    }
 }
 
 New-Item -ItemType Directory -Force $folder | Out-Null
 if (-not (Test-Path $Results)) { Add-Content -Path $Results -Value 'time,label,event,cycle,detail' }
 if (Test-Path $csv) { Move-Item -Force $csv (Join-Path $folder "loadtest-$(Get-Date -Format 'yyyyMMdd-HHmmss').csv") }
 
-$counts = [ordered]@{ ok = 0; crash = 0; exit = 0; hang = 0; stuck = 0 }
+$counts = [ordered]@{ ok = 0; crash = 0; exit = 0; hang = 0; stuck = 0; start = 0 }
 $cycle = 0
 $clock = [Diagnostics.Stopwatch]::StartNew()
 Record 'start' 0 "$(if ($Dll) { $Dll } else { 'this checkout''s build' }), $Cycles cycles$(if ($Scenarios) { ", only $($picked -join ', ')" })"
 try {
-    Open-Session
+    Open-Session 1
     for ($cycle = 1; $cycle -le $Cycles; $cycle++) {
         $save = $saveList[$cycle % $saveList.Count]
         $scenario = $picked[($cycle - 1) % $picked.Count]
         Update-GamesLock $config  # an hours-long run keeps the lock fresh
         $answer = $null
         $problem = $null
-        try { $answer = Invoke-SkytestRequest $script:connection "asr.load $save $scenario" 300 $script:watch }
+        $request = "asr.load $save $scenario$(if ($SaveAs -and $cycle -eq $Cycles) { " saveAs=$SaveAs" })"
+        try { $answer = Invoke-SkytestRequest $script:connection $request 300 $script:watch }
         catch {
             $kind = if ($_.Exception.Data.Contains('Fault')) { $_.Exception.Data['Fault'] } else { 'stuck' }
             $problem = @{ Kind = $kind; Detail = "$($_.Exception.Message); last step: $(Get-LastStep)" }
@@ -103,20 +117,15 @@ try {
         if ($problem) {
             $counts[$problem.Kind]++
             Record $problem.Kind $cycle "$save $scenario`: $($problem.Detail)"
-            if ($cycle -lt $Cycles) { Open-Session }  # closes this session's own Skyrim first
+            if ($cycle -lt $Cycles) { Open-Session ($cycle + 1) }  # closes this session's own Skyrim first
         }
-    }
-    if ($SaveAs -and $script:connection) {
-        # After a load the police takes out copies left in the save (3 s settled, then a step a frame): a moment more.
-        [void] (Invoke-SkytestRequest $script:connection 'wait 4' 30 $script:watch)
-        [void] (Invoke-SkytestRequest $script:connection "console save $SaveAs" 60 $script:watch)
-        Record 'saved' $Cycles $SaveAs
     }
 } finally {
     Disconnect-Skytest $script:connection
     $done = [math]::Min($cycle, $Cycles)
-    Record 'end' $done ("{0} cycles in {1:n0} min: {2} ok, {3} crash(es), {4} exit(s), {5} hang(s), {6} stuck" -f $done, $clock.Elapsed.TotalMinutes,
-        $counts.ok, $counts.crash, $counts.exit, $counts.hang, $counts.stuck)
+    Record 'end' $done ("{0} cycles in {1:n0} min: {2} ok, {3} crash(es), {4} exit(s), {5} hang(s), {6} stuck, {7} failed start(s)" -f $done,
+        $clock.Elapsed.TotalMinutes, $counts.ok, $counts.crash, $counts.exit, $counts.hang, $counts.stuck, $counts.start)
     if (-not $Keep) { Stop-SkyrimTest -Config $config }
+    if ($Dll) { & (Join-Path $PSScriptRoot 'deploy-local.ps1') | Out-Null; Write-Host 'Deployed this checkout''s build again.' }
 }
-if ($counts.crash + $counts.exit + $counts.hang + $counts.stuck) { exit 1 }
+if ($counts.crash + $counts.exit + $counts.hang + $counts.stuck + $counts.start) { exit 1 }

@@ -7,6 +7,7 @@
 #include "collision/CollisionSampler.h"
 #include "debug/HitTest.h"
 #include "debug/LoadTest.h"
+#include "debug/StreamTest.h"
 #include "debug/TestKit.h"
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
@@ -59,6 +60,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
             AhShitRim::HitTest::OnPostLoadGame();
+            AhShitRim::StreamTest::OnPostLoadGame();
             AhShitRim::LoadTest::OnPostLoadGame();
             AhShitRim::Police::OnPostLoadGame();
             break;

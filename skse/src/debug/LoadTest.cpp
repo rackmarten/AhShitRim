@@ -63,6 +63,8 @@ namespace AhShitRim::LoadTest
             int              step = 0;
             bool             travelled = false;
             std::deque<Note> notes;
+            std::string      saveAs;  // saved once the load has settled, before the handover
+            std::chrono::steady_clock::time_point polled;
         } state;
 
         void Say(const std::string& a_what)
@@ -204,13 +206,13 @@ namespace AhShitRim::LoadTest
         }
     }
 
-    std::string Begin(const std::string& a_save, const std::string& a_scenario)
+    std::string Begin(const std::string& a_save, const std::string& a_scenario, const std::string& a_saveAs)
     {
         if (Running()) {
             return "a cycle is still going";
         }
-        if (a_save.empty() || a_save.find_first_of(" \t\"';") != std::string::npos) {
-            return "save is a save's file name without spaces or quotes";
+        if (a_save.empty() || a_save.find_first_of(" \t\"';") != std::string::npos || a_saveAs.find_first_of(" \t\"';") != std::string::npos) {
+            return "save and saveAs are save file names without spaces or quotes";
         }
         std::optional<Scenario> scenario;
         for (const auto s : kScenarios) {
@@ -223,6 +225,8 @@ namespace AhShitRim::LoadTest
         }
         state = State{};
         state.save = a_save;
+        state.saveAs = a_saveAs;
+        state.polled = std::chrono::steady_clock::now();
         state.scenario = *scenario;
         Census();
         Say("load");
@@ -247,6 +251,7 @@ namespace AhShitRim::LoadTest
 
     std::optional<Note> NextNote()
     {
+        state.polled = std::chrono::steady_clock::now();
         if (state.notes.empty()) {
             return std::nullopt;
         }
@@ -276,7 +281,15 @@ namespace AhShitRim::LoadTest
 
     void Update(RE::PlayerCharacter* a_player, float a_delta)
     {
-        if (state.phase == Phase::Off || state.phase == Phase::Done || state.phase == Phase::Loading || a_delta <= 0.0f) {
+        if (state.phase == Phase::Off || state.phase == Phase::Done || a_delta <= 0.0f) {
+            return;
+        }
+        if (std::chrono::steady_clock::now() - state.polled > std::chrono::seconds(60)) {
+            Say("stopped: nobody asked for its notes (the request went away)");
+            state.phase = Phase::Off;
+            return;
+        }
+        if (state.phase == Phase::Loading) {
             return;
         }
         if (!Settled(a_player)) {
@@ -287,6 +300,17 @@ namespace AhShitRim::LoadTest
         state.clock += a_delta;
         switch (state.phase) {
         case Phase::Settling:
+            if (!state.saveAs.empty() && !state.travelled) {
+                // After a load the police takes out copies left in the save (3 s settled, then a step a frame): a moment
+                // more, then this game is saved under its own name, without them.
+                if (state.timer >= kSettleSeconds + 4.0f) {
+                    Say("save " + state.saveAs);
+                    RunConsole("save " + state.saveAs);
+                    state.saveAs.clear();
+                    state.timer = 0.0f;
+                }
+                return;
+            }
             if (state.timer >= kSettleSeconds) {
                 if (state.travelled) {
                     Finish();
