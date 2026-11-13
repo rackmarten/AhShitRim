@@ -1181,9 +1181,9 @@ namespace AhShitRim::TestKit
                 });
 
             // Actors for the activation and the gun lock: placed in front of San Andreas's camera, where CJ looks.
-            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [clear=<bool>]",
+            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [ref=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [clear=<bool>]",
                 "Places count (1) actors of base (a Whiterun guard) distance (700) in front of San Andreas's camera, angle (0) degrees right of "
-                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player. clear=true first disables the ones placed before. Answers "
+                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player. ref=<form> moves that reference there instead (one, never disabled by clear=). clear=true first disables the ones placed before. Answers "
                 "with their form ids",
                 [](Call& a_call) -> Json {
                     static std::vector<RE::ObjectRefHandle> placed;
@@ -1208,16 +1208,27 @@ namespace AhShitRim::TestKit
                         if (!player || !pose) {
                             throw Error("no pose of CJ to place them by");
                         }
-                        const auto baseText = a_call.Text("base");
-                        std::uint32_t baseId = Wanted::kHolds[0].guard;
-                        if (!baseText.empty()) {
-                            const auto [end, error] = std::from_chars(baseText.data() + (baseText.starts_with("0x") ? 2 : 0), baseText.data() + baseText.size(), baseId, 16);
-                            if (error != std::errc{} || end != baseText.data() + baseText.size()) {
-                                throw Error("base is a form id in hex");
+                        auto hex = [&](std::string_view a_key, std::uint32_t a_default) {
+                            const auto    text = a_call.Text(a_key);
+                            std::uint32_t id = a_default;
+                            if (!text.empty()) {
+                                const auto [end, error] = std::from_chars(text.data() + (text.starts_with("0x") ? 2 : 0), text.data() + text.size(), id, 16);
+                                if (error != std::errc{} || end != text.data() + text.size()) {
+                                    throw Error(std::format("{} is a form id in hex", a_key));
+                                }
+                            }
+                            return id;
+                        };
+                        RE::TESObjectREFR* existing = nullptr;
+                        if (a_call.Has("ref")) {
+                            existing = RE::TESForm::LookupByID<RE::TESObjectREFR>(hex("ref", 0));
+                            if (!existing || count != 1.0) {
+                                throw Error("ref= moves one loaded reference (count 1)");
                             }
                         }
-                        auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(baseId);
-                        if (!base) {
+                        const auto baseId = hex("base", Wanted::kHolds[0].guard);
+                        auto*      base = RE::TESForm::LookupByID<RE::TESBoundObject>(baseId);
+                        if (!base && !existing) {
                             throw Error(std::format("no base form {:08X}", baseId));
                         }
                         const float distance = static_cast<float>(a_call.Number("distance", 700.0));
@@ -1226,7 +1237,7 @@ namespace AhShitRim::TestKit
                         const bool  combat = a_call.Flag("combat", false);
                         const int   n = static_cast<int>(count);
                         for (int i = 0; i < n; ++i) {
-                            auto ref = player->PlaceObjectAtMe(base, false);
+                            auto ref = existing ? RE::NiPointer<RE::TESObjectREFR>(existing) : player->PlaceObjectAtMe(base, false);
                             if (!ref) {
                                 throw Error("PlaceObjectAtMe failed");
                             }
@@ -1237,7 +1248,9 @@ namespace AhShitRim::TestKit
                             if (auto* actor = ref->As<RE::Actor>(); actor && combat) {
                                 actor->StartCombat(player);
                             }
-                            placed.push_back(ref->GetHandle());
+                            if (!existing) {
+                                placed.push_back(ref->GetHandle());
+                            }
                             ids.emplace_back(SkseTestKit::FormId(ref->GetFormID()));
                         }
                     }
