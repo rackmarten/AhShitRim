@@ -42,6 +42,14 @@ namespace AhShitRim::Arms
     // Back to Skyrim's own player: nothing of CJ's drawn.
     void Hide();
 
+    // The test kit (debug): the weapon drawn in hand a_hand this frame (0 right, 1 left), as posed, and where its
+    // origin was put in Skyrim's world. False when none was.
+    bool DebugWeapon(std::uint32_t a_hand, Protocol::BodyState& a_pose, RE::NiPoint3& a_feet);
+
+    // The test kit (debug): CJ takes the weapon of type a_type he carries in his hands (his loadout sent again, holding
+    // its slot). False when he hasn't it.
+    bool DebugHoldWeapon(std::uint8_t a_type);
+
     // The co-save.
     void Snapshot(Cosave::Arms& a_out);
     void Restore(const Cosave::Arms& a_arms);

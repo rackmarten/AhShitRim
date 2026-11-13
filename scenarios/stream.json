@@ -1,0 +1,24 @@
+// The stream test (v19): how Skyrim's cell streaming copes with the player moving as fast as a Hydra flies (87 m/s),
+// from Riverwood north-east, 30 m up, for 38 s: 3.3 km, over land up to the north coast. A row a second (frames, the
+// worst frame, how often the land under the player and 1 s and 2 s ahead was loaded, with collision, and had a height),
+// the whole flight as the answer. The checks are what the Hydra's design rests on (docs/DESIGN.md, "Ground ahead of
+// fast vehicles"): over land no frame over 50 ms, and the ground under the player and 1 s ahead always there (2 s ahead
+// attached about 40% of the time on the test desktop today).
+// Past the coast, over the Sea of Ghosts, it drops to about 5 fps (seconds=60 shows it). scripts/skytest.ps1 run
+// scenarios/stream.json in a running session (scenarios/README.md); a session renders every frame while hidden, so the
+// frame times are a hidden game's.
+{
+  "name": "stream",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim has the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "a Hydra's speed, north-east, 3.3 km", "cmd": "asr.stream", "speed": 87, "heading": 45, "height": 30, "seconds": 38,
+      "expect": ["underAttached == 100", "underLand == 100", "ahead1Attached == 100", "ahead1Land == 100", "over50 == 0"] },
+    // Back on the ground in Riverwood, CJ with the player, as the session started.
+    { "label": "back to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "CJ has the player", "cmd": "asr.cj", "expect": "cj == true" }
+  ]
+}
