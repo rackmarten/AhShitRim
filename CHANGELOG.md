@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - For developers: the in-game tests run hidden on the test kit as scenario files (`scenarios/`, `scenarios/README.md`): the hit test and the bust (`hits.json`, `bust.json`, `scripts/hit-test.ps1`), the missions (`mission.json`, with HUD screenshots), the stream test (`stream.json`), and the load test (`scripts/load-test.ps1`, through the kit's `asr.load`). Each has checks, CSV results and an exit code (`skytest run`: 2 for a crash or a hang, with the crash log named; the load test: 1 when any cycle crashed, hung or got stuck). They're the kit's `asr.hits`, `asr.load`, `asr.stream`, `asr.intro` and `asr.quest` now, not `[Debug] HitTest`, `LoadTest`, `StreamTest` or `AHSHITRIM_MISSION_TEST`, and need a dev build with the kit. `hit-test.ps1 -Start` takes a session start (`save:<name>`, ...) instead of a cell, and `-NewGame` is gone (the kit doesn't run on Skyrim SE 1.5.97).
 - For developers: the test kit's probes and recorder see San Andreas's vehicles: `asr.vehicle:` gives the kit the 3D the vehicle is drawn under and its slot and model, so `node`, `probe`, `project`, `pixels`, `ab` and `record` work on it.
 - For developers: scenarios for the in-game checks of the muzzle flash, the vehicles' lamps and the Grove Street crew (`scenarios/muzzle-flash.json`, `vehicle-lights.json`, `crew-follow.json`), each with its pass/fail limits written in the file. New kit commands drive CJ for them: `asr.walk` (waypoints at a walk, run or sprint), `asr.fire` and `asr.muzzle` (the flash against the drawn gun's muzzle), `asr.lamps` (the lamps off for an A/B pair), `asr.exit`, `asr.cheat` and `asr.crew`; and targets for the probes and the recorder: `asr.flash:`, `asr.weapon:`, `asr.lamp:<lamp>`, `asr.homie:<n>`. `asr.vehicle:` also reports its lamps and lights.
+- For developers: `muzzle-flash.json` also checks a single Tec-9, pistol and sawn-off aimed and, with Hitman skill, twin pistols and twin sawn-offs: each flash at its own gun's muzzle and each gun leaning in (`asr.muzzle` reports `weapon.roll`, and reads a model whose first part faces back, the sawn-off's, the right way round).
 
 ### Changed
 
@@ -22,7 +23,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).
 - A character who never went through Helgen (an alternate start, a `coc` from the main menu) could die while CJ had the player, and Skyrim then loaded the last save, instead of CJ being Wasted. The player is mortal while CJ has it only while Helgen's Unbound really runs; the check took a quest that was never started for one that runs.
 - San Andreas no longer takes the foreground when it starts: its window is created hidden and never activated, and it no longer turns off Windows' foreground lock for the whole desktop.
 
