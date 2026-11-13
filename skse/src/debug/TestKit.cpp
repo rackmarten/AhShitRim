@@ -683,17 +683,63 @@ namespace AhShitRim::TestKit
                         }
                         JsonArray   followers;
                         std::string refs;
-                        for (std::uint32_t slot = 0; slot < Protocol::kCrewMax; slot++) {
-                            auto* actor = Homies::ActorOf(slot);
-                            if (actor && actor->IsPlayerTeammate()) {
-                                const auto ref = SkseTestKit::FormId(actor->GetFormID());
-                                refs += (refs.empty() ? "" : ",") + ref;
-                                followers.emplace_back(JsonObject{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } });
+                        // The followers: the loaded homies on the player's team (Homies' Join makes them teammates).
+                        if (auto* processes = RE::ProcessLists::GetSingleton()) {
+                            for (auto& handle : processes->highActorHandles) {
+                                auto actor = handle.get();
+                                if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
+                                    const auto ref = SkseTestKit::FormId(actor->GetFormID());
+                                    refs += (refs.empty() ? "" : ",") + ref;
+                                    followers.emplace_back(
+                                        JsonObject{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } });
+                                }
                             }
                         }
                         return JsonObject{ { "about", Homies::DebugCount(false) }, { "joined", **joined }, { "following", Homies::DebugCount(true) },
                             { "followers", std::move(followers) }, { "refs", refs } };
                     };
+                });
+
+            // The followers as targets, so a scenario file can record them (their references are made at run time):
+            // asr.homie:0 is the follower with the lowest form id. A target is sampled for its place alone, so its details
+            // carry what the recorder reads of a reference's character controller (want, got, obstacle: asked for over 30
+            // units/s and moving at under half of it), its AI package and whether it fights.
+            SkseTestKit::AddTarget("asr.homie", "<n>", "The nth (from 0) of CJ's crew following him, by form id: where he is, facing his way",
+                [](std::string_view a_index) -> SkseTestKit::Place {
+                    std::uint32_t n = 0;
+                    if (std::from_chars(a_index.data(), a_index.data() + a_index.size(), n).ec != std::errc{}) {
+                        throw Error("asr.homie:<n>, n from 0");
+                    }
+                    std::vector<RE::Actor*> crew;
+                    if (auto* processes = RE::ProcessLists::GetSingleton()) {
+                        for (auto& handle : processes->highActorHandles) {
+                            auto actor = handle.get();
+                            if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
+                                crew.push_back(actor.get());
+                            }
+                        }
+                    }
+                    std::sort(crew.begin(), crew.end(), [](const RE::Actor* a, const RE::Actor* b) { return a->GetFormID() < b->GetFormID(); });
+                    if (n >= crew.size()) {
+                        throw Error(std::format("{} follow CJ: no asr.homie:{}", crew.size(), n));
+                    }
+                    auto*      actor = crew[n];
+                    const auto at = actor->GetPosition();
+                    JsonObject details{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "combat", actor->IsInCombat() } };
+                    if (auto* package = actor->GetCurrentPackage()) {
+                        details.Set("package", static_cast<int>(package->packData.packType.get()));
+                    }
+                    if (auto* controller = actor->GetCharController()) {
+                        RE::NiPoint3 velocity;
+                        actor->GetLinearVelocity(velocity);
+                        const auto*  out = reinterpret_cast<const float*>(&controller->outVelocity);
+                        const double want = std::hypot(out[0], out[1]) * RE::bhkWorld::GetWorldScaleInverse();
+                        const double got = std::hypot(velocity.x, velocity.y);
+                        details.Set("want", Round(want, 0.1));
+                        details.Set("got", Round(got, 0.1));
+                        details.Set("obstacle", want > 30.0 && got < 0.5 * want);
+                    }
+                    return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = actor->GetAngleZ(), .root = actor->Get3D(), .details = std::move(details) };
                 });
 #endif
         }

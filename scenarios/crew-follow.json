@@ -1,0 +1,52 @@
+// The Grove Street crew following CJ (v39): at the Whiterun stables, with two Thane titles (a crew of three), CJ recruits
+// the three nearest homies and leads them on a set route, recorded at 10 Hz: from the road past the end of a fence into
+// the stable yard, walking round the north of the stalls, running through the narrow gap between the stalls and the
+// cliff and back, then sprinting back down the road. The recorder's summary per homie: how long he stood stuck while
+// CJ went on, how far behind CJ he was, how often he left the corridor round CJ's path, and the top-down overlay of
+// every track (stables-crew-overlay.png). scripts/skytest.ps1 run scenarios/crew-follow.json (scenarios/README.md).
+// Needs the Grove Street crew (protocol v39).
+//
+// The limits, adjustable (units; set from three runs on the test desktop, measured values in brackets). Each homie:
+// he moved (path over 1500 [2700 to 3900]); never stood still for 10 s while CJ went on more than 400 away (longest
+// [1.1 to 5.9 s]; a homie stuck behind the stalls stands for the rest of the route, 15 s and more), 15 s in all [1.1
+// to 7.9]; never more than 1000 off CJ's path so far [470 to 730: where he stood when he joined, and cutting the
+// corner from the yard to the road; the corridor's exits are those, one each]; within 900 of CJ 10 s after CJ stops
+// [245 to 725; CJ's sprint, about 600 units/s, outruns Skyrim's follower run, 2050 behind at most]. CJ: each walk
+// takes no more than about twice its time on open ground, so the crew never holds him up [13, 3 and 5 s]. Contacts
+// with fences and walls aren't in the summary (the kit counts them for references, and the homies are targets here:
+// their references are made at run time); each sample's details carry want, got and obstacle [at most 0.2 s a homie].
+{
+  "name": "crew-follow",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["worldspace contains Tamriel", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "Thane of two holds: a crew of three", "cmd": "asr.crew", "recruit": 0, "thanes": 2 },
+    { "label": "noon, for the overlay", "cmd": "scene", "presets": "day clear" },
+    { "label": "the Thane titles read, the stables' spots fill out of view", "cmd": "wait", "seconds": 15 },
+    { "label": "CJ on the road below the stables", "cmd": "asr.walk", "points": "17521,-11196", "gait": "run" },
+    { "label": "three homies join", "cmd": "asr.crew", "recruit": 3, "thanes": 2, "expect": ["following == 3", "followers.length == 3"] },
+    { "label": "they gather round CJ", "cmd": "wait", "seconds": 4 },
+
+    { "label": "record CJ and his crew", "cmd": "record", "action": "start", "refs": "player,asr.homie:0,asr.homie:1,asr.homie:2", "leader": "player",
+      "hz": 10, "name": "stables-crew", "near": 400 },
+    { "label": "walk past the fence's end, into the yard, round the north of the stalls", "cmd": "asr.walk",
+      "points": "18243,-11004; 18508,-10715; 18844,-10474", "gait": "walk", "expect": "seconds < 26" },
+    { "label": "run through the gap by the cliff", "cmd": "asr.walk", "points": "19145,-10835; 19157,-11196", "gait": "run", "expect": "seconds < 7" },
+    { "label": "wait for them", "cmd": "wait", "seconds": 3 },
+    { "label": "back through the gap, the yard, and sprint down the road", "cmd": "asr.walk",
+      "points": "19145,-10835; 18844,-10474; 18508,-10715; 18243,-11004; 17521,-11196; 17521,-11918", "gait": "sprint",
+      "expect": "seconds < 11" },
+    { "label": "they catch up", "cmd": "wait", "seconds": 10 },
+    { "label": "the summary and the overlay: each homie kept up", "cmd": "record", "action": "stop",
+      "expect": ["tracks.length == 4", "tracks.1.pathLength > 1500", "tracks.1.longestStuck < 10", "tracks.1.stuckSeconds < 15", "tracks.1.corridor.maxDeviation < 1000", "tracks.1.leader.final < 900",
+                 "tracks.2.pathLength > 1500", "tracks.2.longestStuck < 10", "tracks.2.stuckSeconds < 15", "tracks.2.corridor.maxDeviation < 1000", "tracks.2.leader.final < 900",
+                 "tracks.3.pathLength > 1500", "tracks.3.longestStuck < 10", "tracks.3.stuckSeconds < 15", "tracks.3.corridor.maxDeviation < 1000", "tracks.3.leader.final < 900"] },
+    { "label": "all three still follow", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "following == 3" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
