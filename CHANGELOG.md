@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A character who never went through Helgen (an alternate start, a `coc` from the main menu) could die while CJ had the player, and Skyrim then loaded the last save, instead of CJ being Wasted. The player is mortal while CJ has it only while Helgen's Unbound really runs; the check took a quest that was never started for one that runs.
 - San Andreas no longer takes the foreground when it starts: its window is created hidden and never activated, and it no longer turns off Windows' foreground lock for the whole desktop.
+- The muzzle flash stopped lighting anything after CJ went through a load door into an interior and back: Skyrim drops every light from its renderer on the way, and the flash's was added only once, when it was made. It's added back whenever it's missing (`skse/src/body/SceneLights.cpp`).
 
 ## [0.1.1] - 2026-10-26
 
