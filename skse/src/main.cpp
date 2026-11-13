@@ -8,6 +8,7 @@
 #include "debug/HitTest.h"
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
+#include "debug/TestKit.h"
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
@@ -41,22 +42,24 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         SKSE::GetPluginVersion().string("."),
         a_skse->RuntimeVersion().string("."));
 
+    // Dev builds only, and only with a [Test] section in AhShitRim.ini: before anything else, so Skyrim's window is
+    // hidden from the start.
+    AhShitRim::TestKit::Load();
     AhShitRim::LinkService::Start();
     AhShitRim::PlayerSync::Install();
     AhShitRim::SaveState::Install();
 
     SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
+        AhShitRim::TestKit::OnMessage(a_msg);
         switch (a_msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
             AhShitRim::PlayerSync::OnDataLoaded();
             AhShitRim::CollisionSampler::OnDataLoaded();
             AhShitRim::SaHud::Load();
             AhShitRim::Audio::OnDataLoaded();
-            AhShitRim::StreamTest::OnDataLoaded();
-            AhShitRim::HitTest::OnDataLoaded();
-            AhShitRim::LoadTest::OnDataLoaded();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
+            AhShitRim::HitTest::OnPostLoadGame();
             AhShitRim::StreamTest::OnPostLoadGame();
             AhShitRim::LoadTest::OnPostLoadGame();
             AhShitRim::Police::OnPostLoadGame();
