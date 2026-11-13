@@ -1,6 +1,7 @@
 #include "player/Conversation.h"
 
 #include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "player/Missions.h"
 
 namespace AhShitRim::Conversation
@@ -215,6 +216,9 @@ namespace AhShitRim::Conversation
                                 // subtitle settings were on (SubtitleForcing), over San Andreas's.
                                 return RE::UI_MESSAGE_RESULTS::kHandled;
                             }
+                        }
+                        if (SkyrimMessages::OnHudMessage(*data, cjHasPlayer)) {
+                            return RE::UI_MESSAGE_RESULTS::kHandled;  // San Andreas's zone name or help box, or junk
                         }
                     }
                 }

@@ -3,7 +3,9 @@
 #include "Ini.h"
 #include "hud/Overlay.h"
 #include "hud/RadarScene.h"
+#include "gxt.h"
 #include "hud_layout.h"
+#include "hud_names.h"
 #include "img.h"
 #include "link/LinkService.h"
 #include "loot.h"
@@ -161,6 +163,8 @@ namespace AhShitRim::SaHud
             float            delta = 0.0f;
             std::string      menuTitle;
             std::vector<MenuRow> menuRows;  // set again every frame (ShowMenu)
+            HudNames::Names  names;         // the zone and vehicle names bottom right
+            std::unordered_map<std::uint16_t, std::string> vehicleNames;  // by model, as San Andreas's GXT has them
         } state;
 
         std::vector<std::uint8_t> ReadFile(const std::filesystem::path& a_path)
@@ -515,6 +519,12 @@ namespace AhShitRim::SaHud
             if (const float alpha = state.missionTitle.Alpha(); alpha > 0.0f) {
                 a_frame.Text(kMissionTitle, state.missionTitle.text, WithAlpha(kMissionTitle.colour, alpha));
             }
+            if (const auto& zone = state.names.Zone(); zone.alpha > 0.0f) {
+                a_frame.Text(kZoneName, zone.printed, WithAlpha(kZoneName.colour, zone.alpha));
+            }
+            if (const auto& vehicle = state.names.Vehicle(); vehicle.alpha > 0.0f) {
+                a_frame.Text(kVehicleName, vehicle.printed, WithAlpha(kVehicleName.colour, vehicle.alpha));
+            }
             if (const float alpha = state.radio.Alpha(); alpha > 0.0f && state.drawRadio) {
                 a_frame.Text(kRadioName, state.radio.text, WithAlpha(state.radioRetuning ? kDarkGray : kRadioName.colour, alpha));
             }
@@ -584,6 +594,35 @@ namespace AhShitRim::SaHud
             state.fadeTime = (std::min)(state.fadeTime + a_delta, state.fadeSeconds);
             state.fade = state.fadeFrom + (state.fadeTarget - state.fadeFrom) * (state.fadeTime / state.fadeSeconds);
         }
+
+        // The zone and vehicle names (HudNames): the vehicle's from CJ's pose, while San Andreas has the player.
+        void UpdateNames(float a_delta, bool a_owned, bool a_menu)
+        {
+            if (!a_owned) {
+                state.names.Clear();
+                return;
+            }
+            const auto model = state.cj.valid ? state.cj.vehicleModel : std::uint16_t{ 0 };
+            const auto name = model && !VehicleKinds::IsGear(model) ? state.vehicleNames.find(model) : state.vehicleNames.end();
+            const std::string vehicle = name != state.vehicleNames.end() ? name->second : std::string{};
+            if (static std::string logged; vehicle != logged) {
+                logged = vehicle;
+                if (!vehicle.empty()) {
+                    SKSE::log::info("sa hud: San Andreas's vehicle name \"{}\" (model {})", vehicle, model);
+                }
+            }
+            state.names.SetVehicle(vehicle);
+            const auto kind = VehicleKinds::KindOf(model);
+            const bool cutscene = state.letterbox > 0.0f;
+            HudNames::Frame frame;
+            frame.delta = a_menu ? 0.0f : a_delta;
+            frame.drawZone = !a_menu && !cutscene && kind != VehicleKinds::Kind::Plane && kind != VehicleKinds::Kind::Heli;
+            frame.drawVehicle = !a_menu && !cutscene;
+            frame.subtitle = state.subtitle.Alpha() > 0.0f;
+            frame.bigText = state.missionTitle.Alpha() > 0.0f || state.big.Alpha() > 0.0f;
+            frame.screenFading = state.fadeSeconds > 0.0f && state.fadeTime < state.fadeSeconds;
+            state.names.Update(frame);
+        }
     }
 
     void Load()
@@ -602,6 +641,15 @@ namespace AhShitRim::SaHud
         if (!HudFont::Parse(std::string_view(reinterpret_cast<const char*>(dat.data()), dat.size()), state.values)) {
             SKSE::log::warn("sa hud: {} didn't read ({} bytes), San Andreas's HUD stays off", (sa / "data" / "fonts.dat").string(), dat.size());
             return;
+        }
+        {
+            const auto ide = ReadFile(sa / "data" / "vehicles.ide");
+            const auto gxt = ReadFile(sa / "text" / "american.gxt");
+            state.vehicleNames = Gxt::VehicleNames(std::string_view(reinterpret_cast<const char*>(ide.data()), ide.size()), gxt.data(), gxt.size());
+            if (state.vehicleNames.empty()) {
+                SKSE::log::warn("sa hud: no vehicle names from data\vehicles.ide and text\american.gxt ({} and {} bytes), San Andreas's vehicle name stays off",
+                    ide.size(), gxt.size());
+            }
         }
         std::uint32_t skipped = 0;
         const auto    fontsData = ReadFile(sa / "models" / "fonts.txd");
@@ -720,6 +768,7 @@ namespace AhShitRim::SaHud
         TickFade(a_delta);
         const float slide = a_delta / 0.5f;
         state.letterbox = std::clamp(state.letterbox + (state.letterboxOn ? slide : -slide), 0.0f, 1.0f);
+        UpdateNames(a_delta, a_owned, a_menu);
 
         Frame frame;
         float width = 0.0f, height = 0.0f;
@@ -801,6 +850,27 @@ namespace AhShitRim::SaHud
     }
 
     void ShowMissionTitle(std::string a_text) { state.missionTitle.Show(std::move(a_text), 4.0f); }
+
+    void ShowZoneName(std::string a_name) { state.names.SetZone(std::move(a_name)); }
+
+    DebugText DebugTexts()
+    {
+        const auto phase = [](HudNames::Phase a_phase) -> std::string {
+            switch (a_phase) {
+            case HudNames::Phase::Hidden: return "hidden";
+            case HudNames::Phase::FadeIn: return "fade in";
+            case HudNames::Phase::Shown: return "shown";
+            case HudNames::Phase::FadeOut: return "fade out";
+            case HudNames::Phase::Switch: return "switch";
+            }
+            return "?";
+        };
+        const auto& zone = state.names.Zone();
+        const auto& vehicle = state.names.Vehicle();
+        const float help = state.help.Alpha();
+        return { zone.printed, phase(zone.phase), vehicle.printed, phase(vehicle.phase), help > 0.0f ? state.help.text : std::string{}, zone.alpha,
+            vehicle.alpha, help };
+    }
 
     void ShowBigMessage(BigMessage a_message, float a_seconds)
     {
@@ -907,12 +977,13 @@ namespace AhShitRim::SaHud
         }
         FadeTo(0.0f, 0.0f);
         state.letterboxOn = false;
+        state.names.Clear();
     }
 
     void NextDemo()
     {
         static constexpr const char* kSteps[] = { "mission title", "wasted", "busted", "mission passed", "help box", "subtitles", "fade to black",
-            "letterbox", "wanted stars", "radio station", "off" };
+            "letterbox", "wanted stars", "radio station", "zone name", "off" };
         const int step = state.demo;
         state.demo = (state.demo + 1) % static_cast<int>(std::size(kSteps));
         ClearText();
@@ -928,6 +999,7 @@ namespace AhShitRim::SaHud
         case 7: SetLetterbox(true); ShowSubtitle("Thane of Grove Street.", 6.0f); break;
         case 8: SetWantedLevel(3); break;
         case 9: ShowRadioStation("Radio Sovngarde", false); break;
+        case 10: ShowZoneName("Riverwood"); break;
         default: break;
         }
         SKSE::log::info("sa hud: demo {} ({})", step + 1, kSteps[step]);

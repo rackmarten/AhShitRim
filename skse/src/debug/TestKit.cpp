@@ -8,6 +8,8 @@
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
 #include "hud/Overlay.h"
+#include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
 #include "player/Missions.h"
@@ -508,9 +510,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>]",
+            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>] [untilZone=<bool>]",
                 "Walks CJ (San Andreas's stick, from its camera's view) through waypoints x,y; x,y; ... at a gait (run, the default, is San "
-                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s",
+                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s. "
+                "untilZone=true stops him and answers as soon as Skyrim names a location he walks into (San Andreas's zone name, zone: its "
+                "text), and fails when he reaches the last point without one",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const auto    points = ParseWaypoints(a_call.Text("points"));
@@ -525,6 +529,8 @@ namespace AhShitRim::TestKit
                     }
                     const float  arrive = static_cast<float>(a_call.Number("arrive", 100.0));
                     const double stuck = a_call.Number("stuck", 5.0);
+                    const bool   untilZone = a_call.Flag("untilZone", false);
+                    const auto   zonesBefore = SkyrimMessages::DebugCounted().zones;
                     double       length = 0.0;
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         Waypoint from{ player->GetPosition().x, player->GetPosition().y };
@@ -569,10 +575,20 @@ namespace AhShitRim::TestKit
                             walk->bestAt = a_call.Seconds();
                             if (walk->next == points.size()) {
                                 PlayerSync::DebugHold(std::nullopt);
+                                if (untilZone) {
+                                    throw Error("CJ reached the last point and Skyrim named no location on the way");
+                                }
                                 return JsonObject{ { "points", points.size() }, { "seconds", Round(a_call.Seconds()) }, { "path", Round(walk->path, 0.1) },
                                     { "at", Point(at) }, { "gait", gait } };
                             }
                             return std::nullopt;
+                        }
+                        if (untilZone) {
+                            if (const auto counts = SkyrimMessages::DebugCounted(); counts.zones != zonesBefore) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                return JsonObject{ { "zone", counts.lastZone }, { "rule", counts.lastRule }, { "seconds", Round(a_call.Seconds()) },
+                                    { "at", Point(at) } };
+                            }
                         }
                         if (d < walk->best - 10.0f) {
                             walk->best = d;
@@ -1126,6 +1142,50 @@ namespace AhShitRim::TestKit
                 calendar->gameHour->value = static_cast<float>(hour);
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
+
+            // San Andreas's zone and vehicle names and help box, and what became of Skyrim's HUD messages
+            // (hud/SkyrimMessages: counts since the game started, the last of each).
+            SkseTestKit::AddCommand("asr.hud", "",
+                "San Andreas's zone name, vehicle name and help box as drawn last frame (text, alpha 0 to 1, phase), and Skyrim's HUD messages "
+                "restyled or hidden so far (zones, helps, hidden, the last of each and the rule it went by), and the player's Skyrim location",
+                [](Call&) -> Json {
+                    const auto text = SaHud::DebugTexts();
+                    const auto counts = SkyrimMessages::DebugCounted();
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    auto*      location = player ? player->GetCurrentLocation() : nullptr;
+                    std::string where = location && location->GetName() ? location->GetName() : "";
+                    return JsonObject{ { "zone", text.zone }, { "zoneAlpha", Round(text.zoneAlpha) }, { "zonePhase", text.zonePhase },
+                        { "vehicle", text.vehicle }, { "vehicleAlpha", Round(text.vehicleAlpha) }, { "vehiclePhase", text.vehiclePhase },
+                        { "help", text.help }, { "helpAlpha", Round(text.helpAlpha) }, { "zones", counts.zones }, { "helps", counts.helps },
+                        { "hidden", counts.hidden }, { "lastZone", counts.lastZone }, { "lastHelp", counts.lastHelp },
+                        { "lastHidden", counts.lastHidden }, { "lastRule", counts.lastRule }, { "location", where }, { "cj", PlayerSync::DebugOwned() } };
+                });
+
+            SkseTestKit::AddTask("asr.notify", "<text...>",
+                "Shows a Skyrim notification (Debug.Notification's way: SendHUDMessage::ShowHUDMessage, through Skyrim's HUD) and answers with what became of it: "
+                "hidden, help (San Andreas's help box) or kept (Skyrim's, when nothing took it within 3 s), and the rule it went by",
+                [](Call& a_call) -> Step {
+                    const auto text = a_call.Text("text");
+                    if (text.empty()) {
+                        throw Error("no text");
+                    }
+                    const auto before = SkyrimMessages::DebugCounted();
+                    RE::SendHUDMessage::ShowHUDMessage(text.c_str());
+                    a_call.DefaultTimeout(10.0);
+                    return [before](Call& a_call) -> std::optional<Json> {
+                        const auto now = SkyrimMessages::DebugCounted();
+                        if (now.hidden != before.hidden) {
+                            return JsonObject{ { "action", "hidden" }, { "text", now.lastHidden }, { "rule", now.lastRule } };
+                        }
+                        if (now.helps != before.helps) {
+                            return JsonObject{ { "action", "help" }, { "text", now.lastHelp }, { "rule", now.lastRule } };
+                        }
+                        if (a_call.Seconds() > 3.0) {
+                            return JsonObject{ { "action", "kept" } };
+                        }
+                        return std::nullopt;
+                    };
+                });
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit
