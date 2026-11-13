@@ -84,9 +84,9 @@
     // front of him, talks.
     { "label": "Bjorlam in front of CJ", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
     { "cmd": "wait", "seconds": 1.5 },
-    { "label": "the help box names LB", "cmd": "log", "lines": 1, "match": "activation: CJ (aims at|faces) 00013698 \(LB: Talk Bjorlam\)", "expect": "lines.length == 1" },
+    { "label": "the help box names LB", "cmd": "log", "lines": 1, "match": "activation: CJ (aims at|faces) 00013698 [(]LB: Talk Bjorlam[)]", "expect": "lines.length == 1" },
     { "label": "LB tapped", "cmd": "pad", "buttons": "lb", "seconds": 0.15 },
-    { "label": "Skyrim's activation", "cmd": "log", "lines": 1, "match": "00013698 activated by the player \(LB", "expect": "lines.length == 1" },
+    { "label": "Skyrim's activation", "cmd": "log", "lines": 1, "match": "00013698 activated by the player [(]LB", "expect": "lines.length == 1" },
     { "label": "Bjorlam talks", "cmd": "wait", "until": "menus contains Dialogue Menu", "for": "asr.pose", "timeout": 5 },
     { "label": "the dialogue", "cmd": "screenshot", "name": "dialogue", "hud": true },
     { "label": "B leaves it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
