@@ -37,6 +37,10 @@ namespace AhShitRim::PlayerSync
     // once the game is up), and a new game or a load starting over.
     void Snapshot(Cosave::Record& a_out);
 
+    // Seconds since CJ was last seen crouching (Skyrim's player sneaking for him), -1 when never: Shots' sneak attack
+    // counts a knife blow swung from a crouch that stood him up (Damage::CrouchedBlow).
+    float SinceCrouched();
+
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it

@@ -120,6 +120,7 @@ namespace AhShitRim::PlayerSync
             std::uint32_t lastPoseFrame = 0;
 
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::optional<std::chrono::steady_clock::time_point> crouchedAt;  // CJ last seen crouching (SinceCrouched)
             std::optional<std::pair<RE::NiPoint3, float>> debugCj;  // CJ's feet in Skyrim's world and his heading, from the last pose (DebugCj)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
@@ -767,6 +768,9 @@ namespace AhShitRim::PlayerSync
             // are both kept in step, and the event is sent again if the graph ignored it.
             const bool sneak = (a_pose.flags & Protocol::kPlayerCrouching) != 0;
             auto*      actorState = a_player->AsActorState();
+            if (sneak) {
+                state.crouchedAt = std::chrono::steady_clock::now();
+            }
             if (actorState && sneak != state.sneak) {
                 state.sneak = sneak;
                 a_player->NotifyAnimationGraph(sneak ? "SneakStart"sv : "SneakStop"sv);
@@ -1599,6 +1603,11 @@ namespace AhShitRim::PlayerSync
     bool DebugOwned() { return state.owned; }
 
     std::uint32_t DebugHandover() { return state.handover; }
+
+    float SinceCrouched()
+    {
+        return state.crouchedAt ? std::chrono::duration<float>(std::chrono::steady_clock::now() - *state.crouchedAt).count() : -1.0f;
+    }
 
     bool DebugCj(RE::NiPoint3& a_feet, float& a_heading)
     {

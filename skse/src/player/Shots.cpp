@@ -6,6 +6,7 @@
 #include "mega_punch.h"
 #include "player/CheatCodes.h"
 #include "player/Particles.h"
+#include "player/PlayerSync.h"
 #include "player/Chatter.h"
 #include "player/ObjectHits.h"
 #include "player/CombatBalance.h"
@@ -562,7 +563,7 @@ namespace AhShitRim::Shots
                     MegaBlow(a_player, victim, a_shot, facing, sa);
                 } else {
                     // v36: Skyrim's sneak attack for a crouched knife blow on someone who doesn't detect the player.
-                    const float sneak = a_shot.weaponType == Weapons::Knife && a_player->IsSneaking()
+                    const float sneak = a_shot.weaponType == Weapons::Knife && Damage::CrouchedBlow(a_player->IsSneaking(), PlayerSync::SinceCrouched())
                                             ? Damage::SneakMultiplier(a_shot.weaponType, true, actor->RequestDetectionLevel(a_player) > 0)
                                             : 1.0f;
                     if (sneak > 1.0f) {
