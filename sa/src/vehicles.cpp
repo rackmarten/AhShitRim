@@ -1206,7 +1206,7 @@ namespace AhShitRim::Vehicles
             Vehicle::Spot spot;
             float         groundZ = 0.0f;
             int           tried = 0;
-            if (places.empty() || !FirstSpot(places, ground, ground + CVector(0.0f, 0.0f, 1.0f), size, traits.maxUneven, spot, groundZ, tried)) {
+            if (places.empty() || !FirstSpot(places, ground, ground + CVector(0.0f, 0.0f, 1.0f), size, (std::min)(traits.maxUneven, Parked::kMaxUneven), spot, groundZ, tried)) {
                 ParkedWhy(a_spot, std::format("no flat, clear place for the {} ({} tried)", name, tried));
                 return false;
             }

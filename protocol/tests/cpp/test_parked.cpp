@@ -229,3 +229,11 @@ TEST_CASE("never put out on top of CJ")
     CHECK(ClearOfCj({ { 4.6f, 0.0f, 500.0f }, { 0.0f, 1.0f, 0.0f }, 0.0f }, size, feet));
     CHECK_FALSE(ClearOfCj({ { 4.4f, 0.0f, 500.0f }, { 0.0f, 1.0f, 0.0f }, 0.0f }, size, feet));
 }
+
+TEST_CASE("a parked vehicle needs flatter ground than a spawned one")
+{
+    // 0.8 m is a bike's own limit for spawning in front of CJ; left alone on a slope of that kind it falls over.
+    CHECK(kMaxUneven > 0.0f);
+    CHECK(kMaxUneven < VehicleKinds::TraitsOf(VehicleKinds::Kind::Bike).maxUneven);
+    CHECK(kMaxUneven < VehicleKinds::TraitsOf(VehicleKinds::Kind::Bicycle).maxUneven);
+}

@@ -171,6 +171,11 @@ namespace AhShitRim::Parked
     inline constexpr float kGroundAbove = 3.0f;  // metres, as a pickup's ray (Pickups::kRayAbove): a roof or a tree over the spot isn't its ground
     inline constexpr float kGroundBelow = 30.0f;
 
+    // How uneven the ground under a parked vehicle's footprint may be, metres from its highest to its lowest. A spawned
+    // vehicle may stand on up to 0.8 m of slope for a bike (VehicleKinds::Traits), but one left standing on a ledge or a
+    // cobbled hillside falls over and rolls (the Solitude stables' Sanchez did), so a parked one needs flatter ground.
+    inline constexpr float kMaxUneven = 0.35f;
+
     // The spots to try for a parked vehicle at a_at (San Andreas metres, z its ground) facing a_heading (San Andreas
     // radians), best first: the spot itself, then kAroundRings rings of kAroundSteps round it, each facing the same way.
     inline constexpr int   kAroundRings = 3;
