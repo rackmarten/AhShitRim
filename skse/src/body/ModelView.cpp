@@ -595,6 +595,12 @@ namespace AhShitRim::ModelView
         return Find(a_model) != nullptr;
     }
 
+    RE::NiNode* Node(std::uint32_t a_model)
+    {
+        auto* built = Find(a_model);
+        return built && built->shown ? built->node.get() : nullptr;
+    }
+
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale)
     {
         auto* built = Find(a_pose.model);
@@ -694,6 +700,28 @@ namespace AhShitRim::ModelView
     {
         const auto found = state.models.find(a_model);
         return found != state.models.end() ? found->second->model.name : std::string("a model");
+    }
+
+    bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || built->posed.size() != built->model.boneIds.size()) {
+            return false;
+        }
+        std::vector<Body::Matrix34> bones(built->posed.size());
+        for (std::size_t i = 0; i < bones.size(); i++) {
+            bones[i] = Body::Hidden(built->posedHidden, static_cast<std::uint32_t>(i)) ? Body::Collapsed(built->posed[i]) : Body::ToMatrix(built->posed[i]);
+        }
+        a_out.clear();
+        for (const auto& shape : built->shapes) {
+            const auto& mesh = built->model.meshes[shape.mesh];
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                Body::Vec3 position, normal;
+                Body::Skin(bones.data(), static_cast<std::uint32_t>(bones.size()), mesh.Vertex(i), position, normal);
+                a_out.emplace_back(position.x, position.y, position.z);
+            }
+        }
+        return true;
     }
 
     void EndFrame()
