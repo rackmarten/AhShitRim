@@ -10,6 +10,7 @@
 #include "hud/Overlay.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
+#include "player/Headlights.h"
 #include "player/Missions.h"
 #include "player/PlayerSync.h"
 #include "vehicle_hits.h"
@@ -165,6 +166,7 @@ namespace AhShitRim::TestKit
         };
         std::array<Seen, Protocol::kVehicleMax> g_seen;
         bool                                    g_lampsOff = false;  // asr.lamps off: drawn and lit as if every lamp were out
+        std::optional<bool>                     g_braking;            // asr.lamps brake / nobrake: drawn and lit as if braking, or not
 
         template <class T>
         void SeeVehicle(std::uint32_t a_slot, T& a_pose, const RE::NiPoint3& a_feet)
@@ -184,6 +186,9 @@ namespace AhShitRim::TestKit
                 seen.rear = { static_cast<float>(a_pose.lights.rear[0]), static_cast<float>(a_pose.lights.rear[1]), static_cast<float>(a_pose.lights.rear[2]) };
                 if (g_lampsOff) {
                     a_pose.lights.lit = 0;
+                }
+                if (g_braking) {
+                    a_pose.lights.state = static_cast<std::uint8_t>(*g_braking ? (a_pose.lights.state | Protocol::kLightBraking) : (a_pose.lights.state & ~Protocol::kLightBraking));
                 }
             }
         }
@@ -297,7 +302,7 @@ namespace AhShitRim::TestKit
                 return;
             }
             a_details.Set("lamps", JsonObject{ { "lit", LampNames(seen.lit) }, { "litCount", std::popcount(seen.lit) }, { "braking", (seen.lampState & 0x1) != 0 },
-                                       { "forcedOff", g_lampsOff }, { "frontDummy", Point(seen.front) }, { "rearDummy", Point(seen.rear) } });
+                                       { "forcedOff", g_lampsOff }, { "forcedBraking", g_braking ? Json(*g_braking) : Json() }, { "frontDummy", Point(seen.front) }, { "rearDummy", Point(seen.rear) } });
             JsonArray lights;
             for (auto* light : LampLightsOf(a_slot)) {
                 const auto& data = light->GetLightRuntimeData();
@@ -466,18 +471,63 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.lamps", "<state>",
                 "Vehicle lamps for an A/B pair: off draws and lights every vehicle as if none of its lamps burned (their glow and their "
-                "scene lights), on gives San Andreas's back. Needs a build whose vehicles carry their lamps (protocol v36)",
+                "scene lights), brake as if its driver braked (the tail lamps' brake glow and light), nobrake as if he didn't; on gives "
+                "San Andreas's back. Needs a build whose vehicles carry their lamps (protocol v36)",
                 [](Call& a_call) -> Json {
                     if constexpr (!kHasLamps<Protocol::BodyState>) {
                         throw Error("this build's vehicles carry no lamps (the headlights, protocol v36, aren't in it)");
                     } else {
                         const auto which = a_call.Text("state");
-                        if (which != "on" && which != "off") {
-                            throw Error("asr.lamps on, or asr.lamps off");
+                        if (which == "on") {
+                            g_lampsOff = false;
+                            g_braking.reset();
+                        } else if (which == "off") {
+                            g_lampsOff = true;
+                        } else if (which == "brake" || which == "nobrake") {
+                            g_braking = which == "brake";
+                        } else {
+                            throw Error("asr.lamps on, off, brake or nobrake");
                         }
-                        g_lampsOff = which == "off";
-                        return JsonObject{ { "lampsOff", g_lampsOff } };
+                        return JsonObject{ { "lampsOff", g_lampsOff }, { "braking", g_braking ? Json(*g_braking) : Json() } };
                     }
+                });
+
+            SkseTestKit::AddCommand("asr.lamptune", "[key] [value]",
+                "Sets one of AhShitRim.ini's [Headlights] values (Intensity, Radius, Ahead, Raise, TailRadius, TailIntensity, TailDrop, "
+                "BrakeRadius, BrakeIntensity, LampGlow, BrakeGlow; metres for the distances) until the game closes, for trying values; "
+                "answers every value as it is now",
+                [](Call& a_call) -> Json {
+                    if (a_call.Has("key")) {
+                        const auto key = a_call.Text("key");
+                        if (!Headlights::DebugTune(key, static_cast<float>(a_call.Number("value")))) {
+                            throw Error(std::format("no [Headlights] key {} (or a negative value)", key));
+                        }
+                    }
+                    JsonObject out;
+                    for (const auto& [key, value] : Headlights::DebugTuning()) {
+                        out.Set(key, Round(value, 0.001));
+                    }
+                    return out;
+                });
+
+            SkseTestKit::AddCommand("asr.pedals", "[gas=<bool>] [brake=<bool>] [handbrake=<bool>] [steer=<-1..1>]",
+                "Holds CJ's vehicle controls (W, S, Space, the stick sideways) until the next asr.pedals; with none of them it lets go",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    std::uint32_t buttons = 0;
+                    buttons |= a_call.Flag("gas", false) ? Protocol::kButtonAccelerate : 0;
+                    buttons |= a_call.Flag("brake", false) ? Protocol::kButtonBrake : 0;
+                    buttons |= a_call.Flag("handbrake", false) ? Protocol::kButtonHandbrake : 0;
+                    const float steer = std::clamp(static_cast<float>(a_call.Number("steer", 0.0)), -1.0f, 1.0f);
+                    // moveY with W and S as Skyrim's keys give it: forward for W, back for S, nothing for both.
+                    const float move = ((buttons & Protocol::kButtonAccelerate) ? 1.0f : 0.0f) - ((buttons & Protocol::kButtonBrake) ? 1.0f : 0.0f);
+                    if (buttons == 0 && steer == 0.0f) {
+                        PlayerSync::DebugHold(std::nullopt);
+                    } else {
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = steer, .moveY = move, .buttons = buttons });
+                    }
+                    return JsonObject{ { "gas", (buttons & Protocol::kButtonAccelerate) != 0 }, { "brake", (buttons & Protocol::kButtonBrake) != 0 },
+                        { "handbrake", (buttons & Protocol::kButtonHandbrake) != 0 }, { "steer", steer } };
                 });
 
             SkseTestKit::AddCommand("asr.cheat", "<code>", "Types a cheat code for CJ, as its letters (CPKTNWT blows up every vehicle)", [](Call& a_call) -> Json {
@@ -965,6 +1015,8 @@ namespace AhShitRim::TestKit
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
                     g_lampsOff = false;  // a run that stopped between asr.lamps off and on leaves nothing behind a new handover
+                    g_braking.reset();
+                    PlayerSync::DebugHold(std::nullopt);  // nor held pedals
                     if (want && !PlayerSync::DebugOwned() && !LinkService::Get().IsUp()) {
                         throw Error("San Andreas isn't linked (not running, or still starting): nothing to hand the player to");
                     }

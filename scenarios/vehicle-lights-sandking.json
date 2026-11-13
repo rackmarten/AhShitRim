@@ -1,0 +1,98 @@
+// The vehicles' lamps on a Sandking (v36), as vehicle-lights.json checks the ZR-350's: the operator saw its headlights
+// not glow and only its left tail lamp cast light (tail and brake). CJ in a Sandking on Riverwood's road at 23:00; its
+// four lamps burn; pairs of shots taken unpaused a few frames apart, lamps as San Andreas has them against asr.lamps off
+// (or braking against not braking), compared region by region: each tail lamp glows and lights the road behind it red,
+// braking makes them brighter, the headlight glass glows white and the headlights light the road ahead.
+// scripts/skytest.ps1 run scenarios/vehicle-lights-sandking.json (scenarios/README.md). Needs the headlights (v36).
+//
+// The limits (luma, 0 to 255) mean "clearly visible" in the shots at 1280x720: set from the PNGs of the first run with
+// the coronas, each about half of what was measured (the numbers measured are in the README's table). The Sandking's
+// lamps are about a metre up: the road behind them is 75 units down.
+{
+  "name": "vehicle-lights-sandking",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "the lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    "wait frames=45",
+    { "label": "CJ in a Sandking, its engine running", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
+    { "label": "all four lamps burn, both lights on and among the renderer's", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 4", "at.details.lights.length == 2", "lights.0.on == true", "lights.1.on == true"] },
+
+    { "label": "the tail lights: from behind", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 700, "pitch": 15 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-tail-on" },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "sk-tail-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "each tail lamp glows red, with a halo, and lights the road behind it red", "cmd": "compare", "a": "sk-tail-on", "b": "sk-tail-off",
+      "regions": [ { "name": "lensLeft", "at": "asr.lamp:rearLeft", "worldRadius": 15 },
+                   { "name": "lensRight", "at": "asr.lamp:rearRight", "worldRadius": 15 },
+                   { "name": "haloLeft", "at": "asr.lamp:rearLeft", "worldRadius": 45 },
+                   { "name": "haloRight", "at": "asr.lamp:rearRight", "worldRadius": 45 },
+                   { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-75", "worldRadius": 40 },
+                   { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-75", "worldRadius": 40 },
+                   { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,550,-80", "worldRadius": 100 } ],
+      "expect": ["regions.0.delta < -40", "regions.1.delta < -40", "regions.0.color.r < -40", "regions.1.color.r < -40",
+                 "regions.2.delta < -10", "regions.3.delta < -10",
+                 "regions.4.delta < -6", "regions.5.delta < -6", "regions.4.color.r < -10", "regions.5.color.r < -10",
+                 "regions.6.delta > -4"] },
+
+    { "label": "not braking", "cmd": "asr.lamps", "state": "nobrake" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "sk-brake-off" },
+    { "label": "braking", "cmd": "asr.lamps", "state": "brake" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "sk-brake-on" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "braking, both tail lamps glow brighter and light more of the road behind each", "cmd": "compare", "a": "sk-brake-off", "b": "sk-brake-on",
+      "regions": [ { "name": "haloLeft", "at": "asr.lamp:rearLeft", "worldRadius": 45 },
+                   { "name": "haloRight", "at": "asr.lamp:rearRight", "worldRadius": 45 },
+                   { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-75", "worldRadius": 40 },
+                   { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-75", "worldRadius": 40 } ],
+      "expect": ["regions.0.delta > 5", "regions.1.delta > 5", "regions.2.delta > 4", "regions.3.delta > 4", "regions.2.color.r > 6", "regions.3.color.r > 6"] },
+
+    { "label": "the road ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 1000, "pitch": 35 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-road-on" },
+    { "label": "the headlights: from the front, the trees in between cut away", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 180, "distance": 600, "pitch": 10, "near": 350 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-front-on" },
+    { "label": "the headlight glass glows white", "cmd": "pixels", "shot": "sk-front-on",
+      "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 12 }, { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 12 } ],
+      "expect": ["regions.0.luma > 200", "regions.1.luma > 200"] },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "sk-front-off" },
+    { "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 1000, "pitch": 35 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-road-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "cmd": "camera", "mode": "player" },
+    { "label": "the headlights light the road ahead", "cmd": "compare", "a": "sk-road-on", "b": "sk-road-off",
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
+                   { "name": "mid", "at": "asr.vehicle:", "offset": "700,0,-80", "worldRadius": 150 },
+                   { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,550,-80", "worldRadius": 100 } ],
+      "expect": ["regions.0.delta < -15", "regions.1.delta < -15", "regions.2.delta > -4"] },
+    { "label": "the front lamps glow, with a halo", "cmd": "compare", "a": "sk-front-on", "b": "sk-front-off",
+      "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 15 },
+                   { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 15 },
+                   { "name": "haloLeft", "at": "asr.lamp:frontLeft", "worldRadius": 50 },
+                   { "name": "haloRight", "at": "asr.lamp:frontRight", "worldRadius": 50 } ],
+      "expect": ["regions.0.delta < -40", "regions.1.delta < -40", "regions.2.delta < -10", "regions.3.delta < -10"] },
+
+    { "label": "CJ drives off", "cmd": "asr.pedals", "gas": true },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "and brakes", "cmd": "asr.pedals", "brake": true },
+    "wait frames=4",
+    { "label": "San Andreas says he brakes", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500, "expect": "at.details.lamps.braking == true" },
+    { "label": "foot off the pedals", "cmd": "asr.pedals" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
