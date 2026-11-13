@@ -13,6 +13,7 @@
   "steps": [
     { "label": "nothing held from before", "cmd": "input", "release": true },
     { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "no actors left from an earlier run (asr.place)", "cmd": "asr.place", "clear": true },
     { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
