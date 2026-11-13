@@ -37,6 +37,22 @@ namespace AhShitRim::StealthKills
     // Every frame San Andreas has the player: holds the grabbed victim still.
     void Update(RE::PlayerCharacter* a_player, float a_seconds);
 
+    // The test kit (debug): the grabs and stabs Skyrim took so far, the last victim, where it stood at the grab and
+    // whether the stab killed it, and the victim held now.
+    struct Debug
+    {
+        int          grabs = 0;
+        int          stabs = 0;
+        RE::FormID   victim = 0;
+        RE::NiPoint3 grabbedAt;
+        bool         died = false;
+        RE::FormID   held = 0;
+        bool         killMove = false;    // the victim in Skyrim's kill move now
+        const char*  idle = "";           // the kill move's idle at the last grab, "" for the ragdoll
+        float        moveSeconds = 0.0f;  // how long the last kill move ran, once it's over
+    };
+    Debug DebugState();
+
     // Back to Skyrim's own player, or a re-anchor: lets go.
     void Clear();
 }
