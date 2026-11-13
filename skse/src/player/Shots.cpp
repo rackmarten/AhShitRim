@@ -46,6 +46,7 @@ namespace AhShitRim::Shots
             Damage::SkillHits                hits;
             RE::COL_LAYER                    layer = RE::COL_LAYER::kProjectile;
             RE::BGSImpactDataSet*            bulletSet = nullptr;
+            BlowDebug                        lastBlow;  // the test kit's view (DebugLastBlow)
             RE::BGSImpactDataSet*            bladeSet = nullptr;
             RE::BGSImpactDataSet*            bluntSet = nullptr;
             ProcessHitFn                     processHit = nullptr;
@@ -568,6 +569,7 @@ namespace AhShitRim::Shots
                         sa *= sneak;
                         SneakAttack(actor, sneak);
                     }
+                    state.lastBlow = { state.lastBlow.blows + 1, actor->GetFormID(), a_shot.weaponType, sneak, landed, sa };
                     Hurt(a_player, victim, a_shot, facing, sa);
                 }
                 landedAny = true;
@@ -701,4 +703,6 @@ namespace AhShitRim::Shots
     }
 
     Damage::Class ClassOf(RE::Actor* a_actor) { return ClassOfRace(a_actor); }
+
+    BlowDebug DebugLastBlow() { return state.lastBlow; }
 }

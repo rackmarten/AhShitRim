@@ -14,6 +14,7 @@ namespace AhShitRim::StealthKills
             RE::FormID held = 0;  // the victim grabbed, waiting for the stab
             float      heldFor = 0.0f;
             int        kills = 0;
+            Debug      debug;  // the test kit's view (DebugState)
         } state;
 
         RE::Actor* ActorOf(RE::FormID a_id)
@@ -49,6 +50,10 @@ namespace AhShitRim::StealthKills
             }
             state.held = a_actor->GetFormID();
             state.heldFor = 0.0f;
+            state.debug.grabs++;
+            state.debug.victim = state.held;
+            state.debug.grabbedAt = a_actor->GetPosition();
+            state.debug.died = false;
             // Skyrim's own stagger, from behind: San Andreas's victim struggles in KILL_KNIFE_PED_DAMAGE.
             const auto  at = a_actor->GetPosition();
             const float heading = std::atan2(feet.x - at.x, feet.y - at.y);
@@ -77,6 +82,8 @@ namespace AhShitRim::StealthKills
                 }
             }
             state.kills++;
+            state.debug.stabs++;
+            state.debug.died = dead;
             SKSE::log::info("stealth kill #{}: CJ stabs {} ({:08X}){}", state.kills, a_actor->GetName(), a_actor->GetFormID(),
                 dead ? ", who dies" : ", who lives (Skyrim's hit didn't kill)");
         }
@@ -161,6 +168,13 @@ namespace AhShitRim::StealthKills
             return;
         }
         actor->StopMoving(a_seconds);
+    }
+
+    Debug DebugState()
+    {
+        auto out = state.debug;
+        out.held = state.held;
+        return out;
     }
 
     void Clear() { state.held = 0; }

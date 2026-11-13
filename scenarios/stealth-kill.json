@@ -1,0 +1,105 @@
+// The knife stealth kill (v36) and Skyrim's sneak attack, as a player does them, with the knife in CJ's hands in
+// Riverwood by day. scripts/skytest.ps1 run scenarios/stealth-kill.json (scenarios/README.md).
+//
+// First the sneak attack: a standing knife blow on a Whiterun guard's back (no sneak attack), then a crouched one on
+// another, unseen: Skyrim's sneak attack, three times the damage for as well a landed blow (vsLast ~ 3), its HUD message
+// in the shot. Then three stealth kills: a guard placed 1.05 m ahead with his back to CJ, recorded at 30 Hz (the guard's
+// feet, CJ's, Skyrim's hidden player), CJ crouched, the right button held and the left one clicked as a player does;
+// paused on the grab and on the stab for a shot from the side. Each kill: the guard dead, CJ no more than 20 units (29
+// cm) from where he grabbed (San Andreas holds him a metre behind the victim, 5 cm a step), the hidden player never
+// 3 m from him (a teleport is 100 m). Last, in Whiterun, the nearest person sitting or leaning on furniture that a
+// stealth kill may take: CJ put behind them, the same kill.
+{
+  "name": "stealth-kill",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "day", "cmd": "scene", "presets": "day clear" },
+    { "label": "the knife", "cmd": "asr.give", "weapon": 4, "ammo": 1, "expect": "weapon == 4" },
+
+    { "label": "a guard 0.9 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a standing knife blow: no sneak attack", "cmd": "asr.swing", "crouch": false, "expect": ["sneaking == false", "sneak == 1", "drop > 0"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "another guard 0.9 m ahead", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a crouched knife blow, unseen: Skyrim's sneak attack, three times the damage", "cmd": "asr.swing", "crouch": true,
+      "expect": ["sneak == 3", "detection <= 0", "vsLast ~ 3 +- 0.3"] },
+    { "cmd": "screenshot", "name": "sneak-attack-hud", "hud": true, "settle": 1 },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+
+    { "label": "1: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "1: record the guard, CJ and the hidden player", "cmd": "record", "action": "start", "refs": "asr.victim:,asr.cj:,player",
+      "leader": "asr.cj:", "hz": 30, "name": "kill-1", "near": 1000 },
+    { "label": "1: crouched, the knife raised, the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true,
+      "expect": ["sneaking == true", "cjToVictim < 1.3", "health > 0"] },
+    "pause",
+    { "cmd": "screenshot", "name": "kill-1-grab", "camera": "orbit asr.victim: yaw=90 distance=280 pitch=10 height=70" },
+    "resume",
+    { "label": "1: the stab", "cmd": "asr.stealth", "until": "stab", "expect": ["stabs >= 1", "cjMoved < 120", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "kill-1-stab", "camera": "orbit asr.victim: yaw=90 distance=280 pitch=10 height=70" },
+    "resume",
+    { "label": "1: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
+    { "label": "1: CJ stayed put, the hidden player by him", "cmd": "record", "action": "stop",
+      "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "wait", "seconds": 4 },
+
+    { "label": "2: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "2: record", "cmd": "record", "action": "start", "refs": "asr.victim:,asr.cj:,player", "leader": "asr.cj:", "hz": 30, "name": "kill-2", "near": 1000 },
+    { "label": "2: the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true, "expect": ["sneaking == true", "cjToVictim < 1.3", "health > 0"] },
+    "pause",
+    { "cmd": "screenshot", "name": "kill-2-grab", "camera": "orbit asr.victim: yaw=-90 distance=280 pitch=10 height=70" },
+    "resume",
+    { "label": "2: the stab", "cmd": "asr.stealth", "until": "stab", "expect": ["cjMoved < 120", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "kill-2-stab", "camera": "orbit asr.victim: yaw=-90 distance=280 pitch=10 height=70" },
+    "resume",
+    { "label": "2: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
+    { "label": "2: the tracks", "cmd": "record", "action": "stop", "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "wait", "seconds": 4 },
+
+    { "label": "3: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "3: record", "cmd": "record", "action": "start", "refs": "asr.victim:,asr.cj:,player", "leader": "asr.cj:", "hz": 30, "name": "kill-3", "near": 1000 },
+    { "label": "3: the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true, "expect": ["sneaking == true", "cjToVictim < 1.3", "health > 0"] },
+    { "label": "3: the stab", "cmd": "asr.stealth", "until": "stab", "expect": ["cjMoved < 120", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "kill-3-stab-behind", "camera": "orbit asr.cj: yaw=0 distance=300 pitch=15 height=80" },
+    "resume",
+    { "label": "3: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
+    { "label": "3: the tracks", "cmd": "record", "action": "stop", "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+
+    { "label": "evening, when Whiterun sits out", "cmd": "scene", "presets": "19 clear" },
+    { "label": "to Whiterun", "cmd": "console", "command": "coc WhiterunOrigin" },
+    { "cmd": "wait", "seconds": 12 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "the nearest seated person a stealth kill may take", "cmd": "asr.seated", "radius": 6000, "expect": "sitState >= 1" },
+    { "label": "Skyrim's player behind them", "cmd": "asr.behind", "meters": 1.05 },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "cmd": "wait", "seconds": 2 },
+    { "cmd": "screenshot", "name": "seated-before", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    { "label": "seated: the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true, "expect": ["cjToVictim < 1.6", "health > 0"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-grab", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    "resume",
+    { "label": "seated: the stab", "cmd": "asr.stealth", "until": "stab", "expect": ["cjMoved < 120", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-stab", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    "resume",
+    { "label": "seated: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "playerFromCj < 210"] },
+    { "cmd": "screenshot", "name": "seated-after", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

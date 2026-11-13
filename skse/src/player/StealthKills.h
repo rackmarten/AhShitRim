@@ -25,6 +25,19 @@ namespace AhShitRim::StealthKills
     // Every frame San Andreas has the player: holds the grabbed victim still.
     void Update(RE::PlayerCharacter* a_player, float a_seconds);
 
+    // The test kit (debug): the grabs and stabs Skyrim took so far, the last victim, where it stood at the grab and
+    // whether the stab killed it, and the victim held now.
+    struct Debug
+    {
+        int          grabs = 0;
+        int          stabs = 0;
+        RE::FormID   victim = 0;
+        RE::NiPoint3 grabbedAt;
+        bool         died = false;
+        RE::FormID   held = 0;
+    };
+    Debug DebugState();
+
     // Back to Skyrim's own player, or a re-anchor: lets go.
     void Clear();
 }

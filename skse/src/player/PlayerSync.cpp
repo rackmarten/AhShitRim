@@ -120,6 +120,7 @@ namespace AhShitRim::PlayerSync
             std::uint32_t lastPoseFrame = 0;
 
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::optional<std::pair<RE::NiPoint3, float>> debugCj;  // CJ's feet in Skyrim's world and his heading, from the last pose (DebugCj)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
@@ -1040,6 +1041,7 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
+            state.debugCj = valid ? std::optional(std::pair(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]), pose.heading)) : std::nullopt;
             if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
@@ -1089,8 +1091,10 @@ namespace AhShitRim::PlayerSync
             if (onFoot && !MenuHasInput()) {
                 aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
                 aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
-                aim.aim = state.input.Aiming();
-                aim.fire = state.input.Firing();
+                // The test kit's held buttons (DebugHold) count as the mouse's, so its lock-on and stealth kill go as a player's.
+                const std::uint32_t kit = state.debugInput ? state.debugInput->buttons : 0u;
+                aim.aim = state.input.Aiming() || (kit & Protocol::kButtonAim) != 0;
+                aim.fire = state.input.Firing() || (kit & Protocol::kButtonFire) != 0;
                 aim.heading = pose.heading;
                 aim.weapon = pose.weaponType;
             }
@@ -1582,6 +1586,16 @@ namespace AhShitRim::PlayerSync
     bool DebugOwned() { return state.owned; }
 
     std::uint32_t DebugHandover() { return state.handover; }
+
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading)
+    {
+        if (!state.owned || !state.debugCj) {
+            return false;
+        }
+        a_feet = state.debugCj->first;
+        a_heading = state.debugCj->second;
+        return true;
+    }
 
     bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
     {

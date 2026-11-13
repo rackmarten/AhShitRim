@@ -43,6 +43,8 @@ namespace AhShitRim::PlayerSync
     // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units), its heading (radians, Skyrim's:
     // 0 north, clockwise) and the model drawn (ModelView's id). False when San Andreas hasn't the player or the slot draws nothing.
     bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr);
+    // The test kit: CJ's feet in Skyrim's world (where his last pose puts him) and his heading. False when San Andreas hasn't the player.
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading);
     void DebugToggle();
     void DebugType(const char* a_code);
 
