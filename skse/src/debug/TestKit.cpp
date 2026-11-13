@@ -1363,6 +1363,7 @@ namespace AhShitRim::TestKit
                     }
                     if (auto* before = g_placed ? RE::TESForm::LookupByID<RE::Actor>(g_placed) : nullptr; before && !before->IsDisabled()) {
                         before->Disable();
+                        before->SetDelete(true);
                     }
                     auto* player = RE::PlayerCharacter::GetSingleton();
                     auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);

@@ -14,6 +14,7 @@
     { "label": "to Whiterun", "cmd": "console", "command": "coc WhiterunOrigin" },
     { "cmd": "wait", "seconds": 12 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "the nearest seated person a stealth kill may take", "cmd": "asr.seated", "radius": 6000, "lean": true, "expect": "sitState >= 1" },
     { "label": "Skyrim's player behind them", "cmd": "asr.behind", "meters": 1.05 },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
