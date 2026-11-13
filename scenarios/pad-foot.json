@@ -91,6 +91,7 @@
     { "label": "the dialogue", "cmd": "screenshot", "name": "dialogue", "hud": true },
     { "label": "B leaves it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
     { "label": "the dialogue closed", "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+    { "label": "Bjorlam 35 m behind CJ, out of later checks' way (the gun lock's)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 2500, "angle": 180 },
 
     // Skyrim's menus on the pad while CJ has the player: B held the tween menu (a tap is Circle in a cheat sequence),
     // Start the journal; B closes the tween menu, Start the journal.
