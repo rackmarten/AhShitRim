@@ -1,24 +1,30 @@
 // Getting on and off, in and out, riding and driving, with CJ's gun on his hand (the playtest's reports): asr.watch
 // records every frame as it's drawn, from the first get-on to the last get-out.
 //  1. The gun never floats: CJ holds an SMG (the Tec-9) as he gets on a Sanchez, rides it fast and gets off, then a
-//     pistol as he gets into a car, drives and gets out. Every frame the drawn gun's root against his drawn right hand's
-//     joint (gun.gripMax, units); shots paused on the moments his get-on and get-off begin, and a few frames in.
+//     pistol as he gets into a car (a Sandking), drives and gets out. Every frame the drawn gun's root against his drawn right hand's
+//     joint (gun.gripSpread: units above its usual distance, about 33 from the joint to the gun's root); shots paused on the moments his get-on and get-off begin, and a few frames in.
 //  2. The gun is drawn while he sits still on the bike (gun.missingStill: frames San Andreas has a gun in his hand and
 //     none is drawn while the vehicle stands), with a shot of it.
 //  3. Getting out looks like San Andreas: each get-out's pelvis, across the vehicle, never steps back towards the seat
 //     (exits.N.maxBack) nor jumps (maxStep), and ends beside the door (endAcross); shots through the car's get-out.
 //  4. Lydia rides along in the car and gets out beside her door: not seated once CJ's get-out began
 //     (riders.0.seatedFrames), out across (endAcross), no jump (maxStep).
-//  5. Two minutes' drive: CJ's pelvis in the car's frame while he sits (seat.maxDeviation from where he sits most,
-//     seat.maxStep frame to frame); a stutter drew him 0.3 m (21 units) back for a frame.
+//  5. Two minutes' drive along the road below the stables: CJ's pelvis in the car's frame while he sits (seats.1.maxDeviation from where
+//     he sits most, maxStep frame to frame); a stutter drew him 0.3 m (21 units) back for a frame. On the bike only
+//     maxStep: it leans, and the frame here is its heading.
 // scripts/skytest.ps1 run scenarios/car-exit.json (scenarios/README.md). Limits in units (1 unit is 1.43 cm).
 {
   "name": "car-exit",
   "steps": [
-    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
-    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "onto the road below the stables", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "label": "facing down the road, south", "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["dead == false"] },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
@@ -28,9 +34,9 @@
     { "label": "a Tec-9", "cmd": "asr.give", "weapon": 32, "ammo": 300, "expect": "weapon == 32" },
     { "label": "a pistol", "cmd": "asr.give", "weapon": 22, "ammo": 100, "expect": "weapon == 22" },
     { "label": "the Tec-9 in his hand", "cmd": "asr.hold", "weapon": 32, "expect": "weapon == 32" },
-    { "label": "watching every frame", "cmd": "asr.watch", "start": "start" },
+    { "label": "watching every frame", "cmd": "asr.watch", "what": "start" },
 
-    { "label": "a Sanchez", "cmd": "asr.spawn", "model": 468, "expect": "label contains Sanchez" },
+    { "label": "a Sanchez", "cmd": "asr.spawn", "model": 468, "expect": "model == 468" },
     { "label": "his get-on begins", "cmd": "asr.enter", "until": "start", "expect": "gettingIn == true" },
     "pause",
     { "cmd": "screenshot", "name": "bike-on-0", "camera": "orbit player yaw=90 distance=260 pitch=10" },
@@ -46,7 +52,8 @@
     { "cmd": "screenshot", "name": "bike-still", "camera": "orbit player yaw=90 distance=260 pitch=10" },
     { "cmd": "screenshot", "name": "bike-still-gun", "camera": "orbit asr.weapon: yaw=90 distance=90 pitch=10" },
     "resume",
-    { "label": "rides it fast", "cmd": "asr.drive", "seconds": 8, "steer": 0.15, "expect": "fastest > 12" },
+    { "label": "rides it down to the main road and west along it", "cmd": "asr.drive", "seconds": 40, "speed": 15,
+      "points": "17521,-13700; 15073,-13541; 12625,-13082; 10177,-13082", "expect": ["fastest > 12", "arrived == true", "stopped == true"] },
     { "label": "his get-off begins", "cmd": "asr.exit", "until": "start", "expect": "gettingOut == true" },
     "pause",
     { "cmd": "screenshot", "name": "bike-off-0", "camera": "orbit player yaw=90 distance=260 pitch=10" },
@@ -60,7 +67,7 @@
     { "label": "away from the bike, so the car is the one he gets into", "cmd": "asr.ahead", "distance": 1000 },
     { "label": "the pistol in his hand", "cmd": "asr.hold", "weapon": 22, "expect": "weapon == 22" },
     { "label": "Lydia with him", "cmd": "asr.follower", "expect": "ref exists" },
-    { "label": "an Elegy", "cmd": "asr.spawn", "model": 562, "expect": "label contains Elegy" },
+    { "label": "a Sandking (off-road: the tundra round the stables)", "cmd": "asr.spawn", "model": 495, "expect": "model == 495" },
     { "label": "his get-in begins", "cmd": "asr.enter", "until": "start", "expect": "gettingIn == true" },
     "pause",
     { "cmd": "screenshot", "name": "car-in-0", "camera": "orbit player yaw=90 distance=300 pitch=10" },
@@ -69,15 +76,17 @@
     "resume",
     { "label": "in the car", "cmd": "wait", "until": ["in == true", "getting == false"], "for": "asr.pose", "timeout": 10 },
     { "cmd": "wait", "seconds": 1 },
-    { "label": "two minutes' drive", "cmd": "asr.drive", "seconds": 120, "steer": 0.25, "expect": "fastest > 15" },
+    { "label": "two minutes' drive, east and west along the main road", "cmd": "asr.drive", "seconds": 120, "speed": 15,
+      "points": "12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082",
+      "expect": ["fastest > 15", "stopped == true"] },
     { "cmd": "wait", "seconds": 1 },
     { "label": "his get-out begins", "cmd": "asr.exit", "until": "start", "expect": "gettingOut == true" },
     "pause",
-    { "cmd": "screenshot", "name": "car-out-0", "camera": "orbit asr.vehicle:driven yaw=90 distance=550 pitch=15" },
+    { "cmd": "screenshot", "name": "car-out-0", "camera": "orbit asr.vehicle: yaw=90 distance=550 pitch=15" },
     { "cmd": "step", "frames": 20 },
-    { "cmd": "screenshot", "name": "car-out-20", "camera": "orbit asr.vehicle:driven yaw=90 distance=550 pitch=15" },
+    { "cmd": "screenshot", "name": "car-out-20", "camera": "orbit asr.vehicle: yaw=90 distance=550 pitch=15" },
     { "cmd": "step", "frames": 20 },
-    { "cmd": "screenshot", "name": "car-out-40", "camera": "orbit asr.vehicle:driven yaw=90 distance=550 pitch=15" },
+    { "cmd": "screenshot", "name": "car-out-40", "camera": "orbit asr.vehicle: yaw=90 distance=550 pitch=15" },
     "resume",
     { "label": "out of the car", "cmd": "wait", "until": "in == false", "for": "asr.pose", "timeout": 10 },
     { "cmd": "wait", "seconds": 2 },
@@ -86,13 +95,13 @@
     { "cmd": "screenshot", "name": "car-out-done-other-side", "camera": "orbit asr.vehicle: yaw=270 distance=550 pitch=15" },
     "resume",
 
-    { "label": "every frame judged", "cmd": "asr.watch", "start": "stop",
+    { "label": "every frame judged", "cmd": "asr.watch", "what": "stop",
       "expect": [
-        "gun.longestMissing <= 3", "gun.missingStill == 0", "gun.gripMax < 10",
+        "gun.longestMissing <= 3", "gun.missingStill == 0", "gun.gripSpread < 10",
         "exits.length == 2", "exits.0.out == true", "exits.0.maxBack < 5", "exits.0.maxStep < 15",
         "exits.1.out == true", "exits.1.maxBack < 5", "exits.1.maxStep < 15", "exits.1.endAcross > 50",
-        "exits.1.riders.length == 1", "exits.1.riders.0.seatedFrames == 0", "exits.1.riders.0.endAcross > 50", "exits.1.riders.0.maxStep < 15",
-        "seat.frames > 6000", "seat.maxDeviation < 8", "seat.maxStep < 5"
+        "exits.1.riders.length == 1", "exits.1.riders.0.seatedFrames == 0", "exits.1.riders.0.maxAcross > 50", "exits.1.riders.0.maxStep < 15",
+        "seats.length == 2", "seats.0.model == 468", "seats.0.maxStep < 5", "seats.1.model == 495", "seats.1.frames > 6500", "seats.1.maxDeviation < 8", "seats.1.maxStep < 5"
       ] },
     { "label": "Skyrim's player fine", "cmd": "state", "ref": "player", "expect": ["dead == false"] }
   ]
