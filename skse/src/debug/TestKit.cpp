@@ -589,6 +589,49 @@ namespace AhShitRim::TestKit
                     };
                 });
 
+            // A lamp's dummy in the vehicle's whole frame (its slope too, which a target's offset= leaves out), for regions round
+            // the lamps: asr.lamp:rearLeft is the tail light on the left of the vehicle asr.spawn made last, @<slot> another's.
+            SkseTestKit::AddTarget("asr.lamp", "<frontRight|frontLeft|rearRight|rearLeft>[@<slot>]",
+                "A vehicle's lamp where San Andreas's dummy puts it (a pair mirrored across its middle), facing the vehicle's way",
+                [](std::string_view a_spec) -> SkseTestKit::Place {
+                    const auto  at = a_spec.find('@');
+                    const auto  lamp = a_spec.substr(0, at);
+                    std::uint32_t slot = 0;
+                    if (at != std::string_view::npos) {
+                        const auto number = a_spec.substr(at + 1);
+                        if (std::from_chars(number.data(), number.data() + number.size(), slot).ec != std::errc{} || slot >= Protocol::kVehicleMax) {
+                            throw Error("asr.lamp:<lamp>@<slot>, the slot 0 to " + std::to_string(Protocol::kVehicleMax - 1));
+                        }
+                    } else if (g_spawned) {
+                        slot = *g_spawned;
+                    } else {
+                        throw Error("asr.spawn hasn't made a vehicle yet: name a slot (asr.lamp:rearLeft@0)");
+                    }
+                    const bool front = lamp == "frontRight" || lamp == "frontLeft";
+                    const bool left = lamp == "frontLeft" || lamp == "rearLeft";
+                    if (!front && lamp != "rearRight" && !left) {
+                        throw Error("the lamp is frontRight, frontLeft, rearRight or rearLeft");
+                    }
+                    RE::NiPoint3 position;
+                    float        heading = 0.0f;
+                    if (!PlayerSync::DebugVehicle(slot, position, heading) || !g_seen[slot].on) {
+                        throw Error(std::format("vehicle slot {} isn't drawn", slot));
+                    }
+                    const auto& seen = g_seen[slot];
+                    if (!seen.lamps) {
+                        throw Error("this build's vehicles carry no lamps (the headlights, protocol v36, aren't in it)");
+                    }
+                    auto dummy = front ? seen.front : seen.rear;
+                    if (dummy.x == 0.0f && dummy.y == 0.0f && dummy.z == 0.0f) {
+                        throw Error(std::format("the vehicle has no {} dummy", front ? "headlight" : "tail light"));
+                    }
+                    dummy.x = left ? -std::abs(dummy.x) : std::abs(dummy.x);  // the dummy is one of the pair; X runs to the right
+                    const auto world = VehicleHits::ToWorld(seen.frame, dummy);
+                    return SkseTestKit::Place{ .x = world.x, .y = world.y, .z = world.z, .heading = heading,
+                        .details = JsonObject{ { "slot", slot }, { "lamp", std::string(lamp) }, { "local", PointOf(dummy) },
+                            { "lit", (seen.lit & (front ? (left ? 0x2 : 0x1) : (left ? 0x8 : 0x4))) != 0 } } };
+                });
+
             // Cameras and probes at the flash and at the gun's muzzle.
             SkseTestKit::AddTarget("asr.flash", "[hand]", "A hand's muzzle flash where it was last shown, facing along the barrel (its model and light inside)",
                 [](std::string_view a_hand) -> SkseTestKit::Place {
