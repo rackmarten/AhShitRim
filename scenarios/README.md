@@ -22,9 +22,14 @@ crash log in its last line and in `summary.json`'s `Fault`). Each run writes `re
 | `mission.json` | Quests as missions (v24): CJ's intro line, a quest's title (Bleak Falls Barrow, `MQ103`) and "mission passed" with its tune, first while CJ has the player, then while Skyrim has it; four screenshots with the HUD | | 33 s |
 | `stream.json` | Skyrim's streaming at a Hydra's 87 m/s (v19): the player flown 3.3 km north-east from Riverwood, 30 m up; no frame over 50 ms, and the land under it and 1 s ahead always loaded with collision | per second: frames, the worst frame, land loaded under, 1 s and 2 s ahead | 62 s |
 | `test-kit-smoke.json` | AhShitRim's kit commands themselves: handovers, the night, a weapon, a spawned Elegy, a tracked second, exact steps | CJ, a row a frame | 6 s |
+| `muzzle-flash.json` | The muzzle flash (v12) at the muzzle: CJ fires a pistol, a shotgun, an SMG and an M4 at night; in the flash's frame the flash against the drawn gun's barrel end (`along` within 8 units, `across` under 6), paused on it for a close shot and a wider one, its light probed; then the same after a trip into an interior and back (the light still among the renderer's) | | 38 s |
+| `vehicle-lights.json` | The headlights and tail lights (v36; needs them): a ZR-350 at 23:00 with CJ in it, its four lamps lit and both scene lights on, A/B pairs with `asr.lamps off` (each tail lens 15 darker, the road behind 1.5, the front lamps 10, the road ahead 5); out by day; out when blown up (CJ out and well away first); still lighting after an interior and back | | 55 s |
+| `crew-follow.json` | The Grove Street crew following CJ (v39; needs it): at the Whiterun stables, three homies recruited and recorded at 10 Hz on a set route (past a fence's end, round the stalls, through a narrow gap by the cliff and back, a sprint down the road); per homie: moved, never stuck 10 s, within 1000 of CJ's path, within 900 of CJ 10 s after he stops; CJ never held up. `stables-crew-overlay.png` draws every track | `stables-crew.csv`: a row per sample and track | 67 s |
 
 Every scenario starts by putting the session where it needs it (a `coc Riverwood`, Skyrim's player healed, most with a
-new handover), so they run in any order in one session. Times are on the test desktop, from a running session.
+new handover), so they run in any order in one session. Times are on the test desktop, from a running session. The
+last three check features that came after the kit (the headlights, the crew): on a build without them their first
+step that needs them fails, saying so. Their limits are in each file's opening comment, with what they were set from.
 
 ## Starts and saves
 
