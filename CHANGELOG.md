@@ -6,9 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- For developers: a test session puts the games back as it found them. `scripts/skytest.ps1 stop` (and a failed start) restores the AhShitRim that was installed before it: the SKSE plugin, the ASI, their `.pdb`s, `AhShitRim.ini` (whose keys `deploy-local.ps1` would drop) and Sweetroll FM's tracks; PerkeleRim's plugin is set aside while the session runs (`scripts/test-deploy.ps1`, skytest's `Undeploy`).
+- For developers: test sessions (`scripts/skytest.ps1`, docs/DEV_SETUP.md "Test sessions"). Skyrim starts hidden and never focused, straight into Riverwood with CJ there or into a save, with San Andreas beside it, in about 20 s, through the skse-test-kit submodule. Dev builds only: a release never has it.
+- For developers: a test session takes commands while it runs (`scripts/skytest.ps1 session`, `cmd`, `run`): the kit's (state, console, wait, pause, exact steps...) and AhShitRim's `asr.cj`, `asr.spawn`, `asr.give`, `asr.night` and the `asr.track` scenario. `scenarios/test-kit-smoke.json` checks them.
+- For developers: the in-game tests run hidden on the test kit as scenario files (`scenarios/`, `scenarios/README.md`): the hit test and the bust (`hits.json`, `bust.json`, `scripts/hit-test.ps1`), the missions (`mission.json`, with HUD screenshots), the stream test (`stream.json`), and the load test (`scripts/load-test.ps1`, through the kit's `asr.load`). Each has checks, CSV results and an exit code (`skytest run`: 2 for a crash or a hang, with the crash log named; the load test: 1 when any cycle crashed, hung or got stuck). They're the kit's `asr.hits`, `asr.load`, `asr.stream`, `asr.intro` and `asr.quest` now, not `[Debug] HitTest`, `LoadTest`, `StreamTest` or `AHSHITRIM_MISSION_TEST`, and need a dev build with the kit. `hit-test.ps1 -Start` takes a session start (`save:<name>`, ...) instead of a cell, and `-NewGame` is gone (the kit doesn't run on Skyrim SE 1.5.97).
+- For developers: the test kit's probes and recorder see San Andreas's vehicles: `asr.vehicle:` gives the kit the 3D the vehicle is drawn under and its slot and model, so `node`, `probe`, `project`, `pixels`, `ab` and `record` work on it.
+- For developers: scenarios for the in-game checks of the muzzle flash, the vehicles' lamps and the Grove Street crew (`scenarios/muzzle-flash.json`, `vehicle-lights.json`, `crew-follow.json`), each with its pass/fail limits written in the file. New kit commands drive CJ for them: `asr.walk` (waypoints at a walk, run or sprint), `asr.fire` and `asr.muzzle` (the flash against the drawn gun's muzzle), `asr.lamps` (the lamps off for an A/B pair), `asr.exit`, `asr.cheat` and `asr.crew`; and targets for the probes and the recorder: `asr.flash:`, `asr.weapon:`, `asr.lamp:<lamp>`, `asr.homie:<n>`. `asr.vehicle:` also reports its lamps and lights.
+
 ### Changed
 
 - The camera works like San Andreas's. On foot V (or Home) steps through San Andreas's three chase distances, close, middle and far; it used to do nothing there. There is still no first person on foot, as in San Andreas. In a vehicle, the first-person step of V now sits in front of the vehicle, past a car's bonnet, a bike's handlebars or an aircraft's nose, instead of inside the model Skyrim draws (San Andreas puts that view at the driver's head and simply doesn't draw the car; Skyrim drew it), and CJ isn't drawn in it. The Seasparrow and the Rustler show the rocket-sight crosshair in that view as the Hunter and the Hydra do, to aim their guns by.
+
+### Fixed
+
+- A character who never went through Helgen (an alternate start, a `coc` from the main menu) could die while CJ had the player, and Skyrim then loaded the last save, instead of CJ being Wasted. The player is mortal while CJ has it only while Helgen's Unbound really runs; the check took a quest that was never started for one that runs.
+- San Andreas no longer takes the foreground when it starts: its window is created hidden and never activated, and it no longer turns off Windows' foreground lock for the whole desktop.
 
 ## [0.1.1] - 2026-10-26
 
