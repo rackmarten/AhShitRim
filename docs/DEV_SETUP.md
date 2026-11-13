@@ -187,6 +187,11 @@ never need it). To use it:
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+   | `asr.enter [until=]`, `asr.exit [until=]` | CJ gets into the vehicle San Andreas picks near him, or out of his; `until=start` answers in the frame the get-in or get-out begins, to pause on it | `asr.enter until=start` |
+   | `asr.drive [seconds] [steer=] [stop=]`, `asr.ahead [distance]` | CJ drives on, the accelerator held, steering left and right, then brakes to a stop; or runs straight on (out of the way of a vehicle he got off) | `asr.drive 120 steer=0.25` |
+   | `asr.hold <weapon>`, `asr.pose` | CJ takes a weapon he carries into his hands; CJ now: in a vehicle, getting in or out, his weapon, and the drawn gun's grip (units from his drawn right hand's joint) | `wait until="in == true" for=asr.pose` |
+   | `asr.follower [base] [right=]` | an actor (Lydia by default) placed beside the player as a teammate, who rides with CJ | `asr.follower` |
+   | `asr.watch <start\|stop>` | every frame from start to stop, after it's drawn: the gun against CJ's hand (and a gun in his hand that isn't drawn), his pelvis in his vehicle's frame, his riders; stop answers with a row a frame and a summary of the get-outs and the seat | `asr.watch stop expect="gun.gripMax < 10"` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|

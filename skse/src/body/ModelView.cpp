@@ -610,6 +610,17 @@ namespace AhShitRim::ModelView
         return true;
     }
 
+    int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId)
+    {
+        auto* built = Find(a_model);
+        if (!built) {
+            return -1;
+        }
+        const auto& ids = built->model.boneIds;
+        const auto  found = std::find(ids.begin(), ids.end(), a_boneId);
+        return found == ids.end() ? -1 : static_cast<int>(found - ids.begin());
+    }
+
     bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out)
     {
         auto* built = Find(a_model);

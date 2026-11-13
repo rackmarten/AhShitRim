@@ -132,6 +132,7 @@ namespace AhShitRim::PlayerSync
             std::uint32_t lastPoseFrame = 0;
 
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::function<void()>     debugFrame;    // the test kit's (SetDebugFrameHook)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
@@ -1132,6 +1133,9 @@ namespace AhShitRim::PlayerSync
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough, state.haveBodyTime ? &state.body : nullptr, state.bodyTime);
             }
+            if (state.debugFrame) {
+                state.debugFrame();
+            }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
             // On foot CJ bumps into Skyrim's actors, and with fists or a melee weapon the right mouse button or a swing
@@ -1694,6 +1698,11 @@ namespace AhShitRim::PlayerSync
     void SetDebugVehicleHook(DebugVehicleHook a_hook)
     {
         state.debugVehicle = std::move(a_hook);
+    }
+
+    void SetDebugFrameHook(std::function<void()> a_hook)
+    {
+        state.debugFrame = std::move(a_hook);
     }
 
     void DebugType(const char* a_code)

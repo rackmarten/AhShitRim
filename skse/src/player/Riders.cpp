@@ -196,6 +196,11 @@ namespace AhShitRim::Riders
         return std::any_of(state.riders.begin(), state.riders.end(), [&](const Rider& a_rider) { return a_rider.id == a_id; });
     }
 
+    bool Sits(RE::FormID a_id)
+    {
+        return std::any_of(state.riders.begin(), state.riders.end(), [&](const Rider& a_rider) { return a_rider.id == a_id && a_rider.out < 0.0f; });
+    }
+
     std::vector<RE::FormID> Riding()
     {
         std::vector<RE::FormID> out;

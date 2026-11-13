@@ -38,6 +38,10 @@ namespace AhShitRim::ModelView
     // (unscaled). False while it isn't shown.
     bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out);
 
+    // The test kit (debug): where bone a_boneId (San Andreas's node id: 24 CJ's right hand, 2 his pelvis) sits in model
+    // a_model's poses (BodyState.bones' index), -1 when the model isn't built or has no such bone.
+    int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId);
+
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
     // The hit test (debug): where model a_model's node is in the world after Skyrim's scene update, and its parent's
