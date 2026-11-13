@@ -368,12 +368,13 @@ namespace AhShitRim::Crew
     }
 
     // Whom the followers shoot: one hostile to CJ, or one fighting CJ or the crew who stands and fights. Not one
-    // fleeing (Skyrim's deer and elk run from CJ in a fight of their own, CJ their target), and never an animal that
-    // isn't aggressive (Skyrim's Aggression 0: elk, deer, horses, goats), whatever it does. Nobody else either.
+    // fleeing (Skyrim's deer and elk run from CJ in a fight of their own, CJ their target). An animal only when it's
+    // hostile to CJ (a wolf, a bear: the kit read a wolf's Aggression as 0 all the same), or an aggressive one fighting
+    // him: never an elk, deer, horse or goat he shot at. Nobody else either.
     inline constexpr bool IsFoe(bool a_hostile, bool a_fightsUs, bool a_fleeing, bool a_animal, bool a_aggressive)
     {
-        if (a_animal && !a_aggressive) {
-            return false;
+        if (a_animal) {
+            return a_hostile || (a_fightsUs && a_aggressive && !a_fleeing);
         }
         return a_hostile || (a_fightsUs && !a_fleeing);
     }

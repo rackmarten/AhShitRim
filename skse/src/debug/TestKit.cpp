@@ -295,6 +295,13 @@ namespace AhShitRim::TestKit
             a_details.Set("canTalk", probe.canTalk);
             a_details.Set("rides", probe.rides);
             a_details.Set("target", probe.target ? SkseTestKit::FormId(probe.target) : std::string());
+            a_details.Set("waiting", probe.waiting);
+            a_details.Set("greetingTimer", probe.greetingTimer);
+            a_details.Set("detectGreetTimer", probe.detectGreetTimer);
+            a_details.Set("checkToTalkTimer", probe.checkToTalkTimer);
+            a_details.Set("voiceTimer", probe.voiceTimer);
+            a_details.Set("greeting", probe.greeting);
+            a_details.Set("greetingPlayer", probe.greetingPlayer);
         }
 #endif
 
@@ -832,8 +839,29 @@ namespace AhShitRim::TestKit
                         targeted.emplace_back(SkseTestKit::FormId(id));
                     }
                     return JsonObject{ { "hushedLines", stats.hushedLines }, { "hushedSounds", stats.hushedSounds }, { "followPuts", stats.followPuts },
-                        { "gearStripped", stats.gearStripped }, { "drawnFrames", stats.drawnFrames }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
+                        { "gearStripped", stats.gearStripped }, { "drawnFrames", stats.drawnFrames }, { "fistsFrames", stats.fistsFrames },
+                        { "unwaited", stats.unwaited }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
                         { "about", Homies::DebugCount(false) } };
+                });
+
+            SkseTestKit::AddCommand("asr.foe", "<ref>",
+                "Why the crew shoots an actor or not (Crew::IsFoe's inputs, its combat target, and each follower's distance, sight and range)",
+                [](Call& a_call) -> Json {
+                    auto* ref = SkseTestKit::FindRef(a_call.Text("ref"));
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    if (!actor) {
+                        throw Error("ref is an actor");
+                    }
+                    const auto info = Homies::DebugFoe(RE::PlayerCharacter::GetSingleton(), actor);
+                    JsonArray  followers;
+                    for (const auto& f : info.followers) {
+                        followers.emplace_back(JsonObject{ { "ref", SkseTestKit::FormId(f.id) }, { "metres", Round(f.metres, 0.1) }, { "sight", f.sight },
+                            { "mayShoot", f.mayShoot }, { "weapon", f.weapon } });
+                    }
+                    return JsonObject{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "dead", actor->IsDead() }, { "foe", info.foe }, { "hostile", info.hostile },
+                        { "fightsUs", info.fightsUs }, { "fleeing", info.fleeing }, { "animal", info.animal }, { "aggressive", info.aggressive },
+                        { "combatTarget", info.combatTarget ? SkseTestKit::FormId(info.combatTarget) : std::string() }, { "metres", Round(info.metres, 0.1) },
+                        { "followers", std::move(followers) } };
                 });
 
             SkseTestKit::AddTarget("asr.free", "<n>", "The nth (from 0) nearest homie standing about (not of the crew): where he is, facing his way",
@@ -849,12 +877,15 @@ namespace AhShitRim::TestKit
                     return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = actor->GetAngleZ(), .root = actor->Get3D(), .details = std::move(details) };
                 });
 
-            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>]",
+            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>] [dismiss=<bool>]",
                 "The Grove Street crew: plays as a Thane of thanes (1) holds (-1: the titles the game has), waits for the spots round CJ to fill, has the recruit (2) nearest "
                 "homies join and answers once they follow, with each follower's reference (refs, for record start) and what he carries and "
                 "runs (gear, hands, weaponDrawn, followPackage, canTalk, rides, target)",
                 [](Call& a_call) -> Step {
                     RequireCj();
+                    if (a_call.Flag("dismiss", false)) {
+                        Homies::DebugDismissAll();  // a scenario's crew from scratch: the one an earlier scenario left sent off
+                    }
                     const int recruit = static_cast<int>(a_call.Number("recruit", 2.0));
                     Homies::DebugThanes(static_cast<int>(a_call.Number("thanes", 1.0)));
                     g_homies = {};
@@ -863,6 +894,9 @@ namespace AhShitRim::TestKit
                     return [recruit, joined](Call& a_call) -> std::optional<Json> {
                         auto* player = RE::PlayerCharacter::GetSingleton();
                         if (!*joined) {
+                            if (Homies::DebugCount(false) < recruit && a_call.Frames() % 120 == 0) {
+                                Homies::DebugFresh();  // the spots fill even where the camera looks
+                            }
                             if (Homies::DebugCount(false) < recruit && a_call.Seconds() < 25.0) {
                                 return std::nullopt;  // the spots fill out of view, a few seconds after the Thane read
                             }

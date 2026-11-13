@@ -80,15 +80,37 @@ namespace AhShitRim::Homies
         std::vector<std::string> hands;   // what his hands hold, Skyrim's
         bool                     weaponDrawn = false, followPackage = false, canTalk = true, rides = false, follower = false;
         RE::FormID               target = 0;  // his crew target
+        float                    waiting = 0.0f;  // his WaitingForPlayer actor value
+        float                    greetingTimer = 0.0f, detectGreetTimer = 0.0f, checkToTalkTimer = 0.0f, voiceTimer = 0.0f;  // HighProcessData's
+        bool                     greeting = false, greetingPlayer = false;  // a greeting under way (greetTopic), to the player
     };
     DebugProbe DebugProbeOf(RE::Actor* a_actor);
     struct DebugStats
     {
         unsigned                hushedLines = 0, hushedSounds = 0, followPuts = 0, gearStripped = 0;
-        unsigned                drawnFrames = 0;   // frames a homie had a Skyrim weapon drawn or in a hand
+        unsigned                drawnFrames = 0;   // frames a homie had a Skyrim weapon in a hand
+        unsigned                fistsFrames = 0;   // frames one had his empty hands raised for a Skyrim fight
+        unsigned                unwaited = 0;      // followers told to stop waiting
         std::vector<RE::FormID> targeted;  // everyone a follower has had as his target
     };
     DebugStats DebugStatsOf(bool a_reset);
+    void       DebugDismissAll();  // every follower sent off, none to come back
+    void       DebugFresh();       // the spots fill in view for 3 s, as after a handover (a test can't wait for the camera to turn)
+    struct DebugFoeInfo
+    {
+        bool       hostile = false, fightsUs = false, fleeing = false, animal = false, aggressive = false, foe = false;
+        RE::FormID combatTarget = 0;
+        float      metres = 0.0f;  // from the player
+        struct Follower
+        {
+            RE::FormID id = 0;
+            float      metres = 0.0f;
+            bool       sight = false, mayShoot = false;
+            int        weapon = 0;
+        };
+        std::vector<Follower> followers;
+    };
+    DebugFoeInfo DebugFoe(RE::PlayerCharacter* a_player, RE::Actor* a_actor);  // why the crew shoots a_actor or not
     float      DebugStray(RE::PlayerCharacter* a_player, float a_metres);  // a follower put on the navmesh that far behind; metres, -1 for none
     bool       DebugNavmesh(RE::PlayerCharacter* a_player, RE::NiPoint3& a_nearest);  // the navmesh nearest the player
 

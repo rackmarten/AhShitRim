@@ -286,7 +286,8 @@ TEST_CASE("crew: the followers shoot whoever is hostile or fights them, never a 
     CHECK(Crew::IsFoe(false, true, false, true, true));     // a bear CJ woke
     CHECK_FALSE(Crew::IsFoe(false, true, true, true, false));   // an elk running from CJ, CJ its combat target
     CHECK_FALSE(Crew::IsFoe(false, true, false, true, false));  // or turned to him
-    CHECK_FALSE(Crew::IsFoe(true, true, false, true, false));   // an animal that isn't aggressive is never one
+    CHECK(Crew::IsFoe(true, true, false, true, false));         // a wolf on CJ whose Aggression reads 0 (as the kit saw)
+    CHECK_FALSE(Crew::IsFoe(false, true, false, true, false));  // a goat CJ shot, turned to him: not hostile, not aggressive
 }
 
 TEST_CASE("crew: a puppet's walk and run play at the rate that keeps his feet on the ground")

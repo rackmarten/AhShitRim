@@ -1,15 +1,17 @@
 // The Grove Street crew's round 3 fixes, checked at the Whiterun stables with two homies following CJ (v39):
 //  - no Skyrim gear: the soldier's bow, quiver, blades and shield are gone from each homie's inventory and hands, idle,
 //    following and in a fight with two wolves, and no follower ever has a Skyrim weapon drawn or in hand (drawnFrames,
-//    every frame counted); shots of a homie from the side and from behind, idle and in the fight,
-//  - no Skyrim hellos: CJ stands by them 30 s; no subtitle of theirs comes up (hushedLines, each a line Skyrim started
-//    and the hush took off again) and none may talk to the player (canTalk),
+//    every frame counted), nor his fists raised for a Skyrim fight for more than a few frames (fistsFrames: he never
+//    fights Skyrim's way); shots of a homie from the side and from behind, idle and in the fight,
+//  - no Skyrim lines: CJ stands by them 30 s, then the fights; no subtitle of theirs comes up (hushedLines, each a line
+//    Skyrim started and the hush took off again: hellos, chatter, a fight's calls) and none may talk to the player,
 //  - only foes: an elk placed by them is never anyone's target, neither left alone nor once CJ has shot it and it runs,
 //    while the wolves are,
 //  - the keys: HESOYAM, LXGIWYL and G typed send nobody off; G without aiming does nothing; aimed at a follower it
 //    dismisses him, aimed at a homie standing about it recruits him (asr.crewkey, the aim line from the player to him).
 // The stables' parked Sanchez is blown up first: on its own it burns and blows up about 19 s after a handover beside
-// it, killing CJ and the homies (a parked vehicles bug, not the crew's).
+// it, killing CJ and the homies (a parked vehicles bug, not the crew's). Its wreck burns a while, so CJ stays on the
+// road 18 m south of it (standing beside it burned him to Wasted).
 // scripts/skytest.ps1 run scenarios/crew-checks.json (scenarios/README.md). The crew stays CJ's after it: run it last,
 // or skytest stop before the others.
 {
@@ -31,10 +33,9 @@
     { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
     { "cmd": "wait", "seconds": 6 },
     { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
-    { "label": "Thane of two holds: a crew of three", "cmd": "asr.crew", "recruit": 0, "thanes": 2 },
+    { "label": "Thane of two holds: a crew of three, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "dismiss": true },
     { "label": "noon", "cmd": "scene", "presets": "day clear" },
-    { "label": "the Thane titles read, the stables' spots fill out of view", "cmd": "wait", "seconds": 15 },
-    { "label": "CJ on the road below the stables", "cmd": "asr.walk", "points": "17521,-11196", "gait": "run" },
+    { "label": "the Thane titles read, the stables' spots fill (CJ stays 18 m off: the blown-up Sanchez burns there)", "cmd": "wait", "seconds": 15 },
     { "label": "two homies join", "cmd": "asr.crew", "recruit": 2, "thanes": 2, "expect": ["following == 2", "followers.length == 2"] },
     { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
     { "label": "counters from zero", "cmd": "asr.crewstats", "reset": true },
@@ -42,8 +43,8 @@
       "expect": ["followers.0.gear.length == 0", "followers.0.hands.length == 0", "followers.0.weaponDrawn == false",
                  "followers.1.gear.length == 0", "followers.1.hands.length == 0", "followers.1.weaponDrawn == false",
                  "followers.0.canTalk == false", "followers.1.canTalk == false"] },
-    { "label": "a homie idle, from the side", "cmd": "screenshot", "name": "homie-idle-side", "camera": "orbit asr.homie:0 yaw=90 distance=260 pitch=10" },
-    { "label": "a homie idle, from behind (a quiver would show)", "cmd": "screenshot", "name": "homie-idle-back", "camera": "orbit asr.homie:0 yaw=0 distance=260 pitch=10" },
+    { "label": "a homie idle, from the side", "cmd": "screenshot", "name": "homie-idle-side", "camera": "orbit asr.homie:0 yaw=90 distance=320 height=90 pitch=5" },
+    { "label": "a homie idle, from behind (a quiver would show)", "cmd": "screenshot", "name": "homie-idle-back", "camera": "orbit asr.homie:0 yaw=0 distance=320 height=90 pitch=5" },
 
     { "label": "CJ stands by them 30 s", "cmd": "wait", "seconds": 30 },
     { "label": "no Skyrim hello started, no Skyrim weapon in hand", "cmd": "asr.crewstats", "expect": ["hushedLines == 0", "drawnFrames == 0"] },
@@ -55,16 +56,19 @@
     { "label": "left alone a while", "cmd": "wait", "seconds": 8 },
     { "label": "nobody aimed at the elk", "cmd": "asr.crewstats", "expect": "targeted.length == 0" },
     { "label": "CJ shoots it, it runs", "cmd": "asr.hurt", "ref": "name:Elk", "damage": 2 },
-    { "cmd": "wait", "seconds": 10 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "the shot elk is no foe", "cmd": "asr.foe", "ref": "name:Elk", "expect": "foe == false" },
+    { "cmd": "wait", "seconds": 8 },
     { "label": "still nobody aimed at the elk", "cmd": "asr.crewstats", "expect": "targeted.length == 0" },
 
     { "label": "two wolves", "cmd": "console", "command": "player.placeatme 23ABE 2" },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "a homie in the fight, from the side", "cmd": "screenshot", "name": "homie-fight-side", "camera": "orbit asr.homie:0 yaw=90 distance=300 pitch=10" },
+    { "label": "a wolf on them is a foe", "cmd": "asr.foe", "ref": "name:Wolf", "expect": "foe == true" },
+    { "label": "a homie in the fight, from the side", "cmd": "screenshot", "name": "homie-fight-side", "camera": "orbit asr.homie:0 yaw=90 distance=360 height=90 pitch=5" },
     { "cmd": "wait", "seconds": 1 },
-    { "label": "a homie in the fight, from behind", "cmd": "screenshot", "name": "homie-fight-back", "camera": "orbit asr.homie:1 yaw=0 distance=300 pitch=10" },
+    { "label": "a homie in the fight, from behind", "cmd": "screenshot", "name": "homie-fight-back", "camera": "orbit asr.homie:1 yaw=0 distance=360 height=90 pitch=5" },
     { "cmd": "wait", "seconds": 12 },
-    { "label": "the wolves were their targets, no Skyrim weapon ever drawn", "cmd": "asr.crewstats", "expect": ["targeted.length >= 1", "drawnFrames == 0", "hushedLines == 0"] },
+    { "label": "the wolves were their targets, no Skyrim weapon ever drawn", "cmd": "asr.crewstats", "expect": ["targeted.length >= 1", "drawnFrames == 0", "fistsFrames < 20", "hushedLines == 0"] },
     { "label": "a wolf is dead", "cmd": "state", "ref": "name:Wolf", "expect": "dead == true" },
     { "label": "after the fight: no Skyrim gear, nothing in hand", "cmd": "asr.crew", "recruit": 0, "thanes": 2,
       "expect": ["following == 2", "followers.0.gear.length == 0", "followers.0.hands.length == 0", "followers.1.gear.length == 0", "followers.1.hands.length == 0"] },
@@ -78,7 +82,7 @@
     { "label": "G typed, no aim", "cmd": "asr.cheat", "code": "G" },
     { "cmd": "wait", "seconds": 1 },
     { "label": "G without aiming does nothing", "cmd": "asr.crewstats", "expect": "following == 2" },
-    { "label": "G at a homie standing about, no aim: nothing", "cmd": "asr.crewkey", "at": "asr.free:0", "aim": false, "expect": ["following == 2", "about == aboutBefore"] },
+    { "label": "G at a homie standing about, no aim: nothing", "cmd": "asr.crewkey", "at": "asr.free:0", "aim": false, "expect": ["followingBefore == 2", "following == 2"] },
     { "label": "G aimed at a follower: he goes", "cmd": "asr.crewkey", "at": "asr.homie:0", "aim": true, "expect": "following == 1" },
     { "label": "G aimed at a homie standing about: he joins", "cmd": "asr.crewkey", "at": "asr.free:0", "aim": true, "expect": "following == 2" },
     { "cmd": "wait", "seconds": 2 },
