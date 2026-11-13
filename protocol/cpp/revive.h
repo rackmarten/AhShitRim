@@ -34,25 +34,19 @@ namespace AhShitRim::Revive
 
     // ---- Who comes back ----
 
-    // Skyrim's aggression (the Aggression actor value: 0 unaggressive, 1 aggressive, 2 very aggressive, 3
-    // frenzied) and faction reaction (Actor::GetFactionReaction's FIGHT_REACTION).
+    // Skyrim's aggression (0 unaggressive, 1 aggressive, 2 very aggressive, 3 frenzied).
     inline constexpr int kAggressive = 1;
     inline constexpr int kVeryAggressive = 2;
-    enum class Reaction : int
-    {
-        Neutral = 0,
-        Enemy = 1,
-        Ally = 2,
-        Friend = 3,
-    };
 
     // Whether an actor attacks the player on sight, before anyone has done anything: a very aggressive or
-    // frenzied one attacks neutrals too, an aggressive one its enemies (a faction hostile to the player's).
-    // Guards are aggressive but not the player's enemies, chickens unaggressive. Its base aggression, so a
-    // Fury spell or a fight that's started doesn't change the answer.
-    constexpr bool HostileOnSight(int a_aggression, Reaction a_reaction)
+    // frenzied one attacks neutrals too, an aggressive one whoever Skyrim says it's hostile to
+    // (Actor::IsHostileToActor). The faction reaction alone doesn't say it: a bandit's to the player is
+    // neutral (measured at Halted Stream Camp), the same as a guard's. A lawful actor (one with a crime faction:
+    // guards, townsfolk) is hostile only over a crime, a fight CJ started, so that doesn't count. Its base
+    // aggression, so a Fury spell doesn't change the answer.
+    constexpr bool HostileOnSight(int a_aggression, bool a_hostile, bool a_lawful)
     {
-        return a_aggression >= kVeryAggressive || (a_aggression >= kAggressive && a_reaction == Reaction::Enemy);
+        return a_aggression >= kVeryAggressive || (a_aggression >= kAggressive && a_hostile && !a_lawful);
     }
 
     // What the plugin knows of a death when it happens.
@@ -61,8 +55,9 @@ namespace AhShitRim::Revive
         bool          cjHasPlayer = false;  // San Andreas had the player
         bool          byPlayer = false;     // the player killed them
         std::uint32_t id = 0;
-        int           aggression = 0;  // base
-        Reaction      reaction = Reaction::Neutral;  // to the player
+        int           aggression = 0;      // base
+        bool          hostile = false;     // Skyrim's IsHostileToActor(player)
+        bool          lawful = false;      // has a crime faction (a hold's people)
         bool          spared = false;      // essential, by its base, itself, a quest alias holding it, or before NOMERCY cleared it
         bool          killTarget = false;  // a running quest's shown objective points at an alias holding them (KillTarget)
     };
@@ -89,7 +84,7 @@ namespace AhShitRim::Revive
         if (a_kill.spared) {
             return Verdict::Back;
         }
-        if (HostileOnSight(a_kill.aggression, a_kill.reaction)) {
+        if (HostileOnSight(a_kill.aggression, a_kill.hostile, a_kill.lawful)) {
             return Verdict::Hostile;
         }
         return a_kill.killTarget ? Verdict::KillTarget : Verdict::Back;
@@ -158,6 +153,15 @@ namespace AhShitRim::Revive
 
     constexpr bool Completed(std::uint8_t a_state) { return a_state == 2 || a_state == 3; }  // kCompleted, kCompletedDisplayed
 
+    // Only a quest the player is in (one of its objectives shown at some point: any state but dormant) has deaths that
+    // move it on. Quests the player never started hold townsfolk too and set their stages when they die: a dialogue
+    // or scene quest with no objectives at all (Riverwood's intro scene, Hilde), or a dormant one (FreeformRiverwood01,
+    // Faendal, before anyone talked to him). Those aren't quest deaths, or the townsfolk would never come back.
+    inline bool Watched(const QuestMark& a_mark)
+    {
+        return std::any_of(a_mark.objectives.begin(), a_mark.objectives.end(), [](std::uint8_t a_state) { return a_state != 0; });
+    }
+
     // The deaths of the last kQuestWindow seconds, each with the quests holding them as they were then: a stage
     // set in one of those quests while the window is open, or a stage or a completed objective found when it
     // closes, and the death moved it on, so the dead stay dead. A quest that only stops (a scene or a radiant
@@ -172,10 +176,12 @@ namespace AhShitRim::Revive
             std::vector<QuestMark> quests;
         };
 
-        // a_id died at a_now (real seconds) held by a_quests. Nobody holding them: nothing to watch.
+        // a_id died at a_now (real seconds) held by a_quests. Only the quests with objectives are watched (Watched);
+        // none of those: nothing to watch.
         void Start(std::uint32_t a_id, float a_now, std::vector<QuestMark> a_quests)
         {
             Stop(a_id);
+            std::erase_if(a_quests, [](const QuestMark& a_mark) { return !Watched(a_mark); });
             if (!a_quests.empty()) {
                 _watches.push_back(Watch{ a_id, a_now + kQuestWindow, std::move(a_quests) });
             }

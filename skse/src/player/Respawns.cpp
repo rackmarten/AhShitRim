@@ -147,7 +147,8 @@ namespace AhShitRim::Respawns
             const auto* base = a_actor->GetActorBase();
             // the base's AI data, as the grudges read it (Police::ForgivesOf): two bits, 0 unaggressive to 3 frenzied
             kill.aggression = base ? (base->aiData.aggression1 ? 1 : 0) | (base->aiData.aggression2 ? 2 : 0) : 0;
-            kill.reaction = a_player ? static_cast<Revive::Reaction>(a_actor->GetFactionReaction(a_player)) : Revive::Reaction::Neutral;
+            kill.hostile = a_player && a_actor->IsHostileToActor(a_player);
+            kill.lawful = a_actor->GetCrimeFaction() != nullptr;
             bool       aliasEssential = false;
             const auto holders = Holders(a_actor, aliasEssential);
             out.quests = QuestsOf(holders);
@@ -365,18 +366,21 @@ namespace AhShitRim::Respawns
             if (judged.verdict != Revive::Verdict::Back) {
                 state.roster.Remove(a_seen.id);  // killed again after a quest made them matter
                 state.watch.Stop(a_seen.id);
-                SKSE::log::info("respawns: CJ killed {} ({:08X}, base {:08X}, aggression {}, reaction {}): {}{}", NameOf(actor), a_seen.id, a_seen.base, kill.aggression,
-                    static_cast<int>(kill.reaction), Revive::Why(judged.verdict), judged.target ? std::format(", {}", QuestName(judged.target)) : std::string());
+                SKSE::log::info("respawns: CJ killed {} ({:08X}, base {:08X}, aggression {}, {}, {}): {}{}", NameOf(actor), a_seen.id, a_seen.base, kill.aggression,
+                    kill.hostile ? "hostile" : "not hostile", kill.lawful ? "lawful" : "no crime faction", Revive::Why(judged.verdict),
+                    judged.target ? std::format(", {}", QuestName(judged.target)) : std::string());
                 return;
             }
             state.roster.Note(a_seen.id, a_seen.base, Now());
+            const auto marks = MarksOf(judged.quests);
+            const auto watched = kill.spared ? 0 : std::count_if(marks.begin(), marks.end(), Revive::Watched);
             if (kill.spared) {
                 state.watch.Stop(a_seen.id);  // essential: no quest wanted them dead
             } else {
-                state.watch.Start(a_seen.id, state.clock, MarksOf(judged.quests));
+                state.watch.Start(a_seen.id, state.clock, marks);  // only the quests the player is in (Revive::Watched)
             }
             SKSE::log::info("respawns: CJ killed {} ({:08X}, base {:08X}){}, back in a game hour{}", NameOf(actor), a_seen.id, a_seen.base, kill.spared ? ", essential" : "",
-                judged.quests.empty() ? "" : std::format(" unless one of the {} quests holding them moves on", judged.quests.size()));
+                watched == 0 ? "" : std::format(" unless one of the {} quests the player is in holding them moves on", watched));
         }
 
         void QuestDeath(std::uint32_t a_id, std::uint32_t a_quest, const char* a_how)
@@ -501,6 +505,18 @@ namespace AhShitRim::Respawns
     {
         const auto& dead = state.roster.Dead();
         return std::any_of(dead.begin(), dead.end(), [a_id](const Revive::Death& a_death) { return a_death.id == a_id; });
+    }
+
+    DebugJudged DebugJudge(RE::Actor* a_actor, RE::PlayerCharacter* a_player)
+    {
+        DebugJudged out;
+        const auto* base = a_actor->GetActorBase();
+        out.baseAggression = base ? (base->aiData.aggression1 ? 1 : 0) | (base->aiData.aggression2 ? 2 : 0) : 0;
+        out.aggression = static_cast<int>(a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAggression));
+        out.reaction = a_player ? static_cast<int>(a_actor->GetFactionReaction(a_player)) : 0;
+        out.hostile = a_player && a_actor->IsHostileToActor(a_player);
+        out.lawful = a_actor->GetCrimeFaction() != nullptr;
+        return out;
     }
 
     bool DebugHeld(std::uint32_t a_id) { return std::find(state.held.begin(), state.held.end(), a_id) != state.held.end(); }
