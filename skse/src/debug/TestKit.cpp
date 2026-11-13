@@ -8,6 +8,8 @@
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
 #include "hud/Overlay.h"
+#include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
 #include "player/Missions.h"
@@ -1126,6 +1128,47 @@ namespace AhShitRim::TestKit
                 calendar->gameHour->value = static_cast<float>(hour);
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
+
+            // San Andreas's zone and vehicle names and help box, and what became of Skyrim's HUD messages
+            // (hud/SkyrimMessages: counts since the game started, the last of each).
+            SkseTestKit::AddCommand("asr.hud", "",
+                "San Andreas's zone name, vehicle name and help box as drawn last frame (text, alpha 0 to 1, phase), and Skyrim's HUD messages "
+                "restyled or hidden so far (zones, helps, hidden, the last of each and the rule it went by)",
+                [](Call&) -> Json {
+                    const auto text = SaHud::DebugTexts();
+                    const auto counts = SkyrimMessages::DebugCounted();
+                    return JsonObject{ { "zone", text.zone }, { "zoneAlpha", Round(text.zoneAlpha) }, { "zonePhase", text.zonePhase },
+                        { "vehicle", text.vehicle }, { "vehicleAlpha", Round(text.vehicleAlpha) }, { "vehiclePhase", text.vehiclePhase },
+                        { "help", text.help }, { "helpAlpha", Round(text.helpAlpha) }, { "zones", counts.zones }, { "helps", counts.helps },
+                        { "hidden", counts.hidden }, { "lastZone", counts.lastZone }, { "lastHelp", counts.lastHelp },
+                        { "lastHidden", counts.lastHidden }, { "lastRule", counts.lastRule }, { "cj", PlayerSync::DebugOwned() } };
+                });
+
+            SkseTestKit::AddTask("asr.notify", "<text...>",
+                "Shows a Skyrim notification (Debug.Notification's way: SendHUDMessage::ShowHUDMessage, through Skyrim's HUD) and answers with what became of it: "
+                "hidden, help (San Andreas's help box) or kept (Skyrim's, when nothing took it within 3 s), and the rule it went by",
+                [](Call& a_call) -> Step {
+                    const auto text = a_call.Text("text");
+                    if (text.empty()) {
+                        throw Error("no text");
+                    }
+                    const auto before = SkyrimMessages::DebugCounted();
+                    RE::SendHUDMessage::ShowHUDMessage(text.c_str());
+                    a_call.DefaultTimeout(10.0);
+                    return [before](Call& a_call) -> std::optional<Json> {
+                        const auto now = SkyrimMessages::DebugCounted();
+                        if (now.hidden != before.hidden) {
+                            return JsonObject{ { "action", "hidden" }, { "text", now.lastHidden }, { "rule", now.lastRule } };
+                        }
+                        if (now.helps != before.helps) {
+                            return JsonObject{ { "action", "help" }, { "text", now.lastHelp }, { "rule", now.lastRule } };
+                        }
+                        if (a_call.Seconds() > 3.0) {
+                            return JsonObject{ { "action", "kept" } };
+                        }
+                        return std::nullopt;
+                    };
+                });
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit

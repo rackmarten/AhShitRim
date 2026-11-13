@@ -75,4 +75,12 @@ namespace AhShitRim::SaHud
 
     // The dev key (/ while San Andreas has the player): shows the next text style in turn.
     void NextDemo();
+
+    // For the test kit (asr.hud): the zone and vehicle names and the help box as drawn last frame.
+    struct DebugText
+    {
+        std::string zone, zonePhase, vehicle, vehiclePhase, help;
+        float       zoneAlpha = 0.0f, vehicleAlpha = 0.0f, helpAlpha = 0.0f;
+    };
+    DebugText DebugTexts();
 }

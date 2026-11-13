@@ -853,6 +853,25 @@ namespace AhShitRim::SaHud
 
     void ShowZoneName(std::string a_name) { state.names.SetZone(std::move(a_name)); }
 
+    DebugText DebugTexts()
+    {
+        const auto phase = [](HudNames::Phase a_phase) -> std::string {
+            switch (a_phase) {
+            case HudNames::Phase::Hidden: return "hidden";
+            case HudNames::Phase::FadeIn: return "fade in";
+            case HudNames::Phase::Shown: return "shown";
+            case HudNames::Phase::FadeOut: return "fade out";
+            case HudNames::Phase::Switch: return "switch";
+            }
+            return "?";
+        };
+        const auto& zone = state.names.Zone();
+        const auto& vehicle = state.names.Vehicle();
+        const float help = state.help.Alpha();
+        return { zone.printed, phase(zone.phase), vehicle.printed, phase(vehicle.phase), help > 0.0f ? state.help.text : std::string{}, zone.alpha,
+            vehicle.alpha, help };
+    }
+
     void ShowBigMessage(BigMessage a_message, float a_seconds)
     {
         const bool passed = a_message == BigMessage::MissionPassed || a_message == BigMessage::OddJobPassed;
