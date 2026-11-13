@@ -23,4 +23,22 @@ namespace AhShitRim::MuzzleFlash
 
     // Back to Skyrim's own player: no flash lasts.
     void Reset();
+
+    // The test kit (debug): hand a_hand's flash as last shown (shown: in the last frame drawn), its model's id
+    // (ModelView::Node finds it while shown) and the scene light shared by both hands.
+    struct DebugFlash
+    {
+        bool              shown = false;
+        float             left = 0.0f;  // seconds of it still to come
+        float             strength = 0.0f;
+        RE::NiPoint3      at;           // the muzzle it was put at, Skyrim's world
+        std::uint32_t     model = 0;
+        std::uint32_t     fired = 0;    // shots it has flashed for since the plugin loaded
+        RE::NiPointLight* light = nullptr;
+    };
+    DebugFlash Debug(std::uint32_t a_hand);
+
+    // The test kit (debug): while held, a flash that shows doesn't fade or run out (its seconds stop counting down), so a
+    // test can pause on it however long its pause takes to arrive. Let go by the next DebugHold(false) or Reset.
+    void DebugHold(bool a_hold);
 }

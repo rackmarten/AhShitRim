@@ -1,0 +1,18 @@
+// The hit test (v31): Skyrim's attacks on CJ's vehicle, nobody at the keys. CJ in a Sandking where the session is, a
+// giant and two guards set on him; their blows land on the car, not on CJ inside. scripts/hit-test.ps1 runs it, or
+// scripts/skytest.ps1 run scenarios/hits.json in a running session (scenarios/README.md).
+{
+  "name": "hits",
+  "steps": [
+    // Riverwood's road, wherever an earlier test left the player (Wasted wakes CJ at a temple), CJ on foot there.
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "CJ in a new Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "a giant and two guards on him for 90 s", "cmd": "asr.hits", "seconds": 90,
+      "expect": ["attackers == 3", "carLost > 0"] }
+  ]
+}
