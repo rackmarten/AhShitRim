@@ -12,8 +12,10 @@
 //  4. Lydia rides along in the car and gets out beside her door: not seated once CJ's get-out began
 //     (riders.0.seatedFrames), out from the car (maxAcross), no jump (maxStep).
 //  5. Two minutes' drive along the road: CJ's pelvis in the car's whole frame while he sits (seats.1.maxDeviation from
-//     where he sits most, maxStep frame to frame); a stutter drew him 21 units (0.3 m) back for a frame or two once a
-//     second. On the bike only maxStep: he leans with it.
+//     where he sits most, maxStep frame to frame); the stutter drew him 21 to 43 units back for a frame or two once a
+//     second. Within 15: when San Andreas's frames come over 50 ms late (on the test desktop, with other sessions
+//     building, about 70 times in the two minutes) the car and CJ hold together for two or three frames, and the frame
+//     they catch up on can have him up to 12 units back. On the bike only maxStep: he leans with it.
 // Reported, not judged: seats.N.getInHop, how far his body is off the seat in his first 8 frames in it. San Andreas
 // sends a frame or two with it 40 to 60 units off as it puts him from the door onto the seat (13 November 2026).
 // scripts/skytest.ps1 run scenarios/car-exit.json (scenarios/README.md). Limits in units (1 unit is 1.43 cm).
@@ -108,7 +110,7 @@
         "exits.length == 2", "exits.0.out == true", "exits.0.maxBack < 5", "exits.0.maxStep < 15",
         "exits.1.out == true", "exits.1.maxBack < 5", "exits.1.maxStep < 15", "exits.1.endAcross > 50",
         "exits.1.riders.length == 1", "exits.1.riders.0.seatedFrames == 0", "exits.1.riders.0.maxAcross > 50", "exits.1.riders.0.maxStep < 15",
-        "seats.length == 2", "seats.0.model == 468", "seats.0.maxStep < 5", "seats.1.model == 495", "seats.1.frames > 6500", "seats.1.maxDeviation < 8", "seats.1.maxStep < 5"
+        "seats.length == 2", "seats.0.model == 468", "seats.0.maxStep < 5", "seats.1.model == 495", "seats.1.frames > 6000", "seats.1.maxDeviation < 15", "seats.1.maxStep < 15"
       ] },
     { "label": "Skyrim's player fine", "cmd": "state", "ref": "player", "expect": ["dead == false"] }
   ]
