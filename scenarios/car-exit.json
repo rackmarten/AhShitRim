@@ -1,17 +1,21 @@
-// Getting on and off, in and out, riding and driving, with CJ's gun on his hand (the playtest's reports): asr.watch
-// records every frame as it's drawn, from the first get-on to the last get-out.
-//  1. The gun never floats: CJ holds an SMG (the Tec-9) as he gets on a Sanchez, rides it fast and gets off, then a
-//     pistol as he gets into a car (a Sandking), drives and gets out. Every frame the drawn gun's root against his drawn right hand's
-//     joint (gun.gripSpread: units above its usual distance, about 33 from the joint to the gun's root); shots paused on the moments his get-on and get-off begin, and a few frames in.
+// Getting on and off, in and out, riding and driving, with CJ's gun on his hand (the playtest's reports), on the road
+// below the Whiterun stables: asr.watch records every frame as it's drawn, from the first get-on to the last get-out.
+//  1. The gun never floats: CJ holds an SMG (the Tec-9) as he gets on a Sanchez, rides it down the road and gets off,
+//     then a pistol as he gets into a Sandking, drives and gets out. Every frame the drawn gun's root against his drawn
+//     right hand's joint (gun.gripSpread: units over its usual distance, about 33; a weapon switch's frames apart), and
+//     shots as his get-on and get-off begin and a few frames in. Never paused on those: San Andreas plays on through a
+//     pause in Skyrim, so the frames after one jump.
 //  2. The gun is drawn while he sits still on the bike (gun.missingStill: frames San Andreas has a gun in his hand and
 //     none is drawn while the vehicle stands), with a shot of it.
-//  3. Getting out looks like San Andreas: each get-out's pelvis, across the vehicle, never steps back towards the seat
-//     (exits.N.maxBack) nor jumps (maxStep), and ends beside the door (endAcross); shots through the car's get-out.
+//  3. Getting out looks like San Andreas: each get-out's pelvis, across the vehicle by its heading, never steps back
+//     towards the seat (exits.N.maxBack) nor jumps (maxStep), and ends beside the door (endAcross); shots of the car's.
 //  4. Lydia rides along in the car and gets out beside her door: not seated once CJ's get-out began
-//     (riders.0.seatedFrames), out across (endAcross), no jump (maxStep).
-//  5. Two minutes' drive along the road below the stables: CJ's pelvis in the car's frame while he sits (seats.1.maxDeviation from where
-//     he sits most, maxStep frame to frame); a stutter drew him 0.3 m (21 units) back for a frame. On the bike only
-//     maxStep: it leans, and the frame here is its heading.
+//     (riders.0.seatedFrames), out from the car (maxAcross), no jump (maxStep).
+//  5. Two minutes' drive along the road: CJ's pelvis in the car's whole frame while he sits (seats.1.maxDeviation from
+//     where he sits most, maxStep frame to frame); a stutter drew him 21 units (0.3 m) back for a frame or two once a
+//     second. On the bike only maxStep: he leans with it.
+// Reported, not judged: seats.N.getInHop, how far his body is off the seat in his first 8 frames in it. San Andreas
+// sends a frame or two with it 40 to 60 units off as it puts him from the door onto the seat (13 November 2026).
 // scripts/skytest.ps1 run scenarios/car-exit.json (scenarios/README.md). Limits in units (1 unit is 1.43 cm).
 {
   "name": "car-exit",
@@ -52,7 +56,7 @@
     { "label": "still on the bike, the gun drawn", "cmd": "asr.pose", "expect": ["in == true", "inHand == true", "gunDrawn == true"] },
     { "cmd": "screenshot", "name": "bike-still", "settle": 1 },
     { "cmd": "screenshot", "name": "bike-still-gun", "camera": "orbit asr.weapon: yaw=90 distance=90 pitch=10" },
-    { "label": "rides it down to the main road and west along it", "cmd": "asr.drive", "seconds": 40, "speed": 15,
+    { "label": "rides it down to the main road and west along it", "cmd": "asr.drive", "seconds": 40, "speed": 12,
       "points": "17521,-13700; 15073,-13541; 12625,-13082; 10177,-13082", "expect": ["fastest > 12", "arrived == true", "stopped == true"] },
     { "cmd": "camera", "mode": "orbit", "at": "player", "yaw": 90, "distance": 260, "pitch": 10 },
     "wait frames=10",

@@ -1372,6 +1372,8 @@ namespace AhShitRim::TestKit
             }
         }
 
+        constexpr std::size_t kSettleFrames = 8;  // a seat's first frames, judged apart
+
         // What a watch says: the gun (missing: frames San Andreas has a gun in his hand and none is drawn; its grip, the
         // gun from his hand's joint), CJ in his seat while he rides (his pelvis from where it sits most, frame to frame),
         // each get-out (CJ's pelvis across the vehicle, frame to frame, back towards the seat) and each rider's.
@@ -1458,12 +1460,19 @@ namespace AhShitRim::TestKit
                     return a_v[a_v.size() / 2];
                 };
                 const RE::NiPoint3 mid{ median(xs), median(ys), median(zs) };
-                float              dev = 0.0f, step = 0.0f, fast = 0.0f;
+                float              dev = 0.0f, step = 0.0f, fast = 0.0f, settle = 0.0f;
                 int                frames = 0;
                 const WatchSample* last = nullptr;
                 for (std::size_t k = i; k < end; k++) {
                     const auto& w = s[k];
                     if (w.getting || !w.haveSeat) {
+                        last = nullptr;
+                        continue;
+                    }
+                    // His first frames in it, apart: San Andreas puts him from the door onto the seat, and his body can be
+                    // off it for a few frames then (getInHop, from where he sits most).
+                    if (k < i + kSettleFrames) {
+                        settle = (std::max)(settle, w.pelvis.GetDistance(mid));
                         last = nullptr;
                         continue;
                     }
@@ -1476,7 +1485,7 @@ namespace AhShitRim::TestKit
                     last = &w;
                 }
                 seats.emplace_back(JsonObject{ { "model", model }, { "frames", frames }, { "fastest", Round(fast, 0.1) }, { "seat", Point(mid) },
-                    { "maxDeviation", Round(dev, 0.1) }, { "maxStep", Round(step, 0.1) } });
+                    { "maxDeviation", Round(dev, 0.1) }, { "maxStep", Round(step, 0.1) }, { "getInHop", Round(settle, 0.1) } });
                 i = end;
             }
             // Get-outs: from the first frame he's in and getting out (after one in and settled) until 1.5 s after he's out.
