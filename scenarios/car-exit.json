@@ -71,8 +71,8 @@
 
     { "label": "away from the bike, so the car is the one he gets into", "cmd": "asr.ahead", "distance": 1000 },
     { "label": "the pistol in his hand", "cmd": "asr.hold", "weapon": 22, "expect": "weapon == 22" },
-    { "label": "Lydia with him", "cmd": "asr.follower", "expect": "ref exists" },
     { "label": "a Sandking (off-road: the tundra round the stables)", "cmd": "asr.spawn", "model": 495, "expect": "model == 495" },
+    { "label": "Lydia with him (after the Sandking: standing in front of him she takes its spot)", "cmd": "asr.follower", "expect": "ref exists" },
     { "cmd": "camera", "mode": "orbit", "at": "player", "yaw": 90, "distance": 300, "pitch": 10 },
     "wait frames=10",
     { "label": "his get-in begins", "cmd": "asr.enter", "until": "start", "expect": "gettingIn == true" },
