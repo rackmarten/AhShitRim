@@ -1133,15 +1133,18 @@ namespace AhShitRim::TestKit
             // (hud/SkyrimMessages: counts since the game started, the last of each).
             SkseTestKit::AddCommand("asr.hud", "",
                 "San Andreas's zone name, vehicle name and help box as drawn last frame (text, alpha 0 to 1, phase), and Skyrim's HUD messages "
-                "restyled or hidden so far (zones, helps, hidden, the last of each and the rule it went by)",
+                "restyled or hidden so far (zones, helps, hidden, the last of each and the rule it went by), and the player's Skyrim location",
                 [](Call&) -> Json {
                     const auto text = SaHud::DebugTexts();
                     const auto counts = SkyrimMessages::DebugCounted();
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    auto*      location = player ? player->GetCurrentLocation() : nullptr;
+                    std::string where = location && location->GetName() ? location->GetName() : "";
                     return JsonObject{ { "zone", text.zone }, { "zoneAlpha", Round(text.zoneAlpha) }, { "zonePhase", text.zonePhase },
                         { "vehicle", text.vehicle }, { "vehicleAlpha", Round(text.vehicleAlpha) }, { "vehiclePhase", text.vehiclePhase },
                         { "help", text.help }, { "helpAlpha", Round(text.helpAlpha) }, { "zones", counts.zones }, { "helps", counts.helps },
                         { "hidden", counts.hidden }, { "lastZone", counts.lastZone }, { "lastHelp", counts.lastHelp },
-                        { "lastHidden", counts.lastHidden }, { "lastRule", counts.lastRule }, { "cj", PlayerSync::DebugOwned() } };
+                        { "lastHidden", counts.lastHidden }, { "lastRule", counts.lastRule }, { "location", where }, { "cj", PlayerSync::DebugOwned() } };
                 });
 
             SkseTestKit::AddTask("asr.notify", "<text...>",
