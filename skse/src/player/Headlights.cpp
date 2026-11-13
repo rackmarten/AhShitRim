@@ -2,6 +2,7 @@
 
 #include "Ini.h"
 #include "body/ModelView.h"
+#include "body/SceneLights.h"
 #include "vehicle_hits.h"
 #include "vehicle_lights.h"
 
@@ -71,16 +72,16 @@ namespace AhShitRim::Headlights
             return root ? root->parent : nullptr;
         }
 
-        // The point light for one end of a vehicle, made the first time it burns (as the muzzle flash's).
+        // The point light for one end of a vehicle, made the first time it burns (as the muzzle flash's), and kept among
+        // the renderer's lights (a load door drops them).
         RE::NiPointLight* Ensure(std::uint32_t a_slot, int a_end)
         {
             auto& light = state.lights[a_slot][a_end];
             if (light || state.failed) {
-                return light.get();
+                return light && SceneLights::Keep(light.get()) ? light.get() : nullptr;
             }
             auto* scene = Scene();
-            auto* shadowScene = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0];
-            if (!scene || !shadowScene) {
+            if (!scene) {
                 return nullptr;  // not up yet: tried again next frame
             }
             auto* made = RE::NiPointLight::Create();
@@ -95,16 +96,7 @@ namespace AhShitRim::Headlights
             data.fade = 0.0f;
             light.reset(made);
             scene->AttachChild(made, true);
-            RE::ShadowSceneNode::LIGHT_CREATE_PARAMS params{};
-            params.dynamic = true;
-            params.shadowLight = false;
-            params.portalStrict = false;
-            params.affectLand = true;
-            params.affectWater = true;
-            params.neverFades = true;
-            params.falloff = 1.0f;
-            shadowScene->AddLight(made, params);
-            return made;
+            return SceneLights::Keep(made) ? made : nullptr;
         }
 
         void Out(std::uint32_t a_slot)
