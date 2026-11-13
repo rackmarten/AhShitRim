@@ -1,7 +1,7 @@
 // The wait key while CJ has the player: T is a letter of the cheat codes there, so / opens Skyrim's wait menu instead.
 // Keys go through Skyrim's own input (asr.key: its input device manager's events, as the keyboard sends them), so
 // Skyrim's menu open handler and AhShitRim's input sink both see them. On foot / opens the wait menu (a shot of it, the
-// HUD on); T doesn't, and still types cheats (WANRLTW on and off again); in a vehicle / says to get out first.
+// HUD on); T doesn't, and still types cheats (WANRLTW, twice); in a vehicle / says to get out first.
 // scripts/skytest.ps1 run scenarios/wait-key.json (scenarios/README.md).
 {
   "name": "wait-key",
@@ -16,14 +16,20 @@
 
     { "label": "on foot, / opens Skyrim's wait menu", "cmd": "asr.key", "keys": "/", "close": false, "expect": ["waitMenu == true", "open == true", "cj == true"] },
     { "cmd": "screenshot", "name": "wait-menu", "hud": true },
-    { "label": "Escape closes it", "cmd": "asr.key", "keys": "dik:0x01", "frames": 10, "close": false },
+    // asr.key's own close (an Escape sent through the input device manager doesn't reach the menu).
+    { "label": "the menu closed again", "cmd": "asr.key", "keys": "dik:0x58", "frames": 10 },
     { "label": "the menu is gone, CJ still has the player", "cmd": "asr.key", "keys": "dik:0x58", "frames": 5, "close": false, "expect": ["open == false", "cj == true"] },
 
     { "label": "T doesn't open the wait menu", "cmd": "asr.key", "keys": "T", "expect": ["waitMenu == false", "cj == true"] },
-    { "label": "T types cheats: WANRLTW on", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5 },
-    { "label": "and off again", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5, "expect": "waitMenu == false" },
-    { "label": "both typed, T among the letters (the log names it by its other code, FULLCLIP)", "cmd": "log", "lines": 2, "match": "typed: infinite ammo",
-      "expect": ["lines.length == 2", "lines.0 matches \" on\\b\"", "lines.1 matches \" off\\b\""] },
+    // Each typing must be followed in the log by the cheat (logged by its other code, FULLCLIP), right after that asr.key
+    // request (the kit logs each request). Whether it was on before isn't known, so either way counts. The pattern is
+    // written so the log request's own line doesn't match it.
+    { "label": "T types cheats: WANRLTW", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5, "expect": "waitMenu == false" },
+    { "label": "the cheat right after those keys", "cmd": "log", "lines": 2, "match": "chea[t]s: FULLCLIP|\"cmd\":\"asr\\.ke[y]\"",
+      "expect": ["lines.length == 2", "lines.0 contains WANRLTW", "lines.1 matches infinite ammo, no reloading (on|off)"] },
+    { "label": "and again, toggling it back", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5, "expect": "waitMenu == false" },
+    { "label": "the cheat again right after those keys", "cmd": "log", "lines": 3, "match": "chea[t]s: FULLCLIP|\"cmd\":\"asr\\.ke[y]\"",
+      "expect": ["lines.length == 3", "lines.0 matches infinite ammo", "lines.1 contains WANRLTW", "lines.2 matches infinite ammo, no reloading (on|off)"] },
 
     { "label": "CJ in a Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": "driven == true" },
     { "cmd": "wait", "seconds": 1 },
