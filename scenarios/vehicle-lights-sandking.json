@@ -17,7 +17,9 @@
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "the lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
-    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    { "label": "night (23:00), the clock nearly still, the sky clear: set through the game, not held by scene (another client's scene restore can't undo it)", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "console", "command": "set timescale to 1" },
+    { "cmd": "console", "command": "fw 81a" },
     "wait frames=45",
     { "label": "CJ in a Sandking, its engine running", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
     { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
@@ -93,6 +95,6 @@
     "wait frames=4",
     { "label": "San Andreas says he brakes", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500, "expect": "at.details.lamps.braking == true" },
     { "label": "foot off the pedals", "cmd": "asr.pedals" },
-    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+    { "label": "the clock running again", "cmd": "console", "command": "set timescale to 20" }
   ]
 }

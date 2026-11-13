@@ -2,7 +2,7 @@
 // operator saw at night (lamps that didn't look lit, tail lights casting almost nothing, brake lights that never came
 // on). Its four lamps burn, each with its corona; its two scene lights are among the renderer's. Then pairs of shots,
 // each one with the lamps as San Andreas has them and one with asr.lamps off (or braking against not braking), taken
-// with the clock and the weather held and the car standing, a few frames apart (unpaused: the lamps are drawn by the
+// at 23:00 with the clock nearly still (timescale 1), the sky clear (fw 81a) and the car standing, a few frames apart (unpaused: the lamps are drawn by the
 // frame), compared region by region: the tail lamps glow (lens and halo) and each lights the road behind it red; braking
 // makes them and that red patch brighter; the headlights glow white and light the road ahead. The real brake comes
 // after: CJ drives off and brakes, and San Andreas says so. By day the lamps are out; blown up, they're out too. Last,
@@ -22,7 +22,9 @@
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "the lamps as San Andreas has them (a run that stopped halfway may have left them off)", "cmd": "asr.lamps", "state": "on" },
-    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    { "label": "night (23:00), the clock nearly still, the sky clear: set through the game, not held by scene (another client's scene restore can't undo it)", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "console", "command": "set timescale to 1" },
+    { "cmd": "console", "command": "fw 81a" },
     "wait frames=45",
     { "label": "CJ in a ZR-350, its engine running", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },
     { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
@@ -112,14 +114,14 @@
     { "label": "foot off the pedals", "cmd": "asr.pedals" },
     { "cmd": "wait", "seconds": 2 },
 
-    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "noon", "cmd": "asr.night", "hour": 12 },
     "wait frames=60",
     { "label": "San Andreas switches them off", "cmd": "wait", "seconds": 2 },
     { "label": "by day no lamp burns, both lights out", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
       "expect": ["at.details.lamps.litCount == 0", "at.details.lights.0.fade == 0", "at.details.lights.1.fade == 0"] },
     { "cmd": "screenshot", "name": "day-behind", "camera": "orbit asr.vehicle: yaw=0 distance=600 pitch=15" },
 
-    { "label": "night again", "cmd": "scene", "presets": "night clear" },
+    { "label": "night again", "cmd": "asr.night", "hour": 23 },
     "wait frames=60",
     { "cmd": "wait", "seconds": 2 },
     { "label": "lit again", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500, "expect": "at.details.lamps.litCount == 4" },
@@ -139,7 +141,9 @@
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
-    { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
+    { "label": "night (23:00), the clock nearly still, the sky clear: set through the game, not held by scene (another client's scene restore can't undo it)", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "console", "command": "set timescale to 1" },
+    { "cmd": "console", "command": "fw 81a" },
     "wait frames=45",
     { "label": "CJ in another ZR-350", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },
     { "cmd": "wait", "seconds": 2 },
@@ -149,6 +153,6 @@
       "expect": ["at.details.lamps.litCount == 4", "lights.0.on == true", "lights.1.on == true"] },
     { "cmd": "screenshot", "name": "after-interior-behind" },
     { "cmd": "camera", "mode": "player" },
-    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+    { "label": "the clock running again", "cmd": "console", "command": "set timescale to 20" }
   ]
 }
