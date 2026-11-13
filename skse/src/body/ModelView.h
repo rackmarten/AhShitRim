@@ -25,6 +25,9 @@ namespace AhShitRim::ModelView
     // Whether model a_model is built and ready to draw.
     bool Has(std::uint32_t a_model);
 
+    // The node model a_model is drawn under while it's shown (the test kit's probes look inside it), else nullptr.
+    RE::NiNode* Node(std::uint32_t a_model);
+
     // Draws model a_pose.model posed by a_pose with its origin (CJ's feet, a vehicle's position) at
     // a_origin (Skyrim world units), this frame, a_scale times its size (v23: a pickup's twice). False when that model
     // isn't built.

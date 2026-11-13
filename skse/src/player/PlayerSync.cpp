@@ -88,9 +88,10 @@ namespace AhShitRim::PlayerSync
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
             struct Drawn
             {
-                bool         on = false;
-                RE::NiPoint3 position;
-                float        heading = 0.0f;
+                bool          on = false;
+                RE::NiPoint3  position;
+                float         heading = 0.0f;
+                std::uint32_t model = 0;
             };
             Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
@@ -490,7 +491,7 @@ namespace AhShitRim::PlayerSync
                     const float* q = pose.vehicleFrame.rotation;
                     const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
                     const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
-                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY) };
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
@@ -1567,13 +1568,16 @@ namespace AhShitRim::PlayerSync
 
     std::uint32_t DebugHandover() { return state.handover; }
 
-    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading)
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
     {
         if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
             return false;
         }
         a_position = state.vehiclesDrawn[a_slot].position;
         a_heading = state.vehiclesDrawn[a_slot].heading;
+        if (a_model) {
+            *a_model = state.vehiclesDrawn[a_slot].model;
+        }
         return true;
     }
 

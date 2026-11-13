@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - For developers: test sessions (`scripts/skytest.ps1`, docs/DEV_SETUP.md "Test sessions"). Skyrim starts hidden and never focused, straight into Riverwood with CJ there or into a save, with San Andreas beside it, in about 20 s, through the skse-test-kit submodule. Dev builds only: a release never has it.
 - For developers: a test session takes commands while it runs (`scripts/skytest.ps1 session`, `cmd`, `run`): the kit's (state, console, wait, pause, exact steps...) and AhShitRim's `asr.cj`, `asr.spawn`, `asr.give`, `asr.night` and the `asr.track` scenario. `scenarios/test-kit-smoke.json` checks them.
+- For developers: the test kit's probes and recorder see San Andreas's vehicles: `asr.vehicle:` gives the kit the 3D the vehicle is drawn under and its slot and model, so `node`, `probe`, `project`, `pixels`, `ab` and `record` work on it.
 
 ### Fixed
 

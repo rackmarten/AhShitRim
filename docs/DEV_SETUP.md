@@ -186,6 +186,11 @@ never need it). To use it:
    Skyrim's unless `-Hud`. Named shot sets are in `shots/`: `scripts/skytest.ps1 shots` lists them,
    `scripts/skytest.ps1 shots zr350` (a ZR-350 by day and at night, from behind, beside and above) writes
    `out/shots/zr350/`.
+8. Measure it: the kit's probes (its `docs/COMMANDS.md`, "Probes") take `asr.vehicle:` too, with the 3D ModelView draws
+   the vehicle under: `cmd node asr.vehicle:` lists its shapes, `cmd probe effects asr.vehicle:` its glowing ones,
+   `cmd probe lights asr.vehicle: radius=600` the lights round it, and `offset=<forward>,<right>,<up>` points at a part
+   of it in `project`, `pixels`, `compare` and `ab` (`at=asr.vehicle: offset=-200,0,40` is about the ZR-350's back).
+   `record start player,asr.vehicle:` records it as it moves. The answers carry its `details` (slot, model).
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's

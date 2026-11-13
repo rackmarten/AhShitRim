@@ -2,6 +2,7 @@
 #include "debug/TestKit.h"
 
 #include "Ini.h"
+#include "body/ModelView.h"
 #include "hud/Overlay.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
@@ -253,7 +254,8 @@ namespace AhShitRim::TestKit
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit
-            // can't find them or their heading itself.
+            // can't find them or their heading itself. Its root is the node ModelView draws it under, so the kit's node
+            // and probe commands see its parts and shapes.
             SkseTestKit::AddTarget("asr.vehicle", "[slot|driven|last]",
                 "A San Andreas vehicle where it's drawn, facing its way: a slot (asr.spawn answers it), the one CJ drives, or (the default) "
                 "the one asr.spawn made last",
@@ -283,12 +285,14 @@ namespace AhShitRim::TestKit
                         }
                         slot = number;
                     }
-                    RE::NiPoint3 position;
-                    float        heading = 0.0f;
-                    if (!PlayerSync::DebugVehicle(*slot, position, heading)) {
+                    RE::NiPoint3  position;
+                    float         heading = 0.0f;
+                    std::uint32_t model = 0;
+                    if (!PlayerSync::DebugVehicle(*slot, position, heading, &model)) {
                         throw Error(std::format("vehicle slot {} isn't drawn (asr.cj and asr.spawn first)", *slot));
                     }
-                    return SkseTestKit::Place{ position.x, position.y, position.z, heading };
+                    return SkseTestKit::Place{ .x = position.x, .y = position.y, .z = position.z, .heading = heading, .root = ModelView::Node(model),
+                        .details = JsonObject{ { "slot", *slot }, { "model", std::format("{:08X}", model) } } };
                 });
 
             // A scenario: a row a frame, for skytest run's CSV.

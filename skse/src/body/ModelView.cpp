@@ -542,6 +542,12 @@ namespace AhShitRim::ModelView
         return Find(a_model) != nullptr;
     }
 
+    RE::NiNode* Node(std::uint32_t a_model)
+    {
+        auto* built = Find(a_model);
+        return built && built->shown ? built->node.get() : nullptr;
+    }
+
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale)
     {
         auto* built = Find(a_pose.model);
