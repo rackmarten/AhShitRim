@@ -58,7 +58,8 @@ namespace AhShitRim::CoronaModel
         model.kind = Protocol::kSkinModelVehicle;
         model.boneIds = { 0, 1, 2, 3 };
         const std::uint8_t white[3] = { 255, 250, 225 };  // San Andreas's headlight corona, a warm white
-        const std::uint8_t red[3] = { 255, 20, 10 };
+        const std::uint8_t red[3] = { 255, 6, 3 };  // nearly pure: the lamp's glow (6, 12 braking) multiplies it, and more
+                                                    // green would turn the halo orange
         model.textures.push_back({ kTextureSize, kTextureSize, Texture(white) });
         model.textures.push_back({ kTextureSize, kTextureSize, Texture(red) });
         for (std::uint32_t lamp = 0; lamp < kLamps; ++lamp) {

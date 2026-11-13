@@ -189,6 +189,12 @@ namespace AhShitRim::TestKit
                 }
                 if (g_braking) {
                     a_pose.lights.state = static_cast<std::uint8_t>(*g_braking ? (a_pose.lights.state | Protocol::kLightBraking) : (a_pose.lights.state & ~Protocol::kLightBraking));
+                    // The tail lamps burn for the brake by day too (VehicleLights::Lit). Both bits: a bike's one tail light
+                    // sits on its middle line, where the mirrored one falls too.
+                    const bool rear = a_pose.lights.rear[0] != 0 || a_pose.lights.rear[1] != 0 || a_pose.lights.rear[2] != 0;
+                    if (*g_braking && rear && !g_lampsOff && (a_pose.flags & Protocol::kBodyWrecked) == 0) {
+                        a_pose.lights.lit |= static_cast<std::uint8_t>(Protocol::kLightRearRight | Protocol::kLightRearLeft);
+                    }
                 }
             }
         }
@@ -510,8 +516,9 @@ namespace AhShitRim::TestKit
                     return out;
                 });
 
-            SkseTestKit::AddCommand("asr.pedals", "[gas=<bool>] [brake=<bool>] [handbrake=<bool>] [steer=<-1..1>]",
-                "Holds CJ's vehicle controls (W, S, Space, the stick sideways) until the next asr.pedals; with none of them it lets go",
+            SkseTestKit::AddCommand("asr.pedals", "[gas=<bool>] [brake=<bool>] [handbrake=<bool>] [steer=<-1..1>] [seconds=<s>]",
+                "Holds CJ's vehicle controls (W, S, Space, the stick sideways) for seconds (10, at most 30) or until the next asr.pedals; "
+                "with none of them it lets go",
                 [](Call& a_call) -> Json {
                     RequireCj();
                     std::uint32_t buttons = 0;
@@ -519,12 +526,13 @@ namespace AhShitRim::TestKit
                     buttons |= a_call.Flag("brake", false) ? Protocol::kButtonBrake : 0;
                     buttons |= a_call.Flag("handbrake", false) ? Protocol::kButtonHandbrake : 0;
                     const float steer = std::clamp(static_cast<float>(a_call.Number("steer", 0.0)), -1.0f, 1.0f);
+                    const auto  hold = std::chrono::milliseconds(static_cast<long long>(std::clamp(a_call.Number("seconds", 10.0), 0.1, 30.0) * 1000.0));
                     // moveY with W and S as Skyrim's keys give it: forward for W, back for S, nothing for both.
                     const float move = ((buttons & Protocol::kButtonAccelerate) ? 1.0f : 0.0f) - ((buttons & Protocol::kButtonBrake) ? 1.0f : 0.0f);
                     if (buttons == 0 && steer == 0.0f) {
                         PlayerSync::DebugHold(std::nullopt);
                     } else {
-                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = steer, .moveY = move, .buttons = buttons });
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = steer, .moveY = move, .buttons = buttons }, hold);
                     }
                     return JsonObject{ { "gas", (buttons & Protocol::kButtonAccelerate) != 0 }, { "brake", (buttons & Protocol::kButtonBrake) != 0 },
                         { "handbrake", (buttons & Protocol::kButtonHandbrake) != 0 }, { "steer", steer } };

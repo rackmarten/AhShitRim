@@ -186,7 +186,7 @@ never need it). To use it:
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
    | `asr.lamps <on\|off\|brake\|nobrake>` | every vehicle drawn and lit as if its lamps were out (`off`), or its driver braked (`brake`) or didn't (`nobrake`), for A/B shots; `on` gives San Andreas's back (needs the headlights, v36) | `asr.lamps brake` |
    | `asr.lamptune [key] [value]` | sets one of `AhShitRim.ini`'s `[Headlights]` values (metres for the distances) until the game closes, for trying values; answers them all | `asr.lamptune Intensity 6` |
-   | `asr.pedals [gas=] [brake=] [handbrake=] [steer=]` | holds CJ's vehicle controls (W, S, Space, the stick sideways) until the next `asr.pedals`; none of them lets go | `asr.pedals brake=true` |
+   | `asr.pedals [gas=] [brake=] [handbrake=] [steer=] [seconds=]` | holds CJ's vehicle controls (W, S, Space, the stick sideways) for `seconds` (10, at most 30) or until the next `asr.pedals`; none of them lets go | `asr.pedals brake=true` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
 

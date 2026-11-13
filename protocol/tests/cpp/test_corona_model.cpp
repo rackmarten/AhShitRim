@@ -63,7 +63,7 @@ TEST_CASE("coronas: a quad per lamp, each a lamp's mesh on a bone of its own, cl
     CHECK(pixel(0, 0)[3] == 0);
     CHECK(pixel(32, 32)[3] == 255);
     CHECK(pixel(32, 32)[1] > 200);
-    CHECK(pixel(32, 44)[0] > pixel(32, 44)[1] * 3);
+    CHECK(pixel(32, 44)[0] > pixel(32, 44)[1] * 20);  // red out from the middle, not orange once it glows
 }
 
 TEST_CASE("coronas: each sits just out from its lamp, the left ones mirrored, and faces the camera")
