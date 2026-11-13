@@ -1,13 +1,112 @@
-// Parked vehicles (v36, protocol/cpp/parked.h): only bicycles, motorbikes and the quad wait parked. In Riverwood a BMX
-// turns up by the road once CJ is there (the feature works on this build), and on the road below Fort Greymoor, where
-// round 2's Rhino stood and blocked it, nothing does. scripts/skytest.ps1 run scenarios/parked.json
-// (scenarios/README.md). San Andreas's log says what it parked ("vehicle: BMX (481) parked at spot 20 (Riverwood)").
+// Parked vehicles (v36, protocol/cpp/parked.h): only bicycles, motorbikes and the quad wait parked. At each of the five
+// stables a Sanchez, in Riverwood a BMX by the road, and on the road below Fort Greymoor, where round 2's Rhino stood and
+// blocked it, nothing. scripts/skytest.ps1 run scenarios/parked.json (scenarios/README.md). San Andreas's log says what it
+// parked ("vehicle: SANCHEZ (468) parked at spot 1 (the Whiterun stables)").
 //
-// The limits: within 50 m of Riverwood's marker (the BMX's spot is 11 m from it) at least one vehicle 12 s after the
-// handover (the BMX; nothing else is there); within 160 m (the drop radius) of the old Rhino spot none, 12 s after.
+// `asr.vehicles` answers every vehicle drawn: health (1000 new), wrecked, burning, smoking (under 650: something damaged
+// it), up (1 upright) and above (how far its box's bottom is over Skyrim's ground there, units). The limits at each stable
+// (CJ handed over there as on the road below the Whiterun stables, where one once caught fire and blew up on its own 19 s on)
+// and in Riverwood:
+//   health > 990, not wrecked, burning or smoking ... untouched
+//   up > 0.9 ......................................... upright (a bike on its side stand leans a few degrees)
+//   above within -15 and 25 .......................... on the ground: wheels touching it, not sunk in nor floating (35 cm)
+// looked at 10, 30 and 60 s after it was parked at the Whiterun stables, 10 s after at the other four, 12 s after in Riverwood;
+// each with a screenshot. Within 50 m of Riverwood's marker (the BMX's spot is 11 m from it) at least one vehicle; within
+// 160 m (the drop radius) of the old Rhino spot none, 12 s after the handover.
 {
   "name": "parked",
+  "continueOnFail": true,
   "steps": [
+    // ---- Whiterun stables
+    {"cmd": "console", "command": "cow Tamriel 4 -3", "label": "to Whiterun stables"},
+    "wait seconds=8",
+    {"cmd": "asr.cj", "on": false},
+    {"cmd": "console", "command": "player.setpos x 17521"},
+    {"cmd": "console", "command": "player.setpos y -11196"},
+    {"cmd": "console", "command": "player.setpos z -4690"},
+    "wait seconds=2",
+    {"cmd": "asr.cj", "expect": "cj == true"},
+    {"cmd": "scene", "presets": "day clear"},
+    "wait seconds=10",
+    {"cmd": "asr.vehicles", "label": "Whiterun stables 10 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Whiterun-stables-10-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=20",
+    {"cmd": "asr.vehicles", "label": "Whiterun stables 30 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Whiterun-stables-30-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=30",
+    {"cmd": "asr.vehicles", "label": "Whiterun stables 60 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Whiterun-stables-60-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    
+    // ---- Solitude stables
+    {"cmd": "console", "command": "cow Tamriel -18 24", "label": "to Solitude stables"},
+    "wait seconds=8",
+    {"cmd": "asr.cj", "on": false},
+    {"cmd": "console", "command": "player.setpos x -73700"},
+    {"cmd": "console", "command": "player.setpos y 98500"},
+    {"cmd": "console", "command": "player.setpos z -11190"},
+    "wait seconds=2",
+    {"cmd": "asr.cj", "expect": "cj == true"},
+    {"cmd": "scene", "presets": "day clear"},
+    "wait seconds=10",
+    {"cmd": "asr.vehicles", "label": "Solitude stables 10 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Solitude-stables-10-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=20",
+    {"cmd": "asr.vehicles", "label": "Solitude stables 30 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Solitude-stables-30-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    
+    // ---- Windhelm stables
+    {"cmd": "console", "command": "cow Tamriel 33 6", "label": "to Windhelm stables"},
+    "wait seconds=8",
+    {"cmd": "asr.cj", "on": false},
+    {"cmd": "console", "command": "player.setpos x 136900"},
+    {"cmd": "console", "command": "player.setpos y 25100"},
+    {"cmd": "console", "command": "player.setpos z -12780"},
+    "wait seconds=2",
+    {"cmd": "asr.cj", "expect": "cj == true"},
+    {"cmd": "scene", "presets": "day clear"},
+    "wait seconds=10",
+    {"cmd": "asr.vehicles", "label": "Windhelm stables 10 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Windhelm-stables-10-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=20",
+    {"cmd": "asr.vehicles", "label": "Windhelm stables 30 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Windhelm-stables-30-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    
+    // ---- Riften stables
+    {"cmd": "console", "command": "cow Tamriel 42 -23", "label": "to Riften stables"},
+    "wait seconds=8",
+    {"cmd": "asr.cj", "on": false},
+    {"cmd": "console", "command": "player.setpos x 173450"},
+    {"cmd": "console", "command": "player.setpos y -91450"},
+    {"cmd": "console", "command": "player.setpos z 11140"},
+    "wait seconds=2",
+    {"cmd": "asr.cj", "expect": "cj == true"},
+    {"cmd": "scene", "presets": "day clear"},
+    "wait seconds=10",
+    {"cmd": "asr.vehicles", "label": "Riften stables 10 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Riften-stables-10-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=20",
+    {"cmd": "asr.vehicles", "label": "Riften stables 30 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Riften-stables-30-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    
+    // ---- Markarth stables
+    {"cmd": "console", "command": "cow Tamriel -42 1", "label": "to Markarth stables"},
+    "wait seconds=8",
+    {"cmd": "asr.cj", "on": false},
+    {"cmd": "console", "command": "player.setpos x -169500"},
+    {"cmd": "console", "command": "player.setpos y 5650"},
+    {"cmd": "console", "command": "player.setpos z -4050"},
+    "wait seconds=2",
+    {"cmd": "asr.cj", "expect": "cj == true"},
+    {"cmd": "scene", "presets": "day clear"},
+    "wait seconds=10",
+    {"cmd": "asr.vehicles", "label": "Markarth stables 10 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Markarth-stables-10-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    "wait seconds=20",
+    {"cmd": "asr.vehicles", "label": "Markarth stables 30 s: whole, upright, on the ground", "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"]},
+    {"cmd": "screenshot", "name": "Markarth-stables-30-s", "camera": "orbit asr.vehicle:0 yaw=90 distance=400 pitch=20"},
+    
+
+    // ---- Riverwood's BMX and the road below Fort Greymoor
     { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
     { "cmd": "wait", "seconds": 8 },
     { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
@@ -19,7 +118,7 @@
     { "cmd": "wait", "seconds": 4 },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
     { "label": "San Andreas parks Riverwood's BMX", "cmd": "wait", "seconds": 12 },
-    { "label": "a vehicle parked within 50 m (the BMX)", "cmd": "asr.vehicles", "within": 3500, "expect": ["count >= 1"] },
+    { "label": "the BMX parked within 50 m: whole, upright, on the ground", "cmd": "asr.vehicles", "within": 3500, "expect": ["count >= 1", "vehicles.0.wrecked == false", "vehicles.0.burning == false", "vehicles.0.smoking == false", "vehicles.0.health > 990", "vehicles.0.up > 0.9", "vehicles.0.above >= -15", "vehicles.0.above <= 25"] },
     { "label": "from above", "cmd": "camera", "mode": "top", "at": "player", "distance": 2500 },
     "wait frames=10",
     { "cmd": "screenshot", "name": "riverwood" },

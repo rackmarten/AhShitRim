@@ -158,6 +158,8 @@ namespace AhShitRim::TestKit
             bool               on = false;
             VehicleHits::Frame frame;
             std::uint32_t      flags = 0;
+            float              health = 0.0f;       // San Andreas's vehicle health (1000 new)
+            float              boxBottom = 0.0f;    // the collision box's bottom, in the vehicle's frame, Skyrim units
             bool               lamps = false;  // the slot carries lamps (kHasLamps)
             std::uint8_t       lit = 0;        // the lamps burning as San Andreas sent them (asr.lamps off draws none of them)
             std::uint8_t       lampState = 0;
@@ -176,6 +178,8 @@ namespace AhShitRim::TestKit
             seen.on = true;
             seen.frame = VehicleHits::FrameOf(a_pose.vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
             seen.flags = a_pose.flags;
+            seen.health = a_pose.health;
+            seen.boxBottom = a_pose.boxMin[2];
             if constexpr (kHasLamps<T>) {
                 seen.lamps = true;
                 seen.lit = a_pose.lights.lit;
@@ -186,6 +190,31 @@ namespace AhShitRim::TestKit
                     a_pose.lights.lit = 0;
                 }
             }
+        }
+
+        // Skyrim's ground under a point (what a ray down through the line-of-sight layer hits first: the land and the statics on
+        // it, the cobbles of a village), from 100 units above it to 600 below.
+        std::optional<float> GroundUnder(const RE::NiPoint3& a_at)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return std::nullopt;
+            }
+            RE::BSReadLockGuard      lock(bhk->worldLock);
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            input.from = RE::hkVector4(a_at.x * scale, a_at.y * scale, (a_at.z + 100.0f) * scale, 0.0f);
+            input.to = RE::hkVector4(a_at.x * scale, a_at.y * scale, (a_at.z - 600.0f) * scale, 0.0f);
+            RE::hkpWorldRayCastOutput output;
+            world->CastRay(input, output);
+            if (!output.HasHit()) {
+                return std::nullopt;
+            }
+            return a_at.z + 100.0f - 700.0f * output.hitFraction;
         }
 
         RE::NiNode* WorldScene()
@@ -1175,7 +1204,9 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.vehicles", "[within=<units>]",
                 "San Andreas's vehicles drawn now (every slot, a parked one too): count, and each one's slot, model (ModelView's id), where "
-                "and how far from the player; within (default everywhere) counts only those that close",
+                "and how far from the player, its health (1000 new), wrecked, burning, smoking (health under 650), up (1 upright: its frame's Z) "
+                "and above (how far its box's bottom is over Skyrim's ground there, units; missing with no ground); within (default everywhere) "
+                "counts only those that close",
                 [](Call& a_call) -> Json {
                     RequireCj();
                     const double within = a_call.Number("within", (std::numeric_limits<double>::max)());
@@ -1191,8 +1222,15 @@ namespace AhShitRim::TestKit
                         }
                         const double distance = std::hypot(at.x - from.x, at.y - from.y);
                         if (distance <= within) {
-                            vehicles.emplace_back(JsonObject{ { "slot", i }, { "model", std::format("{:08X}", model) }, { "at", Point(at) },
-                                { "distance", Round(distance, 1.0) } });
+                            const auto& seen = g_seen[i];
+                            const bool  wrecked = seen.on && (seen.flags & Protocol::kBodyWrecked) != 0;
+                            JsonObject  one{ { "slot", i }, { "model", std::format("{:08X}", model) }, { "at", Point(at) }, { "distance", Round(distance, 1.0) },
+                                { "health", seen.health }, { "wrecked", wrecked }, { "burning", seen.on && (seen.flags & Protocol::kBodyBurning) != 0 },
+                                { "smoking", seen.on && !wrecked && seen.health < 650.0f }, { "up", seen.frame.up.z } };
+                            if (const auto ground = GroundUnder(at)) {
+                                one.Set("above", at.z + seen.boxBottom - *ground);
+                            }
+                            vehicles.emplace_back(std::move(one));
                         }
                     }
                     const auto count = vehicles.size();
