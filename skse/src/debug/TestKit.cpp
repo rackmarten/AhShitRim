@@ -1173,6 +1173,32 @@ namespace AhShitRim::TestKit
                         .lights = std::move(lights), .details = std::move(details) };
                 });
 
+            SkseTestKit::AddCommand("asr.vehicles", "[within=<units>]",
+                "San Andreas's vehicles drawn now (every slot, a parked one too): count, and each one's slot, model (ModelView's id), where "
+                "and how far from the player; within (default everywhere) counts only those that close",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    const double within = a_call.Number("within", (std::numeric_limits<double>::max)());
+                    auto*        player = RE::PlayerCharacter::GetSingleton();
+                    const auto   from = player ? player->GetPosition() : RE::NiPoint3{};
+                    JsonArray    vehicles;
+                    for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                        RE::NiPoint3  at;
+                        float         heading = 0.0f;
+                        std::uint32_t model = 0;
+                        if (!PlayerSync::DebugVehicle(i, at, heading, &model)) {
+                            continue;
+                        }
+                        const double distance = std::hypot(at.x - from.x, at.y - from.y);
+                        if (distance <= within) {
+                            vehicles.emplace_back(JsonObject{ { "slot", i }, { "model", std::format("{:08X}", model) }, { "at", Point(at) },
+                                { "distance", Round(distance, 1.0) } });
+                        }
+                    }
+                    const auto count = vehicles.size();
+                    return JsonObject{ { "count", count }, { "vehicles", std::move(vehicles) } };
+                });
+
             // A scenario: a row a frame, for skytest run's CSV.
             SkseTestKit::AddScenario("asr.track", "[frames]",
                 "Records CJ for frames frames (default 60), a row a frame: where San Andreas has him from the handover's anchor, and his vehicle",
