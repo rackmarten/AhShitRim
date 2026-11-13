@@ -12,8 +12,10 @@
 #include "player/Arms.h"
 #include "player/Missions.h"
 #include "player/PlayerSync.h"
+#include "pose.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
+#include "wanted.h"
 #include "weapons.h"
 
 // The Grove Street crew's command builds once the crew is in (player/Homies.h, protocol v39); before, asr.crew isn't
@@ -29,8 +31,10 @@
 #include <bit>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -957,6 +961,290 @@ namespace AhShitRim::TestKit
                 });
         }
 
+        // ---- The controller checks (scenarios/pad-*.json): CJ's pose, and what changed between two steps ----
+        //
+        // The kit's pad, stick and mouse commands feed Skyrim's input queue; these read back what San Andreas made of it.
+
+        double Degrees(float a_radians) { return a_radians * 180.0 / std::numbers::pi; }
+
+        // a_to - a_from, -180 to 180 degrees.
+        double Turned(float a_from, float a_to)
+        {
+            double d = Degrees(a_to - a_from);
+            while (d > 180.0) {
+                d -= 360.0;
+            }
+            while (d < -180.0) {
+                d += 360.0;
+            }
+            return d;
+        }
+
+        double KmH(const float (&a_velocity)[3]) { return std::hypot(a_velocity[0], a_velocity[1]) * Pose::kMetersPerUnit * 3.6; }
+
+        // Which way CJ faces: his vehicle's heading in one, else his body's (radians, Skyrim's: 0 north, clockwise).
+        float Facing(const Protocol::PlayerState& a_pose) { return (a_pose.flags & Protocol::kPlayerInVehicle) ? a_pose.vehicleHeading : a_pose.heading; }
+
+        // His speed along the way he faces, km/h: below 0 reversing.
+        double Ahead(const Protocol::PlayerState& a_pose)
+        {
+            const float h = Facing(a_pose);
+            return (a_pose.velocity[0] * std::sin(h) + a_pose.velocity[1] * std::cos(h)) * Pose::kMetersPerUnit * 3.6;
+        }
+
+        // Skyrim's menus a pad opens, by name, those open now.
+        JsonArray OpenMenus()
+        {
+            static constexpr std::string_view kMenus[] = { RE::TweenMenu::MENU_NAME, RE::JournalMenu::MENU_NAME, RE::SleepWaitMenu::MENU_NAME,
+                RE::DialogueMenu::MENU_NAME, RE::MapMenu::MENU_NAME, RE::InventoryMenu::MENU_NAME, RE::MagicMenu::MENU_NAME, RE::StatsMenu::MENU_NAME,
+                RE::FavoritesMenu::MENU_NAME, RE::ContainerMenu::MENU_NAME, RE::BarterMenu::MENU_NAME, RE::MessageBoxMenu::MENU_NAME,
+                RE::Console::MENU_NAME };
+            JsonArray open;
+            if (auto* ui = RE::UI::GetSingleton()) {
+                for (const auto name : kMenus) {
+                    if (ui->IsMenuOpen(name)) {
+                        open.emplace_back(std::string(name));
+                    }
+                }
+            }
+            return open;
+        }
+
+        Json DescribePose(const Protocol::PlayerState& a_pose)
+        {
+            const bool inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
+            return JsonObject{ { "onFoot", !inVehicle }, { "inVehicle", inVehicle }, { "vehicleModel", inVehicle ? Json(a_pose.vehicleModel) : Json() },
+                { "gettingInOut", (a_pose.flags & Protocol::kPlayerGettingInOut) != 0 }, { "grounded", (a_pose.flags & Protocol::kPlayerGrounded) != 0 },
+                { "crouching", (a_pose.flags & Protocol::kPlayerCrouching) != 0 }, { "at", Point(a_pose.offset) }, { "speed", Round(KmH(a_pose.velocity), 0.1) },
+                { "ahead", Round(Ahead(a_pose), 0.1) }, { "heading", Round(Degrees(Facing(a_pose)), 0.1) }, { "view", Round(Degrees(a_pose.viewHeading), 0.1) },
+                { "pitch", Round(Degrees(a_pose.viewPitch), 0.1) }, { "weapon", a_pose.weaponType },
+                { "aiming", (a_pose.weaponFlags & Protocol::kWeaponAiming) != 0 }, { "shots", a_pose.shots }, { "cameraMode", a_pose.cameraMode },
+                { "radio", a_pose.radioStation } };
+        }
+
+        // asr.mark's pose and when, and asr.since's and asr.watch's results kept by name for vs=.
+        struct Mark
+        {
+            Protocol::PlayerState                 pose{};
+            std::chrono::steady_clock::time_point at{};
+            std::uint32_t                         handover = 0;
+        };
+        std::optional<Mark>         g_mark;
+        std::map<std::string, Json> g_kept;
+
+        Mark TakeMark()
+        {
+            const auto pose = CjPose();
+            if (!pose) {
+                throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
+            }
+            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover() };
+        }
+
+        // Since a_mark: seconds, metres moved (on the ground's plane) and climbed, degrees the camera turned (either way:
+        // turnedBy) and pitched and CJ or his vehicle turned (bodyTurned), shots fired, the speed now (ahead: along the way
+        // he faces), the weapon and radio station then and now.
+        JsonObject Since(const Mark& a_mark, const Protocol::PlayerState& a_now)
+        {
+            const float dx = a_now.offset[0] - a_mark.pose.offset[0], dy = a_now.offset[1] - a_mark.pose.offset[1];
+            return JsonObject{ { "seconds", Round(std::chrono::duration<double>(std::chrono::steady_clock::now() - a_mark.at).count()) },
+                { "moved", Round(std::hypot(dx, dy) * Pose::kMetersPerUnit) },
+                { "climbed", Round((a_now.offset[2] - a_mark.pose.offset[2]) * Pose::kMetersPerUnit) },
+                { "turned", Round(Turned(a_mark.pose.viewHeading, a_now.viewHeading), 0.1) },
+                { "turnedBy", Round(std::abs(Turned(a_mark.pose.viewHeading, a_now.viewHeading)), 0.1) },
+                { "bodyTurned", Round(Turned(Facing(a_mark.pose), Facing(a_now)), 0.1) },
+                { "pitched", Round(Turned(a_mark.pose.viewPitch, a_now.viewPitch), 0.1) },
+                { "shots", static_cast<std::uint16_t>(a_now.shots - a_mark.pose.shots) }, { "speed", Round(KmH(a_now.velocity), 0.1) },
+                { "ahead", Round(Ahead(a_now), 0.1) }, { "weaponFrom", a_mark.pose.weaponType }, { "weapon", a_now.weaponType },
+                { "weaponChanged", a_now.weaponType != a_mark.pose.weaponType }, { "radioFrom", a_mark.pose.radioStation },
+                { "radio", a_now.radioStation }, { "radioChanged", a_now.radioStation != a_mark.pose.radioStation } };
+        }
+
+        // keep=<name> keeps a_result; vs=<name> adds "vs": each of its numbers over the same one in the result kept as that
+        // name (0 over 0 is 1, anything else over 0 null).
+        void Compare(JsonObject& a_result, Call& a_call)
+        {
+            if (const auto keep = a_call.Text("keep"); !keep.empty()) {
+                g_kept[keep] = Json(a_result);
+            }
+            const auto vs = a_call.Text("vs");
+            if (vs.empty()) {
+                return;
+            }
+            const auto kept = g_kept.find(vs);
+            if (kept == g_kept.end()) {
+                throw Error(std::format("nothing kept as {} (an earlier asr.since or asr.watch with keep={})", vs, vs));
+            }
+            JsonObject ratios;
+            for (const auto& [key, value] : a_result) {
+                const auto* other = kept->second.Find(key);
+                if (!value.IsNumber() || !other || !other->IsNumber()) {
+                    continue;
+                }
+                const double a = value.AsNumber(), b = other->AsNumber();
+                ratios[key] = b != 0.0 ? Json(Round(a / b, 0.001)) : a == 0.0 ? Json(1.0) : Json();
+            }
+            a_result["vs"] = Json(std::move(ratios));
+        }
+
+        void AddPadChecks()
+        {
+            SkseTestKit::AddCommand("asr.pose", "",
+                "CJ as San Andreas has him now: on foot or in a vehicle (its model), getting in or out, grounded, crouching, where (units from the "
+                "handover's anchor), speed (km/h; ahead: along the way he faces), his (or his vehicle's) and the camera's heading and the camera's pitch (degrees), weapon, aiming, shots, radio "
+                "station; whether San Andreas has the player, and Skyrim's open menus",
+                [](Call&) -> Json {
+                    const auto pose = CjPose();
+                    Json       out = pose ? DescribePose(*pose) : Json(JsonObject{});
+                    out["cj"] = PlayerSync::DebugOwned();
+                    out["posed"] = pose.has_value();
+                    out["menus"] = Json(OpenMenus());
+                    return out;
+                });
+
+            SkseTestKit::AddCommand("asr.mark", "", "Marks CJ's pose now, for asr.since", [](Call&) -> Json {
+                g_mark = TakeMark();
+                return DescribePose(g_mark->pose);
+            });
+
+            SkseTestKit::AddCommand("asr.since", "[keep=<name>] [vs=<name>]",
+                "What changed since asr.mark: seconds, moved and climbed (metres), turned (turnedBy: either way) and pitched (degrees, the camera), "
+                "bodyTurned (CJ's or his vehicle's heading), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
+                "weapon and radio station then and now. keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
+                [](Call& a_call) -> Json {
+                    if (!g_mark) {
+                        throw Error("no asr.mark yet");
+                    }
+                    const auto pose = CjPose();
+                    if (!pose || g_mark->handover != PlayerSync::DebugHandover()) {
+                        throw Error("the handover changed since asr.mark (or San Andreas has no pose of CJ): mark again");
+                    }
+                    auto out = Since(*g_mark, *pose);
+                    Compare(out, a_call);
+                    return out;
+                });
+
+            SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
+                "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
+                "above where he started (metres), his top and lowest speed (km/h), the most the camera turned either way, whether he left the "
+                "ground, and the menus that were open. keep= and vs= as asr.since",
+                [](Call& a_call) -> Step {
+                    const double seconds = a_call.Number("seconds", 1.0);
+                    if (seconds <= 0.0 || seconds > 600.0) {
+                        throw Error("seconds is up to 600");
+                    }
+                    a_call.DefaultTimeout(seconds + 10.0);
+                    struct Watch
+                    {
+                        Mark      mark;
+                        double    rose = 0.0;
+                        double    top = 0.0;
+                        double    low = 1e9;
+                        double    left = 0.0;
+                        double    right = 0.0;
+                        bool      airborne = false;
+                        JsonArray menus;
+                    };
+                    auto watch = std::make_shared<Watch>(Watch{ .mark = TakeMark() });
+                    return [watch, seconds](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose || watch->mark.handover != PlayerSync::DebugHandover()) {
+                            throw Error("the handover changed while watching (or San Andreas lost CJ's pose)");
+                        }
+                        const double speed = KmH(pose->velocity);
+                        const double turned = Turned(watch->mark.pose.viewHeading, pose->viewHeading);
+                        watch->rose = (std::max)(watch->rose, static_cast<double>(pose->offset[2] - watch->mark.pose.offset[2]) * Pose::kMetersPerUnit);
+                        watch->top = (std::max)(watch->top, speed);
+                        watch->low = (std::min)(watch->low, speed);
+                        watch->left = (std::min)(watch->left, turned);
+                        watch->right = (std::max)(watch->right, turned);
+                        watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
+                        for (auto& menu : OpenMenus()) {
+                            if (std::ranges::find(watch->menus, menu) == watch->menus.end()) {
+                                watch->menus.push_back(std::move(menu));
+                            }
+                        }
+                        if (a_call.Seconds() < seconds) {
+                            return std::nullopt;
+                        }
+                        auto out = Since(watch->mark, *pose);
+                        out["rose"] = Round(watch->rose);
+                        out["topSpeed"] = Round(watch->top, 0.1);
+                        out["lowSpeed"] = Round(watch->low, 0.1);
+                        out["turnedLeft"] = Round(watch->left, 0.1);
+                        out["turnedRight"] = Round(watch->right, 0.1);
+                        out["airborne"] = watch->airborne;
+                        out["menusSeen"] = Json(watch->menus);
+                        Compare(out, a_call);
+                        return Json(std::move(out));
+                    };
+                });
+
+            // Actors for the activation and the gun lock: placed in front of San Andreas's camera, where CJ looks.
+            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [clear=<bool>]",
+                "Places count (1) actors of base (a Whiterun guard) distance (700) in front of San Andreas's camera, angle (0) degrees right of "
+                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player. clear=true first disables the ones placed before. Answers "
+                "with their form ids",
+                [](Call& a_call) -> Json {
+                    static std::vector<RE::ObjectRefHandle> placed;
+                    const bool clear = a_call.Flag("clear", false);
+                    if (clear) {
+                        for (const auto& handle : placed) {
+                            if (auto ref = handle.get(); ref && !ref->IsDisabled()) {
+                                ref->Disable();
+                            }
+                        }
+                        placed.clear();
+                    }
+                    const double count = a_call.Number("count", clear ? 0.0 : 1.0);
+                    if (count < 0.0 || count > 10.0 || count != std::floor(count)) {
+                        throw Error("count is 0 to 10");
+                    }
+                    JsonArray ids;
+                    if (count > 0.0) {
+                        RequireCj();
+                        auto*      player = RE::PlayerCharacter::GetSingleton();
+                        const auto pose = CjPose();
+                        if (!player || !pose) {
+                            throw Error("no pose of CJ to place them by");
+                        }
+                        const auto baseText = a_call.Text("base");
+                        std::uint32_t baseId = Wanted::kHolds[0].guard;
+                        if (!baseText.empty()) {
+                            const auto [end, error] = std::from_chars(baseText.data() + (baseText.starts_with("0x") ? 2 : 0), baseText.data() + baseText.size(), baseId, 16);
+                            if (error != std::errc{} || end != baseText.data() + baseText.size()) {
+                                throw Error("base is a form id in hex");
+                            }
+                        }
+                        auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(baseId);
+                        if (!base) {
+                            throw Error(std::format("no base form {:08X}", baseId));
+                        }
+                        const float distance = static_cast<float>(a_call.Number("distance", 700.0));
+                        const float angle = static_cast<float>(a_call.Number("angle", 0.0) * std::numbers::pi / 180.0);
+                        const float spread = static_cast<float>(a_call.Number("spread", 25.0) * std::numbers::pi / 180.0);
+                        const bool  combat = a_call.Flag("combat", false);
+                        const int   n = static_cast<int>(count);
+                        for (int i = 0; i < n; ++i) {
+                            auto ref = player->PlaceObjectAtMe(base, false);
+                            if (!ref) {
+                                throw Error("PlaceObjectAtMe failed");
+                            }
+                            // The pose's view heading is Skyrim's convention (0 north, clockwise).
+                            const float h = pose->viewHeading + angle + (static_cast<float>(i) - static_cast<float>(n - 1) / 2.0f) * spread;
+                            ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * distance, std::cos(h) * distance, 0.0f));
+                            ref->data.angle.z = h + std::numbers::pi_v<float>;  // facing CJ
+                            if (auto* actor = ref->As<RE::Actor>(); actor && combat) {
+                                actor->StartCombat(player);
+                            }
+                            placed.push_back(ref->GetHandle());
+                            ids.emplace_back(SkseTestKit::FormId(ref->GetFormID()));
+                        }
+                    }
+                    return JsonObject{ { "placed", std::move(ids) }, { "total", placed.size() } };
+                });
+        }
+
         // AhShitRim's commands on the kit's command pipe (docs/DEV_SETUP.md, "Test sessions").
         void AddCommands()
         {
@@ -1207,6 +1495,7 @@ namespace AhShitRim::TestKit
             AddCommands();
             AddTests();
             AddFeatureChecks();
+            AddPadChecks();
         }
     }
 

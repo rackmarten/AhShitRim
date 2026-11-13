@@ -186,6 +186,10 @@ never need it). To use it:
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
+   | `asr.pose` | CJ as San Andreas has him: on foot or in a vehicle, getting in or out, grounded, crouching, where, speed (km/h; `ahead` along the way he faces), headings, weapon, aiming, shots, radio station; whether San Andreas has the player, and Skyrim's open menus | `asr.pose` |
+   | `asr.mark`, `asr.since [keep=] [vs=]` | what changed between two steps: seconds, moved and climbed (m), the camera's turn (degrees), CJ's or his vehicle's turn, shots, speed, weapon and station then and now; `keep=` a result by name, `vs=` each number over a kept one's | `asr.since vs=walk` |
+   | `asr.watch [seconds] [keep=] [vs=]` | the same over the next seconds, with their peaks: how high he rose, top and lowest speed, the most the camera turned, whether he left the ground, the menus seen | `asr.watch 1.2 keep=run` |
+   | `asr.place [count] [base=] [distance=] [angle=] [spread=] [combat=] [clear=]` | actors (a Whiterun guard) in front of San Andreas's camera (`angle` degrees right of its middle), facing CJ, set on him with `combat=true`; `clear=true` takes away the ones placed before | `asr.place 2 distance=700 combat=true` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
