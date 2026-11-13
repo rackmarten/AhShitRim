@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "pose.h"
 
@@ -32,6 +33,10 @@ namespace AhShitRim::ModelView
     // a_origin (Skyrim world units), this frame, a_scale times its size (v23: a pickup's twice). False when that model
     // isn't built.
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
+
+    // The test kit (debug): model a_model's vertices as its last Show posed them, relative to the origin it was shown at
+    // (unscaled). False while it isn't shown.
+    bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out);
 
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();

@@ -20,6 +20,8 @@ namespace AhShitRim::MuzzleFlash
             float                     left[Protocol::kWeaponHandMax] = {};
             RE::NiPointer<RE::NiPointLight> pointLight;
             std::uint32_t             frame = 0;
+            DebugFlash                debug[Protocol::kWeaponHandMax];  // the test kit's look at each hand's
+            bool                      showing[Protocol::kWeaponHandMax] = {};  // shown this frame (debug.shown once it ends)
         } state;
 
         bool EnsureModel(std::uint32_t a_hand)
@@ -100,6 +102,7 @@ namespace AhShitRim::MuzzleFlash
     {
         if (a_hand < Protocol::kWeaponHandMax) {
             state.left[a_hand] = kSeconds;
+            state.debug[a_hand].fired++;
         }
     }
 
@@ -122,6 +125,12 @@ namespace AhShitRim::MuzzleFlash
         if (!ModelView::Show(flash, a_feet)) {
             return;
         }
+        auto& debug = state.debug[a_hand];
+        state.showing[a_hand] = true;
+        debug.left = state.left[a_hand];
+        debug.strength = strength;
+        debug.at = a_feet + RE::NiPoint3(a_muzzle[0], a_muzzle[1], a_muzzle[2]);
+        debug.model = flash.model;
         if (EnsureLight()) {
             state.lit = true;
             auto* light = state.pointLight.get();
@@ -141,6 +150,9 @@ namespace AhShitRim::MuzzleFlash
 
     void EndFrame()
     {
+        for (std::uint32_t hand = 0; hand < Protocol::kWeaponHandMax; ++hand) {
+            state.debug[hand].shown = std::exchange(state.showing[hand], false);
+        }
         if (!state.lit && state.pointLight) {
             state.pointLight->GetLightRuntimeData().fade = 0.0f;
         }
@@ -153,5 +165,15 @@ namespace AhShitRim::MuzzleFlash
             left = 0.0f;
         }
         EndFrame();
+    }
+
+    DebugFlash Debug(std::uint32_t a_hand)
+    {
+        if (a_hand >= Protocol::kWeaponHandMax) {
+            return {};
+        }
+        auto debug = state.debug[a_hand];
+        debug.light = state.pointLight.get();
+        return debug;
     }
 }
