@@ -32,6 +32,7 @@
     { "cmd": "wait", "seconds": 1 },
     { "label": "the pistol drawn, no lock", "cmd": "asr.pose", "expect": ["weapon == 22", "gunTarget missing"] },
 
+    { "label": "Bjorlam, the stables' carriage driver, 55 m behind CJ: the nearest to the crosshair otherwise", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 4000, "angle": 180 },
     { "label": "a guard 12 degrees right, the nearest to the crosshair", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 12 },
     { "label": "one 35 degrees right", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 35 },
     { "label": "one 35 degrees left", "cmd": "asr.place", "count": 1, "distance": 700, "angle": -35, "expect": "total == 3" },
