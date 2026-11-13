@@ -11,7 +11,8 @@
 // four times stays under half a turn) and 20 % for the
 // stick (half right for 0.4 s, so a frame's timing more or less shows), set from runs on the test desktop (values in the pull
 // request). The move to the middle: from Skyrim's own defaults (0.0125, 0.6667) to 0.0300 and 1.0000, recorded as
-// LookReset=1 and logged.
+// LookReset=1 and logged (in memory: the replay doesn't write SkyrimPrefs.ini, which in a session is the player's own file
+// once Skyrim has loaded; the first start's own move writes it).
 {
   "name": "look-sensitivity",
   "steps": [
@@ -32,7 +33,7 @@
     { "cmd": "asr.look", "mark": true },
     { "label": "80 counts right", "cmd": "mouse", "dx": 20, "dy": 0, "frames": 4 },
     { "cmd": "wait", "seconds": 0.5 },
-    { "label": "CJ's camera turned right", "cmd": "asr.look", "keep": "mouse-middle", "expect": "turned > 5" },
+    { "label": "CJ's camera turned right, under a quarter turn (so the top's four times stays under half a turn)", "cmd": "asr.look", "keep": "mouse-middle", "expect": ["turned > 5", "turned < 40"] },
     { "label": "the mouse slider's bottom", "cmd": "asr.look", "mouse": 0.01, "expect": "mouseScale ~ 0.25 +- 0.001" },
     { "cmd": "asr.look", "mark": true },
     { "cmd": "mouse", "dx": 20, "dy": 0, "frames": 4 },
@@ -50,7 +51,7 @@
     { "cmd": "asr.look", "mark": true },
     { "label": "the right stick half right 0.4 s", "cmd": "stick", "side": "right", "x": 0.5, "y": 0, "seconds": 0.4 },
     { "cmd": "wait", "seconds": 0.5 },
-    { "label": "CJ's camera turned right", "cmd": "asr.look", "keep": "pad-middle", "expect": "turned > 5" },
+    { "label": "CJ's camera turned right, under a quarter turn (so the top's four times stays under half a turn)", "cmd": "asr.look", "keep": "pad-middle", "expect": ["turned > 5", "turned < 40"] },
     { "label": "the pad slider's bottom", "cmd": "asr.look", "pad": 0.4445, "expect": "padScale ~ 0.25 +- 0.001" },
     { "cmd": "asr.look", "mark": true },
     { "cmd": "stick", "side": "right", "x": 0.5, "y": 0, "seconds": 0.4 },

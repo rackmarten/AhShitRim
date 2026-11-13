@@ -63,7 +63,8 @@ namespace AhShitRim::PlayerSync
 
     // The test kit (debug): Skyrim's look sensitivity sliders (their live values and their ends) and the scales CJ's look
     // counts get from them (look_sensitivity.h); setting a slider's live value (below 0 leaves it), as its menu does; and
-    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first).
+    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first), in memory only:
+    // SkyrimPrefs.ini isn't written (in a test session the file on disk is the player's own once Skyrim has loaded).
     struct DebugLookState
     {
         float  mouse = 0.0f;

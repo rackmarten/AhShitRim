@@ -191,8 +191,9 @@ namespace AhShitRim::PlayerSync
         }
 
         // Once (until [Input] LookReset=1 is recorded): both look sliders to their middle, San Andreas's own speed, so
-        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini.
-        void ResetLookOnce()
+        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini (unless
+        // a_write is false: the test kit's replay, whose session prefs aren't the file on disk).
+        void ResetLookOnce(bool a_write = true)
         {
             const auto recorded = Ini::Value("Input", "LookReset");
             if (!LookSensitivity::ResetDue(recorded) || (!state.mouseSensitivity && !state.padSensitivity)) {
@@ -207,7 +208,7 @@ namespace AhShitRim::PlayerSync
                         name, old, setting->GetFloat(), LookSensitivity::Scale(old, range));
                 }
             }
-            if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton()) {
+            if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton(); prefs && a_write) {
                 prefs->WriteAllSettings();  // as Skyrim's Settings menu does on closing
             }
             if (Ini::Set("Input", "LookReset", "1", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)")) {
@@ -1932,7 +1933,8 @@ namespace AhShitRim::PlayerSync
     void DebugResetLook()
     {
         Ini::Set("Input", "LookReset", "0", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)");
-        ResetLookOnce();
+        // Not written to SkyrimPrefs.ini: in a test session the file on disk is the player's own once Skyrim has loaded.
+        ResetLookOnce(false);
     }
 
     void DebugStick(bool a_right, float a_x, float a_y)
