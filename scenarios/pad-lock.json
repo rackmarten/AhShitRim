@@ -32,7 +32,7 @@
     { "cmd": "wait", "seconds": 1 },
     { "label": "the pistol drawn, no lock", "cmd": "asr.pose", "expect": ["weapon == 22", "gunTarget missing"] },
 
-    { "label": "Bjorlam, the stables' carriage driver, 55 m behind CJ: the nearest to the crosshair otherwise", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 4000, "angle": 180 },
+    { "label": "Bjorlam, the stables' carriage driver, out of the way (the lock took him, 20 m off, moved or not)", "cmd": "console", "ref": "00013698", "command": "disable" },
     { "label": "a guard 12 degrees right, the nearest to the crosshair", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 12 },
     { "label": "one 35 degrees right", "cmd": "asr.place", "count": 1, "distance": 700, "angle": 35 },
     { "label": "one 35 degrees left", "cmd": "asr.place", "count": 1, "distance": 700, "angle": -35, "expect": "total == 3" },
@@ -65,6 +65,7 @@
     { "label": "free aim: the lock dropped", "cmd": "asr.pose", "expect": ["gunTarget missing", "aiming == true"] },
     { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
     { "label": "the guard taken away", "cmd": "asr.place", "clear": true },
+    { "label": "Bjorlam back", "cmd": "console", "ref": "00013698", "command": "enable" },
     { "label": "nothing left held", "cmd": "input", "expect": "idle == true" },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]
