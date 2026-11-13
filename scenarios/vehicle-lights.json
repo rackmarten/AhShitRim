@@ -19,6 +19,7 @@
     { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
     { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
     { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "the lamps as San Andreas has them (a run that stopped halfway may have left them off)", "cmd": "asr.lamps", "state": "on" },
     { "label": "night, the clock held", "cmd": "scene", "presets": "night clear" },
     "wait frames=45",
     { "label": "CJ in a ZR-350, its engine running", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },

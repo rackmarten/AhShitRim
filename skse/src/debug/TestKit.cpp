@@ -138,8 +138,8 @@ namespace AhShitRim::TestKit
 
         // ---- The feature checks (scenarios/vehicle-lights.json, muzzle-flash.json, crew-follow.json) ----
 
-        Json PointOf(const RE::NiPoint3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
-        Json PointOf(const Body::Vec3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
+        Json Point(const RE::NiPoint3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
+        Json Point(const Body::Vec3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
         double Round(double a_v, double a_step = 0.01) { return std::round(a_v / a_step) * a_step; }
 
         // Whether this build's vehicle slots carry their lamps (BodyState.lights, protocol v36): asr.lamps and the lamp
@@ -195,13 +195,23 @@ namespace AhShitRim::TestKit
             return root ? root->parent : nullptr;
         }
 
-        // The vehicles' scene lights near a_at: AhShitRim's headlight and tail light point lights (named so by
-        // player/Headlights.cpp), which hang in the world's scene graph, not under the vehicle's node.
-        std::vector<RE::NiPointLight*> LampLightsNear(const RE::NiPoint3& a_at, float a_radius)
+        // How well a lamp light at a_world fits a vehicle drawn with a_frame: player/Headlights.cpp puts each on the
+        // vehicle's middle line (x 0), ahead of the headlights or behind the tail lights at about their height. Lower fits
+        // better.
+        double LampFit(const VehicleHits::Frame& a_frame, const RE::NiPoint3& a_world)
+        {
+            const auto local = VehicleHits::ToLocal(a_frame, { a_world.x, a_world.y, a_world.z });
+            return std::abs(local.x) + std::abs(local.z) + (std::max)(0.0, std::abs(static_cast<double>(local.y)) - 1200.0);
+        }
+
+        // Vehicle slot a_slot's scene lights: AhShitRim's headlight and tail light point lights (named so by
+        // player/Headlights.cpp), which hang in the world's scene graph, not under the vehicle's node. Each light goes to
+        // the drawn vehicle it fits best, so a car parked beside this one keeps its own.
+        std::vector<RE::NiPointLight*> LampLightsOf(std::uint32_t a_slot)
         {
             std::vector<RE::NiPointLight*> out;
             auto*                          scene = WorldScene();
-            if (!scene) {
+            if (!scene || !g_seen[a_slot].on) {
                 return out;
             }
             for (auto& child : scene->GetChildren()) {
@@ -210,7 +220,20 @@ namespace AhShitRim::TestKit
                     continue;
                 }
                 const std::string_view name = light->name.c_str();
-                if ((name == "AhShitRimHeadlight" || name == "AhShitRimTailLight") && light->world.translate.GetDistance(a_at) <= a_radius) {
+                if (name != "AhShitRimHeadlight" && name != "AhShitRimTailLight") {
+                    continue;
+                }
+                const double fit = LampFit(g_seen[a_slot].frame, light->world.translate);
+                bool         best = fit < 400.0;
+                for (std::uint32_t other = 0; best && other < Protocol::kVehicleMax; other++) {
+                    RE::NiPoint3 position;
+                    float        heading = 0.0f;
+                    if (other != a_slot && g_seen[other].on && PlayerSync::DebugVehicle(other, position, heading) &&
+                        LampFit(g_seen[other].frame, light->world.translate) < fit) {
+                        best = false;
+                    }
+                }
+                if (best) {
                     out.push_back(light);
                 }
             }
@@ -231,7 +254,7 @@ namespace AhShitRim::TestKit
 
         // asr.vehicle's details beyond slot and model: wrecked, its lamps (which burn, the dummies in its frame: x right,
         // y forward, z up) and its scene lights, each with where it is in the vehicle's frame.
-        void DescribeLamps(std::uint32_t a_slot, const RE::NiPoint3& a_position, JsonObject& a_details, std::vector<RE::NiLight*>& a_lights)
+        void DescribeLamps(std::uint32_t a_slot, JsonObject& a_details, std::vector<RE::NiLight*>& a_lights)
         {
             const auto& seen = g_seen[a_slot];
             if (!seen.on) {
@@ -242,15 +265,15 @@ namespace AhShitRim::TestKit
                 return;
             }
             a_details.Set("lamps", JsonObject{ { "lit", LampNames(seen.lit) }, { "litCount", std::popcount(seen.lit) }, { "braking", (seen.lampState & 0x1) != 0 },
-                                       { "forcedOff", g_lampsOff }, { "frontDummy", PointOf(seen.front) }, { "rearDummy", PointOf(seen.rear) } });
+                                       { "forcedOff", g_lampsOff }, { "frontDummy", Point(seen.front) }, { "rearDummy", Point(seen.rear) } });
             JsonArray lights;
-            for (auto* light : LampLightsNear(a_position, 1500.0f)) {
+            for (auto* light : LampLightsOf(a_slot)) {
                 const auto& data = light->GetLightRuntimeData();
                 const auto& w = light->world.translate;
                 const auto  local = VehicleHits::ToLocal(seen.frame, { w.x, w.y, w.z });
                 lights.emplace_back(JsonObject{ { "name", light->name.c_str() }, { "fade", Round(data.fade) }, { "radius", Round(data.radius.x, 0.1) },
                     { "color", JsonObject{ { "r", Round(data.diffuse.red) }, { "g", Round(data.diffuse.green) }, { "b", Round(data.diffuse.blue) } } },
-                    { "world", PointOf(w) }, { "local", PointOf(local) } });
+                    { "world", Point(w) }, { "local", Point(local) } });
                 a_lights.push_back(light);
             }
             a_details.Set("lights", std::move(lights));
@@ -334,13 +357,16 @@ namespace AhShitRim::TestKit
             const auto flash = MuzzleFlash::Debug(a_hand);
             JsonObject out{ { "hand", a_hand },
                 { "weapon", JsonObject{ { "model", std::format("{:08X}", barrel.pose.model) }, { "vertices", barrel.vertices },
-                                { "origin", PointOf(barrel.frame.pos) }, { "tip", PointOf(barrel.tip) }, { "tipLocal", PointOf(barrel.tipLocal) },
+                                { "origin", Point(barrel.frame.pos) }, { "tip", Point(barrel.tip) }, { "tipLocal", Point(barrel.tipLocal) },
                                 { "heading", Round(barrel.heading * 180.0 / std::numbers::pi, 0.1) }, { "pitch", Round(barrel.pitch, 0.1) } } } };
             JsonObject flashJson{ { "shown", flash.shown }, { "fired", flash.fired }, { "left", Round(flash.left, 0.001) }, { "strength", Round(flash.strength) } };
             if (flash.fired > 0) {
-                flashJson.Set("at", PointOf(flash.at));
+                flashJson.Set("at", Point(flash.at));
+            }
+            // The offsets only for a flash shown in the last frame: an older one's place says nothing of the gun now.
+            if (flash.shown) {
                 const auto local = VehicleHits::ToLocal(barrel.frame, { flash.at.x, flash.at.y, flash.at.z });
-                flashJson.Set("local", PointOf(local));
+                flashJson.Set("local", Point(local));
                 // along: past the muzzle's end (+) or short of it (-); across: off the barrel's line through the muzzle.
                 const double along = local.x - barrel.tipLocal.x;
                 const double across = std::hypot(local.y - barrel.tipLocal.y, local.z - barrel.tipLocal.z);
@@ -350,7 +376,7 @@ namespace AhShitRim::TestKit
             }
             if (flash.light) {
                 const auto& data = flash.light->GetLightRuntimeData();
-                flashJson.Set("light", JsonObject{ { "fade", Round(data.fade) }, { "at", PointOf(flash.light->world.translate) },
+                flashJson.Set("light", JsonObject{ { "fade", Round(data.fade) }, { "at", Point(flash.light->world.translate) },
                                            { "fromFlash", Round(flash.light->world.translate.GetDistance(flash.at)) } });
             }
             out.Set("flash", std::move(flashJson));
@@ -439,8 +465,9 @@ namespace AhShitRim::TestKit
                             PlayerSync::DebugHold(std::nullopt);
                             return JsonObject{ { "onFoot", true }, { "seconds", Round(a_call.Seconds()) } };
                         }
-                        // Held 0.2 s of every 2 s: San Andreas acts on the press.
-                        const bool press = std::fmod(a_call.Seconds(), 2.0) < 0.2;
+                        // Held 0.2 s, again every 5 s should he still sit in it: getting out takes about 2 s, and a press
+                        // once he's out would put him back in.
+                        const bool press = std::fmod(a_call.Seconds(), 5.0) < 0.2;
                         PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonEnterExit }) : std::nullopt);
                         return std::nullopt;
                     };
@@ -508,7 +535,7 @@ namespace AhShitRim::TestKit
                             if (walk->next == points.size()) {
                                 PlayerSync::DebugHold(std::nullopt);
                                 return JsonObject{ { "points", points.size() }, { "seconds", Round(a_call.Seconds()) }, { "path", Round(walk->path, 0.1) },
-                                    { "at", PointOf(at) }, { "gait", gait } };
+                                    { "at", Point(at) }, { "gait", gait } };
                             }
                             return std::nullopt;
                         }
@@ -544,7 +571,11 @@ namespace AhShitRim::TestKit
                     const double settle = a_call.Number("settle", 1.0);
                     std::uint8_t weapon = 0;
                     if (a_call.Has("weapon")) {
-                        weapon = static_cast<std::uint8_t>(a_call.Number("weapon"));
+                        const double number = a_call.Number("weapon");
+                        if (number < 1 || number > 46 || number != std::floor(number)) {
+                            throw Error("weapon is a San Andreas weapon type, 1 to 46");
+                        }
+                        weapon = static_cast<std::uint8_t>(number);
                         if (!Arms::DebugHoldWeapon(weapon)) {
                             throw Error(std::format("CJ doesn't carry weapon {} (asr.give {} first)", weapon, weapon));
                         }
@@ -628,7 +659,7 @@ namespace AhShitRim::TestKit
                     dummy.x = left ? -std::abs(dummy.x) : std::abs(dummy.x);  // the dummy is one of the pair; X runs to the right
                     const auto world = VehicleHits::ToWorld(seen.frame, dummy);
                     return SkseTestKit::Place{ .x = world.x, .y = world.y, .z = world.z, .heading = heading,
-                        .details = JsonObject{ { "slot", slot }, { "lamp", std::string(lamp) }, { "local", PointOf(dummy) },
+                        .details = JsonObject{ { "slot", slot }, { "lamp", std::string(lamp) }, { "local", Point(dummy) },
                             { "lit", (seen.lit & (front ? (left ? 0x2 : 0x1) : (left ? 0x8 : 0x4))) != 0 } } };
                 });
 
@@ -662,7 +693,7 @@ namespace AhShitRim::TestKit
 
 #ifdef AHSHITRIM_TEST_CREW
             SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>]",
-                "The Grove Street crew: plays as a Thane of thanes (1) holds, waits for the spots round CJ to fill, has the recruit (2) nearest "
+                "The Grove Street crew: plays as a Thane of thanes (1) holds (-1: the titles the game has), waits for the spots round CJ to fill, has the recruit (2) nearest "
                 "homies join and answers once they follow, with each follower's reference (refs, for record start)",
                 [](Call& a_call) -> Step {
                     RequireCj();
@@ -1078,7 +1109,7 @@ namespace AhShitRim::TestKit
                     }
                     JsonObject                details{ { "slot", *slot }, { "model", std::format("{:08X}", model) } };
                     std::vector<RE::NiLight*> lights;
-                    DescribeLamps(*slot, position, details, lights);
+                    DescribeLamps(*slot, details, lights);
                     return SkseTestKit::Place{ .x = position.x, .y = position.y, .z = position.z, .heading = heading, .root = ModelView::Node(model),
                         .lights = std::move(lights), .details = std::move(details) };
                 });

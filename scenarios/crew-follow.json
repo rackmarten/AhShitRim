@@ -4,7 +4,8 @@
 // cliff and back, then sprinting back down the road. The recorder's summary per homie: how long he stood stuck while
 // CJ went on, how far behind CJ he was, how often he left the corridor round CJ's path, and the top-down overlay of
 // every track (stables-crew-overlay.png). scripts/skytest.ps1 run scenarios/crew-follow.json (scenarios/README.md).
-// Needs the Grove Street crew (protocol v39).
+// Needs the Grove Street crew (protocol v39). The three stay CJ's crew afterwards (there's no command to send them off):
+// run it last in a session, or start a new one (skytest stop) before the other scenarios, whose fights they'd join.
 //
 // The limits, adjustable (units; set from three runs on the test desktop, measured values in brackets). Each homie:
 // he moved (path over 1500 [2700 to 3900]); never stood still for 10 s while CJ went on more than 400 away (longest
@@ -47,6 +48,7 @@
                  "tracks.2.pathLength > 1500", "tracks.2.longestStuck < 10", "tracks.2.stuckSeconds < 15", "tracks.2.corridor.maxDeviation < 1000", "tracks.2.leader.final < 900",
                  "tracks.3.pathLength > 1500", "tracks.3.longestStuck < 10", "tracks.3.stuckSeconds < 15", "tracks.3.corridor.maxDeviation < 1000", "tracks.3.leader.final < 900"] },
     { "label": "all three still follow", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "following == 3" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]
 }
