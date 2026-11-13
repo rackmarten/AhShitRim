@@ -175,9 +175,11 @@ namespace AhShitRim::Aim
         return Body::Add(Body::Scale(u, std::cos(a_roll)), Body::Scale(Body::Cross(b, u), std::sin(a_roll)));
     }
 
-    // Twin guns lean in toward each other, mirrored: San Andreas's twin stance rolls the left gun's top to the
-    // right, and the right gun takes the same roll the other way. The right hand's own pose rolled it right too.
-    inline float TwinRoll(float a_leftRoll) { return -a_leftRoll; }
+    // The right gun's roll about its barrel: leaning in toward his middle, as the left gun of a pair leans. San
+    // Andreas's stance rolls the left gun's top to the right (in), but the right hand's own pose rolls its gun right
+    // too (out), alone or as the right one of a pair. So a pair's right gun takes the left one's roll mirrored, and a
+    // gun on its own its own lean turned in, as the right one of a pair (a_twin, a_leftRoll: the left gun's roll).
+    inline float RightGunRoll(float a_rightRoll, bool a_twin, float a_leftRoll) { return a_twin ? -a_leftRoll : -std::abs(a_rightRoll); }
 
     // ---- His head ----
 

@@ -6,6 +6,7 @@
 #include "cj_weapons.h"
 #include "log.h"
 #include "model_sender.h"
+#include "passengers.h"
 #include "pose.h"
 #include "scene.h"
 #include "skin_model.h"
@@ -47,6 +48,7 @@ namespace AhShitRim::CrewPuppets
         constexpr int kSeatIdle = 150;        // ANIM_DEFAULT_SEAT_IDLE
         constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
         constexpr int kBoneRightHand = 24;
+        constexpr int kBonePelvis = 2;        // BONE_PELVIS
         constexpr unsigned short kAnimLooped = 0x2;
         constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
 
@@ -57,9 +59,16 @@ namespace AhShitRim::CrewPuppets
             std::uint16_t          model = 0;
             std::uint8_t           weapon = 0;
             Scene::MotionTracker   motion;
+            Scene::SeatMatch       seat;  // seated: his pelvis's offset from his position, to sit it on the seat
+            bool                   sat = false;     // he sat since he last stood (for the logs)
+            bool                   satLogged = false;
+            float                  stood = 0.0f;    // seconds since he stood up while his seat anim fades
             Crew::Facing           facing;
             float                  heading = 0.0f;  // as he faced last
             int                    playing = -1;  // the Scene::Motion played, -1 before any
+            bool                   stepping = false;  // a follower walking or running last frame, for the slip measured
+            float                  stepTime = 0.0f;   // his walk's or run's time in its cycle then
+            CVector                stepFeet;          // and his feet
             bool                   fallen = false;
             float                  fireWait = 0.0f;
             std::uint32_t          shots = 0;
@@ -86,6 +95,8 @@ namespace AhShitRim::CrewPuppets
             unsigned                               posed = 0, fired = 0, kept = 0;
             unsigned                               facedSamples = 0;  // followers on the move: how far off their way they face
             float                                  facedSum = 0.0f, facedMax = 0.0f;
+            unsigned                               paced = 0, gaitChanges = 0;  // followers' walking or running frames; their gait changes
+            float                                  groundSum = 0.0f, stepSum = 0.0f;  // metres they went, and their steps covered
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -200,19 +211,62 @@ namespace AhShitRim::CrewPuppets
             return &entry;
         }
 
+        // His seat fades out. It's a partial anim, and BlendAnimation only fades out those as partial as the one it
+        // blends in, so his walk, run, idle or fall never would: he'd sit on top of them for good.
+        void StandUp(CPed* a_ped)
+        {
+            if (auto* seat = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, kSeatIdle)) {
+                seat->m_fBlendDelta = -4.0f;  // SEAT_idle is blend-auto-remove: gone once faded
+            }
+        }
+
+        // How far through its cycle a_assoc is, 0 to 1 (-1 for none).
+        float PhaseOf(const CAnimBlendAssociation* a_assoc)
+        {
+            if (!a_assoc || !a_assoc->m_pHierarchy || a_assoc->m_pHierarchy->m_fTotalTime <= 0.0f) {
+                return -1.0f;
+            }
+            return a_assoc->m_fCurrentTime / a_assoc->m_pHierarchy->m_fTotalTime;
+        }
+
         // His walk, run, idle or seat, blended straight onto his clump the moment the gait changes. Not through a task:
         // a task's anim fades out (and is deleted) as the task goes, while the next task's anim only starts once San
-        // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update.
+        // Andreas processes him, and a clump left with nothing crashed San Andreas's anim update. From a walk to a run
+        // or back the new one starts where the old one was in its stride, as San Andreas keeps its peds' in step, so the
+        // feet don't jump as one fades into the other.
         void PlayMotion(CPed* a_ped, Scene::Motion a_motion)
         {
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
-            auto* clump = a_ped->m_pRwClump;
+            auto*       clump = a_ped->m_pRwClump;
+            if (a_motion != Scene::Motion::Seated) {
+                StandUp(a_ped);
+            }
+            const bool  walk = a_motion == Scene::Motion::Walk;
+            const float phase = walk || a_motion == Scene::Motion::Run ? PhaseOf(RpAnimBlendClumpGetAssociation(clump, walk ? kMoveRun : kMoveWalk)) : -1.0f;
+            CAnimBlendAssociation* assoc = nullptr;
             switch (a_motion) {
             case Scene::Motion::Seated: CAnimManager::BlendAnimation(clump, kGroupDefault, kSeatIdle, 4.0f); break;
-            case Scene::Motion::Walk: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
-            case Scene::Motion::Run: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveRun, 4.0f); break;
+            case Scene::Motion::Walk: assoc = CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
+            case Scene::Motion::Run: assoc = CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveRun, 4.0f); break;
             default: CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveIdle, 4.0f); break;
             }
+            if (assoc && phase >= 0.0f && assoc->m_pHierarchy) {
+                assoc->SetCurrentTime(phase * assoc->m_pHierarchy->m_fTotalTime);
+            }
+        }
+
+        // His walk or run, played at the rate that keeps his feet on the ground at a_speed m/s (Crew::Stride); null
+        // standing.
+        CAnimBlendAssociation* PaceMotion(CPed* a_ped, std::uint16_t a_model, Scene::Motion a_motion, float a_speed)
+        {
+            if (a_motion != Scene::Motion::Walk && a_motion != Scene::Motion::Run) {
+                return nullptr;
+            }
+            auto* assoc = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, a_motion == Scene::Motion::Walk ? kMoveWalk : kMoveRun);
+            if (assoc) {
+                assoc->m_fSpeed = Crew::Stride::Rate(a_model, a_motion, a_speed);
+            }
+            return assoc;
         }
 
         // His fall as the actor dies (San Andreas's shot-in-front knockout), held on its last frame.
@@ -220,6 +274,7 @@ namespace AhShitRim::CrewPuppets
         {
             a_puppet.fallen = true;
             a_puppet.ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
+            StandUp(a_puppet.ped);
             if (auto* assoc = CAnimManager::BlendAnimation(a_puppet.ped->m_pRwClump, kGroupDefault, kShotFront, 8.0f)) {
                 assoc->m_nFlags = static_cast<unsigned short>(assoc->m_nFlags & ~kAnimLooped);
                 assoc->Start(0.0f);
@@ -413,7 +468,12 @@ namespace AhShitRim::CrewPuppets
             const bool track = freshInput || puppet.playing < 0;
             auto       motion = puppet.playing >= 0 ? static_cast<Scene::Motion>(puppet.playing) : Scene::Motion::Idle;
             if (!dead && track) {
+                // San Andreas's gaits at his pace, changed where its paces meet (Crew::Stride), not the scenes' 3.5 m/s.
+                const auto was = puppet.playing >= 0 ? static_cast<Scene::Motion>(puppet.playing) : Scene::Motion::Idle;
                 motion = puppet.motion.Update(seated, Vec(feet), tracked);
+                if (motion != Scene::Motion::Seated) {
+                    motion = Crew::Stride::Next(was == Scene::Motion::Seated ? Scene::Motion::Idle : was, puppet.motion.Speed());
+                }
             }
             const bool moving = motion == Scene::Motion::Walk || motion == Scene::Motion::Run;
 
@@ -432,8 +492,20 @@ namespace AhShitRim::CrewPuppets
                 state.facedMax = (std::max)(state.facedMax, off);
                 state.facedSamples++;
             }
+            // Seated, his pelvis on the seat, not his feet on his actor's: San Andreas's sitting anim lowers him backwards
+            // from where he stands onto a chair behind him, which put him a head too high (through a car's roof) and
+            // behind his seat (beside a bike). His actor's feet are kSeatDrop under the seat, where the hips go.
+            const bool  sits = !dead && motion == Scene::Motion::Seated;
             const float lift = ped->GetDistanceFromCentreOfMassToBaseOfModel();
-            ped->SetPosn(feet + CVector(0.0f, 0.0f, lift));
+            CVector     at = feet + CVector(0.0f, 0.0f, lift);
+            if (!sits) {
+                puppet.seat.Reset();
+            } else if (puppet.seat.Have()) {
+                const float surface = Passengers::kSeatDrop * Pose::kMetersPerUnit - Scene::SeatMatch::kPelvisOverSeat;
+                const auto  place = puppet.seat.Place(Vec(feet + CVector(0.0f, 0.0f, surface)), lift);
+                at = CVector(place.x, place.y, place.z);
+            }
+            ped->SetPosn(at);
             ped->SetHeading(heading);
             ped->m_fHeadingCurrent = heading;
             ped->m_fHeadingGoal = heading;
@@ -445,10 +517,30 @@ namespace AhShitRim::CrewPuppets
                 Fall(puppet);
             } else if (!dead) {
                 puppet.fallen = false;
-                if (static_cast<int>(motion) != puppet.playing) {
+                const bool follower = (member.flags & Protocol::kCrewFollower) != 0;
+                const bool changed = static_cast<int>(motion) != puppet.playing;
+                if (changed) {
+                    state.gaitChanges += follower && puppet.playing >= 0 ? 1 : 0;
                     puppet.playing = static_cast<int>(motion);
                     PlayMotion(ped, motion);
                 }
+                // The slip measured, not assumed: the ground he went this frame against what his steps covered, his
+                // walk's or run's time through its cycle (as San Andreas played it, at whatever rate) times its pace.
+                auto* step = PaceMotion(ped, member.model, motion, puppet.motion.Speed());
+                if (step && step->m_pHierarchy && follower && puppet.stepping && !changed) {
+                    const float cycle = step->m_pHierarchy->m_fTotalTime;
+                    float       played = step->m_fCurrentTime - puppet.stepTime;
+                    played += played < 0.0f ? cycle : 0.0f;
+                    const float went = std::hypot(feet.x - puppet.stepFeet.x, feet.y - puppet.stepFeet.y);
+                    if (went < 1.0f && played < cycle * 0.5f) {  // not a jump or a load
+                        state.groundSum += went;
+                        state.stepSum += played * Crew::Stride::Natural(member.model, motion);
+                        state.paced++;
+                    }
+                }
+                puppet.stepping = step != nullptr && follower;
+                puppet.stepTime = step ? step->m_fCurrentTime : 0.0f;
+                puppet.stepFeet = feet;
             }
 
             // His bones, posed as CJ's are (hidden, San Andreas poses nobody), his arm on his aim, his gun on his hand.
@@ -456,6 +548,34 @@ namespace AhShitRim::CrewPuppets
             ped->UpdateRwMatrix();
             ped->UpdateRwFrame();
             ped->UpdateRpHAnim();
+            if (sits) {
+                RwMatrix   pelvis;
+                const bool posed = CjBody::BoneWorld(static_cast<CPlayerPed*>(ped), kBonePelvis, pelvis);
+                const auto from = ped->GetPosition();
+                puppet.seat.Update(posed, pelvis.pos.x - from.x, pelvis.pos.y - from.y, pelvis.pos.z - from.z, seconds);
+                // Once, sat down: how far his pelvis is from the seat (the ridecrew hit test reads it).
+                const auto* anim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, kSeatIdle);
+                puppet.sat = true;
+                puppet.stood = 0.0f;
+                if (!puppet.satLogged && posed && anim && anim->m_fBlendAmount >= 0.99f) {
+                    puppet.satLogged = true;
+                    const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - feet -
+                                        CVector(0.0f, 0.0f, Passengers::kSeatDrop * Pose::kMetersPerUnit);
+                    Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}", member.id, off.x, off.y, off.z,
+                        std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT"));
+                }
+            } else if (puppet.sat) {
+                // Stood up (or fell): his seat anim must be gone within its fade.
+                const auto* anim = RpAnimBlendClumpGetAssociation(ped->m_pRwClump, kSeatIdle);
+                puppet.stood += seconds;
+                if (!anim || anim->m_fBlendAmount <= 0.0f || puppet.stood >= 2.0f) {
+                    Log(anim && anim->m_fBlendAmount > 0.0f
+                            ? std::format("crew: homie {:08X} STILL SITS {:.1f} s after he stood up (seat blend {:.2f})", member.id, puppet.stood, anim->m_fBlendAmount)
+                            : std::format("crew: homie {:08X} stood up, his seat anim gone in {:.2f} s", member.id, puppet.stood));
+                    puppet.sat = false;
+                    puppet.satLogged = false;
+                }
+            }
             const CVector aim = toSa(member.aim);
             if (aiming) {
                 CjBody::AimRightArm(ped->m_pRwClump, ped->GetForward(), aim);
@@ -475,7 +595,7 @@ namespace AhShitRim::CrewPuppets
             Protocol::CrewBody out{};
             out.id = member.id;
             auto* body = BodyModel(ped, member.model);
-            const CVector pedFeet = ped->GetPosition() - CVector(0.0f, 0.0f, lift);
+            const CVector pedFeet = feet;  // his bones go from his actor's feet, where Skyrim draws them (seated, not his own)
             if (body && CjBody::PoseSkinned(ped->m_pRwClump, body->bones, pedFeet, out.body)) {
                 out.body.frame = a_frame;
                 out.body.flags = Protocol::kBodyValid;
@@ -531,11 +651,17 @@ namespace AhShitRim::CrewPuppets
                     Log(std::format("crew: moving followers faced {:.0f} degrees off their way on average, {:.0f} at most ({} frames)",
                         state.facedSum / state.facedSamples * 180.0f / Pose::kPi, state.facedMax * 180.0f / Pose::kPi, state.facedSamples));
                 }
+                if (state.paced) {
+                    Log(std::format("crew: moving followers went {:.1f} m on the ground and their steps covered {:.1f} m ({} frames, {} gait changes)",
+                        state.groundSum, state.stepSum, state.paced, state.gaitChanges));
+                }
             }
             state.statMs = now;
             state.posed = state.fired = state.kept = 0;
             state.facedSamples = 0;
             state.facedSum = state.facedMax = 0.0f;
+            state.paced = state.gaitChanges = 0;
+            state.groundSum = state.stepSum = 0.0f;
         }
     }
 }

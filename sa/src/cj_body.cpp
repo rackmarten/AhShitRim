@@ -276,13 +276,16 @@ namespace AhShitRim::CjBody
                 hands[arm] = hand;
                 barrels[arm] = barrel;
             }
-            // Twin guns lean in toward each other: the right gun takes the left one's roll mirrored (Aim::TwinRoll),
-            // turned about its barrel.
-            if (hands[0] >= 0 && hands[1] >= 0) {
-                const float   leftRoll = Aim::RollOf(Vec(barrels[1]), Vec(GunTop(a_matrices[hands[1]], true)));
+            // The right gun leans in toward his middle, turned about its barrel (Aim::RightGunRoll): a pair's right gun
+            // mirrors the left one, a gun on its own leans in as the right one of a pair.
+            if (hands[0] >= 0) {
+                const bool    pair = hands[1] >= 0;
+                const float   leftRoll = pair ? Aim::RollOf(Vec(barrels[1]), Vec(GunTop(a_matrices[hands[1]], true))) : 0.0f;
                 const CVector top = GunTop(a_matrices[hands[0]], false);
+                const float   rightRoll = Aim::RollOf(Vec(barrels[0]), Vec(top));
                 const CVector across = top - barrels[0] * (top.x * barrels[0].x + top.y * barrels[0].y + top.z * barrels[0].z);
-                Turn(a_hierarchy, parents, a_matrices, hands[0], Pos(a_matrices[hands[0]]), across, Vector(Aim::RolledTop(Vec(barrels[0]), Aim::TwinRoll(leftRoll))));
+                Turn(a_hierarchy, parents, a_matrices, hands[0], Pos(a_matrices[hands[0]]), across,
+                    Vector(Aim::RolledTop(Vec(barrels[0]), Aim::RightGunRoll(rightRoll, pair, leftRoll))));
             }
             if (logPose) {
                 for (int arm = 0; arm < 2; ++arm) {

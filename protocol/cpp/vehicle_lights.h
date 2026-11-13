@@ -14,13 +14,14 @@
 //    and FORCE_CAR_LIGHTS_ON lights them; then each headlight and tail light burns unless it is smashed (a
 //    car's damage manager; a bike's never break). A car has a pair of each, mirrored across its middle, a
 //    bike one of each. A wreck shows none. The tail lights also burn while the driver brakes, by day too.
-//  - The lamps' meshes are drawn lit while their lamp burns (LampOfMaterial), each lamp's light comes from where
-//    it is (LampOf).
+//  - The lamps' meshes are drawn lit while their lamp burns (LampOfMaterial, Glowing, LampGlowOf); each end's
+//    light comes from where its lamps are (LightOf).
 
 #pragma once
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 #include "../ahshitrim_protocol.h"
@@ -153,28 +154,56 @@ namespace AhShitRim::VehicleLights
         return static_cast<std::int16_t>(std::clamp(std::lround(a_units), -32767l, 32767l));
     }
 
+    // ---- How a burning lamp's mesh looks (Skyrim's side) ----
+
+    // San Andreas's lights-on texture is only a little brighter than the unlit one (the ZR-350's pop-up glass keeps a dark
+    // core), and San Andreas makes its lamps look lit with the corona it draws over each. Skyrim draws no corona, so a
+    // burning lamp's mesh shows the lights-on texture lifted toward full brightness, its hue kept (a tail light stays red),
+    // glowing by itself (LampGlow), solid (the Sandking's headlight glass is half see-through) and twice as bright while
+    // braking (BrakeGlow).
+    inline constexpr float kGlowLift = 0.7f;  // how far each pixel's brightest channel goes toward full
+
+    inline void Glowing(std::uint8_t* a_rgba, std::size_t a_pixels)
+    {
+        for (std::size_t i = 0; i < a_pixels; i++) {
+            std::uint8_t* p = a_rgba + i * 4;
+            const int     top = (std::max)({ p[0], p[1], p[2] });
+            const float   lifted = static_cast<float>(top) + (255.0f - static_cast<float>(top)) * kGlowLift;
+            for (int c = 0; c < 3; c++) {
+                // A grey (or black) pixel lifts as grey; a coloured one keeps its channels' ratio.
+                const float value = top > 0 ? static_cast<float>(p[c]) * lifted / static_cast<float>(top) : lifted;
+                p[c] = static_cast<std::uint8_t>(std::clamp(std::lround(value), 0L, 255L));
+            }
+        }
+    }
+
     // ---- The light they throw (Skyrim's side) ----
 
-    // Skyrim has no shadowless spot light, so each lamp burning is a point light of its own, placed from its dummy (the
-    // left ones mirrored, x negated, as DoLightEffectImpl places them):
-    //  - a headlight's out on the road ahead of it and a little up, lighting the ground as San Andreas's light pool
-    //    does (DoHeadLightReflection's StoreCarLightShadow: about 7 m ahead of the lamps and 13 m long, plus a 20 m
-    //    directional light), so clearly, not a glimmer;
-    //  - a tail light's just behind it, red, small; larger and brighter while braking (San Andreas adds a red light
-    //    behind the car then).
+    // Skyrim has no shadowless spot light, so the headlights' light on the road is a point light out ahead of them and a
+    // little up, lighting the ground as San Andreas's light pool does (DoHeadLightReflection's StoreCarLightShadow: about
+    // 7 m ahead of the lamps and 13 m long), and the tail lights' a small red one behind, larger and brighter while
+    // braking (San Andreas adds a red light behind the car then).
+    //  - One light per end, not per lamp: Skyrim lights each mesh (the ground under the car among them) with about 4
+    //    dynamic lights, so 4 per vehicle crowded each other out (one tail light lit, or none beside a second vehicle).
+    //    It sits midway between a pair, or at the one lamp burning (a bike's, or a pair with one smashed).
+    //  - Far enough out that its reach ends kLampClear short of the lamps: the car itself isn't lit by its own lights
+    //    (a light-blue car lit up all over from in front, the plate glowing pink).
     // The numbers are a matter of taste, so AhShitRim.ini's [Headlights] may change them (skse/src/player/Headlights.cpp).
+    inline constexpr float kLampClear = 0.3f * Pose::kUnitsPerMeter;
+
     struct Tuning
     {
-        float beamAhead = 6.0f * Pose::kUnitsPerMeter;   // ahead of a headlight
-        float beamRaise = 0.8f * Pose::kUnitsPerMeter;   // above it, so the pool spreads over the road
-        float beamRadius = 12.0f * Pose::kUnitsPerMeter;
-        float beamIntensity = 2.5f;                       // the point light's fade: Skyrim's torch is about 1
-        float tailBehind = 0.25f * Pose::kUnitsPerMeter;
-        float tailRadius = 1.5f * Pose::kUnitsPerMeter;
-        float tailIntensity = 1.0f;
-        float brakeRadius = 3.0f * Pose::kUnitsPerMeter;
-        float brakeIntensity = 2.5f;
-        float lampGlow = 2.0f;  // a burning lamp's mesh: its emissive strength (Skyrim's shader)
+        float beamAhead = 6.0f * Pose::kUnitsPerMeter;   // at least this far ahead of the headlights
+        float beamRaise = 0.8f * Pose::kUnitsPerMeter;   // above them, so the pool spreads over the road
+        float beamRadius = 8.0f * Pose::kUnitsPerMeter;
+        float beamIntensity = 3.0f;                       // the point light's fade: Skyrim's torch is about 1
+        float tailDrop = 0.3f * Pose::kUnitsPerMeter;    // below the tail lights, toward the road behind
+        float tailRadius = 1.2f * Pose::kUnitsPerMeter;
+        float tailIntensity = 1.5f;
+        float brakeRadius = 2.0f * Pose::kUnitsPerMeter;
+        float brakeIntensity = 3.0f;
+        float lampGlow = 3.0f;   // a burning lamp's mesh: its emissive strength (Skyrim's shader)
+        float brakeGlow = 2.0f;  // a tail lamp's, times this while braking
     };
 
     struct Glow
@@ -185,27 +214,68 @@ namespace AhShitRim::VehicleLights
         float colour[3] = {};
     };
 
-    // The point light for lamp a_lamp (0..3, in kLight order: front right, front left, rear right, rear left). False
-    // while it doesn't burn.
-    inline bool LampOf(const Protocol::BodyLights& a_lights, int a_lamp, const Tuning& a_tuning, Glow& a_out)
+    // How far ahead of (behind) the lamps a light of a_radius sits, a_up above (below) them, so its reach ends
+    // kLampClear short of them, and at least a_least.
+    inline float OutFrom(float a_radius, float a_up, float a_least)
     {
-        if (a_lamp < 0 || a_lamp >= 4 || (a_lights.lit & kLampBits[a_lamp]) == 0) {
+        const float reach = a_radius + kLampClear;
+        const float out = reach > std::fabs(a_up) ? std::sqrt(reach * reach - a_up * a_up) : 0.0f;
+        return (std::max)(out, a_least);
+    }
+
+    // The point light for one end, a_end 0 the headlights, 1 the tail lights. False while neither of its lamps burns.
+    inline bool LightOf(const Protocol::BodyLights& a_lights, int a_end, const Tuning& a_tuning, Glow& a_out)
+    {
+        if (a_end < 0 || a_end > 1) {
             return false;
         }
-        const bool          front = a_lamp < 2;
-        const bool          left = a_lamp % 2 == 1;
+        const bool          front = a_end == 0;
+        const bool          right = (a_lights.lit & kLampBits[a_end * 2]) != 0;
+        const bool          left = (a_lights.lit & kLampBits[a_end * 2 + 1]) != 0;
         const std::int16_t* dummy = front ? a_lights.front : a_lights.rear;
-        a_out.at.x = static_cast<float>(left ? -dummy[0] : dummy[0]);
-        a_out.at.y = static_cast<float>(dummy[1]) + (front ? a_tuning.beamAhead : -a_tuning.tailBehind);
-        a_out.at.z = static_cast<float>(dummy[2]) + (front ? a_tuning.beamRaise : 0.0f);
+        if (!right && !left) {
+            return false;
+        }
         const bool braking = !front && (a_lights.state & Protocol::kLightBraking) != 0;
         a_out.radius = front ? a_tuning.beamRadius : braking ? a_tuning.brakeRadius : a_tuning.tailRadius;
         a_out.intensity = front ? a_tuning.beamIntensity : braking ? a_tuning.brakeIntensity : a_tuning.tailIntensity;
+        // Midway between a pair; at the one burning otherwise (the left one mirrored, x negated, as DoLightEffectImpl does).
+        a_out.at.x = right && left ? 0.0f : static_cast<float>(left ? -dummy[0] : dummy[0]);
+        if (front) {
+            a_out.at.y = static_cast<float>(dummy[1]) + OutFrom(a_out.radius, a_tuning.beamRaise, a_tuning.beamAhead);
+            a_out.at.z = static_cast<float>(dummy[2]) + a_tuning.beamRaise;
+        } else {
+            a_out.at.y = static_cast<float>(dummy[1]) - OutFrom(a_out.radius, a_tuning.tailDrop, 0.0f);
+            a_out.at.z = static_cast<float>(dummy[2]) - a_tuning.tailDrop;
+        }
         // San Andreas's headlight colour (160, 160, 140) brought up to full, and its tail lights' red.
-        const float white[3] = { 1.0f, 1.0f, 0.875f };
-        const float red[3] = { 1.0f, 0.06f, 0.03f };
+        const float  white[3] = { 1.0f, 1.0f, 0.875f };
+        const float  red[3] = { 1.0f, 0.06f, 0.03f };
         const float* colour = front ? white : red;
         std::copy(colour, colour + 3, a_out.colour);
         return true;
+    }
+
+    // A lamp mesh's own glow (its emissive strength) for lamp a_lamp (a kLight bit): none while it doesn't burn, a tail
+    // lamp's brighter while braking.
+    inline float LampGlowOf(std::uint8_t a_lamp, const Protocol::BodyLights& a_lights, const Tuning& a_tuning)
+    {
+        if ((a_lamp & a_lights.lit) == 0) {
+            return 0.0f;
+        }
+        const bool rear = (a_lamp & (Protocol::kLightRearRight | Protocol::kLightRearLeft)) != 0;
+        return a_tuning.lampGlow * (rear && (a_lights.state & Protocol::kLightBraking) != 0 ? a_tuning.brakeGlow : 1.0f);
+    }
+
+    // A lamp's name in the logs.
+    constexpr const char* LampName(std::uint8_t a_lamp)
+    {
+        switch (a_lamp) {
+        case Protocol::kLightFrontRight: return "front right";
+        case Protocol::kLightFrontLeft: return "front left";
+        case Protocol::kLightRearRight: return "rear right";
+        case Protocol::kLightRearLeft: return "rear left";
+        default: return "several";
+        }
     }
 }
