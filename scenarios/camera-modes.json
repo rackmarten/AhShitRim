@@ -4,7 +4,9 @@
 // until San Andreas's first-person view, which sits out in front of the vehicle, not inside it: its middle
 // well behind the camera (70 units a metre: a ZR-350 more than 2 m, forward > 140; a Sanchez, > 50; the Hunter and
 // the Hydra, > 300), looking ahead, the vehicle's middle behind the camera (not in the picture); the Hunter and the
-// Hydra show San Andreas's rocket sight in it. Screenshots with the HUD at each step.
+// Hydra show San Andreas's rocket sight in it. The vehicles stand on the open road below the Whiterun stables, facing
+// south along it on a clear day, and the view must reach 1000 units (14 m) ahead before land or a tree (asr.camera's
+// ahead), so the shots show the road, not a bush. Screenshots with the HUD at each step.
 // scripts/skytest.ps1 run scenarios/camera-modes.json (scenarios/README.md).
 {
   "name": "camera-modes",
@@ -24,39 +26,48 @@
     { "label": "V: back to the first", "cmd": "asr.view", "expect": ["firstPerson == false", "changed == true"] },
     { "cmd": "screenshot", "name": "foot-3", "hud": true },
 
-    { "label": "CJ in a ZR-350", "cmd": "asr.spawn", "model": 477, "in": true, "expect": "driven == true" },
+    { "label": "to the road below the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "V to the first-person view: in front of the bonnet", "cmd": "asr.view", "untilFirstPerson": true,
-      "expect": ["firstPerson == true", "forward > 140", "looksAhead > 0.9", "scope == none"] },
-    { "label": "the car's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "a clear day, held", "cmd": "scene", "presets": "day clear still" },
+
+    { "label": "facing south along the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "label": "CJ in a ZR-350 there", "cmd": "asr.spawn", "model": 477, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "V to the first-person view: out in front, the road clear ahead", "cmd": "asr.view", "untilFirstPerson": true,
+      "expect": ["firstPerson == true", "forward > 140", "looksAhead > 0.9", "ahead > 1000", "scope == none"] },
+    { "label": "the ZR-350's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
     { "cmd": "screenshot", "name": "zr350-first-person", "hud": true },
-    { "label": "CJ gets out", "cmd": "asr.exit" },
-    { "label": "on to a clear spot", "cmd": "asr.walk", "points": "16100,-47050", "gait": "sprint", "stuck": 8 },
 
-    { "label": "CJ on a Sanchez", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
+    { "label": "facing south along the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "label": "CJ in a Sanchez there", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "V to the first-person view: past the handlebars", "cmd": "asr.view", "untilFirstPerson": true,
-      "expect": ["firstPerson == true", "forward > 50", "looksAhead > 0.9"] },
-    { "label": "the bike's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
+    { "label": "V to the first-person view: out in front, the road clear ahead", "cmd": "asr.view", "untilFirstPerson": true,
+      "expect": ["firstPerson == true", "forward > 50", "looksAhead > 0.9", "ahead > 1000"] },
+    { "label": "the Sanchez's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
     { "cmd": "screenshot", "name": "sanchez-first-person", "hud": true },
-    { "label": "CJ gets off", "cmd": "asr.exit" },
-    { "label": "on to a clear spot", "cmd": "asr.walk", "points": "15000,-47100", "gait": "sprint", "stuck": 8 },
 
-    { "label": "CJ in a Hunter", "cmd": "asr.spawn", "model": 425, "in": true, "expect": "driven == true" },
+    { "label": "facing south along the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "label": "CJ in a Hunter there", "cmd": "asr.spawn", "model": 425, "in": true, "expect": "driven == true" },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "V to the first-person view: in front of the nose, with the rocket sight", "cmd": "asr.view", "untilFirstPerson": true,
-      "expect": ["firstPerson == true", "forward > 300", "looksAhead > 0.9", "scope == rocket"] },
+    { "label": "V to the first-person view: out in front, the road clear ahead", "cmd": "asr.view", "untilFirstPerson": true,
+      "expect": ["firstPerson == true", "forward > 300", "looksAhead > 0.9", "ahead > 1000", "scope == rocket"] },
     { "label": "the Hunter's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
     { "cmd": "screenshot", "name": "hunter-first-person", "hud": true },
-    { "label": "CJ gets out", "cmd": "asr.exit" },
-    { "label": "on to a clear spot", "cmd": "asr.walk", "points": "13500,-47200", "gait": "sprint", "stuck": 8 },
 
-    { "label": "CJ in a Hydra", "cmd": "asr.spawn", "model": 520, "in": true, "expect": "driven == true" },
+    { "label": "facing south along the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "label": "CJ in a Hydra there", "cmd": "asr.spawn", "model": 520, "in": true, "expect": "driven == true" },
     { "cmd": "wait", "seconds": 2 },
-    { "label": "V to the first-person view: in front of the nose, with the rocket sight", "cmd": "asr.view", "untilFirstPerson": true,
-      "expect": ["firstPerson == true", "forward > 300", "looksAhead > 0.9", "scope == rocket"] },
+    { "label": "V to the first-person view: out in front, the road clear ahead", "cmd": "asr.view", "untilFirstPerson": true,
+      "expect": ["firstPerson == true", "forward > 300", "looksAhead > 0.9", "ahead > 1000", "scope == rocket"] },
     { "label": "the Hydra's middle is behind the camera", "cmd": "project", "at": "asr.vehicle:", "expect": "visible == false" },
     { "cmd": "screenshot", "name": "hydra-first-person", "hud": true },
-    { "label": "CJ gets out", "cmd": "asr.exit" }
+    { "label": "the scene back", "cmd": "scene", "presets": "restore" }
   ]
 }

@@ -321,6 +321,44 @@ namespace AhShitRim::TestKit
             return pose;
         }
 
+        // How far the camera sees along San Andreas's camera's forward before something solid (land, a tree, a building;
+        // not people, the hidden player among them), from the camera the frame is rendered with; a_max when nothing is.
+        float ClearAhead(const float a_forward[3], float a_max)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* camera = RE::Main::WorldRootCamera();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!camera || !world) {
+                return -1.0f;
+            }
+            const auto&              from = camera->world.translate;
+            const RE::NiPoint3       to = from + RE::NiPoint3(a_forward[0], a_forward[1], a_forward[2]) * a_max;
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               start = 0.0f;
+            for (int i = 0; i < 4 && start < 1.0f; i++) {
+                const RE::NiPoint3 a = from + (to - from) * start;
+                input.from = RE::hkVector4(a.x * scale, a.y * scale, a.z * scale, 0.0f);
+                input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return a_max;
+                }
+                const float at = start + (1.0f - start) * output.hitFraction;
+                auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
+                if (!hit || !hit->IsActor()) {
+                    return at * a_max;
+                }
+                start = at + 1.0f / a_max;
+            }
+            return a_max;
+        }
+
         // asr.camera: San Andreas's camera against CJ and his vehicle, from the pose and the body (both relative to the
         // handover's anchor, Skyrim units).
         Json CameraNow()
@@ -335,7 +373,8 @@ namespace AhShitRim::TestKit
             JsonObject out{ { "mode", static_cast<int>(pose->cameraMode) }, { "firstPerson", pose->cameraMode == Weapons::kCamFirstPerson },
                 { "fromFeet", Round(std::hypot(cam[0], cam[1]), 0.1) }, { "height", Round(cam[2], 0.1) },
                 { "forward3", JsonObject{ { "x", Round(body.cameraForward[0]) }, { "y", Round(body.cameraForward[1]) }, { "z", Round(body.cameraForward[2]) } } },
-                { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) } };
+                { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) },
+                { "ahead", Round(ClearAhead(body.cameraForward, 3000.0f), 1.0) } };
             const auto scope = Weapons::ScopeOf(pose->cameraMode, (pose->flags & Protocol::kPlayerInVehicle) ? pose->vehicleModel : 0);
             constexpr const char* kScopes[] = { "none", "sniper", "rocket", "rifle", "camera", "aim" };
             out.Set("scope", static_cast<std::size_t>(scope) < std::size(kScopes) ? kScopes[static_cast<std::size_t>(scope)] : "?");
@@ -1158,7 +1197,8 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.camera", "",
                 "San Andreas's camera now: its mode (eCamMode), where it is from CJ's feet (distance on the ground, height) and, in a "
-                "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it)",
+                "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it); its scope; and ahead: how far "
+                "the rendered camera sees that way before land, a tree or a building (3000 for nothing within 3000 units)",
                 [](Call&) -> Json { return CameraNow(); });
 
             SkseTestKit::AddTask("asr.view", "[settle=<seconds>] [untilFirstPerson=<bool>] [presses=<n>]",
