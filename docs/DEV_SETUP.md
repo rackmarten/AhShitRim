@@ -140,8 +140,8 @@ the console, the game settled, the player handed to San Andreas, then one scenar
 each load. A crash (a new crash log), a hang (no frame for `-HangSeconds`, 180) or Skyrim gone is recorded with its
 cycle and the plugin's last step, the session is started again and the test goes on. Results:
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
-`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit; this checkout's is
-deployed again at the end); `-SaveAs <name>` saves the last cycle's game under that name once its load has settled (a
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit; the games' own files
+come back at the end, as after any session); `-SaveAs <name>` saves the last cycle's game under that name once its load has settled (a
 save cleaned of the police's leftovers); `-Keep` leaves the session up. A start that fails (it loads a save, which can
 crash too) is recorded and tried again, up to five times.
 
@@ -160,7 +160,8 @@ never need it). To use it:
 3. `scripts/build.ps1`: with the submodule there, the SKSE plugin links the kit (the CMake option
    `AHSHITRIM_TEST_KIT`, `-NoTestKit` to leave it out). The kit does nothing unless `AhShitRim.ini` has a `[Test]`
    section, which only `skytest` writes, and takes out again as soon as Skyrim has read it.
-4. `scripts/skytest.ps1 start`: takes the games lock, deploys (`scripts/deploy-local.ps1`), starts San Andreas hidden
+4. `scripts/skytest.ps1 start`: takes the games lock, deploys (`scripts/test-deploy.ps1`: the games' own files kept,
+   then `scripts/deploy-local.ps1`), starts San Andreas hidden
    (`scripts/launch-sa.ps1`) and Skyrim hidden into `coc:Riverwood` with a new character, hands the player to San
    Andreas (`[Test] CJ=1`) and returns once CJ has it, about 20 s after the command. `-Start save:<name>` (or
    `save:latest`, `cow:<worldspace> <x> <y>`, `newgame`, `menu`) starts elsewhere, `-NoPartner` leaves San Andreas
@@ -223,15 +224,23 @@ never need it). To use it:
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
-`SkyrimPrefs.ini` back byte for byte, and `AhShitRim.ini` as the deploy left it. `start` refuses while a Skyrim or San
-Andreas that isn't a test session's runs (someone may be playing; `-CloseGames` closes it), and `stop` closes only the
-session's own.
+`SkyrimPrefs.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a test session's runs
+(someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
 
-The deploy stays in the games: `skytest.psd1` has no `Undeploy`, so after `stop` the plugin, the ASI and their `.pdb`s
-are this checkout's build, not the AhShitRim installed before, and `AhShitRim.ini` is the one `deploy-local.ps1` wrote
-(it keeps `KeyLayout`, `MiscPassed` and `Compass`, and drops any key it doesn't know, such as one a newer build added).
-Testing on a machine someone also plays on? Copy those files aside first and put them back after, or deploy their own
-build again from its checkout (`scripts/deploy-local.ps1`).
+The games come back as they were. `skytest.psd1`'s `Deploy` is `scripts/test-deploy.ps1 deploy`: before
+`deploy-local.ps1` writes over them it keeps a copy of every file it writes (`AhShitRim.dll`, its `.pdb` and
+`AhShitRim.ini` in `Data/SKSE/Plugins`, Sweetroll FM's tracks in `Data/Music/AhShitRim`, `AhShitRim.asi` and its `.pdb`
+in San Andreas's `scripts`), notes the ones that weren't there, and sets PerkeleRim's SKSE plugin aside (both mods take
+over the player). Its `Undeploy`, `test-deploy.ps1 restore`, puts all of it back once no Skyrim runs: on `stop`, after a
+failed start, and on the next `stop` after a shell that was killed mid-session (a `start` in between keeps the first
+copies). That matters for `AhShitRim.ini`: `deploy-local.ps1` rewrites it and drops keys it doesn't know (one a held
+branch added), and the kit puts back only what the deploy wrote. The copies are in
+`%LOCALAPPDATA%\AhShitRim\test-session` until then; a session restarted for a new build keeps the first ones, and the
+folders the deploy made go again once empty. Should the games' files change while a session is deployed (someone
+installed another AhShitRim before `stop`), the restore refuses and says so: look, then `scripts/test-deploy.ps1
+restore-anyway` (the old ones back all the same) or `forget` (keep what's there). `scripts/test-deploy.ps1 status` lists
+what's kept.
+`restart-games.ps1` and a plain `deploy-local.ps1` still deploy straight into the games, for playing.
 Neither game takes the foreground: San Andreas's window is created hidden and never activated (`sa/src/window.cpp`),
 as Skyrim's is.
 `hit-test.ps1` and `load-test.ps1` run on test sessions and take the games lock; `restart-games.ps1` (the play loop)

@@ -3,8 +3,11 @@
 @{
     Name    = 'AhShitRim'
     Ini     = 'Data/SKSE/Plugins/AhShitRim.ini'
-    # Copies what scripts/build.ps1 built last (both plugins); skytest starts nothing until it's done.
-    Deploy  = @{ Script = 'scripts/deploy-local.ps1' }
+    # What scripts/build.ps1 built last (both plugins), through scripts/deploy-local.ps1; the player's own files are kept
+    # and PerkeleRim's plugin set aside (both take over the player) until Undeploy puts everything back (skytest stop, a
+    # failed start).
+    Deploy   = @{ Script = 'scripts/test-deploy.ps1'; Arguments = @{ Mode = 'deploy'; Aside = @('PerkeleRim') } }
+    Undeploy = @{ Script = 'scripts/test-deploy.ps1'; Arguments = @{ Mode = 'restore' } }
     # What a build changes: skytest session starts again when these differ from the running session's.
     Build   = @('skse/build/release/AhShitRim.dll', 'sa/build/Release/AhShitRim.asi')
     # San Andreas, hidden as scripts/restart-games.ps1 starts it, beside Skyrim. CJ=1 only while it runs: the session
