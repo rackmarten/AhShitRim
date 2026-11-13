@@ -7,5 +7,8 @@
     <SkyrimPath>C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition</SkyrimPath>
     <!-- The San Andreas 1.0 US folder (gta_sa.exe), with an ASI loader installed. -->
     <SaPath>C:\Games\Grand Theft Auto San Andreas</SaPath>
+    <!-- Optional, for scripts/skytest.ps1 (docs/DEV_SETUP.md, "Test sessions"): the folder every session on this machine
+         locks the games with, so two of them never run Skyrim at once. -->
+    <!-- <GamesLock>C:\Games\games-lock</GamesLock> -->
   </PropertyGroup>
 </Project>

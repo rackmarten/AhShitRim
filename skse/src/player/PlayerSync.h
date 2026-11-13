@@ -1,5 +1,12 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
+
+#include "../ahshitrim_protocol.h"
+
 // Hands the Skyrim player to San Andreas and back (F10), as in PerkeleRim. While San Andreas owns
 // the player:
 //  - keyboard and mouse go to San Andreas as an InputState (WASD, mouse look, sprint, jump, crouch,
@@ -34,7 +41,11 @@ namespace AhShitRim::PlayerSync
     bool PadInUse();
 
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
-    bool DebugOwned();
+    bool          DebugOwned();
+    std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
+    // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units), its heading (radians, Skyrim's:
+    // 0 north, clockwise) and the model drawn (ModelView's id). False when San Andreas hasn't the player or the slot draws nothing.
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr);
     void DebugToggle();
     void DebugType(const char* a_code);
     // The hit test's stealth scenario (debug, v38): the mouse's aim and fire buttons held as if pressed.
@@ -51,4 +62,24 @@ namespace AhShitRim::PlayerSync
     // The hit test (debug, v31): San Andreas takes the player (again, if it had it), with CJ in a new vehicle of model a_model
     // where it stands.
     void TakeOverInVehicle(std::uint16_t a_model);
+
+    // The test kit (debug): asks San Andreas for a vehicle of model a_model in front of CJ, as typing its name does. Why
+    // it can't, or nothing.
+    std::string DebugSpawn(std::uint16_t a_model);
+
+    // The test kit (debug): input held for CJ on top of the keyboard's while San Andreas has the player and no menu has
+    // the input: the stick (moveX right, moveY forward, -1 to 1; San Andreas moves CJ that way from its camera's view)
+    // and Protocol::kButton* bits. nullopt lets go; so does 0.3 s without another call (a test whose request went away).
+    struct DebugInput
+    {
+        float         moveX = 0.0f;
+        float         moveY = 0.0f;
+        std::uint32_t buttons = 0;
+    };
+    void DebugHold(const std::optional<DebugInput>& a_input);
+
+    // The test kit (debug): called for each vehicle about to be drawn this frame, with its smoothed pose (which it may
+    // change, for what's drawn this frame only) and its position in Skyrim's world. An empty function takes it out.
+    using DebugVehicleHook = std::function<void(std::uint32_t a_slot, Protocol::BodyState& a_pose, const RE::NiPoint3& a_feet)>;
+    void SetDebugVehicleHook(DebugVehicleHook a_hook);
 }
