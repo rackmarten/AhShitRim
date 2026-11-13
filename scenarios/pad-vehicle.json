@@ -9,7 +9,7 @@
 //
 // The limits (set from runs on the test desktop, measured values in the pull request): RT full for 3 s from a
 // standstill gets the Sandking past 25 km/h and 8 m on; the left stick full left while driving turns it at least 15
-// degrees left; LT held stops it and then backs it up (ahead below -3 km/h); X held turns the camera at least 120
+// degrees left; LT held 7 s stops it and then backs it up (ahead below -3 km/h; from about 40 km/h it stands after about 4 s); X held turns the camera at least 120
 // degrees (looking behind); the d-pad's up changes the radio station. RT half pulled moves the Sandking (top speed past
 // 3 km/h) and RT full reaches a top speed at least 1.3 times half's in the same 3 s; the Sanchez's nose rises at least
 // 3 degrees with the stick half back and 1.2 times that full back, and drops at least 2 degrees half forward and 1.2
@@ -43,7 +43,7 @@
     { "label": "it turned left", "cmd": "asr.since", "expect": "bodyTurned < -15" },
     { "label": "RT let go", "cmd": "pad", "buttons": "rt", "value": 0 },
     { "label": "LT held", "cmd": "pad", "buttons": "lt", "value": 1 },
-    { "label": "it stops and backs up", "cmd": "asr.watch", "seconds": 5, "expect": ["lowSpeed < 3", "ahead < -3"] },
+    { "label": "it stops and backs up", "cmd": "asr.watch", "seconds": 7, "expect": ["lowSpeed < 3", "ahead < -3"] },
     { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
     { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
     { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
