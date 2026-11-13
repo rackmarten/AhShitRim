@@ -1030,6 +1030,20 @@ namespace AhShitRim::TestKit
             std::uint32_t                         handover = 0;
         };
         std::optional<Mark>         g_mark;
+        std::optional<double>       g_markCamera;  // Skyrim's camera's heading at asr.mark, degrees
+
+        // Skyrim's camera's heading now, degrees (0 north, clockwise): AhShitRim puts it where San Andreas's camera is,
+        // so it shows what San Andreas's camera does that CJ's view heading doesn't (a vehicle's look behind).
+        std::optional<double> CameraHeading()
+        {
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            auto* root = camera ? camera->cameraRoot.get() : nullptr;
+            if (!root) {
+                return std::nullopt;
+            }
+            const auto& m = root->world.rotate;
+            return std::atan2(m.entry[0][1], m.entry[1][1]) * 180.0 / std::numbers::pi;  // its forward, the Y axis
+        }
         std::map<std::string, Json> g_kept;
 
         Mark TakeMark()
@@ -1125,13 +1139,15 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.mark", "", "Marks CJ's pose now, for asr.since", [](Call&) -> Json {
                 g_mark = TakeMark();
+                g_markCamera = CameraHeading();
                 return DescribePose(g_mark->pose);
             });
 
             SkseTestKit::AddCommand("asr.since", "[keep=<name>] [vs=<name>]",
                 "What changed since asr.mark: seconds, moved and climbed (metres), turned (turnedBy: either way) and pitched (degrees, the camera), "
                 "bodyTurned (CJ's or his vehicle's heading), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
-                "weapon and radio station then and now. keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
+                "weapon and radio station then and now; cameraTurned (cameraTurnedBy: either way): Skyrim's camera, which follows San Andreas's (a "
+                "vehicle's look behind turns it, not CJ's view). keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
                 [](Call& a_call) -> Json {
                     if (!g_mark) {
                         throw Error("no asr.mark yet");
@@ -1141,6 +1157,12 @@ namespace AhShitRim::TestKit
                         throw Error("the handover changed since asr.mark (or San Andreas has no pose of CJ): mark again");
                     }
                     auto out = Since(*g_mark, *pose);
+                    if (const auto now = CameraHeading(); now && g_markCamera) {
+                        double d = *now - *g_markCamera;
+                        d -= 360.0 * std::round(d / 360.0);
+                        out["cameraTurned"] = Round(d, 0.1);
+                        out["cameraTurnedBy"] = Round(std::abs(d), 0.1);
+                    }
                     Compare(out, a_call);
                     return out;
                 });

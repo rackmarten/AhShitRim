@@ -7,8 +7,8 @@
 //
 // The limits (set from runs on the test desktop, measured values in the pull request): RT full for 3 s from a
 // standstill gets the Sandking past 25 km/h and 8 m on; the left stick full left while driving turns it at least 15
-// degrees left; LT held 7 s stops it and then backs it up (ahead below -3 km/h; from about 40 km/h it stands after about 4 s); X held turns the camera at least 120
-// degrees (looking behind); the d-pad's up changes the radio station.
+// degrees left; LT held 7 s stops it and then backs it up (ahead below -3 km/h; from about 40 km/h it stands after about 4 s); X held turns the camera (Skyrim's, following San Andreas's) at least
+// 120 degrees (looking behind); the d-pad's up changes the radio station.
 {
   "name": "pad-vehicle",
   "steps": [
@@ -47,7 +47,7 @@
     { "cmd": "asr.mark" },
     { "label": "X held", "cmd": "pad", "buttons": "x" },
     { "cmd": "wait", "seconds": 0.6 },
-    { "label": "CJ looks behind", "cmd": "asr.since", "expect": "turnedBy > 120" },
+    { "label": "CJ looks behind (Skyrim's camera, which follows San Andreas's)", "cmd": "asr.since", "expect": "cameraTurnedBy > 120" },
     { "label": "looking behind", "cmd": "screenshot", "name": "look-behind" },
     { "cmd": "pad", "buttons": "x", "value": 0 },
     { "cmd": "wait", "seconds": 0.6 },
