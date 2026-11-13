@@ -10,7 +10,7 @@
     the plugin's last step, the session is started again, and the test goes on with the next cycle. Each run's events
     go to Documents/My Games/AhShitRim/loadtest-results.csv, every cycle's steps to loadtest.csv beside it (the one
     before is kept with its time in its name). Exit code: 0 when no cycle crashed, hung or got stuck, 1 otherwise.
-    Never saves, unless -SaveAs. With -Dll this checkout's build is deployed again at the end.
+    Never saves, unless -SaveAs. The games' own files come back at the end (skytest.psd1's Undeploy), -Dll's too.
 .EXAMPLE
     scripts/load-test.ps1 -Cycles 70 -Label after
     scripts/load-test.ps1 -Cycles 40 -Scenarios chase -Label chase-only
@@ -39,7 +39,8 @@ $config = Get-SkytestConfig $root
 if ($Dll) {
     if ($Keep) { throw '-Keep leaves the session running, and with -Dll it would run the other build as if it were this checkout''s: drop one.' }
     $Dll = (Resolve-Path $Dll).Path
-    $config.Deploy = @{ Script = 'scripts/deploy-local.ps1'; Arguments = @('-SkseDll', $Dll) }
+    # The session's own deploy (it keeps the games' files for the undeploy), with the other build.
+    $config.Deploy = @{ Script = $config.Deploy['Script']; Arguments = @{} + $config.Deploy['Arguments'] + @{ SkseDll = $Dll } }
 }
 $folder = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\AhShitRim'
 $csv = Join-Path $folder 'loadtest.csv'
@@ -127,6 +128,5 @@ try {
     Record 'end' $done ("{0} cycles in {1:n0} min: {2} ok, {3} crash(es), {4} exit(s), {5} hang(s), {6} stuck, {7} failed start(s)" -f $done,
         $clock.Elapsed.TotalMinutes, $counts.ok, $counts.crash, $counts.exit, $counts.hang, $counts.stuck, $counts.start)
     if (-not $Keep) { Stop-SkyrimTest -Config $config }
-    if ($Dll) { & (Join-Path $PSScriptRoot 'deploy-local.ps1') | Out-Null; Write-Host 'Deployed this checkout''s build again.' }
 }
 if ($counts.crash + $counts.exit + $counts.hang + $counts.stuck + $counts.start) { exit 1 }
