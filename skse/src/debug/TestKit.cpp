@@ -1450,7 +1450,16 @@ namespace AhShitRim::TestKit
                             const double held = a_call.Seconds() - run->readyAt;
                             if (held > aim + 3.0) {
                                 PlayerSync::DebugHold(std::nullopt);
-                                throw Error("no grab: Skyrim never got CJ's grab (the lock-on target not a stealth kill? the SKSE log's lock-on line says why)");
+                                std::string why = "no victim placed";
+                                if (auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr) {
+                                    const auto feet = CjFeet();
+                                    const auto target = StealthKills::TargetOf(victim, RE::PlayerCharacter::GetSingleton());
+                                    const auto verdict = StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target);
+                                    why = std::format("{} is {} ({}{:.2f} m, {})", victim->GetName(), StealthKill::Why(verdict),
+                                        verdict == StealthKill::Verdict::NotStanding ? StealthKills::OffItsFeet(victim) + ", " : std::string(),
+                                        StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), victim->IsInCombat() ? "in combat" : "not in combat");
+                                }
+                                throw Error("no grab: " + why);
                             }
                             const bool click = held >= aim && held < aim + 0.25;
                             PlayerSync::DebugHold(PlayerSync::DebugInput{ .buttons = Protocol::kButtonAim | (click ? Protocol::kButtonFire : 0u) });

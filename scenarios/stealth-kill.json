@@ -26,12 +26,14 @@
     { "cmd": "wait", "seconds": 1 },
     { "label": "a standing knife blow: no sneak attack", "cmd": "asr.swing", "crouch": false, "expect": ["sneaking == false", "sneak == 1", "drop > 0"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
     { "label": "another guard 0.9 m ahead", "cmd": "asr.victim", "meters": 0.9 },
     { "cmd": "wait", "seconds": 1 },
     { "label": "a crouched knife blow, unseen: Skyrim's sneak attack, three times the damage", "cmd": "asr.swing", "crouch": true,
       "expect": ["sneak == 3", "detection <= 0", "vsLast ~ 3 +- 0.3"] },
     { "cmd": "screenshot", "name": "sneak-attack-hud", "hud": true, "settle": 1 },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
 
     { "label": "1: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
     { "cmd": "wait", "seconds": 1 },
@@ -50,6 +52,7 @@
     { "label": "1: CJ stayed put, the hidden player by him", "cmd": "record", "action": "stop",
       "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
     { "cmd": "wait", "seconds": 4 },
 
     { "label": "2: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
@@ -66,6 +69,7 @@
     { "label": "2: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
     { "label": "2: the tracks", "cmd": "record", "action": "stop", "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
     { "cmd": "wait", "seconds": 4 },
 
     { "label": "3: a guard 1.05 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 1.05 },
@@ -79,6 +83,7 @@
     { "label": "3: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
     { "label": "3: the tracks", "cmd": "record", "action": "stop", "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
 
     { "label": "evening, when Whiterun sits out", "cmd": "scene", "presets": "19 clear" },
     { "label": "to Whiterun", "cmd": "console", "command": "coc WhiterunOrigin" },
@@ -100,6 +105,7 @@
     { "label": "seated: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "playerFromCj < 210"] },
     { "cmd": "screenshot", "name": "seated-after", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "and Skyrim's alarm over the kill (guards placed after would come out fighting CJ)", "cmd": "console", "command": "player.stopcombatalarm" },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]
 }

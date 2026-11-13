@@ -266,6 +266,12 @@ TEST_CASE("damage: a crouched knife blow on someone who doesn't see the player i
     CHECK(SneakMultiplier(Weapons::Knife, true, true) == 1.0f);
     CHECK(SneakMultiplier(Weapons::Knife, false, false) == 1.0f);
     CHECK(SneakMultiplier(Weapons::Knife, false, true) == 1.0f);
+    // Swung from a crouch: San Andreas stands CJ up before the blow lands, which still counts.
+    CHECK(CrouchedBlow(true, 99.0f));
+    CHECK(CrouchedBlow(false, 0.4f));
+    CHECK(CrouchedBlow(false, kCrouchedBlow));
+    CHECK_FALSE(CrouchedBlow(false, 1.5f));
+    CHECK_FALSE(CrouchedBlow(false, -1.0f));  // never crouched
     // Only the knife.
     for (const std::uint8_t other : { Weapons::Unarmed, Weapons::Katana, Weapons::BaseballBat, Weapons::Chainsaw, Weapons::Pistol }) {
         CHECK(SneakMultiplier(other, true, false) == 1.0f);
