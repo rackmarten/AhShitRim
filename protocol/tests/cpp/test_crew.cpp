@@ -128,8 +128,9 @@ TEST_CASE("crew: G acts on the homie CJ aims at: his lock-on or crosshair, else 
     CHECK(Crew::AimPick(cj, 0.0f, far) == 4);                                          // 4.8 degrees off
     far[0].at.x = 2.5f * Crew::kMeter;
     CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // 7.9 degrees off
-    far[0].at = { 0.0f, 25.0f * Crew::kMeter, 0.0f };
+    far[0].at = { 0.0f, 35.0f * Crew::kMeter, 0.0f };
     CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // past kAimReach
+    far[0].at = { 0.0f, 28.0f * Crew::kMeter, 0.0f };
     far[0].targeted = true;
     CHECK(Crew::AimPick(cj, Pose::kPi, far) == 4);                                     // his crosshair on him: wherever
 }

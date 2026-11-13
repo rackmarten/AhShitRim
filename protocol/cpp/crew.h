@@ -290,7 +290,7 @@ namespace AhShitRim::Crew
         bool          targeted = false;  // CJ's lock-on or crosshair is on him
     };
 
-    inline constexpr float kAimReach = 20.0f;  // metres: a homie further than this isn't picked by CJ's aim alone
+    inline constexpr float kAimReach = 30.0f;  // metres: a homie further than this isn't picked by CJ's aim alone (the crosshair's reach)
     inline constexpr float kAimWidth = 0.6f;   // metres either side of CJ's aim line a homie may stand
     inline constexpr float kAimCone = 6.0f;    // degrees either side of it, for those further off
 
