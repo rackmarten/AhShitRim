@@ -92,9 +92,9 @@
                    { "name": "haloRight", "at": "asr.lamp:frontRight", "worldRadius": 50 } ],
       "expect": ["regions.0.delta < -100", "regions.1.delta < -100", "regions.2.delta < -15", "regions.3.delta < -15"] },
 
-    { "label": "CJ drives off (a second, clear of the rocks ahead)", "cmd": "asr.pedals", "gas": true },
+    { "label": "CJ backs up along the road (the Sandking pulls hard enough to hit the rocks ahead within a second)", "cmd": "asr.pedals", "brake": true },
     { "cmd": "wait", "seconds": 1 },
-    { "label": "and brakes", "cmd": "asr.pedals", "brake": true },
+    { "label": "and brakes: W while rolling back is San Andreas's brake", "cmd": "asr.pedals", "gas": true },
     { "label": "San Andreas says he brakes before the car stops", "cmd": "wait", "until": "at.details.lamps.braking == true",
       "for": { "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500 }, "timeout": 1.5 },
     { "label": "foot off the pedals", "cmd": "asr.pedals" },
