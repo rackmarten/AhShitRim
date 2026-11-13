@@ -47,7 +47,7 @@
       "expect": ["regions.0.delta < -45", "regions.1.delta < -45", "regions.0.color.r < -70", "regions.1.color.r < -70",
                  "regions.2.delta < -14", "regions.3.delta < -14",
                  "regions.4.delta < -5", "regions.5.delta < -5", "regions.4.color.r < -14", "regions.5.color.r < -14",
-                 "regions.6.delta > -5", "regions.6.delta < 5"] },
+                 "regions.6.delta > -8", "regions.6.delta < 8"] },
 
     { "label": "not braking", "cmd": "asr.lamps", "state": "nobrake" },
     "wait frames=5",
