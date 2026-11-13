@@ -10,8 +10,12 @@
 // scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md); vehicle-lights-sandking.json does the
 // Sandking. Needs the headlights (protocol v36; until they are on main, scenarios/README.md says how to run it).
 //
-// The limits (luma, 0 to 255) mean "clearly visible" in the shots at 1280x720: set from the PNGs of the first run with
-// the coronas, each about half of what was measured (the numbers measured are in the README's table).
+// The limits (luma, 0 to 255) mean "clearly visible" in the shots at 1280x720, each about half of what the run of 13
+// November 2026 measured, where the PNGs showed white headlight glass with a halo, red coronas and a red patch on the road
+// behind, and the road ahead lit: tail lenses 122 darker with the lamps off (red 176), their halos 22, the road behind
+// each lamp 19 and 21 (red 47 and 51); braking, the halos 4.5 brighter and the road behind 19 and 25 (red 45 and 60); the
+// headlight glass 229 luma lit, 192 darker off, its halo 34; the road ahead 31 and 34. The ground beside the car changes
+// by 2 or 3 either way (the eye adaptation following the lamps).
 {
   "name": "vehicle-lights",
   "steps": [
@@ -52,10 +56,10 @@
                    { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-65", "worldRadius": 40 },
                    { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-65", "worldRadius": 40 },
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
-      "expect": ["regions.0.delta < -40", "regions.1.delta < -40", "regions.0.color.r < -40", "regions.1.color.r < -40",
+      "expect": ["regions.0.delta < -60", "regions.1.delta < -60", "regions.0.color.r < -80", "regions.1.color.r < -80",
                  "regions.2.delta < -10", "regions.3.delta < -10",
-                 "regions.4.delta < -6", "regions.5.delta < -6", "regions.4.color.r < -10", "regions.5.color.r < -10",
-                 "regions.6.delta > -4"] },
+                 "regions.4.delta < -9", "regions.5.delta < -9", "regions.4.color.r < -20", "regions.5.color.r < -20",
+                 "regions.6.delta > -5", "regions.6.delta < 5"] },
 
     { "label": "not braking", "cmd": "asr.lamps", "state": "nobrake" },
     "wait frames=5",
@@ -72,8 +76,8 @@
                    { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-65", "worldRadius": 40 },
                    { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-65", "worldRadius": 40 },
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
-      "expect": ["regions.0.delta > 5", "regions.1.delta > 5", "regions.2.delta > 4", "regions.3.delta > 4",
-                 "regions.2.color.r > 6", "regions.3.color.r > 6", "regions.4.delta < 4"] },
+      "expect": ["regions.0.delta > 2", "regions.1.delta > 2", "regions.2.delta > 9", "regions.3.delta > 9",
+                 "regions.2.color.r > 20", "regions.3.color.r > 20", "regions.4.delta < 5", "regions.4.delta > -5"] },
 
     { "label": "the road ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 900, "pitch": 35 },
     "wait frames=20",
@@ -102,14 +106,15 @@
                    { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 15 },
                    { "name": "haloLeft", "at": "asr.lamp:frontLeft", "worldRadius": 50 },
                    { "name": "haloRight", "at": "asr.lamp:frontRight", "worldRadius": 50 } ],
-      "expect": ["regions.0.delta < -40", "regions.1.delta < -40", "regions.2.delta < -10", "regions.3.delta < -10"] },
+      "expect": ["regions.0.delta < -90", "regions.1.delta < -90", "regions.2.delta < -15", "regions.3.delta < -15"] },
 
-    { "label": "CJ drives off", "cmd": "asr.pedals", "gas": true },
-    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ drives off (a second, clear of the rocks ahead)", "cmd": "asr.pedals", "gas": true },
+    { "cmd": "wait", "seconds": 1 },
     { "label": "and brakes", "cmd": "asr.pedals", "brake": true },
-    "wait frames=4",
-    { "label": "San Andreas says he brakes: the tail lights burn for it", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
-      "expect": ["at.details.lamps.braking == true", "at.details.lights.1.fade > 5"] },
+    { "label": "San Andreas says he brakes before the car stops", "cmd": "wait", "until": "at.details.lamps.braking == true",
+      "for": { "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500 }, "timeout": 1.5 },
+    { "label": "the tail lights burn for it", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lights.1.fade > 5"] },
     { "cmd": "screenshot", "name": "braking", "camera": "orbit asr.vehicle: yaw=0 distance=600 pitch=15" },
     { "label": "foot off the pedals", "cmd": "asr.pedals" },
     { "cmd": "wait", "seconds": 2 },
