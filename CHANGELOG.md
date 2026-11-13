@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - For developers: the test kit's probes and recorder see San Andreas's vehicles: `asr.vehicle:` gives the kit the 3D the vehicle is drawn under and its slot and model, so `node`, `probe`, `project`, `pixels`, `ab` and `record` work on it.
 - For developers: scenarios for the in-game checks of the muzzle flash, the vehicles' lamps and the Grove Street crew (`scenarios/muzzle-flash.json`, `vehicle-lights.json`, `crew-follow.json`), each with its pass/fail limits written in the file. New kit commands drive CJ for them: `asr.walk` (waypoints at a walk, run or sprint), `asr.fire` and `asr.muzzle` (the flash against the drawn gun's muzzle), `asr.lamps` (the lamps off for an A/B pair), `asr.exit`, `asr.cheat` and `asr.crew`; and targets for the probes and the recorder: `asr.flash:`, `asr.weapon:`, `asr.lamp:<lamp>`, `asr.homie:<n>`. `asr.vehicle:` also reports its lamps and lights.
 
+### Changed
+
+- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves on a quest you're in (one whose objectives you've seen). Essential people NOMERCY let CJ kill still always come back.
+- For developers: `scenarios/respawns.json` and `respawns-stay-dead.json` check it in a hidden test session (who comes back and when; bandits and a quest's kill target staying dead), with the kit's new `asr.kill`, `asr.judge`, `asr.killed`, `asr.later` and `asr.objectives`.
+
 ### Fixed
 
 - A character who never went through Helgen (an alternate start, a `coc` from the main menu) could die while CJ had the player, and Skyrim then loaded the last save, instead of CJ being Wasted. The player is mortal while CJ has it only while Helgen's Unbound really runs; the check took a quest that was never started for one that runs.
