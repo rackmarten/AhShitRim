@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "pose.h"
 
@@ -25,12 +26,26 @@ namespace AhShitRim::ModelView
     // Whether model a_model is built and ready to draw.
     bool Has(std::uint32_t a_model);
 
+    // The node model a_model is drawn under while it's shown (the test kit's probes look inside it), else nullptr.
+    RE::NiNode* Node(std::uint32_t a_model);
+
     // Draws model a_pose.model posed by a_pose with its origin (CJ's feet, a vehicle's position) at
     // a_origin (Skyrim world units), this frame, a_scale times its size (v23: a pickup's twice). False when that model
     // isn't built.
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
 
+    // The test kit (debug): model a_model's vertices as its last Show posed them, relative to the origin it was shown at
+    // (unscaled). False while it isn't shown.
+    bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out);
+
+    // The test kit (debug): where bone a_boneId (San Andreas's node id: 24 CJ's right hand, 2 his pelvis) sits in model
+    // a_model's poses (BodyState.bones' index), -1 when the model isn't built or has no such bone.
+    int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId);
+
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
+    // The hit test (debug): where model a_model's node is in the world after Skyrim's scene update, and its parent's
+    // world position (its cell's node); false while it isn't shown.
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent);
     void HideAll();
 }

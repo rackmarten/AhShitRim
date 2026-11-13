@@ -40,7 +40,10 @@ namespace AhShitRim::CjBody
     // left) as last posed; false when he has no such bone.
     bool BoneWorld(CPlayerPed* a_ped, int a_boneId, RwMatrixTag& a_out);
 
-    // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call).
+    // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call), read once a
+    // frame (BeginFrame, after San Andreas's own frame): CJ, his vehicles, his gear and his weapons carry the same stamp
+    // for the same frame, so Skyrim draws them at the same moment.
+    void          BeginFrame();
     std::uint32_t NowMs();
 
     // Another skinned clump read the way CJ's is (v19: the parachute's canopy): its model as a SkinModel of kind

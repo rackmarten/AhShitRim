@@ -1,6 +1,8 @@
 #include "vehicles.h"
 
 #include "air_spawn.h"
+#include "car_exit.h"
+#include "cj_body.h"
 #include "cj_cheats.h"
 #include "fx_model.h"
 #include "log.h"
@@ -113,18 +115,6 @@ namespace AhShitRim::Vehicles
         {
             return { { a_m.right.x, a_m.right.y, a_m.right.z }, { a_m.up.x, a_m.up.y, a_m.up.z }, { a_m.at.x, a_m.at.y, a_m.at.z },
                 { a_m.pos.x, a_m.pos.y, a_m.pos.z } };
-        }
-
-        std::uint32_t NowMs()
-        {
-            static LARGE_INTEGER frequency{}, start{};
-            if (!frequency.QuadPart) {
-                ::QueryPerformanceFrequency(&frequency);
-                ::QueryPerformanceCounter(&start);
-            }
-            LARGE_INTEGER now;
-            ::QueryPerformanceCounter(&now);
-            return static_cast<std::uint32_t>((now.QuadPart - start.QuadPart) * 1000 / frequency.QuadPart);
         }
 
         CVehicleModelInfo* InfoOf(int a_model)
@@ -748,7 +738,7 @@ namespace AhShitRim::Vehicles
             s.handover = a_handover;
             s.model = slot.model;
             s.boneCount = static_cast<std::uint32_t>(slot.parts.size());
-            s.timeMs = NowMs();
+            s.timeMs = CjBody::NowMs();  // CJ's clock and this frame's stamp: Skyrim draws the vehicle at his moment
             const CVector d = at - a_spawnFeet;
             s.feet[0] = d.x * Pose::kUnitsPerMeter;
             s.feet[1] = d.y * Pose::kUnitsPerMeter;
@@ -995,6 +985,18 @@ namespace AhShitRim::Vehicles
     CVehicle* Driven(CPlayerPed* a_ped)
     {
         return a_ped && a_ped->bInVehicle ? a_ped->m_pVehicle : nullptr;
+    }
+
+    namespace
+    {
+        bool HasTask(CPlayerPed* a_ped, int a_type)
+        {
+            return a_ped->m_pIntelligence && a_ped->m_pIntelligence->m_TaskMgr.FindActiveTaskByType(a_type);
+        }
+
+        // San Andreas's leave-car task (its get-out animation), and the bust's drag out of the driver's door.
+        bool Leaving(CPlayerPed* a_ped) { return HasTask(a_ped, TASK_COMPLEX_LEAVE_CAR); }
+        bool DraggedOut(CPlayerPed* a_ped) { return HasTask(a_ped, TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT); }
     }
 
     namespace
@@ -1365,7 +1367,11 @@ namespace AhShitRim::Vehicles
             TrackGrip(driven);
             Heavy(driven);
             FloatAway(driven);
-            a_ped->SetPedPositionInCar();  // seated where the (leaning) vehicle is now
+            // Seated where the (leaning) vehicle is now, except while San Andreas takes him out: its get-out task lines
+            // him up with the door along the animation (protocol/cpp/car_exit.h), and seating him again held him in the seat.
+            if (CarExit::Reseat(Leaving(a_ped), DraggedOut(a_ped))) {
+                a_ped->SetPedPositionInCar();
+            }
             // A plane's landing gear (R3, v23), as it finishes going up or down.
             if (driven->m_nVehicleSubClass == VEHICLE_PLANE) {
                 const float angle = static_cast<CPlane*>(driven)->m_fLandingGearStatus;

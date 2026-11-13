@@ -6,6 +6,7 @@
     scripts/build.ps1                       # both, Release
     scripts/build.ps1 -Target sa -Configuration Debug
     scripts/build.ps1 -Target sa -PluginSaCache .plugin-sa  # CI: link (or else keep) a prebuilt plugin_sa.lib
+    scripts/build.ps1 -Target skse -NoTestKit               # without skse-test-kit, as scripts/package.ps1 builds
     powershell.exe -File scripts/build.ps1  # from WSL
 #>
 param(
@@ -13,7 +14,10 @@ param(
     [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release',
     # A folder for plugin-sdk's plugin_sa.lib (Release only): linked when it's there, put there
     # after building it when it isn't. CI caches the folder (.github/workflows/build.yml).
-    [string] $PluginSaCache
+    [string] $PluginSaCache,
+    # Leaves skse-test-kit out of the SKSE plugin. Without this it's linked whenever the submodule is checked out
+    # (docs/DEV_SETUP.md, "Test sessions"); a release never has it.
+    [switch] $NoTestKit
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -30,12 +34,17 @@ function Initialize-Submodule($path, $marker) {
 if ($Target -in 'all', 'skse') {
     Enter-DevShell
     Initialize-Submodule 'skse/extern/CommonLibSSE-NG' 'CMakeLists.txt'
+    # The test kit's submodule is never fetched by itself (it's private for now): use it when it's there.
+    $kit = -not $NoTestKit -and (Test-Path (Join-Path $RepoRoot 'skse/extern/skse-test-kit/CMakeLists.txt'))
+    if (-not $NoTestKit -and -not $kit) {
+        Write-Host 'skse-test-kit is not checked out: building without test sessions (git submodule update --init --checkout skse/extern/skse-test-kit adds them).' -ForegroundColor Yellow
+    }
     Push-Location (Join-Path $RepoRoot 'skse')
     try {
-        Invoke-Checked cmake @('--preset', $preset)
+        Invoke-Checked cmake @('--preset', $preset, "-DAHSHITRIM_TEST_KIT=$(if ($kit) { 'ON' } else { 'OFF' })")
         Invoke-Checked cmake @('--build', '--preset', $preset)
     } finally { Pop-Location }
-    Write-Host "SKSE plugin: skse/build/$preset/AhShitRim.dll"
+    Write-Host "SKSE plugin: skse/build/$preset/AhShitRim.dll$(if ($kit) { ' (with skse-test-kit)' })"
 }
 
 if ($Target -in 'all', 'sa') {
