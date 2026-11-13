@@ -1382,10 +1382,20 @@ namespace AhShitRim::TestKit
             float       gripMax = 0.0f, gripMaxMoving = 0.0f, gripMaxGetting = 0.0f, gripMaxSwitching = 0.0f;
             double      gripSum = 0.0, fastest = 0.0;
             int                gripN = 0;
+            // A weapon switch's frames, three either side of San Andreas's change: the drawn gun blends from the old model to
+            // the new one, and the new one can be in his hand a frame before the pose names it.
+            std::vector<bool> switching(s.size(), false);
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (s[i].weapon != s[i - 1].weapon) {
+                    for (std::size_t k = i >= 3 ? i - 3 : 0; k < (std::min)(s.size(), i + 4); k++) {
+                        switching[k] = true;
+                    }
+                }
+            }
             std::vector<float> grips;
-            for (const auto& w : s) {
-                if (w.gunDrawn && !w.switching) {
-                    grips.push_back(w.grip);
+            for (std::size_t i = 0; i < s.size(); i++) {
+                if (s[i].gunDrawn && !switching[i]) {
+                    grips.push_back(s[i].grip);
                 }
             }
             float gripMedian = 0.0f;
@@ -1393,8 +1403,9 @@ namespace AhShitRim::TestKit
                 std::nth_element(grips.begin(), grips.begin() + grips.size() / 2, grips.end());
                 gripMedian = grips[grips.size() / 2];
             }
-            for (const auto& w : s) {
-                const bool miss = w.inHand && !w.gunDrawn;
+            for (std::size_t i = 0; i < s.size(); i++) {
+                const auto& w = s[i];
+                const bool  miss = w.inHand && !w.gunDrawn;
                 inHand += w.inHand ? 1 : 0;
                 if (miss) {
                     missing++;
@@ -1408,7 +1419,7 @@ namespace AhShitRim::TestKit
                 if (w.in && w.speed < 0.5f && !w.getting && w.inHand) {
                     onStill++;
                 }
-                if (w.gunDrawn && w.switching) {
+                if (w.gunDrawn && switching[i]) {
                     gripMaxSwitching = (std::max)(gripMaxSwitching, w.grip);
                 } else if (w.gunDrawn) {
                     gripMax = (std::max)(gripMax, w.grip);
