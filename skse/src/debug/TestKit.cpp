@@ -321,6 +321,32 @@ namespace AhShitRim::TestKit
             return pose;
         }
 
+        // asr.camera: San Andreas's camera against CJ and his vehicle, from the pose and the body (both relative to the
+        // handover's anchor, Skyrim units).
+        Json CameraNow()
+        {
+            const auto pose = CjPose();
+            Protocol::BodyState body{};
+            if (!pose || !LinkService::Get().ReadBody(body) || (body.flags & Protocol::kBodyValid) == 0) {
+                throw Error("San Andreas has no pose or camera for CJ (asr.cj first)");
+            }
+            const float cam[3] = { body.cameraPosition[0] - pose->offset[0], body.cameraPosition[1] - pose->offset[1],
+                body.cameraPosition[2] - pose->offset[2] };  // from CJ's feet
+            JsonObject out{ { "mode", static_cast<int>(pose->cameraMode) }, { "firstPerson", pose->cameraMode == Weapons::kCamFirstPerson },
+                { "fromFeet", Round(std::hypot(cam[0], cam[1]), 0.1) }, { "height", Round(cam[2], 0.1) },
+                { "forward3", JsonObject{ { "x", Round(body.cameraForward[0]) }, { "y", Round(body.cameraForward[1]) }, { "z", Round(body.cameraForward[2]) } } },
+                { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) } };
+            if ((pose->flags & Protocol::kPlayerInVehicle) && pose->vehicleModel) {
+                const float h = pose->vehicleHeading;
+                const float rel[3] = { cam[0] - pose->vehicleOffset[0], cam[1] - pose->vehicleOffset[1], cam[2] - pose->vehicleOffset[2] };
+                out.Set("forward", Round(rel[0] * std::sin(h) + rel[1] * std::cos(h), 0.1));
+                out.Set("right", Round(rel[0] * std::cos(h) - rel[1] * std::sin(h), 0.1));
+                out.Set("up", Round(rel[2], 0.1));
+                out.Set("looksAhead", Round(body.cameraForward[0] * std::sin(h) + body.cameraForward[1] * std::cos(h)));
+            }
+            return out;
+        }
+
         std::uint32_t HandOf(Call& a_call)
         {
             const double hand = a_call.Number("hand", 0.0);
@@ -1126,6 +1152,28 @@ namespace AhShitRim::TestKit
                 calendar->gameHour->value = static_cast<float>(hour);
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
+
+            SkseTestKit::AddCommand("asr.camera", "",
+                "San Andreas's camera now: its mode (eCamMode), where it is from CJ's feet (distance on the ground, height) and, in a "
+                "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it)",
+                [](Call&) -> Json { return CameraNow(); });
+
+            SkseTestKit::AddTask("asr.view", "[settle=<seconds>]",
+                "Presses San Andreas's camera key once (V, select on its pad), as the player would, and answers settle seconds (1.5) later "
+                "with asr.camera's numbers",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double settle = a_call.Number("settle", 1.5);
+                    a_call.DefaultTimeout(settle + 10.0);
+                    return [settle](Call& a_call) -> std::optional<Json> {
+                        const bool press = a_call.Seconds() < 0.15;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCameraView }) : std::nullopt);
+                        if (a_call.Seconds() < settle) {
+                            return std::nullopt;
+                        }
+                        return CameraNow();
+                    };
+                });
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit

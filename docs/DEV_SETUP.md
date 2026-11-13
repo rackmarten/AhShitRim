@@ -180,6 +180,8 @@ never need it). To use it:
    | `asr.spawn <model> [in=<bool>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one); answers with its slot and offset from the player | `asr.spawn 562` |
    | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
+   | `asr.camera` | San Andreas's camera: its mode (`firstPerson`), how far it is from CJ's feet on the ground and how high, and in a vehicle where it is in the vehicle's frame from its middle (`forward`, `right`, `up`; `looksAhead` 1 straight ahead) | `asr.camera` |
+   | `asr.view [settle=]` | presses San Andreas's camera key (V) once and answers `settle` seconds (1.5) later with `asr.camera`'s numbers | `asr.view` |
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
    | `asr.walk <points> [gait=] [arrive=] [stuck=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
    | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
