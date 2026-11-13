@@ -22,7 +22,7 @@
     { "label": "T doesn't open the wait menu", "cmd": "asr.key", "keys": "T", "expect": ["waitMenu == false", "cj == true"] },
     { "label": "T types cheats: WANRLTW on", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5 },
     { "label": "and off again", "cmd": "asr.key", "keys": "WANRLTW", "frames": 5, "expect": "waitMenu == false" },
-    { "label": "both typed, T among the letters", "cmd": "log", "lines": 2, "match": "cheats: WANRLTW typed",
+    { "label": "both typed, T among the letters (the log names it by its other code, FULLCLIP)", "cmd": "log", "lines": 2, "match": "typed: infinite ammo",
       "expect": ["lines.length == 2", "lines.0 matches \" on\\b\"", "lines.1 matches \" off\\b\""] },
 
     { "label": "CJ in a Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": "driven == true" },

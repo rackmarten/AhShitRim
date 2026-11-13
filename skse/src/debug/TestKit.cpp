@@ -1212,7 +1212,12 @@ namespace AhShitRim::TestKit
             if (!devices) {
                 throw Error("no input device manager");
             }
-            const RE::BSFixedString user(map ? map->GetUserEventName(a_dik, RE::INPUT_DEVICE::kKeyboard) : std::string_view{});
+            // The user event of the context on top (a menu's while one has the input: Escape is Cancel there, not Journal).
+            auto context = RE::ControlMap::InputContextID::kGameplay;
+            if (map && !map->GetRuntimeData().contextPriorityStack.empty()) {
+                context = map->GetRuntimeData().contextPriorityStack.back();
+            }
+            const RE::BSFixedString user(map ? map->GetUserEventName(a_dik, RE::INPUT_DEVICE::kKeyboard, context) : std::string_view{});
             auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, user, a_dik, a_down ? 1.0f : 0.0f, a_down ? 0.0f : 0.1f);
             if (!event) {
                 throw Error("no button event");
