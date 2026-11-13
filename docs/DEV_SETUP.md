@@ -181,6 +181,7 @@ never need it). To use it:
    | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
    | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
+   | `asr.vehicles [within=]` | San Andreas's vehicles drawn now, a parked one too: `count`, and each one's slot, model (ModelView's id), position and distance from the player; `within` counts only those that close (units) | `asr.vehicles within=7000` |
    | `asr.walk <points> [gait=] [arrive=] [stuck=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
    | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
