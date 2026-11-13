@@ -223,8 +223,15 @@ never need it). To use it:
 
 The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
 in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
-`SkyrimPrefs.ini` and `AhShitRim.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a
-test session's runs (someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
+`SkyrimPrefs.ini` back byte for byte, and `AhShitRim.ini` as the deploy left it. `start` refuses while a Skyrim or San
+Andreas that isn't a test session's runs (someone may be playing; `-CloseGames` closes it), and `stop` closes only the
+session's own.
+
+The deploy stays in the games: `skytest.psd1` has no `Undeploy`, so after `stop` the plugin, the ASI and their `.pdb`s
+are this checkout's build, not the AhShitRim installed before, and `AhShitRim.ini` is the one `deploy-local.ps1` wrote
+(it keeps `KeyLayout`, `MiscPassed` and `Compass`, and drops any key it doesn't know, such as one a newer build added).
+Testing on a machine someone also plays on? Copy those files aside first and put them back after, or deploy their own
+build again from its checkout (`scripts/deploy-local.ps1`).
 Neither game takes the foreground: San Andreas's window is created hidden and never activated (`sa/src/window.cpp`),
 as Skyrim's is.
 `hit-test.ps1` and `load-test.ps1` run on test sessions and take the games lock; `restart-games.ps1` (the play loop)

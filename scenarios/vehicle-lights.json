@@ -4,7 +4,8 @@
 // but for the lamps: both shots are taken with the clock and the weather held and the car standing, a few frames
 // apart), compared region by region. By day the lamps are out; blown up, they're out too. Last, after a trip into an
 // interior and back (Riverwood's inn), a new ZR-350's lights must still be among the renderer's (on: lighting shapes).
-// scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md). Needs the headlights (protocol v36).
+// scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md). Needs the headlights (protocol v36; until
+// they are on main, scenarios/README.md says how to run it).
 //
 // The limits, adjustable (luma, 0 to 255): each tail lamp's lens 15 darker with the lamps off, and 20 less red (measured
 // 39 and 39 darker, red 75 less),
