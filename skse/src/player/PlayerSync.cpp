@@ -8,7 +8,6 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
-#include "debug/MissionTest.h"
 #include "debug/HitTest.h"
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
@@ -91,6 +90,14 @@ namespace AhShitRim::PlayerSync
             Input::Builder input;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            struct Drawn
+            {
+                bool          on = false;
+                RE::NiPoint3  position;
+                float         heading = 0.0f;
+                std::uint32_t model = 0;
+            };
+            Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
@@ -115,6 +122,10 @@ namespace AhShitRim::PlayerSync
             int           newPoses = 0;
             int           drawn = 0;
             std::uint32_t lastPoseFrame = 0;
+
+            std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
+            DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
 
         double NowMs()
@@ -191,7 +202,6 @@ namespace AhShitRim::PlayerSync
             const bool wasted = state.owned && (Vitals::IsWasted() || Police::IsBusted());  // the player is dying or arrested: CJ stands still
             // In Ammu-Nation the keys are the shop's: CJ stands still.
             auto input = state.input.Build(++state.inputFrame, state.owned, !a_menu && !wasted && !AmmuNation::IsOpen(), a_paused);
-            HitTest::Drive(input.moveX, input.moveY);  // the crew hit test walks CJ
             if (state.owned && Vitals::IsDown()) {
                 input.flags |= Protocol::kInputWasted | (Vitals::HasDeathCamera() ? Protocol::kInputWastedCamera : 0u);
             }
@@ -203,6 +213,14 @@ namespace AhShitRim::PlayerSync
                 std::copy(std::begin(state.carRequest.colours), std::end(state.carRequest.colours), input.carColours);
                 std::copy(std::begin(state.carRequest.offset), std::end(state.carRequest.offset), input.carOffset);
                 input.carHeading = state.carRequest.heading;
+            }
+            if (state.debugInput && std::chrono::steady_clock::now() > state.debugInputUntil) {
+                state.debugInput.reset();
+            }
+            if (state.owned && state.debugInput && !a_menu && !wasted && !AmmuNation::IsOpen()) {
+                input.moveX = state.debugInput->moveX;
+                input.moveY = state.debugInput->moveY;
+                input.buttons |= state.debugInput->buttons;
             }
             input.handover = state.handover;
             input.heading = state.heading;
@@ -341,6 +359,9 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
+            }
             state.gear.Reset();
         }
 
@@ -476,6 +497,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehiclesDrawn[i].on = false;
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         Headlights::Show(i, nullptr, {});
@@ -488,7 +510,15 @@ namespace AhShitRim::PlayerSync
                 Protocol::BodyState pose{};
                 if (state.vehicles[i].Sample(now, pose)) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                    if (state.debugVehicle) {
+                        state.debugVehicle(i, pose, feet);
+                    }
                     ModelView::Show(pose, feet);
+                    // Its heading from its frame (X right, Y forward, Z up): the turned Y axis, by the quaternion.
+                    const float* q = pose.vehicleFrame.rotation;
+                    const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
+                    const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
                     Headlights::Show(i, &pose, feet);  // v36
@@ -499,6 +529,7 @@ namespace AhShitRim::PlayerSync
                     }
                 } else {
                     Headlights::Show(i, nullptr, {});
+                    state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
@@ -645,6 +676,9 @@ namespace AhShitRim::PlayerSync
             }
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
+            }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
             }
             state.gear.Reset();
             VehicleFx::Clear();
@@ -1201,7 +1235,6 @@ namespace AhShitRim::PlayerSync
                 Police::Sweep(a_delta);
                 Homies::Sweep(a_delta);
                 GunRewards::Update();
-                MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
                 if (a_delta > 0.0f) {
                     // A quest's title or its mission passed, CJ's intro line: San Andreas plays the sound, whoever has the player.
@@ -1564,7 +1597,6 @@ namespace AhShitRim::PlayerSync
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
         Missions::OnDataLoaded();
-        MissionTest::OnDataLoaded();
         Shouting::OnDataLoaded();
         Riders::OnDataLoaded();
         Hitboxes::OnDataLoaded();
@@ -1594,6 +1626,21 @@ namespace AhShitRim::PlayerSync
 
     bool DebugOwned() { return state.owned; }
 
+    std::uint32_t DebugHandover() { return state.handover; }
+
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
+    {
+        if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
+            return false;
+        }
+        a_position = state.vehiclesDrawn[a_slot].position;
+        a_heading = state.vehiclesDrawn[a_slot].heading;
+        if (a_model) {
+            *a_model = state.vehiclesDrawn[a_slot].model;
+        }
+        return true;
+    }
+
     void DebugToggle()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1604,10 +1651,16 @@ namespace AhShitRim::PlayerSync
         }
     }
 
-    void DebugButtons(bool a_aim, bool a_fire)
+    void DebugHold(const std::optional<DebugInput>& a_input)
     {
-        state.input.SetAim(a_aim);
-        state.input.SetFire(a_fire);
+        state.debugInput = a_input;
+        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        Publish();
+    }
+
+    void SetDebugVehicleHook(DebugVehicleHook a_hook)
+    {
+        state.debugVehicle = std::move(a_hook);
     }
 
     void DebugType(const char* a_code)
@@ -1650,6 +1703,14 @@ namespace AhShitRim::PlayerSync
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
         WorldPickups::Restore(a_record.pickupsTaken);
+    }
+
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        if (!state.owned) {
+            return "San Andreas doesn't have the player";
+        }
+        return CheatSpawn(a_model, false);
     }
 
     void TakeOverInVehicle(std::uint16_t a_model)

@@ -1,26 +1,60 @@
 #pragma once
 
-// A check, off unless AhShitRim.ini asks for it (v31): Skyrim's attacks on CJ's vehicle without anyone at the keys. With
-// [Debug] HitTest=hits, bust or stealth it loads the most recent save from the main menu, goes to a cell (HitTestStart,
-// `coc` Riverwood by default; with HitTestNewGame=1 it skips the save and starts a new game there, for a game version
-// none of the saves is from, such as Special Edition 1.5.97), hands the player to San Andreas with CJ in a Sandking, and then
+#include <optional>
+#include <string>
+
+// A check of Skyrim's attacks on CJ's vehicle without anyone at the keys (v31), run as the test kit's scenario
+// asr.hits (skse/src/debug/TestKit.cpp, scenarios/hits.json and bust.json, scripts/hit-test.ps1). With CJ in a vehicle
+// (asr.spawn 495 in=true puts him in a Sandking) it
 //  - hits: places a giant and two of Whiterun's guards 12 m ahead and sets them on the player, so their blows land on
 //    the car (it smokes, burns and blows up, and CJ inside keeps his health until it does),
 //  - bust: types the wanted cheat for two stars, so the guards come and one runs to the stopped car's door to bust him,
-//  - stealth (v38): hands it over on foot instead, gives CJ the knife, places one of Whiterun's guards 1.6 m ahead with his
-//    back to CJ (and a guard facing him off to the side), then holds the right mouse button and clicks the left
-//    one, for the knife stealth kill; each one's StealthKill::Check verdict is logged every second and the guard's fate at the end,
-//  - respawns (HitTest=respawns): hands CJ the player on foot instead, logs what a kill would do to everyone placed
-//    in the editor nearby, has the player kill three that come back (and one that doesn't), puts the clock 1.1 game
-//    hours on, stays 4 s (who gets up out of view, who waits in view), goes into an interior (HitTestAway, the Sleeping Giant Inn) and back out, and logs who is up and where,
-// and logs the car's and the player's health every 2 s for HitTestSeconds (90). Nothing is saved. Main thread only.
+// and samples the car's and the player's health every 2 s for the seconds asked. At the end the attackers go and the
+// stars are cleared, so the session goes on without them; also when nobody has asked for its samples for 600 player
+// updates, 10 s (the kit's request went away). Nothing is saved. Main thread only.
 namespace AhShitRim::HitTest
 {
-    void OnDataLoaded();
+    struct Sample
+    {
+        float seconds = 0.0f;
+        float carHealth = -1.0f;  // -1: CJ drives nothing
+        float playerHealth = 0.0f;
+        bool  inCar = false;
+        bool  wasted = false;
+        bool  busted = false;
+    };
+
+    struct Result
+    {
+        bool  done = false;
+        float seconds = 0.0f;
+        int   attackers = 0;       // placed (hits)
+        float carStart = -1.0f;
+        float carMin = -1.0f;
+        float carEnd = -1.0f;
+        float playerMin = 0.0f;
+        bool  inCarAtEnd = false;
+        bool  wasted = false;      // at any sample
+        bool  busted = false;      // at any sample
+        std::string stopped;       // why it ended early: a game loaded (the player died, and Skyrim loaded the last save)
+    };
+
+    // Starts it; a reason when it can't (CJ isn't driving). Ends a run still going first.
+    std::string Begin(bool a_bust, float a_seconds);
+
+    // Ends a run (its attackers go, the stars are cleared); nothing when none runs.
+    void Stop();
+
+    bool Running();
+
+    // A game loaded: a run still going ends, failed (what follows is another game's).
+    void OnPostLoadGame();
+
+    // The next sample since the last call, in order. Calling it is what keeps a run going (see above).
+    std::optional<Sample> NextSample();
+
+    const Result& Last();
 
     // Every player update, after Skyrim's own.
     void Update(RE::PlayerCharacter* a_player, float a_delta);
-
-    // The crew scenario's walk (v39): while it walks CJ, his stick as the test holds it (true), else as the keys have it.
-    bool Drive(float& a_moveX, float& a_moveY);
 }
