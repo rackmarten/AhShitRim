@@ -32,6 +32,17 @@ last two check features that came after the kit (the headlights, the crew): on a
 step that needs them fails, saying so. Their limits are in each file's opening comment, with what they were set from.
 `crew-follow.json` leaves its three homies following CJ: run it last, or `skytest stop` before the others.
 
+Until those features are on `main`, run their scenarios on a build of `main` merged with the pull request that brings
+them, in a worktree of your own: the headlights are PR 85 (`add-headlights-and-oil`, protocol v36), the crew PR 100
+(`add-grove-street-crew-1`, v39). Neither merges cleanly into `main` as it is (the hit test, `skse/CMakeLists.txt` and
+the docs conflict): resolve that in the worktree, `scripts/build.ps1`, and `skytest.ps1 session` starts again for the
+new build. Never push such a merge.
+
+Known failures (13 November 2026): `muzzle-flash.json` and `vehicle-lights.json` fail their last step on every build,
+"after an interior": a light AhShitRim adds to Skyrim's renderer once (the flash's, the vehicles') is no longer among
+its lights after a trip into an interior and back. That's a bug in the mod, which those steps were written to catch;
+every step before them passes.
+
 ## Starts and saves
 
 The default session (`skytest.psd1`) is `coc:Riverwood`: a new character on Riverwood's road, no save needed, and

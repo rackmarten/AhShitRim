@@ -4,8 +4,9 @@
 // cliff and back, then sprinting back down the road. The recorder's summary per homie: how long he stood stuck while
 // CJ went on, how far behind CJ he was, how often he left the corridor round CJ's path, and the top-down overlay of
 // every track (stables-crew-overlay.png). scripts/skytest.ps1 run scenarios/crew-follow.json (scenarios/README.md).
-// Needs the Grove Street crew (protocol v39). The three stay CJ's crew afterwards (there's no command to send them off):
-// run it last in a session, or start a new one (skytest stop) before the other scenarios, whose fights they'd join.
+// Needs the Grove Street crew (protocol v39; until it is on main, scenarios/README.md says how to run it). The three
+// stay CJ's crew afterwards (there's no command to send them off): run it last in a session, or start a new one
+// (skytest stop) before the other scenarios, whose fights they'd join.
 //
 // The limits, adjustable (units; set from three runs on the test desktop, measured values in brackets). Each homie:
 // he moved (path over 1500 [2700 to 3900]); never stood still for 10 s while CJ went on more than 400 away (longest
