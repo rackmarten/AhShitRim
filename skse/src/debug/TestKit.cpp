@@ -1244,12 +1244,39 @@ namespace AhShitRim::TestKit
             return actor;
         }
 
-        // How far its head is above its feet, units; 0 without its 3D.
-        float HeadRise(RE::Actor* a_actor)
+        // Whether there's room to stand behind a_actor, from half a metre (its seat's back) to a_meters + 0.35, at
+        // waist height: nothing in the way on Skyrim's line-of-sight layer (walls, tables, doors).
+        bool RoomBehind(RE::Actor* a_actor, float a_meters)
         {
-            auto* root = a_actor->Get3D();
-            auto* head = root ? root->GetObjectByName("NPC Head [Head]") : nullptr;
-            return head ? head->world.translate.z - a_actor->GetPosition().z : 0.0f;
+            auto* cell = a_actor->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return false;
+            }
+            const float        heading = a_actor->GetAngleZ();
+            const RE::NiPoint3 back(-std::sin(heading), -std::cos(heading), 0.0f);
+            const RE::NiPoint3 waist = a_actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 60.0f);
+            const auto         from = waist + back * (0.5f * Pose::kUnitsPerMeter);
+            const auto         to = waist + back * ((a_meters + 0.35f) * Pose::kUnitsPerMeter);
+            const float        scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            input.from = RE::hkVector4(from.x * scale, from.y * scale, from.z * scale, 0.0f);
+            input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+            RE::hkpWorldRayCastOutput output;
+            RE::BSReadLockGuard       lock(bhk->worldLock);
+            world->CastRay(input, output);
+            return !output.HasHit();
+        }
+
+        // Whether the furniture a_actor uses is a seat (a chair, a bench), not something to lean on.
+        bool OnASeat(RE::Actor* a_actor)
+        {
+            const auto furniture = a_actor->GetOccupiedFurniture().get();
+            auto*      base = furniture ? furniture->GetBaseObject() : nullptr;
+            auto*      seat = base ? base->As<RE::TESFurniture>() : nullptr;
+            return seat && seat->furnFlags.any(RE::TESFurniture::ActiveMarker::kCanSit) && seat->furnFlags.none(RE::TESFurniture::ActiveMarker::kCanLean);
         }
 
         float HealthOf(RE::Actor* a_actor) { return a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth); }
@@ -1358,14 +1385,15 @@ namespace AhShitRim::TestKit
                         { "distance", Round(Flat(at, feet) * Pose::kMetersPerUnit) } };
                 });
 
-            SkseTestKit::AddCommand("asr.seated", "[radius]",
+            SkseTestKit::AddCommand("asr.seated", "[radius] [lean=<bool>]",
                 "The nearest loaded person sitting on furniture within radius (4000) of the player that a stealth kill may take (not a "
-                "child, not essential; not a guard, who leans on a wall; lowered onto a chair or a bench, not leaning on a counter), with its "
-                "sit state and how high its head is",
+                "child, not essential; not a guard, who leans on a wall; on a chair or a bench, or with lean=true leaning on a counter; with "
+                "room to stand behind them), with its sit state",
                 [](Call& a_call) -> Json {
                     auto*       player = RE::PlayerCharacter::GetSingleton();
                     auto*       lists = RE::ProcessLists::GetSingleton();
                     const float radius = static_cast<float>(a_call.Number("radius", 4000.0));
+                    const bool  lean = a_call.Flag("lean", false);  // also someone leaning on a counter (the same sit state)
                     if (!player || !lists) {
                         throw Error("no player yet");
                     }
@@ -1381,11 +1409,14 @@ namespace AhShitRim::TestKit
                         if (std::string_view(actor->GetName()).find("Guard") != std::string_view::npos) {
                             continue;  // guards lean on walls, where nobody stands behind them
                         }
-                        // On a chair or a bench, not leaning on a counter or a wall (the same sit state): the head well
-                        // down from a standing one's.
-                        const float rise = HeadRise(actor.get());
-                        if (rise <= 0.0f || rise > 0.8f * actor->GetHeight()) {
-                            others += std::format("{}{} (not lowered onto a seat, head {:.0f} up)", others.empty() ? "" : ", ", actor->GetName(), rise);
+                        // On a chair or a bench, not leaning on a counter or a wall (the same sit state): its furniture
+                        // a seat, not a lean.
+                        if (!lean && !OnASeat(actor.get())) {
+                            others += std::format("{}{} (leaning, not on a seat)", others.empty() ? "" : ", ", actor->GetName());
+                            continue;
+                        }
+                        if (!RoomBehind(actor.get(), 1.05f)) {
+                            others += std::format("{}{} (no room behind)", others.empty() ? "" : ", ", actor->GetName());
                             continue;
                         }
                         if (const auto why = StealthKill::Excluded(Weapons::Knife, StealthKills::TargetOf(actor.get(), player)); why != StealthKill::Verdict::Yes) {
@@ -1404,7 +1435,7 @@ namespace AhShitRim::TestKit
                     g_victim = best->GetFormID();
                     return JsonObject{ { "ref", SkseTestKit::FormId(best->GetFormID()) }, { "name", best->GetName() }, { "at", Spot(best->GetPosition()) },
                         { "heading", Round(best->GetAngleZ()) }, { "sitState", static_cast<int>(best->AsActorState()->GetSitSleepState()) },
-                        { "headRise", Round(HeadRise(best), 1.0) }, { "standingHeight", Round(best->GetHeight(), 1.0) },
+
                         { "distance", Round(bestDistance, 1.0) } };
                 });
 
