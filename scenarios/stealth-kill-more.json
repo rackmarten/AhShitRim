@@ -1,0 +1,60 @@
+// The knife's sneak attack and a stealth kill on someone seated (v36), from a fresh session (skytest stop, then
+// session; after a crime, guards placed come out fighting CJ). scripts/skytest.ps1 run scenarios/stealth-kill-more.json
+// (scenarios/README.md).
+//
+// The sneak attack, in Riverwood by day with the knife: a standing blow on a Whiterun guard's back (no sneak attack),
+// then a crouched one on another, unseen: Skyrim's sneak attack, three times the damage for as well a landed blow
+// (vsLast ~ 3 within 0.3), though San Andreas stands CJ up as he swings (Damage::CrouchedBlow). Measured on the test
+// desktop (13 November 2026): 14.08 standing, 42.25 crouched.
+//
+// Seated: in Whiterun at 19:00, the nearest person sitting on a chair or a bench a stealth kill may take (asr.seated
+// skips the guards, who lean on walls, where nobody stands behind them), CJ put 1.05 m behind them: the grab, and the
+// stab without Skyrim's kill move (a standing one): they slump out of the seat into a ragdoll, dead, CJ held a metre
+// behind as San Andreas does.
+{
+  "name": "stealth-kill-more",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "day", "cmd": "scene", "presets": "day clear" },
+    { "label": "the knife", "cmd": "asr.give", "weapon": 4, "ammo": 1, "expect": "weapon == 4" },
+
+    { "label": "a guard 0.9 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a standing knife blow: no sneak attack", "cmd": "asr.swing", "crouch": false, "expect": ["sneak == 1", "drop > 0"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "console", "command": "player.stopcombatalarm" },
+    { "label": "another guard 0.9 m ahead", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a crouched knife blow, unseen: Skyrim's sneak attack, three times the damage", "cmd": "asr.swing", "crouch": true,
+      "expect": ["sneak == 3", "detection <= 0", "vsLast ~ 3 +- 0.3"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "console", "command": "player.stopcombatalarm" },
+
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "evening, when Whiterun sits out", "cmd": "scene", "presets": "19 clear" },
+    { "label": "to Whiterun", "cmd": "console", "command": "coc WhiterunOrigin" },
+    { "cmd": "wait", "seconds": 12 },
+    { "label": "the nearest seated person a stealth kill may take", "cmd": "asr.seated", "radius": 6000, "expect": "sitState >= 1" },
+    { "label": "Skyrim's player behind them", "cmd": "asr.behind", "meters": 1.05 },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "cmd": "wait", "seconds": 2 },
+    { "cmd": "screenshot", "name": "seated-before", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    { "label": "seated: the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true, "expect": ["cjToVictim < 1.6", "health > 0"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-grab", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    "resume",
+    { "label": "seated: the stab, no kill move", "cmd": "asr.stealth", "until": "stab", "expect": ["killMove == false", "inKillMove == false", "playerFromCj < 210"] },
+    "pause",
+    { "cmd": "screenshot", "name": "seated-stab", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    "resume",
+    { "label": "seated: dead and let go", "cmd": "asr.stealth", "until": "over", "expect": ["victimDead == true", "playerFromCj < 210"] },
+    { "cmd": "screenshot", "name": "seated-after", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
