@@ -55,6 +55,7 @@ add_executable(protocol_tests
     tests/cpp/test_weapons.cpp
     tests/cpp/test_aim.cpp
     tests/cpp/test_img.cpp
+    tests/cpp/test_corona_model.cpp
     tests/cpp/test_flash.cpp
     tests/cpp/test_damage.cpp
     tests/cpp/test_explosives.cpp
@@ -91,6 +92,7 @@ add_executable(protocol_tests
     tests/cpp/test_radar.cpp
     tests/cpp/test_settle.cpp
     tests/cpp/test_balance.cpp
+    tests/cpp/test_vehicle_lights.cpp
 )
 if(WIN32)
     target_sources(protocol_tests PRIVATE cpp/link.cpp tests/cpp/test_link.cpp)

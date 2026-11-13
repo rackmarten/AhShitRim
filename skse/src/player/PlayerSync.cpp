@@ -41,6 +41,7 @@
 #include "player/Shots.h"
 #include "player/Shouting.h"
 #include "player/VehicleFx.h"
+#include "player/Headlights.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
 #include "standing.h"
@@ -238,6 +239,7 @@ namespace AhShitRim::PlayerSync
                     Scene::Face(input, feet.x, feet.y, at.x, at.y);
                 }
             }
+            Headlights::Sky(input);  // v36: San Andreas's clock and sky for its vehicles' lights
             link.WriteInput(input);
         }
 
@@ -488,6 +490,7 @@ namespace AhShitRim::PlayerSync
                         state.vehiclesDrawn[i].on = false;
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
+                        Headlights::Show(i, nullptr, {});
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
@@ -508,12 +511,14 @@ namespace AhShitRim::PlayerSync
                     state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    Headlights::Show(i, &pose, feet);  // v36
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
                         driven = pose;
                         drivenFeet = feet;
                         anyDriven = true;
                     }
                 } else {
+                    Headlights::Show(i, nullptr, {});
                     state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
@@ -570,6 +575,7 @@ namespace AhShitRim::PlayerSync
             Projectiles::Clear();
             WorldPickups::Clear();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear(!a_loading);
             CarHits::Clear();
@@ -665,6 +671,7 @@ namespace AhShitRim::PlayerSync
             }
             state.gear.Reset();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear();
             CarHits::Clear();
@@ -1603,10 +1610,10 @@ namespace AhShitRim::PlayerSync
         }
     }
 
-    void DebugHold(const std::optional<DebugInput>& a_input)
+    void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for)
     {
         state.debugInput = a_input;
-        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        state.debugInputUntil = std::chrono::steady_clock::now() + a_for;
         Publish();
     }
 

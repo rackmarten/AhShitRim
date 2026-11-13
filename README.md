@@ -113,7 +113,7 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 ## Playing as CJ
 
-**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half).
+**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half). Headlights and tail lights come on as in San Andreas, by Skyrim's clock: at night (each vehicle from its own minute between 20:00 and 21:00 until one between 6:00 and 7:00), in rain or snow and in interiors, while the engine runs; a smashed lamp stays dark and a wreck has none. The lamps themselves glow, the headlights light the road ahead and the tail lights the ground behind, and the tail lights glow brighter while braking, by day too.
 
 **The Hydra is experimental.** Skyrim streams its land fast enough for it, but only has collision for the ground about a second ahead at that speed, so flying low and fast you can fly through hills. Out over the Sea of Ghosts Skyrim drops to a few frames a second. Fly high, or slow down to land.
 
@@ -190,6 +190,9 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 | `[Input]` | `KeyLayout` | `Modern` (default) or `Classic`, the keys above |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
+| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `10`, Skyrim's torch is about 1), how far round (`10` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`0.8` m) |
+| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`5`, `2.2` m), while braking (`10`, `3` m), and how far below and behind the lamps it sits (`TailDrop` `0.45` m, `TailBack` `1.2` m) |
+| `[Headlights]` | `LampGlow`, `BrakeGlow` | How brightly a burning lamp and its corona glow (`6`; `0` leaves the lamps unlit), and a tail lamp's times this while braking (`2`) |
 
 ## Combat balance
 
@@ -206,6 +209,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 - So a level 6 bandit takes 6 Colt 45 body shots at Adept and 18 at Master (5 at Master before). `CJDamage=0.25` with `FollowDifficulty=0` gives Master's at any difficulty.
 - CJ's body armour (the blue bar) takes the damage first, as San Andreas's does: weapons, arrows, creatures' bites, claws and clubs, traps (blades, spikes, rocks), blasts, and fire, frost and shock from spells, enchantments, traps and burning oil. A hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health. Poison, disease, drowning and falls go straight to his health.
 - Skyrim's fire (a fire spell, a fire trap, burning oil, a dragon's breath) sets CJ alight in San Andreas, with his scream and the burn, as San Andreas's own fire does.
+- Oil burns GTA style: the oil on Skyrim's floors (and the oil a shot-down lamp spills) catches fire when CJ's bullets land in it, as well as from his flamethrower, Molotovs and explosions.
 - `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
 - BAGUVIX still blocks everything.
 

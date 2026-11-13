@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "pose.h"
+#include "vehicle_lights.h"
 
 // Draws San Andreas's models in Skyrim: CJ (protocol v5) and the vehicles (v6). Their meshes and
 // textures arrive once as ModelChunk messages and are built in memory (nothing converted or written
@@ -34,6 +36,12 @@ namespace AhShitRim::ModelView
     // isn't built.
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale = 1.0f);
 
+    // How strongly a vehicle's burning lamps glow (their meshes' emissive strength; AhShitRim.ini's [Headlights] LampGlow
+    // and BrakeGlow). Show draws a vehicle's lamp meshes (Protocol::kSkinMeshLamp) lit while a_pose.lights says they burn.
+    void SetLampTuning(const VehicleLights::Tuning& a_tuning);
+
+    // Model a_model's name for the logs ("a model" when it isn't built).
+    std::string NameOf(std::uint32_t a_model);
     // The test kit (debug): model a_model's vertices as its last Show posed them, relative to the origin it was shown at
     // (unscaled). False while it isn't shown.
     bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out);

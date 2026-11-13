@@ -23,7 +23,9 @@ crash log in its last line and in `summary.json`'s `Fault`). Each run writes `re
 | `stream.json` | Skyrim's streaming at a Hydra's 87 m/s (v19): the player flown 3.3 km north-east from Riverwood, 30 m up; no frame over 50 ms, and the land under it and 1 s ahead always loaded with collision | per second: frames, the worst frame, land loaded under, 1 s and 2 s ahead | 62 s |
 | `test-kit-smoke.json` | AhShitRim's kit commands themselves: handovers, the night, a weapon, a spawned Elegy, a tracked second, exact steps | CJ, a row a frame | 6 s |
 | `muzzle-flash.json` | The muzzle flash (v12) at the muzzle: CJ fires a pistol, a shotgun, an SMG and an M4 at night; in the flash's frame the flash against the drawn gun's barrel end (`along` within 8 units, `across` under 6), paused on it for a close shot and a wider one, its light probed; then the same after a trip into an interior and back (the light still among the renderer's) | | 38 s |
-| `vehicle-lights.json` | The headlights and tail lights (v36; needs them): a ZR-350 at 23:00 with CJ in it, its four lamps lit and both scene lights on, A/B pairs with `asr.lamps off` (each tail lens 15 darker, the road behind 1.5, the front lamps 10, the road ahead 5); out by day; out when blown up (CJ out and well away first); still lighting after an interior and back | | 55 s |
+| `vehicle-lights.json` | The headlights and tail lights (v36; needs them), checked against what the operator saw at night: a ZR-350 at 23:00 (set through the game, not a held `scene`) with CJ in it, its four lamps lit and both scene lights among the renderer's; shot pairs, lamps on against `asr.lamps off`: each tail lens 60 darker off and its halo 10, the road behind each tail lamp 9 (and red), the headlight glass 90 and its halo 15, the road ahead 15; braking against not (`asr.lamps brake`/`nobrake`): the halos 2 brighter, the road behind each lamp 9 (redder); the headlight glass over 200 luma lit; CJ drives off and brakes and San Andreas says so within 1.5 s; out by day; out when blown up (CJ out and well away first); still lighting after an interior and back. Each limit about half of what was measured (the file's opening comment) | | 70 s |
+| `vehicle-lights-sandking.json` | The same lamp checks on a Sandking (its headlights' glass glowing, each tail lamp lighting the road behind it, its brakes, the real brake), the front shot cutting away the trees in between (`near`) | | 25 s |
+| `oil.json` | Oil burning GTA style (needs it, the headlights pull request): in Bleak Falls Barrow, three fresh oil pools lit by a bullet landing, a Molotov's burst and a rocket's blast (`asr.oil`, through `ObjectHits`), all three burn | per pool: lowest health, burned, gone | 30 s |
 | `crew-follow.json` | The Grove Street crew following CJ (v39; needs it): at the Whiterun stables, three homies recruited and recorded at 10 Hz on a set route (past a fence's end, round the stalls, through a narrow gap by the cliff and back, a sprint down the road); per homie: moved, never stuck 10 s, within 1000 of CJ's path, within 900 of CJ 10 s after he stops; CJ never held up. `stables-crew-overlay.png` draws every track | `stables-crew.csv`: a row per sample and track | 67 s |
 
 Every scenario starts by putting the session where it needs it (a `coc Riverwood`, Skyrim's player healed, most with a
@@ -37,11 +39,6 @@ them, in a worktree of your own: the headlights are PR 85 (`add-headlights-and-o
 (`add-grove-street-crew-1`, v39). Neither merges cleanly into `main` as it is (the hit test, `skse/CMakeLists.txt` and
 the docs conflict): resolve that in the worktree, `scripts/build.ps1`, and `skytest.ps1 session` starts again for the
 new build. Never push such a merge.
-
-Known failures (13 November 2026): `muzzle-flash.json` and `vehicle-lights.json` fail their last step on every build,
-"after an interior": a light AhShitRim adds to Skyrim's renderer once (the flash's, the vehicles') is no longer among
-its lights after a trip into an interior and back. That's a bug in the mod, which those steps were written to catch;
-every step before them passes.
 
 ## Starts and saves
 

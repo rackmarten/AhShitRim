@@ -59,3 +59,30 @@ TEST_CASE("traps: an object takes CJ's fire once a second at most")
     scorched.Clear();
     CHECK(scorched.Takes(0x5678, 11.1));
 }
+
+TEST_CASE("traps: oil burns GTA style, from bullets as well as fire and blasts")
+{
+    CHECK(IgnitesOil(Hit::Bullet));
+    CHECK(IgnitesOil(Hit::Fire));
+    CHECK(IgnitesOil(Hit::Blast));
+    CHECK_FALSE(IgnitesOil(Hit::Blow));
+
+    // Lit with GasExplode's 5 only, once: more would only cut its fire short.
+    CHECK(OilDamage(Hit::Bullet, false) == kOilLights);
+    CHECK(OilDamage(Hit::Fire, false) == kOilLights);
+    CHECK(OilDamage(Hit::Blast, false) == kOilLights);
+    CHECK(OilDamage(Hit::Blow, false) == 0.0f);
+    CHECK(OilDamage(Hit::Fire, true) == 0.0f);
+    CHECK(100.0f - kOilLights < 99.0f);  // past its first stage, so it goes on burning down by itself
+    CHECK(100.0f - kOilLights > 94.0f);  // short of its fire, which its own self-damage brings
+
+    // A pool 2 m across (bound radius 70) on the floor at z 100.
+    const Damage::Vec3 pool{ 1000.0f, 2000.0f, 100.0f };
+    CHECK(InOil({ 1000.0f, 2000.0f, 100.0f }, pool, 70.0f));     // the middle
+    CHECK(InOil({ 1075.0f, 2000.0f, 98.0f }, pool, 70.0f));      // its edge, the margin past it
+    CHECK_FALSE(InOil({ 1090.0f, 2000.0f, 100.0f }, pool, 70.0f));
+    CHECK_FALSE(InOil({ 1060.0f, 2060.0f, 100.0f }, pool, 70.0f));  // a corner past the round pool
+    CHECK_FALSE(InOil({ 1000.0f, 2050.0f, 160.0f }, pool, 70.0f));  // the wall above it
+    CHECK_FALSE(InOil({ NAN, 2000.0f, 100.0f }, pool, 70.0f));
+    CHECK_FALSE(InOil({ 1000.0f, 2000.0f, 100.0f }, pool, NAN));
+}
