@@ -146,12 +146,13 @@ namespace AhShitRim::StealthKills
                     state.moving = a_actor->GetFormID();
                     state.movingFor = 0.0f;
                     state.confirmed = false;
+                    state.owed = false;
                     state.loggedIdles = true;
                     state.traced = 0;
                     state.pushed = {};
                     state.pinAt = at;
                     state.pinHeading = a_actor->GetAngleZ();
-                    state.debug.idle = move.editorId.data();  // a literal in kKillMoves
+                    state.debug.idle = move.editorId;
                     state.debug.moveSeconds = 0.0f;
                     SKSE::log::info("stealth kill: {} plays on {} ({:08X})", move.editorId, a_actor->GetName(), a_actor->GetFormID());
                     Trace(a_player, a_actor);
@@ -177,7 +178,7 @@ namespace AhShitRim::StealthKills
             state.debug.victim = state.held;
             state.debug.grabbedAt = a_actor->GetPosition();
             state.debug.died = false;
-            state.debug.idle = "";
+            state.debug.idle = {};
             state.debug.moveSeconds = 0.0f;
             const auto at = a_actor->GetPosition();
             SKSE::log::info("stealth kill: CJ grabs {} ({:08X}) {:.2f} m off", a_actor->GetName(), a_actor->GetFormID(),
@@ -362,5 +363,7 @@ namespace AhShitRim::StealthKills
     {
         state.held = 0;
         state.moving = 0;
+        state.confirmed = false;
+        state.owed = false;  // a move cut short (a re-anchor, Skyrim taking the player back) owes nobody a stab
     }
 }

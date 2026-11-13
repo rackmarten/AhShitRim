@@ -48,7 +48,7 @@ namespace AhShitRim::StealthKills
         bool         died = false;
         RE::FormID   held = 0;
         bool         killMove = false;    // the victim in Skyrim's kill move now
-        const char*  idle = "";           // the kill move's idle at the last grab, "" for the ragdoll
+        std::string_view idle;            // the kill move's idle at the last grab, empty for the ragdoll
         float        moveSeconds = 0.0f;  // how long the last kill move ran, once it's over
     };
     Debug DebugState();

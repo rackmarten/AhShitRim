@@ -1315,7 +1315,7 @@ namespace AhShitRim::TestKit
             const auto debug = StealthKills::DebugState();
             JsonObject out{ { "victim", SkseTestKit::FormId(g_kill.victim) }, { "sneaking", player->IsSneaking() }, { "cj", Spot(cj) },
                 { "cjMoved", Round(Flat(cj, g_kill.cjAt), 0.1) }, { "playerFromCj", Round(Flat(player->GetPosition(), cj), 0.1) },
-                { "grabs", debug.grabs }, { "stabs", debug.stabs }, { "held", debug.held != 0 }, { "killMove", debug.killMove }, { "idle", debug.idle },
+                { "grabs", debug.grabs }, { "stabs", debug.stabs }, { "held", debug.held != 0 }, { "killMove", debug.killMove }, { "idle", std::string(debug.idle) },
                 { "moveSeconds", Round(debug.moveSeconds) } };
             if (a_victim) {
                 const auto at = a_victim->GetPosition();
