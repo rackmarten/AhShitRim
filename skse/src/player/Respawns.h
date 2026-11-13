@@ -20,8 +20,11 @@ namespace AhShitRim::Respawns
     // player now), watches their quests and, once a second, brings back whoever is ready.
     void Update(bool a_cjHasPlayer, float a_delta);
 
-    // What a kill of a_actor by CJ would do (Revive::Why), for the hit test's respawn run.
+    // What a kill of a_actor by CJ would do (Revive::Why), for the test kit's respawn checks.
     const char* DryRun(RE::Actor* a_actor, RE::PlayerCharacter* a_player);
+    // The test kit: whether a_id is dead and noted to come back, and whether its hour is up but it's held in view.
+    bool DebugWaiting(std::uint32_t a_id);
+    bool DebugHeld(std::uint32_t a_id);
 
     void OnGameLoad();  // deaths queued belonged to the game before
 

@@ -187,6 +187,11 @@ never need it). To use it:
    | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+   | `asr.kill <ref> [all=<radius>]` | the player kills an actor as CJ's blow would (the player's kill, Skyrim's death event), `all=` every living one of that name within that many units too; answers each one's Respawns verdict and keeps them for `asr.killed` | `asr.kill name:Bandit all=3000` |
+   | `asr.judge <ref>` | what a kill by CJ would do to an actor, as Respawns judges it (nobody killed) | `asr.judge 0x00035534` |
+   | `asr.killed [forget=]` | everyone `asr.kill` killed: dead or up, waiting to come back, held in view, how far from their editor spot; with the counts | `asr.killed` |
+   | `asr.later <hours>` | Skyrim's clock that many game hours on (days passed and the hour), as a wait would | `asr.later 1.1` |
+   | `asr.objectives <quest>` | a quest as Respawns reads it: running, its stage, each objective's index, state and the references its target aliases hold | `asr.objectives DB01` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|

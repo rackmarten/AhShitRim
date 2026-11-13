@@ -497,6 +497,14 @@ namespace AhShitRim::Respawns
         return base ? Revive::Why(JudgeActor(a_actor, base->GetFormID(), true, true, a_player).verdict) : "no base";
     }
 
+    bool DebugWaiting(std::uint32_t a_id)
+    {
+        const auto& dead = state.roster.Dead();
+        return std::any_of(dead.begin(), dead.end(), [a_id](const Revive::Death& a_death) { return a_death.id == a_id; });
+    }
+
+    bool DebugHeld(std::uint32_t a_id) { return std::find(state.held.begin(), state.held.end(), a_id) != state.held.end(); }
+
     void OnGameLoad()
     {
         std::scoped_lock guard(state.lock);
