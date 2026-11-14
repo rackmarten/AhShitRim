@@ -8,7 +8,6 @@
 #include "camera.h"
 #include "cheats.h"
 #include "collision/CollisionSampler.h"
-#include "debug/MissionTest.h"
 #include "debug/HitTest.h"
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
@@ -18,6 +17,7 @@
 #include "hud/SkyrimMessages.h"
 #include "input.h"
 #include "knock.h"
+#include "pad.h"
 #include "pickups.h"
 #include "settle.h"
 #include "wanted.h"
@@ -90,6 +90,14 @@ namespace AhShitRim::PlayerSync
             Input::Builder input;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            struct Drawn
+            {
+                bool          on = false;
+                RE::NiPoint3  position;
+                float         heading = 0.0f;
+                std::uint32_t model = 0;
+            };
+            Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
@@ -106,6 +114,11 @@ namespace AhShitRim::PlayerSync
             Knock::Down    down;                  // the player knocked down (ragdolled) in Skyrim, and for how long
             Knock::Skeleton skeleton;             // its skeleton left behind in its ragdoll after it's up again
             bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
+            Pad::Mapper    pad;                   // the gamepad (DESIGN.md, Controller), from Skyrim's own gamepad events
+            Pad::Look      padLook;               // [Input] PadLookSpeed, PadAimSpeed, PadInvertY
+            bool           padOn = true;          // [Input] Pad
+            bool           padLast = false;       // the pad was the last thing used: the help box names its buttons
+            std::chrono::steady_clock::time_point padTime{};  // the last pad update, for Back's hold in real time
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -114,7 +127,13 @@ namespace AhShitRim::PlayerSync
             int           newPoses = 0;
             int           drawn = 0;
             std::uint32_t lastPoseFrame = 0;
+
+            std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
+            DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
+
+        void UpdatePad(RE::PlayerCharacter* a_player);  // the gamepad's frame, below its menu hooks
 
         double NowMs()
         {
@@ -201,6 +220,14 @@ namespace AhShitRim::PlayerSync
                 std::copy(std::begin(state.carRequest.colours), std::end(state.carRequest.colours), input.carColours);
                 std::copy(std::begin(state.carRequest.offset), std::end(state.carRequest.offset), input.carOffset);
                 input.carHeading = state.carRequest.heading;
+            }
+            if (state.debugInput && std::chrono::steady_clock::now() > state.debugInputUntil) {
+                state.debugInput.reset();
+            }
+            if (state.owned && state.debugInput && !a_menu && !wasted && !AmmuNation::IsOpen()) {
+                input.moveX = state.debugInput->moveX;
+                input.moveY = state.debugInput->moveY;
+                input.buttons |= state.debugInput->buttons;
             }
             input.handover = state.handover;
             input.heading = state.heading;
@@ -339,6 +366,9 @@ namespace AhShitRim::PlayerSync
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
             }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
+            }
             state.gear.Reset();
         }
 
@@ -474,6 +504,7 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehiclesDrawn[i].on = false;
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
                         Headlights::Show(i, nullptr, {});
@@ -486,7 +517,15 @@ namespace AhShitRim::PlayerSync
                 Protocol::BodyState pose{};
                 if (state.vehicles[i].Sample(now, pose)) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
+                    if (state.debugVehicle) {
+                        state.debugVehicle(i, pose, feet);
+                    }
                     ModelView::Show(pose, feet);
+                    // Its heading from its frame (X right, Y forward, Z up): the turned Y axis, by the quaternion.
+                    const float* q = pose.vehicleFrame.rotation;
+                    const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
+                    const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
                     Headlights::Show(i, &pose, feet);  // v36
@@ -497,6 +536,7 @@ namespace AhShitRim::PlayerSync
                     }
                 } else {
                     Headlights::Show(i, nullptr, {});
+                    state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
@@ -642,6 +682,9 @@ namespace AhShitRim::PlayerSync
             }
             for (auto& vehicle : state.vehicles) {
                 vehicle.Reset();
+            }
+            for (auto& drawn : state.vehiclesDrawn) {
+                drawn.on = false;
             }
             state.gear.Reset();
             VehicleFx::Clear();
@@ -1051,7 +1094,9 @@ namespace AhShitRim::PlayerSync
                 AmmuNation::Close();
             }
             if (AmmuNation::IsOpen() && !MenuHasInput()) {
-                const auto actions = state.input.Build(0, true, true);
+                auto actions = state.input.Build(0, true, true);
+                // On the pad the d-pad browses too (on foot its up and down are the crew's, nothing of San Andreas's).
+                actions.buttons |= (state.pad.Held(Pad::kUp) ? Protocol::kButtonLeanForward : 0u) | (state.pad.Held(Pad::kDown) ? Protocol::kButtonLeanBack : 0u);
                 AmmuNation::Update(a_player, { actions.moveY, actions.buttons, std::exchange(state.shopActivate, false) }, a_delta, valid ? &pose : nullptr);
             }
             Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
@@ -1173,6 +1218,7 @@ namespace AhShitRim::PlayerSync
                     LinkService::ShowMismatch();
                 }
                 state.linkUp = up;
+                UpdatePad(a_player);  // before Drive publishes the input
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
@@ -1187,7 +1233,6 @@ namespace AhShitRim::PlayerSync
                 CheatCodes::Update();
                 Police::Sweep(a_delta);
                 GunRewards::Update();
-                MissionTest::Update(a_player, a_delta);
                 Respawns::Update(state.owned, a_delta);
                 if (a_delta > 0.0f) {
                     // A quest's title or its mission passed, CJ's intro line: San Andreas plays the sound, whoever has the player.
@@ -1245,10 +1290,23 @@ namespace AhShitRim::PlayerSync
 
         // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
         // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
+        // On the pad (DESIGN.md, Controller) Back is held back from Skyrim's wait menu in either game, so a second's hold can
+        // hand the player over (Pad::Mapper), and a tap with Skyrim on the player opens the menu through Skyrim's own
+        // handler (OpenWaitMenu). While CJ has the player only the pad's journal (Start) and tween menu (B) open.
         struct MenuOpenHook
         {
             static bool thunk(RE::MenuOpenHandler* a_handler, RE::InputEvent* a_event)
             {
+                if (state.padOn && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kGamepad) {
+                    auto* button = a_event->AsButtonEvent();
+                    auto* events = RE::UserEvents::GetSingleton();
+                    if (button && events) {
+                        const auto& event = button->QUserEvent();
+                        if (event == events->wait || (state.owned && event != events->journal && event != events->tweenMenu)) {
+                            return false;
+                        }
+                    }
+                }
                 if (state.owned && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
                     if (auto* button = a_event->AsButtonEvent(); button && !Input::OpensSkyrimMenu(button->GetIDCode())) {
                         return false;
@@ -1258,6 +1316,110 @@ namespace AhShitRim::PlayerSync
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
+
+        // Back tapped on the pad while Skyrim has the player: its wait menu, through Skyrim's own menu open handler (which
+        // refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
+        void OpenWaitMenu()
+        {
+            auto* controls = RE::MenuControls::GetSingleton();
+            auto* events = RE::UserEvents::GetSingleton();
+            auto* handler = controls ? controls->menuOpenHandler : nullptr;
+            if (!handler || !events) {
+                return;
+            }
+            for (const float value : { 1.0f, 0.0f }) {
+                auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kGamepad, events->wait, Pad::kBack, value, value > 0.0f ? 0.0f : 0.1f);
+                if (!event) {
+                    return;
+                }
+                if (MenuOpenHook::original(handler, event)) {
+                    handler->ProcessButton(event);
+                }
+                RE::free(event);
+            }
+        }
+
+        // Skyrim's Shout on the pad (RB) is the handbrake while CJ is in a vehicle (DESIGN.md, Controller): Z still shouts.
+        struct ShoutHook
+        {
+            static bool thunk(RE::ShoutHandler* a_handler, RE::InputEvent* a_event)
+            {
+                if (state.owned && state.padOn && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kGamepad && InVehicle()) {
+                    return false;
+                }
+                return original(a_handler, a_event);
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
+        // F10, or Back held a second on the pad: the player to CJ or back to Skyrim.
+        void ToggleHandover(const char* a_reason)
+        {
+            if (state.owned) {
+                Release(a_reason);
+            } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                TakeOver(player);
+            }
+        }
+
+        // E pressed, or LB on the pad, with CJ on foot: buys in Ammu-Nation, swaps for a weapon pickup he stands on, or
+        // activates what he faces through Skyrim.
+        void ActivateKey(RE::PlayerCharacter* a_player)
+        {
+            if (MenuHasInput() || Police::IsBusted()) {
+                return;
+            }
+            if (AmmuNation::IsOpen()) {
+                state.shopActivate = true;  // buys, in the shop
+            } else if (WorldPickups::Activate()) {
+                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
+            } else if (a_player) {
+                Activation::Activate(a_player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
+            }
+        }
+
+        // Once a frame, whoever has the player: the pad's actions (Pad::Mapper) into the input CJ gets, Back's tap and hold.
+        void UpdatePad(RE::PlayerCharacter* a_player)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const float seconds = state.padTime == std::chrono::steady_clock::time_point{} ? 0.0f
+                                                                                           : (std::min)(std::chrono::duration<float>(now - state.padTime).count(), 0.25f);
+            state.padTime = now;
+            if (!state.padOn) {
+                return;
+            }
+            Protocol::PlayerState pose{};
+            const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
+            const bool inVehicle = posed && (pose.flags & Protocol::kPlayerInVehicle) != 0;
+            const auto context = !inVehicle ? Pad::Context::OnFoot : pose.vehicleModel == Pad::kModelHydra ? Pad::Context::Hydra : Pad::Context::Vehicle;
+            const bool scoped = posed && !inVehicle && Weapons::ScopeOf(pose.cameraMode) != Weapons::Scope::None;
+            const bool live = state.owned && !MenuHasInput();
+            const auto frame = state.pad.Update(seconds, context, state.owned, live, scoped, state.padLook);
+            if (frame.handover) {
+                SKSE::log::info("player sync: Back held on the pad: the handover, as F10");
+                ToggleHandover("Back held on the pad");
+                return;
+            }
+            if (frame.waitTap && !state.owned && !MenuHasInput()) {
+                OpenWaitMenu();
+            }
+            if (!state.owned) {
+                return;
+            }
+            state.input.SetPad(frame.actions);
+            state.input.AddMouseCounts(frame.mouseX, AmmuNation::IsOpen() ? 0.0 : frame.mouseY);
+            const bool forCj = live && !AmmuNation::IsOpen();
+            const bool own = forCj && state.control == Scene::Control::Cj && !Vitals::IsDown();
+            for (int i = 0; i < frame.nextSteps + frame.prevSteps && forCj; ++i) {
+                state.input.AddWheel(i < frame.nextSteps);  // weapons on foot, stations in a vehicle
+            }
+            if (frame.insult && own) {
+                state.input.AddInsult();
+            }
+            if (frame.activate && !inVehicle) {
+                ActivateKey(a_player);
+            }
+        }
 
         // F5 and F9: as in San Andreas, no saving (or loading) while wanted. Skyrim's load clearing the world with the
         // pursuit mid-fight in it crashed in its combat code; quicksaves and quickloads wait until the heat is gone.
@@ -1295,6 +1457,24 @@ namespace AhShitRim::PlayerSync
             {
                 bool changed = false;
                 for (auto* e = a_event ? *a_event : nullptr; e; e = e->next) {
+                    if (e->GetDevice() == RE::INPUT_DEVICE::kGamepad) {
+                        // The pad (DESIGN.md, Controller): its state here, its actions once a frame in UpdatePad.
+                        if (!state.padOn) {
+                            continue;
+                        }
+                        if (e->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick) {
+                            auto* stick = static_cast<RE::ThumbstickEvent*>(e);
+                            state.pad.SetStick(stick->IsRight(), stick->xValue, stick->yValue);
+                            state.padLast = true;
+                        } else if (auto* pressed = e->AsButtonEvent()) {
+                            state.pad.SetButton(pressed->GetIDCode(), pressed->Value());
+                            state.padLast = true;
+                        }
+                        continue;
+                    }
+                    if (e->GetDevice() == RE::INPUT_DEVICE::kKeyboard || e->GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
+                        state.padLast = false;  // a key or a mouse button: the help box names keys again
+                    }
                     if (auto* move = e->AsMouseMoveEvent()) {
                         if (MenuHasInput() || AmmuNation::IsOpen()) {
                             continue;  // moves the menu's cursor, not San Andreas's camera
@@ -1361,14 +1541,8 @@ namespace AhShitRim::PlayerSync
                         continue;
                     }
                     if (code == Input::kDikE && state.owned && !InVehicle()) {
-                        if (button->IsDown() && !MenuHasInput() && !Police::IsBusted()) {
-                            if (AmmuNation::IsOpen()) {
-                                state.shopActivate = true;  // buys, in the shop
-                            } else if (WorldPickups::Activate()) {
-                                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
-                            } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                                Activation::Activate(player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
-                            }
+                        if (button->IsDown()) {
+                            ActivateKey(RE::PlayerCharacter::GetSingleton());
                         }
                         continue;
                     }
@@ -1427,14 +1601,7 @@ namespace AhShitRim::PlayerSync
                 SKSE::log::info("player sync: dev pick {}", VehicleKinds::Label(model));
             }
 
-            static void Toggle()
-            {
-                if (state.owned) {
-                    Release("F10");
-                } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                    TakeOver(player);
-                }
-            }
+            static void Toggle() { ToggleHandover("F10"); }
         };
 
         // Skyrim positioning the player: a load door (a city's gate too), fast travel, coc, a script's
@@ -1493,6 +1660,8 @@ namespace AhShitRim::PlayerSync
         FavoritesHook::original = favorites.write_vfunc(0x1, FavoritesHook::thunk);
         REL::Relocation<std::uintptr_t> menuOpen{ RE::VTABLE_MenuOpenHandler[0] };
         MenuOpenHook::original = menuOpen.write_vfunc(0x1, MenuOpenHook::thunk);
+        REL::Relocation<std::uintptr_t> shout{ RE::VTABLE_ShoutHandler[0] };
+        ShoutHook::original = shout.write_vfunc(0x1, ShoutHook::thunk);
         REL::Relocation<std::uintptr_t> quick{ RE::VTABLE_QuickSaveLoadHandler[0] };
         QuickSaveLoadHook::original = quick.write_vfunc(0x1, QuickSaveLoadHook::thunk);
         BlockHook<kMovementHook>::Install(RE::VTABLE_MovementHandler[0]);
@@ -1515,6 +1684,20 @@ namespace AhShitRim::PlayerSync
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 
+    bool PadInUse() { return state.padOn && state.padLast; }
+
+    void DebugPad(std::uint32_t a_id, float a_value)
+    {
+        state.pad.SetButton(a_id, a_value);
+        state.padLast = true;
+    }
+
+    void DebugStick(bool a_right, float a_x, float a_y)
+    {
+        state.pad.SetStick(a_right, a_x, a_y);
+        state.padLast = true;
+    }
+
     void OnDataLoaded()
     {
         static InputSink inputSink;
@@ -1525,6 +1708,16 @@ namespace AhShitRim::PlayerSync
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
             Ini::kPath);
+        // The pad (DESIGN.md, Controller), from Skyrim's own gamepad events: Skyrim's gamepad setting has to be on.
+        const auto pad = Ini::Value("Input", "Pad");
+        state.padOn = pad.empty() || pad != "0";
+        state.padLook.lookSpeed = Pad::ParseNumber(Ini::Value("Input", "PadLookSpeed"), state.padLook.lookSpeed, 100.0f, 10000.0f);
+        state.padLook.aimShare = Pad::ParseNumber(Ini::Value("Input", "PadAimSpeed"), state.padLook.aimShare, 0.05f, 2.0f);
+        state.padLook.invertY = Ini::Value("Input", "PadInvertY") == "1";
+        auto*      devices = RE::BSInputDeviceManager::GetSingleton();
+        const bool skyrimPad = devices && devices->IsGamepadEnabled();
+        SKSE::log::info("player sync: the pad is {} ([Input] Pad), look speed {:.0f}, aiming {:.2f}{}; Skyrim's gamepad setting is {}", state.padOn ? "on" : "off",
+            state.padLook.lookSpeed, state.padLook.aimShare, state.padLook.invertY ? ", inverted" : "", skyrimPad ? "on" : "off (Settings, Controls, Gamepad: no pad events reach us)");
         const auto devKeys = Ini::Value("Debug", "VehicleKeys");
         state.devKeys = devKeys.empty() || devKeys != "0";
         const auto devList = Ini::Value("Debug", "Vehicles");
@@ -1543,7 +1736,6 @@ namespace AhShitRim::PlayerSync
         GunRewards::OnDataLoaded();
         Respawns::OnDataLoaded();
         Missions::OnDataLoaded();
-        MissionTest::OnDataLoaded();
         Shouting::OnDataLoaded();
         Riders::OnDataLoaded();
         Hitboxes::OnDataLoaded();
@@ -1573,6 +1765,21 @@ namespace AhShitRim::PlayerSync
 
     bool DebugOwned() { return state.owned; }
 
+    std::uint32_t DebugHandover() { return state.handover; }
+
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
+    {
+        if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
+            return false;
+        }
+        a_position = state.vehiclesDrawn[a_slot].position;
+        a_heading = state.vehiclesDrawn[a_slot].heading;
+        if (a_model) {
+            *a_model = state.vehiclesDrawn[a_slot].model;
+        }
+        return true;
+    }
+
     void DebugToggle()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1587,6 +1794,18 @@ namespace AhShitRim::PlayerSync
     {
         state.input.SetAim(a_aim);
         state.input.SetFire(a_fire);
+    }
+
+    void DebugHold(const std::optional<DebugInput>& a_input)
+    {
+        state.debugInput = a_input;
+        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        Publish();
+    }
+
+    void SetDebugVehicleHook(DebugVehicleHook a_hook)
+    {
+        state.debugVehicle = std::move(a_hook);
     }
 
     void DebugType(const char* a_code)
@@ -1626,6 +1845,14 @@ namespace AhShitRim::PlayerSync
         Vitals::SetArmor(a_record.armor);
         Arms::Restore(a_record.weapons);
         WorldPickups::Restore(a_record.pickupsTaken);
+    }
+
+    std::string DebugSpawn(std::uint16_t a_model)
+    {
+        if (!state.owned) {
+            return "San Andreas doesn't have the player";
+        }
+        return CheatSpawn(a_model, false);
     }
 
     void TakeOverInVehicle(std::uint16_t a_model)

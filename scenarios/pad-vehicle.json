@@ -1,0 +1,80 @@
+// The pad in a vehicle (DESIGN.md, Controller): CJ in a Sandking on the road below the Whiterun stables, facing south
+// down the open road, driven with the kit's pad and stick commands (Skyrim's own input events, through its input
+// queue). RT accelerates, the left stick steers, LT brakes and then reverses, X looks behind, the d-pad's up changes
+// the station, Y gets out. The effects are read from San Andreas's pose (asr.watch, asr.mark and asr.since: speed, and
+// ahead, the speed along the way the car faces, below 0 reversing). scripts/skytest.ps1 run scenarios/pad-vehicle.json
+// (scenarios/README.md).
+//
+// The limits (set from runs on the test desktop, measured values in the pull request): RT full for 2 s from a
+// standstill gets the Sandking past 25 km/h and 8 m on (every drive here stays under 2 s: 35 m south of the start the
+// road meets a signpost and rocks, which 3 s at full throttle reached at 75 km/h); RT with the left stick full left from a standstill turns it at least
+// 15 degrees left in 2 s (checked last: steered at speed it left the road, where LT didn't stop it in 8 s); LT held brakes it to a stop within 8 s, and from a standstill backs it up (ahead below -3 km/h within 3 s); X held turns the camera (Skyrim's, following San Andreas's) at least
+// 120 degrees (looking behind); the d-pad's up changes the radio station.
+{
+  "name": "pad-vehicle",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "no actors left from an earlier run (asr.place)", "cmd": "asr.place", "clear": true },
+    { "label": "Bjorlam enabled (pad-lock disables him while it runs)", "cmd": "console", "ref": "00013698", "command": "enable" },
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "label": "facing south, down the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150", "dead == false"] },
+    { "label": "Skyrim's gamepad on, as a pad player has it", "cmd": "console", "command": "setini \"bGamepadEnable:Controls\" 1" },
+    { "label": "noon, for the shots", "cmd": "scene", "presets": "day clear" },
+    { "label": "CJ in a new Sandking there", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+    { "label": "standing still", "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    // X held looks behind, checked standing, with the chase camera behind the car (after a reverse San Andreas's camera
+    // already faces the way the car went, and looking behind turned it 12 degrees).
+    { "cmd": "asr.mark" },
+    { "label": "X held", "cmd": "pad", "buttons": "x" },
+    { "cmd": "wait", "seconds": 0.4 },
+    { "label": "CJ looks behind (Skyrim's camera, which follows San Andreas's)", "cmd": "asr.since", "expect": "cameraTurnedBy > 120" },
+    { "label": "looking behind", "cmd": "screenshot", "name": "look-behind" },
+    { "cmd": "pad", "buttons": "x", "value": 0 },
+    { "cmd": "wait", "seconds": 0.6 },
+
+    { "label": "RT held", "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "label": "the Sandking drives off", "cmd": "asr.watch", "seconds": 2, "expect": ["topSpeed > 25", "moved > 8", "ahead > 15"] },
+    { "label": "driving", "cmd": "screenshot", "name": "driving", "camera": "orbit asr.vehicle:driven distance=900 pitch=20" },
+    { "label": "RT let go", "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "label": "LT held, on the road", "cmd": "pad", "buttons": "lt", "value": 1 },
+    { "label": "it brakes to a stop", "cmd": "wait", "until": "speed < 3", "for": "asr.pose", "timeout": 8 },
+    { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+    { "label": "LT held from a standstill", "cmd": "pad", "buttons": "lt", "value": 1 },
+    { "label": "it backs up", "cmd": "asr.watch", "seconds": 3, "expect": "aheadLow < -3" },
+    { "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+    { "cmd": "asr.mark" },
+    { "label": "RT held and the left stick full left, from a standstill", "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "stick", "side": "left", "x": -1, "y": 0, "seconds": 2 },
+    { "label": "it turned left", "cmd": "asr.since", "expect": "bodyTurned < -15" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+
+    { "cmd": "asr.mark" },
+    { "label": "the d-pad's up", "cmd": "pad", "buttons": "up", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "another station", "cmd": "asr.since", "expect": "radioChanged == true" },
+
+    { "label": "Y tapped", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "label": "CJ gets out", "cmd": "wait", "until": ["onFoot == true", "gettingInOut == false"], "for": "asr.pose", "timeout": 10 },
+    { "label": "nothing left held", "cmd": "input", "expect": "idle == true" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}
