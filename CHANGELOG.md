@@ -49,6 +49,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CJ aims pistols, Uzis and sawn-offs (one gun or two) the way San Andreas poses them: the arm straight out to the aim instead of bent down at the elbow, and with the right mouse button held his head turns to the crosshair as well, up, down and to the sides.
 - One-handed guns lean in toward CJ's middle: with two guns they lean toward each other, and a single pistol or SMG leans in as the right one of a pair. The right-hand gun used to lean outward.
 
+### Changed
+
+- The dead come back, San Andreas style. Everyone CJ kills who wasn't hostile on sight, unique or not (guards, citizens, merchants, chickens and cows), gets up an in-game hour later at their spot, as soon as neither the body nor the spot is in view of the camera, in cities and outside. Their cell doesn't have to unload any more. Bandits, necromancers, draugr and wild predators stay dead until Skyrim resets their cell, and so does a quest's kill target or anyone whose death moves on a quest you're in (one whose objectives you've seen). Essential people NOMERCY let CJ kill still always come back.
+- For developers: `scenarios/respawns.json` and `respawns-stay-dead.json` check it in a hidden test session (who comes back and when; bandits and a quest's kill target staying dead), with the kit's new `asr.kill`, `asr.judge`, `asr.killed`, `asr.later` and `asr.objectives`.
+
 ### Fixed
 
 - The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).

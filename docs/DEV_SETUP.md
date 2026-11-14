@@ -200,6 +200,11 @@ never need it). To use it:
    | `asr.seated [radius] [lean=]`, `asr.behind [ref] [meters]` | the nearest person on a chair or a bench (`lean=true`: or leaning on a counter, the same sit state) a stealth kill may take, with room behind (no guards: they lean on walls); Skyrim's player put `meters` behind them, before `asr.cj` | `asr.seated 6000 lean=true` |
    | `asr.stealth [until] [crouch=] [aim=]` | the knife stealth kill as a player does it (crouch, the right button held `aim` s, the left clicked): answers at the `grab`, the `stab` or once it's `over`, with the victim and CJ against where they stood at the grab | `asr.stealth until=grab crouch=true` |
    | `asr.swing [ref] [crouch=]` | one knife blow on the victim, crouched or not: the health it took, the sneak attack multiplier, and `vsLast` against the last swing's | `asr.swing crouch=true` |
+   | `asr.kill <ref> [all=<radius>]` | the player kills an actor as CJ's blow would (the player's kill, Skyrim's death event, from SKSE's task queue), `all=` every living one of that name within that many units too; answers once they're dead, with each one's Respawns verdict and keeps them for `asr.killed` | `asr.kill name:Bandit all=3000` |
+   | `asr.judge <ref>` | what a kill by CJ would do to an actor, as Respawns judges it (nobody killed), and what it read: aggression, faction reaction, Skyrim's hostility, a crime faction | `asr.judge 0x00035534` |
+   | `asr.killed [forget=]` | everyone `asr.kill` killed: dead or up, waiting to come back, held in view, how far from their editor spot; with the counts | `asr.killed` |
+   | `asr.later <hours>` | Skyrim's clock that many game hours on (days passed and the hour), as a wait would | `asr.later 1.1` |
+   | `asr.objectives <quest>` | a quest as Respawns reads it: running, its stage, each objective's index, state and the references its target aliases hold | `asr.objectives DB01` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|

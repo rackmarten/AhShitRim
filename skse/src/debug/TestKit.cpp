@@ -20,6 +20,7 @@
 #include "ride.h"
 #include "player/Shots.h"
 #include "player/StealthKills.h"
+#include "player/Respawns.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
 #include "wanted.h"
@@ -2172,6 +2173,189 @@ namespace AhShitRim::TestKit
                     };
                 });
         }
+
+        // ---- Coming back (player/Respawns.cpp) ----
+
+        struct Victim
+        {
+            std::uint32_t id = 0;
+            std::string   name;
+            std::string   verdict;  // Respawns' own words for what the kill does
+        };
+        std::vector<Victim> g_victims;  // asr.kill's, for asr.killed
+
+        // How far a_actor stands from its editor spot, when both are in the same interior or worldspace.
+        std::optional<double> FromSpot(RE::Actor* a_actor)
+        {
+            RE::NiPoint3 position;
+            RE::NiPoint3 angle;
+            RE::TESForm* where = nullptr;
+            const auto*  cell = a_actor->GetParentCell();
+            if (!cell || !a_actor->GetEditorLocation(position, angle, where, nullptr) || !where) {
+                return std::nullopt;
+            }
+            const bool same = where->Is(RE::FormType::Cell) ? where == cell : !cell->IsInteriorCell() && where == a_actor->GetWorldspace();
+            if (!same) {
+                return std::nullopt;
+            }
+            return static_cast<double>(a_actor->GetPosition().GetDistance(position));
+        }
+
+        void AddRespawnChecks()
+        {
+            SkseTestKit::AddTask("asr.kill", "<ref> [all=<radius>]",
+                "The player kills an actor, as CJ's blow would (the player's kill, Skyrim's death event); all=<radius> kills every living actor of "
+                "the same name within that many units of the player too. The kills run from SKSE's task queue (a kill from the kit's point in "
+                "the frame once waited on the engine for good); answers once all are dead, with each one's verdict (what Respawns says the "
+                "death does), and keeps them for asr.killed",
+                [](Call& a_call) -> Step {
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    auto* first = SkseTestKit::FindRef(a_call.Text("ref"))->As<RE::Actor>();
+                    if (!first || !player) {
+                        throw Error("not an actor");
+                    }
+                    std::vector<RE::Actor*> targets{ first };
+                    if (const double radius = a_call.Number("all", 0.0); radius > 0.0) {
+                        const std::string name = first->GetDisplayFullName();
+                        if (auto* lists = RE::ProcessLists::GetSingleton()) {
+                            for (auto& handle : lists->highActorHandles) {
+                                auto  held = handle.get();
+                                auto* other = held.get();
+                                if (other && other != first && !other->IsDead() && name == other->GetDisplayFullName() &&
+                                    other->GetPosition().GetDistance(player->GetPosition()) <= radius) {
+                                    targets.push_back(other);
+                                }
+                            }
+                        }
+                    }
+                    auto killed = std::make_shared<JsonArray>();
+                    std::vector<std::uint32_t> ids;
+                    for (auto* actor : targets) {
+                        if (actor->IsDead()) {
+                            throw Error(std::format("{} ({}) is dead already", actor->GetDisplayFullName(), SkseTestKit::FormId(actor->GetFormID())));
+                        }
+                        Victim victim{ actor->GetFormID(), actor->GetDisplayFullName(), Respawns::DryRun(actor, player) };
+                        killed->push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict } });
+                        ids.push_back(victim.id);
+                        std::erase_if(g_victims, [&](const Victim& a_v) { return a_v.id == victim.id; });
+                        g_victims.push_back(std::move(victim));
+                    }
+                    SKSE::GetTaskInterface()->AddTask([ids] {
+                        auto* killer = RE::PlayerCharacter::GetSingleton();
+                        for (const auto id : ids) {
+                            if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id); actor && killer && !actor->IsDead()) {
+                                actor->KillImpl(killer, 100000.0f, true, true);
+                            }
+                        }
+                    });
+                    a_call.DefaultTimeout(10.0);
+                    return [ids, killed](Call&) -> std::optional<Json> {
+                        for (const auto id : ids) {
+                            auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                            if (actor && !actor->IsDead()) {
+                                return std::nullopt;
+                            }
+                        }
+                        return JsonObject{ { "count", killed->size() }, { "killed", *killed } };
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.judge", "<ref>", "What a kill of an actor by CJ would do, as Respawns judges it (nobody killed)", [](Call& a_call) -> Json {
+                auto* actor = SkseTestKit::FindRef(a_call.Text("ref"))->As<RE::Actor>();
+                if (!actor) {
+                    throw Error("not an actor");
+                }
+                auto*      player = RE::PlayerCharacter::GetSingleton();
+                const auto read = Respawns::DebugJudge(actor, player);
+                return JsonObject{ { "id", SkseTestKit::FormId(actor->GetFormID()) }, { "name", actor->GetDisplayFullName() },
+                    { "verdict", Respawns::DryRun(actor, player) }, { "baseAggression", read.baseAggression }, { "aggression", read.aggression },
+                    { "reaction", read.reaction }, { "hostile", read.hostile }, { "lawful", read.lawful } };
+            });
+
+            SkseTestKit::AddCommand("asr.killed", "[forget=<bool>]",
+                "Everyone asr.kill killed, in that order: dead or up, waiting to come back (and held in view), how far from their editor spot; "
+                "with the counts. forget=true clears the list after answering",
+                [](Call& a_call) -> Json {
+                    JsonArray victims;
+                    int       alive = 0;
+                    int       waiting = 0;
+                    for (const auto& victim : g_victims) {
+                        auto*      actor = RE::TESForm::LookupByID<RE::Actor>(victim.id);
+                        const bool dead = !actor || actor->IsDead();
+                        const bool waits = Respawns::DebugWaiting(victim.id);
+                        alive += dead ? 0 : 1;
+                        waiting += waits ? 1 : 0;
+                        const auto from = actor ? FromSpot(actor) : std::nullopt;
+                        victims.push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict },
+                            { "dead", dead }, { "waiting", waits }, { "held", Respawns::DebugHeld(victim.id) }, { "fromSpot", from ? Json(*from) : Json() },
+                            { "loaded", actor && actor->Is3DLoaded() } });
+                    }
+                    const int  count = static_cast<int>(g_victims.size());
+                    JsonObject out{ { "count", count }, { "alive", alive }, { "dead", count - alive }, { "waiting", waiting }, { "victims", std::move(victims) } };
+                    if (a_call.Flag("forget", false)) {
+                        g_victims.clear();
+                    }
+                    return out;
+                });
+
+            SkseTestKit::AddCommand("asr.later", "<hours>",
+                "Moves Skyrim's clock on by that many game hours (days passed and the hour), as a wait would, without the wait menu",
+                [](Call& a_call) -> Json {
+                    const double hours = a_call.Number("hours");
+                    if (hours <= 0.0 || hours > 48.0) {
+                        throw Error("hours is over 0, up to 48");
+                    }
+                    auto* calendar = RE::Calendar::GetSingleton();
+                    if (!calendar || !calendar->gameDaysPassed || !calendar->gameHour) {
+                        throw Error("no calendar yet");
+                    }
+                    calendar->gameDaysPassed->value += static_cast<float>(hours / 24.0);
+                    calendar->gameHour->value = static_cast<float>(std::fmod(calendar->gameHour->value + hours, 24.0));
+                    return JsonObject{ { "daysPassed", calendar->GetDaysPassed() }, { "hour", calendar->GetHour() } };
+                });
+
+            SkseTestKit::AddCommand("asr.objectives", "<quest>",
+                "A quest (editor id) as Respawns reads it: running, its stage, and each objective's index, state and the references its "
+                "target aliases hold",
+                [](Call& a_call) -> Json {
+                    const auto id = a_call.Text("quest");
+                    auto*      quest = RE::TESForm::LookupByEditorID<RE::TESQuest>(id);
+                    if (!quest) {
+                        throw Error(std::format("no quest {}", id));
+                    }
+                    JsonArray objectives;
+                    for (auto* objective : quest->objectives) {
+                        if (!objective) {
+                            continue;
+                        }
+                        JsonArray targets;
+                        for (std::uint32_t i = 0; i < objective->numTargets; i++) {
+                            const auto* target = objective->targets[i];
+                            if (!target) {
+                                continue;
+                            }
+                            JsonObject row{ { "alias", target->alias } };
+                            for (auto* alias : quest->aliases) {
+                                if (!alias || alias->aliasID != target->alias) {
+                                    continue;
+                                }
+                                row["aliasName"] = alias->aliasName.c_str();
+                                if (alias->GetVMTypeID() == RE::BGSRefAlias::VMTYPEID) {
+                                    if (auto* held = static_cast<RE::BGSRefAlias*>(alias)->GetReference()) {
+                                        row["ref"] = SkseTestKit::FormId(held->GetFormID());
+                                        row["refName"] = held->GetDisplayFullName();
+                                    }
+                                }
+                            }
+                            targets.push_back(std::move(row));
+                        }
+                        objectives.push_back(JsonObject{ { "index", objective->index }, { "state", static_cast<int>(objective->state.get()) },
+                            { "text", objective->displayText.c_str() }, { "targets", std::move(targets) } });
+                    }
+                    return JsonObject{ { "quest", id }, { "running", quest->IsRunning() }, { "stage", quest->GetCurrentStageID() },
+                        { "objectives", std::move(objectives) } };
+                });
+        }
     }
 
     void Load()
@@ -2183,6 +2367,7 @@ namespace AhShitRim::TestKit
             AddTests();
             AddFeatureChecks();
             AddStealthKills();
+            AddRespawnChecks();
         }
     }
 

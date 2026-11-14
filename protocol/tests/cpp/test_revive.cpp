@@ -10,14 +10,17 @@ using namespace AhShitRim::Revive;
 
 namespace
 {
-    Kill Cj(std::uint32_t a_id, int a_aggression = 0, Reaction a_reaction = Reaction::Neutral)
+    // As read in game: Halted Stream's bandit aggressive and hostile, no crime faction; Riverwood's guard aggressive,
+    // not hostile, lawful.
+    Kill Cj(std::uint32_t a_id, int a_aggression = 0, bool a_hostile = false, bool a_lawful = false)
     {
         Kill kill;
         kill.cjHasPlayer = true;
         kill.byPlayer = true;
         kill.id = a_id;
         kill.aggression = a_aggression;
-        kill.reaction = a_reaction;
+        kill.hostile = a_hostile;
+        kill.lawful = a_lawful;
         return kill;
     }
 
@@ -27,19 +30,19 @@ namespace
 
 TEST_CASE("revive: hostile on sight")
 {
-    CHECK_FALSE(HostileOnSight(0, Reaction::Neutral));  // a chicken, a cow
-    CHECK_FALSE(HostileOnSight(0, Reaction::Enemy));    // unaggressive never starts it
-    CHECK_FALSE(HostileOnSight(1, Reaction::Neutral));  // a guard: aggressive, but not the player's enemy
-    CHECK_FALSE(HostileOnSight(1, Reaction::Friend));
-    CHECK(HostileOnSight(1, Reaction::Enemy));          // a bandit, a draugr: their faction hates the player's
-    CHECK(HostileOnSight(2, Reaction::Neutral));        // very aggressive: a wolf, a bear
-    CHECK(HostileOnSight(3, Reaction::Ally));           // frenzied attacks anyone
+    CHECK_FALSE(HostileOnSight(0, false, false));  // a chicken, a cow
+    CHECK_FALSE(HostileOnSight(0, true, false));   // unaggressive never starts it
+    CHECK_FALSE(HostileOnSight(1, false, true));   // a guard: aggressive, not hostile to the player
+    CHECK_FALSE(HostileOnSight(1, true, true));    // a guard after CJ's crime: hostile over a bounty, not on sight
+    CHECK(HostileOnSight(1, true, false));         // a bandit, a draugr, a wolf: Skyrim says hostile, no crime faction
+    CHECK(HostileOnSight(2, false, false));        // very aggressive attacks neutrals too
+    CHECK(HostileOnSight(3, false, true));         // frenzied attacks anyone
 }
 
 TEST_CASE("revive: whose death counts")
 {
     CHECK(Judge(Cj(0x00013BBF)) == Verdict::Back);                       // CJ killed Adrianne
-    CHECK(Judge(Cj(0x000A2C94, 1, Reaction::Friend)) == Verdict::Back);  // a guard, generic
+    CHECK(Judge(Cj(0x000A2C94, 1, false, true)) == Verdict::Back);       // a guard, generic
     CHECK(Judge(Cj(0x0001C188)) == Verdict::Back);                       // a chicken
 
     auto skyrims = Cj(0x00013BBF);
@@ -51,15 +54,16 @@ TEST_CASE("revive: whose death counts")
 
     CHECK(Judge(Cj(kPlayerRef)) == Verdict::NotPlaced);
     CHECK(Judge(Cj(0xFF000ABC)) == Verdict::NotPlaced);  // made at runtime: no editor spot
-    CHECK(Judge(Cj(0xFF000ABC, 1, Reaction::Enemy)) == Verdict::NotPlaced);
+    CHECK(Judge(Cj(0xFF000ABC, 1, true)) == Verdict::NotPlaced);
 
-    CHECK(Judge(Cj(0x0001A6A1, 1, Reaction::Enemy)) == Verdict::Hostile);  // a bandit at a camp
+    CHECK(Judge(Cj(0x0005054E, 1, true)) == Verdict::Hostile);             // a bandit at Halted Stream Camp
+    CHECK(Judge(Cj(0x0001B743, 1, true, true)) == Verdict::Back);          // Riverwood's guard, after a crime
     CHECK(Judge(Cj(0x0001A6A2, 2)) == Verdict::Hostile);                   // a wolf
 
-    auto bounty = Cj(0x0010E3A1, 1, Reaction::Neutral);
+    auto bounty = Cj(0x0010E3A1, 1);
     bounty.killTarget = true;
     CHECK(Judge(bounty) == Verdict::KillTarget);  // a bounty's giant
-    auto hostileTarget = Cj(0x0010E3A2, 1, Reaction::Enemy);
+    auto hostileTarget = Cj(0x0010E3A2, 1, true);
     hostileTarget.killTarget = true;
     CHECK(Judge(hostileTarget) == Verdict::Hostile);  // a bandit leader: hostile already
 
@@ -90,7 +94,7 @@ TEST_CASE("revive: a quest's kill target")
 TEST_CASE("revive: a death that moves a quest on")
 {
     const QuestMark bounty{ 0x000A0001, 10, { 1, 0 } };
-    const QuestMark home{ 0x000B0001, 0, {} };
+    const QuestMark home{ 0x000B0001, 0, { 1 } };
 
     QuestWatch watch;
     watch.Start(0x00013BBF, 100.0f, { bounty, home });
@@ -135,6 +139,31 @@ TEST_CASE("revive: a death that moves a quest on")
     CHECK(watch.Stage(0x000A0001, 1.5f).empty());
     watch.Clear();
     CHECK(watch.Empty());
+}
+
+TEST_CASE("revive: a stage in a quest the player isn't in isn't a quest death")
+{
+    // Both measured in a test session, each setting a stage the moment its actor died.
+    const QuestMark scene{ 0x000954D9, 0, {} };          // Riverwood's intro scene, Hilde's: no objectives
+    const QuestMark dormant{ 0x00074A83, 0, { 0, 0 } };  // FreeformRiverwood01, Faendal's: none shown yet
+    const QuestMark bounty{ 0x000A0001, 10, { 1 } };
+    CHECK_FALSE(Watched(scene));
+    CHECK_FALSE(Watched(dormant));
+    CHECK(Watched(bounty));
+    CHECK(Watched(QuestMark{ 1, 0, { 0, 3 } }));  // one shown and completed already: the player is in it
+    CHECK(Watched(QuestMark{ 1, 0, { 4 } }));     // failed, but it was shown
+
+    QuestWatch watch;
+    watch.Start(0x00035534, 10.0f, { scene });
+    CHECK_FALSE(watch.Watching(0x00035534));  // nothing to wait for: she's noted to come back at once
+    CHECK(watch.Stage(0x000954D9, 10.0f).empty());
+
+    watch.Start(0x00035534, 20.0f, { scene, bounty });  // held by a journal quest too: that one is watched
+    REQUIRE(watch.Watching(0x00035534));
+    CHECK(watch.Stage(0x000954D9, 20.5f).empty());
+    const auto moved = watch.Stage(0x000A0001, 20.5f);
+    REQUIRE(moved.size() == 1);
+    CHECK(moved[0] == 0x00035534);
 }
 
 TEST_CASE("revive: in view of the camera")
