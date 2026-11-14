@@ -2679,18 +2679,6 @@ namespace AhShitRim::TestKit
         // The vehicle CJ drives, else the one he drove last (or asr.spawn made): its slot.
         std::optional<std::uint32_t> g_rideSlot;
 
-        std::optional<std::uint32_t> DrivenSlot()
-        {
-            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
-                Protocol::BodyState vehicle{};
-                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
-                    vehicle.handover == PlayerSync::DebugHandover()) {
-                    return i;
-                }
-            }
-            return std::nullopt;
-        }
-
         // asr.watch: a sample a frame, from the frame hook (after the frame's drawing).
         struct WatchSample
         {
