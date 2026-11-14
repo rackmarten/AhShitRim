@@ -84,9 +84,11 @@
 
     // LB activates what CJ faces, through Skyrim's own activation: Bjorlam, the stables' carriage driver, brought in
     // front of him, talks.
-    { "label": "Bjorlam up from his seat and over to CJ, where CJ aims (moveto takes him out of furniture; asr.place moving him on left him out of CJ's aim)", "cmd": "console", "ref": "00013698", "command": "moveto player" },
+    { "label": "Bjorlam up from his seat (moveto takes him out of furniture, where asr.place's SetPosition leaves him)", "cmd": "console", "ref": "00013698", "command": "moveto player" },
+    { "label": "his getting up done", "cmd": "wait", "seconds": 3 },
+    { "label": "Bjorlam right in front of CJ (moveto leaves him beside, out of CJ's aim)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
     { "cmd": "wait", "seconds": 1.5 },
-    { "label": "the help box naming LB (\"LB: Talk Bjorlam\"; its log line comes in the moveto's own frame, before a wait for it could start)", "cmd": "screenshot", "name": "lb-help", "hud": true },
+    { "label": "the help box naming LB (\"LB: Talk Bjorlam\", read from the shot)", "cmd": "screenshot", "name": "lb-help", "hud": true },
     { "label": "LB held", "cmd": "pad", "buttons": "lb" },
     { "label": "Skyrim activates him for LB", "cmd": "wait", "log": "00013698 activated by the player [(]LB", "timeout": 3 },
     { "label": "LB let go", "cmd": "pad", "buttons": "lb", "value": 0 },
