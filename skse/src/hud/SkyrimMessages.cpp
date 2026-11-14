@@ -20,6 +20,7 @@ namespace AhShitRim::SkyrimMessages
             std::string zone;
             bool        here = false;  // a location message without a name: the player's location
             std::string help;
+            DebugCounts counts;
         } caught;
 
         bool wasOwned = false;
@@ -80,9 +81,14 @@ namespace AhShitRim::SkyrimMessages
         const std::string text = a_data.text.c_str() ? a_data.text.c_str() : "";
         const auto       verdict = HudMessages::Classify(type, text, patterns);
         switch (verdict.action) {
-        case HudMessages::Action::Hide:
+        case HudMessages::Action::Hide: {
             SKSE::log::info("skyrim messages: \"{}\" (type {}) hidden ({})", text, type, verdict.rule);
+            std::scoped_lock guard(caught.lock);
+            caught.counts.hidden++;
+            caught.counts.lastHidden = text;
+            caught.counts.lastRule = verdict.rule;
             return true;
+        }
         case HudMessages::Action::Help: {
             std::string help = text;
             if (type == HudMessages::Types::kWordOfPowerLearned) {
@@ -96,6 +102,9 @@ namespace AhShitRim::SkyrimMessages
             }
             SKSE::log::info("skyrim messages: \"{}\" (type {}) in San Andreas's help box ({})", help, type, verdict.rule);
             std::scoped_lock guard(caught.lock);
+            caught.counts.helps++;
+            caught.counts.lastHelp = help;
+            caught.counts.lastRule = verdict.rule;
             caught.help = std::move(help);
             return true;
         }
@@ -103,6 +112,9 @@ namespace AhShitRim::SkyrimMessages
             auto zone = HudMessages::ZoneText(text, discovered);
             SKSE::log::info("skyrim messages: \"{}\" (type {}) as San Andreas's zone name \"{}\"", text, type, zone);
             std::scoped_lock guard(caught.lock);
+            caught.counts.zones++;
+            caught.counts.lastZone = zone;
+            caught.counts.lastRule = verdict.rule;
             caught.here = zone.empty();
             caught.zone = std::move(zone);
             return true;
@@ -139,5 +151,11 @@ namespace AhShitRim::SkyrimMessages
         if (!help.empty()) {
             SaHud::ShowHelp(std::move(help));
         }
+    }
+
+    DebugCounts DebugCounted()
+    {
+        std::scoped_lock guard(caught.lock);
+        return caught.counts;
     }
 }

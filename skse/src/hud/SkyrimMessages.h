@@ -16,4 +16,12 @@ namespace AhShitRim::SkyrimMessages
     // Every frame on the main thread: what the hook caught goes to San Andreas's HUD. On taking the
     // player, the location the player is in comes up as the zone name, as San Andreas's does on a spawn.
     void Update(bool a_owned);
+
+    // For the test kit (asr.hud, asr.notify): what the hook did with Skyrim's messages since the game started.
+    struct DebugCounts
+    {
+        std::uint32_t zones = 0, helps = 0, hidden = 0;
+        std::string   lastZone, lastHelp, lastHidden, lastRule;
+    };
+    DebugCounts DebugCounted();
 }

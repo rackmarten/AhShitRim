@@ -72,4 +72,12 @@ namespace AhShitRim::SaHud
     };
     void ShowMenu(std::string a_title, std::vector<MenuRow> a_rows);
     void ClearText();                             // every text style, the fade and the bars off
+
+    // For the test kit (asr.hud): the zone and vehicle names and the help box as drawn last frame.
+    struct DebugText
+    {
+        std::string zone, zonePhase, vehicle, vehiclePhase, help;
+        float       zoneAlpha = 0.0f, vehicleAlpha = 0.0f, helpAlpha = 0.0f;
+    };
+    DebugText DebugTexts();
 }
