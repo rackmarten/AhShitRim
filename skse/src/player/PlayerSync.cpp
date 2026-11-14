@@ -107,6 +107,7 @@ namespace AhShitRim::PlayerSync
                 RE::NiPoint3  position;
                 float         heading = 0.0f;
                 std::uint32_t model = 0;
+                float         rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };  // its frame (BodyState.vehicleFrame), for the test kit's asr.drive
             };
             Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
@@ -615,7 +616,8 @@ namespace AhShitRim::PlayerSync
                     const float* q = pose.vehicleFrame.rotation;
                     const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
                     const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
-                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model,
+                        { q[0], q[1], q[2], q[3] } };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
                     Headlights::Show(i, &pose, feet);  // v36
@@ -1999,7 +2001,7 @@ namespace AhShitRim::PlayerSync
 
     std::uint32_t DebugHandover() { return state.handover; }
 
-    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model, float (*a_rotation)[4])
     {
         if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
             return false;
@@ -2008,6 +2010,9 @@ namespace AhShitRim::PlayerSync
         a_heading = state.vehiclesDrawn[a_slot].heading;
         if (a_model) {
             *a_model = state.vehiclesDrawn[a_slot].model;
+        }
+        if (a_rotation) {
+            std::copy(std::begin(state.vehiclesDrawn[a_slot].rotation), std::end(state.vehiclesDrawn[a_slot].rotation), std::begin(*a_rotation));
         }
         return true;
     }
