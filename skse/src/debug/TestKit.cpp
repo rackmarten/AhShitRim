@@ -56,7 +56,8 @@ namespace AhShitRim::TestKit
         int  g_wait = 0;  // frames until the next try at the handover
         std::optional<std::uint32_t> g_spawned;  // the slot asr.spawn found last, for the asr.vehicle target
 
-        void RunConsole(const std::string& a_command)
+        // A console command, on a_ref as if it were selected when given.
+        void RunConsole(const std::string& a_command, RE::TESObjectREFR* a_ref = nullptr)
         {
             auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
             auto* script = factory ? factory->Create() : nullptr;
@@ -64,9 +65,9 @@ namespace AhShitRim::TestKit
                 throw Error("no console script to run it with");
             }
             script->SetCommand(a_command);
-            script->CompileAndRun(nullptr);
+            script->CompileAndRun(a_ref);
             delete script;
-            SKSE::log::info("test kit: asr ran '{}'", a_command);
+            SKSE::log::info("test kit: asr ran '{}'{}", a_command, a_ref ? " on " + SkseTestKit::FormId(a_ref->GetFormID()) : "");
         }
 
         void Arrived(const SkseTestKit::Settings& a_settings)
@@ -1273,9 +1274,9 @@ namespace AhShitRim::TestKit
                 });
 
             // Actors for the activation and the gun lock: placed in front of San Andreas's camera, where CJ looks.
-            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [ref=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [clear=<bool>]",
+            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [ref=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [still=<bool>] [clear=<bool>]",
                 "Places count (1) actors of base (a Whiterun guard) distance (700) in front of San Andreas's camera, angle (0) degrees right of "
-                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player. ref=<form> moves that reference there instead (one, never disabled by clear=). clear=true first disables the ones placed before. Answers "
+                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player; still=true keeps them where they're put (setdontmove: placed guards wander off, or come up to a drawn gun). ref=<form> moves that reference there instead (one, never disabled by clear=). clear=true first disables the ones placed before. Answers "
                 "with their form ids",
                 [](Call& a_call) -> Json {
                     static std::vector<RE::ObjectRefHandle> placed;
@@ -1331,6 +1332,7 @@ namespace AhShitRim::TestKit
                         const float angle = static_cast<float>(a_call.Number("angle", 0.0) * std::numbers::pi / 180.0);
                         const float spread = static_cast<float>(a_call.Number("spread", 25.0) * std::numbers::pi / 180.0);
                         const bool  combat = a_call.Flag("combat", false);
+                        const bool  still = a_call.Flag("still", false);
                         const int   n = static_cast<int>(count);
                         for (int i = 0; i < n; ++i) {
                             auto ref = existing ? RE::NiPointer<RE::TESObjectREFR>(existing) : player->PlaceObjectAtMe(base, false);
@@ -1343,6 +1345,9 @@ namespace AhShitRim::TestKit
                             ref->SetAngle(RE::NiPoint3(0.0f, 0.0f, h + std::numbers::pi_v<float>));  // facing CJ
                             if (auto* actor = ref->As<RE::Actor>(); actor && combat) {
                                 actor->StartCombat(player);
+                            }
+                            if (still && ref->As<RE::Actor>()) {
+                                RunConsole("setdontmove 1", ref.get());
                             }
                             if (!existing) {
                                 placed.push_back(ref->GetHandle());
