@@ -38,6 +38,7 @@ namespace AhShitRim::Homies
         constexpr float      kFollowEvery = 1.0f;        // seconds between checks that a follower still runs it
         constexpr float      kGearEvery = 1.0f;          // seconds between looks for Skyrim gear on a homie (his outfit comes back)
         constexpr float      kCullEvery = 0.5f;          // seconds between hiding his 3D again (a weapon drawn or a quiver adds shapes)
+        constexpr float      kNoTalkFor = 30.0f;         // seconds his greeting and conversation countdowns are held at, every frame
         constexpr float      kDeadFor = 60.0f;           // a dead homie lies there this long (or until out of reach)
         constexpr float      kTargetRange = 50.0f;       // metres from CJ an enemy may be to be shot at
         constexpr int        kMakesPerFrame = 2;
@@ -150,6 +151,11 @@ namespace AhShitRim::Homies
             std::vector<bool>        keys;  // G presses waiting for the next Update: whether the aim key was held
             RE::TESPackage*          follow = nullptr;  // kFollowPackage, or null to keep them in formation the old way
             unsigned                 followPuts = 0, gearStripped = 0;
+            unsigned                 drawnFrames = 0;  // the test kit: frames a homie had a Skyrim weapon in hand
+            unsigned                 fistsFrames = 0;  // the test kit: frames one had his (empty) hands raised for a Skyrim fight
+            unsigned                 unwaited = 0;     // followers told to stop waiting (WaitingForPlayer)
+            std::vector<std::pair<RE::FormID, float>> animalsFighting;  // animals that fight the crew, and since when (game seconds)
+            std::vector<RE::FormID>  targeted;  // the test kit: everyone a follower has had as his target since asr.crewstats reset
             unsigned                 hushedLines = 0;   // subtitles of theirs taken off (a line each)
             unsigned                 hushedSounds = 0;  // their voice handles stopped
             std::uint32_t            handover = 0;
@@ -316,15 +322,18 @@ namespace AhShitRim::Homies
         // The soldier's Skyrim gear that could show or be used: his bow, quiver and arrows, any blade, shield or torch. Only
         // San Andreas's gun is his. His armour stays: it's hidden with the rest of his 3D and keeps him as tough as before.
         // His outfit comes back now and then (on his 3D loading, a reset), so Update looks every kGearEvery.
+        bool IsGear(RE::TESBoundObject& a_object)
+        {
+            if (a_object.IsWeapon() || a_object.IsAmmo() || a_object.Is(RE::FormType::Light)) {
+                return true;
+            }
+            const auto* armor = a_object.As<RE::TESObjectARMO>();
+            return armor && armor->IsShield();
+        }
+
         void Strip(RE::Actor* a_actor)
         {
-            auto gear = a_actor->GetInventory([](RE::TESBoundObject& a_object) {
-                if (a_object.IsWeapon() || a_object.IsAmmo() || a_object.Is(RE::FormType::Light)) {
-                    return true;
-                }
-                const auto* armor = a_object.As<RE::TESObjectARMO>();
-                return armor && armor->IsShield();
-            });
+            auto gear = a_actor->GetInventory([](RE::TESBoundObject& a_object) { return IsGear(a_object); });
             int removed = 0;
             for (auto& [object, entry] : gear) {
                 if (object && entry.first > 0) {
@@ -348,6 +357,20 @@ namespace AhShitRim::Homies
         {
             if (a_actor->CanTalkToPlayer()) {
                 a_actor->AllowPCDialogue(false);
+            }
+        }
+
+        // A follower on Skyrim's follower package who has been told to wait (its WaitingForPlayer actor value, which the
+        // follower template stands still on, saying "I'm waiting.") is told to follow again: the crew never waits.
+        void Unwait(const Homie& a_homie, RE::Actor* a_actor)
+        {
+            auto*       av = a_actor->AsActorValueOwner();
+            const float waiting = av->GetActorValue(RE::ActorValue::kWaitingForPlayer);
+            if (waiting != 0.0f) {
+                av->SetActorValue(RE::ActorValue::kWaitingForPlayer, 0.0f);
+                if (state.unwaited++ % 20 == 0) {
+                    SKSE::log::info("homies: {:08X} was waiting (WaitingForPlayer {:.0f}): told to follow ({} so far)", a_homie.id, waiting, state.unwaited);
+                }
             }
         }
 
@@ -757,11 +780,11 @@ namespace AhShitRim::Homies
 
         // Every living homie, followers and not, for G: the one CJ's lock-on is on, or, aiming a gun, the one nearest his
         // crosshair (as LockOn marks an enemy), flagged.
-        std::vector<Crew::Candidate> Candidates(RE::FormID a_target)
+        std::vector<Crew::Candidate> Candidates(RE::FormID a_target, bool a_crosshair)
         {
             float x = 0.0f, y = 0.0f, aspect = 0.0f;
             auto* camera = RE::Main::WorldRootCamera();
-            const bool crosshair = camera && SaHud::AimCrosshair(x, y, aspect);
+            const bool crosshair = a_crosshair && camera && SaHud::AimCrosshair(x, y, aspect);
             std::vector<Crew::Candidate> out;
             std::vector<Melee::OnScreen> shown;
             for (const auto& h : state.homies) {
@@ -789,12 +812,13 @@ namespace AhShitRim::Homies
 
         // G: only while CJ aims, at the homie he aims at (Crew::AimPick). One standing about joins, one of the crew
         // leaves. Typed in a cheat, with no aim, it does nothing.
-        void HandleKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
+        // a_crosshair: the camera's crosshair counts (in play CJ aims where it is; the test kit gives an aim line instead).
+        void HandleKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target, bool a_crosshair = true)
         {
             if (!a_aiming) {
                 return;
             }
-            const auto pick = Crew::AimPick(V(a_player->GetPosition()), a_heading, Candidates(a_target));
+            const auto pick = Crew::AimPick(V(a_player->GetPosition()), a_heading, Candidates(a_target, a_crosshair));
             auto       it = std::find_if(state.homies.begin(), state.homies.end(), [&](const Homie& a_h) { return a_h.id == pick; });
             if (!pick || it == state.homies.end()) {
                 SKSE::log::info("homies: G while aiming, at no homie");
@@ -817,17 +841,42 @@ namespace AhShitRim::Homies
             Join(a_player, *it);
         }
 
+        // A homie never fights Skyrim's way: no Skyrim attack or spell of his own (his shots are San Andreas's), any
+        // Skyrim fight he's drawn into (a wolf going for him, the player's teammates joining the player's) called off the
+        // frame it starts rather than at the next look, his raised fists lowered, and no Skyrim line of his own: he may
+        // not speak (kCanSpeak), so a fight's calls ("Get 'em!") never come either.
+        void Calm(const Homie& a_homie, RE::Actor* a_actor)
+        {
+            auto& flags = a_actor->GetActorRuntimeData().boolFlags;
+            flags.set(RE::Actor::BOOL_FLAGS::kAttackingDisabled, RE::Actor::BOOL_FLAGS::kCastingDisabled);
+            flags.reset(RE::Actor::BOOL_FLAGS::kCanSpeak);
+            if (a_homie.follower && a_actor->IsInCombat()) {
+                a_actor->StopCombat();
+            }
+            if (a_actor->AsActorState()->IsWeaponDrawn()) {
+                a_actor->DrawWeaponMagicHands(false);
+            }
+        }
+
         // Their soldier's Skyrim lines (greetings, idle chatter, combat calls): a homie says nothing of Skyrim's. His
         // voice is stopped as it starts and its subtitle taken off.
         void Hush()
         {
             for (auto& h : state.homies) {
                 auto* actor = Get(h);
+                if (actor && !actor->IsDead()) {
+                    Calm(h, actor);
+                }
                 auto* process = actor ? actor->GetActorRuntimeData().currentProcess : nullptr;
                 auto* high = process ? process->high : nullptr;
                 if (!high) {
                     continue;
                 }
+                // At the source: Skyrim greets (hellos, "Hmm?", "Need something?") once an actor's greeting countdown
+                // runs out, and starts a conversation with another once its talk countdown does (the test kit watched
+                // both count down a sixtieth a frame and go below zero as a line came). Held up, neither comes.
+                high->greetingTimer = (std::max)(high->greetingTimer, kNoTalkFor);
+                high->checkToTalkTimer = (std::max)(high->checkToTalkTimer, kNoTalkFor);
                 for (auto& sound : high->soundHandles) {
                     if (sound.IsPlaying()) {
                         sound.Stop();
@@ -880,6 +929,8 @@ namespace AhShitRim::Homies
             }
             const auto                   cj = a_player->GetPosition();
             std::vector<RE::Actor*>      enemies;
+            const float                  now = RE::GetDurationOfApplicationRunTime() / 1000.0f;
+            std::vector<std::pair<RE::FormID, float>> animals;
             for (auto& handle : lists->highActorHandles) {
                 auto  ptr = handle.get();
                 auto* actor = ptr.get();
@@ -887,10 +938,22 @@ namespace AhShitRim::Homies
                     actor->IsPlayerTeammate() || actor->GetPosition().GetDistance(cj) > kTargetRange * Crew::kMeter) {
                     continue;
                 }
-                if (IsFoe(a_player, actor)) {
-                    enemies.push_back(actor);
+                if (!IsFoe(a_player, actor)) {
+                    continue;
                 }
+                if (actor->HasKeywordString("ActorTypeAnimal")) {
+                    // An animal only once it has kept up its fight (Crew::kAnimalFightsFor): prey turns before it runs.
+                    const auto was = std::find_if(state.animalsFighting.begin(), state.animalsFighting.end(),
+                        [&](const auto& a_entry) { return a_entry.first == actor->GetFormID(); });
+                    const float since = was != state.animalsFighting.end() ? was->second : now;
+                    animals.emplace_back(actor->GetFormID(), since);
+                    if (now - since < Crew::kAnimalFightsFor) {
+                        continue;
+                    }
+                }
+                enemies.push_back(actor);
             }
+            state.animalsFighting = std::move(animals);  // one that stopped fighting starts over
             for (auto& h : state.homies) {
                 auto* actor = Get(h);
                 h.target = {};
@@ -912,6 +975,9 @@ namespace AhShitRim::Homies
                 }
                 if (best) {
                     h.target = best->CreateRefHandle();
+                    if (std::find(state.targeted.begin(), state.targeted.end(), best->GetFormID()) == state.targeted.end() && state.targeted.size() < 64) {
+                        state.targeted.push_back(best->GetFormID());
+                    }
                 }
             }
         }
@@ -1134,10 +1200,18 @@ namespace AhShitRim::Homies
             if (actor->Is3DLoaded()) {
                 Cull(h, actor, a_delta);
             }
+            if (actor->GetEquippedObject(false) || actor->GetEquippedObject(true)) {
+                state.drawnFrames++;
+            } else if (actor->AsActorState()->IsWeaponDrawn()) {
+                state.fistsFrames++;
+            }
             if ((h.gearIn -= a_delta) <= 0.0f) {
                 h.gearIn = kGearEvery;
                 Strip(actor);
                 Mute(actor);
+                if (h.follower) {
+                    Unwait(h, actor);
+                }
             }
             // His fight: aim at his target and fire in bursts.
             auto* target = h.target.get().get();
@@ -1384,6 +1458,123 @@ namespace AhShitRim::Homies
         a_nearest = marker->GetPosition();
         state.markers.push_back(marker->CreateRefHandle());
         return found;
+    }
+
+    void DebugFresh()
+    {
+        state.fresh = (std::max)(state.fresh, 3.0f);  // as after a handover: the spots fill in view too
+    }
+
+    void DebugDismissAll()
+    {
+        for (auto it = state.homies.begin(); it != state.homies.end();) {
+            if (it->follower) {
+                it->follower = false;
+                Leave(*it, "the test kit sends the crew off");
+                it = state.homies.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        state.remake.clear();
+        state.remakePending = false;
+    }
+
+    DebugFoeInfo DebugFoe(RE::PlayerCharacter* a_player, RE::Actor* a_actor)
+    {
+        DebugFoeInfo out;
+        if (!a_actor) {
+            return out;
+        }
+        auto* foe = a_actor->GetActorRuntimeData().currentCombatTarget.get().get();
+        out.combatTarget = foe ? foe->GetFormID() : 0;
+        out.hostile = a_actor->IsHostileToActor(a_player);
+        out.fightsUs = foe == a_player || (foe && IsHomie(foe));
+        const auto* combat = a_actor->GetActorRuntimeData().combatController;
+        out.fleeing = combat && combat->state && combat->IsFleeing();
+        out.animal = a_actor->HasKeywordString("ActorTypeAnimal");
+        out.aggressive = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAggression) > 0.0f;
+        out.foe = IsFoe(a_player, a_actor);
+        out.metres = a_actor->GetPosition().GetDistance(a_player->GetPosition()) / Crew::kMeter;
+        for (const auto& h : state.homies) {
+            auto* actor = Get(h);
+            if (!actor || !h.follower) {
+                continue;
+            }
+            bool        unused = false;
+            const bool  sight = actor->HasLineOfSight(a_actor, unused);
+            const float d = a_actor->GetPosition().GetDistance(actor->GetPosition()) / Crew::kMeter;
+            out.followers.push_back({ h.id, d, sight, Crew::MayShoot(d, h.weapon, sight), h.weapon });
+        }
+        return out;
+    }
+
+    void DebugKey(RE::PlayerCharacter* a_player, bool a_aiming, float a_heading, RE::FormID a_target)
+    {
+        HandleKey(a_player, a_aiming, a_heading, a_target, false);
+    }
+
+    RE::Actor* DebugFree(RE::PlayerCharacter* a_player, int a_index)
+    {
+        std::vector<RE::Actor*> free;
+        for (const auto& h : state.homies) {
+            if (auto* actor = Get(h); actor && !h.follower && !actor->IsDead() && actor->Is3DLoaded()) {
+                free.push_back(actor);
+            }
+        }
+        const auto feet = a_player->GetPosition();
+        std::sort(free.begin(), free.end(), [&](RE::Actor* a, RE::Actor* b) { return a->GetPosition().GetDistance(feet) < b->GetPosition().GetDistance(feet); });
+        return a_index >= 0 && a_index < static_cast<int>(free.size()) ? free[a_index] : nullptr;
+    }
+
+    DebugProbe DebugProbeOf(RE::Actor* a_actor)
+    {
+        DebugProbe out;
+        if (!a_actor) {
+            return out;
+        }
+        for (auto& [object, entry] : a_actor->GetInventory([](RE::TESBoundObject& a_object) { return IsGear(a_object); })) {
+            if (object && entry.first > 0) {
+                out.gear.push_back(object->GetName());
+            }
+        }
+        for (const bool left : { false, true }) {
+            if (auto* hand = a_actor->GetEquippedObject(left)) {
+                out.hands.push_back(hand->GetName());
+            }
+        }
+        out.weaponDrawn = a_actor->AsActorState()->IsWeaponDrawn();
+        out.followPackage = state.follow && a_actor->GetCurrentPackage() == state.follow;
+        out.canTalk = a_actor->CanTalkToPlayer();
+        out.rides = Riders::Rides(a_actor->GetFormID());
+        out.waiting = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kWaitingForPlayer);
+        if (auto* process = a_actor->GetActorRuntimeData().currentProcess; process && process->high) {
+            auto* high = process->high;
+            out.greetingTimer = high->greetingTimer;
+            out.detectGreetTimer = high->detectGreetTimer;
+            out.checkToTalkTimer = high->checkToTalkTimer;
+            out.voiceTimer = high->voiceTimer;
+            out.greeting = static_cast<bool>(high->greetTopic);
+            out.greetingPlayer = high->greetingPlayer;
+        }
+        for (const auto& h : state.homies) {
+            if (h.id == a_actor->GetFormID()) {
+                auto* target = h.target.get().get();
+                out.target = target ? target->GetFormID() : 0;
+                out.follower = h.follower;
+            }
+        }
+        return out;
+    }
+
+    DebugStats DebugStatsOf(bool a_reset)
+    {
+        DebugStats out{ state.hushedLines, state.hushedSounds, state.followPuts, state.gearStripped, state.drawnFrames, state.fistsFrames, state.unwaited, state.targeted };
+        if (a_reset) {
+            state.hushedLines = state.hushedSounds = state.followPuts = state.gearStripped = state.drawnFrames = state.fistsFrames = state.unwaited = 0;
+            state.targeted.clear();
+        }
+        return out;
     }
 
     RE::Actor* DebugFollower()

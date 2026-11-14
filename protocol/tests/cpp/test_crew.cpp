@@ -128,8 +128,9 @@ TEST_CASE("crew: G acts on the homie CJ aims at: his lock-on or crosshair, else 
     CHECK(Crew::AimPick(cj, 0.0f, far) == 4);                                          // 4.8 degrees off
     far[0].at.x = 2.5f * Crew::kMeter;
     CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // 7.9 degrees off
-    far[0].at = { 0.0f, 25.0f * Crew::kMeter, 0.0f };
+    far[0].at = { 0.0f, 35.0f * Crew::kMeter, 0.0f };
     CHECK(Crew::AimPick(cj, 0.0f, far) == 0);                                          // past kAimReach
+    far[0].at = { 0.0f, 28.0f * Crew::kMeter, 0.0f };
     far[0].targeted = true;
     CHECK(Crew::AimPick(cj, Pose::kPi, far) == 4);                                     // his crosshair on him: wherever
 }
@@ -282,11 +283,14 @@ TEST_CASE("crew: the followers shoot whoever is hostile or fights them, never a 
     CHECK(Crew::IsFoe(false, true, false, false, false));   // a guard CJ hit, fighting back
     CHECK_FALSE(Crew::IsFoe(false, true, true, false, false));  // a townsman running from the shooting
     CHECK_FALSE(Crew::IsFoe(false, false, false, false, false));  // anybody else
-    CHECK(Crew::IsFoe(true, true, false, true, true));      // a wolf
+    CHECK(Crew::IsFoe(true, true, false, true, true));      // a wolf on CJ
     CHECK(Crew::IsFoe(false, true, false, true, true));     // a bear CJ woke
     CHECK_FALSE(Crew::IsFoe(false, true, true, true, false));   // an elk running from CJ, CJ its combat target
-    CHECK_FALSE(Crew::IsFoe(false, true, false, true, false));  // or turned to him
-    CHECK_FALSE(Crew::IsFoe(true, true, false, true, false));   // an animal that isn't aggressive is never one
+    CHECK(Crew::IsFoe(false, true, false, true, false));        // or turned to him for a moment: Homies holds an animal
+                                                                // back until it has fought for Crew::kAnimalFightsFor
+    CHECK(Crew::IsFoe(true, true, false, true, false));         // a wolf on CJ whose Aggression reads 0 (as the kit saw)
+    CHECK_FALSE(Crew::IsFoe(true, false, false, true, false));  // an elk grazing by the crew that reads hostile (as the kit saw)
+    CHECK_FALSE(Crew::IsFoe(true, false, false, true, true));   // a wolf not on them yet
 }
 
 TEST_CASE("crew: a puppet's walk and run play at the rate that keeps his feet on the ground")

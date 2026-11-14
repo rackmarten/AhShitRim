@@ -23,6 +23,7 @@
 #include "player/Shots.h"
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
+#include "pose.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
 #include "wanted.h"
@@ -356,6 +357,37 @@ namespace AhShitRim::TestKit
         }
 
         std::array<RE::FormID, 8> g_homies{};  // asr.homie:<n>'s follower, pinned the first time it's found (asr.crew lets go)
+
+#ifdef AHSHITRIM_TEST_CREW
+        // What a homie carries and runs (Homies::DebugProbeOf), into a target's details: gear (Skyrim weapons, ammo,
+        // shields, torches in his inventory, names), hands (what his hands hold), weaponDrawn, followPackage (Skyrim's
+        // follower package running), canTalk (to the player: his hellos), rides (in CJ's vehicle), target (his crew target).
+        void AddProbe(JsonObject& a_details, RE::Actor* a_actor)
+        {
+            const auto probe = Homies::DebugProbeOf(a_actor);
+            JsonArray  gear, hands;
+            for (const auto& name : probe.gear) {
+                gear.emplace_back(name);
+            }
+            for (const auto& name : probe.hands) {
+                hands.emplace_back(name);
+            }
+            a_details.Set("gear", std::move(gear));
+            a_details.Set("hands", std::move(hands));
+            a_details.Set("weaponDrawn", probe.weaponDrawn);
+            a_details.Set("followPackage", probe.followPackage);
+            a_details.Set("canTalk", probe.canTalk);
+            a_details.Set("rides", probe.rides);
+            a_details.Set("target", probe.target ? SkseTestKit::FormId(probe.target) : std::string());
+            a_details.Set("waiting", probe.waiting);
+            a_details.Set("greetingTimer", probe.greetingTimer);
+            a_details.Set("detectGreetTimer", probe.detectGreetTimer);
+            a_details.Set("checkToTalkTimer", probe.checkToTalkTimer);
+            a_details.Set("voiceTimer", probe.voiceTimer);
+            a_details.Set("greeting", probe.greeting);
+            a_details.Set("greetingPlayer", probe.greetingPlayer);
+        }
+#endif
 
         Json LampNames(std::uint8_t a_bits)
         {
@@ -1054,11 +1086,120 @@ namespace AhShitRim::TestKit
                 });
 
 #ifdef AHSHITRIM_TEST_CREW
-            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>]",
-                "The Grove Street crew: plays as a Thane of thanes (1) holds (-1: the titles the game has), waits for the spots round CJ to fill, has the recruit (2) nearest "
-                "homies join and answers once they follow, with each follower's reference (refs, for record start)",
+            SkseTestKit::AddTask("asr.enter", "",
+                "CJ gets into the vehicle nearest him (the enter/exit key pressed, as asr.exit); answers once he sits in it, with how many "
+                "of the crew ride with him",
                 [](Call& a_call) -> Step {
                     RequireCj();
+                    a_call.DefaultTimeout(15.0);
+                    return [](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (pose && (pose->flags & Protocol::kPlayerInVehicle) && a_call.Seconds() > 1.0) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "inVehicle", true }, { "model", pose->vehicleModel }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        const bool press = std::fmod(a_call.Seconds(), 5.0) < 0.2;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonEnterExit }) : std::nullopt);
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.crewkey", "[at] [aim=<bool>]",
+                "G as if pressed on foot: aim (true) says CJ aims, along the way from the player to at (a target spec, asr.homie:<n> or "
+                "asr.free:<n>; without it CJ's heading), his lock-on on nobody, so the crew's own pick by the aim line decides. "
+                "Answers with how many follow and stand about after",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const bool aim = a_call.Flag("aim", true);
+                    float      heading = player->GetAngleZ();
+                    if (const auto pose = CjPose()) {
+                        heading = pose->heading;
+                    }
+                    if (a_call.Has("at")) {
+                        const auto place = SkseTestKit::Locate(a_call.Text("at"));
+                        const auto feet = player->GetPosition();
+                        heading = Pose::HeadingOf(static_cast<float>(place.x) - feet.x, static_cast<float>(place.y) - feet.y);
+                    }
+                    const int following = Homies::DebugCount(true), about = Homies::DebugCount(false);
+                    Homies::DebugKey(player, aim, heading, 0);
+                    return JsonObject{ { "aim", aim }, { "heading", Round(heading, 0.001) }, { "followingBefore", following }, { "aboutBefore", about },
+                        { "following", Homies::DebugCount(true) }, { "about", Homies::DebugCount(false) } };
+                });
+
+            SkseTestKit::AddCommand("asr.hurt", "<ref> [damage=<n>]",
+                "CJ's pistol shot on an actor (Shots::Hurt, the player the aggressor, damage (5) in San Andreas's terms): an animal runs from him",
+                [](Call& a_call) -> Json {
+                    auto* actor = SkseTestKit::FindRef(a_call.Text("ref"));
+                    auto* hurt = actor ? actor->As<RE::Actor>() : nullptr;
+                    if (!hurt) {
+                        throw Error("ref is an actor");
+                    }
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const auto at = hurt->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 0.6f * hurt->GetHeight());
+                    auto       dir = at - player->GetPosition();
+                    dir.Unitize();
+                    Shots::Hurt(player, hurt, 22, static_cast<float>(a_call.Number("damage", 5.0)), at, dir, true);
+                    return JsonObject{ { "ref", SkseTestKit::FormId(hurt->GetFormID()) }, { "dead", hurt->IsDead() } };
+                });
+
+            SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",
+                "The crew's counters since the last reset: Skyrim subtitles of theirs taken off and voice handles stopped (Hush), puts "
+                "of the follow package, gear taken off, and everyone a follower has had as his target (targeted, refs)",
+                [](Call& a_call) -> Json {
+                    const auto stats = Homies::DebugStatsOf(a_call.Flag("reset", false));
+                    JsonArray  targeted;
+                    for (const auto id : stats.targeted) {
+                        targeted.emplace_back(SkseTestKit::FormId(id));
+                    }
+                    return JsonObject{ { "hushedLines", stats.hushedLines }, { "hushedSounds", stats.hushedSounds }, { "followPuts", stats.followPuts },
+                        { "gearStripped", stats.gearStripped }, { "drawnFrames", stats.drawnFrames }, { "fistsFrames", stats.fistsFrames },
+                        { "unwaited", stats.unwaited }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
+                        { "about", Homies::DebugCount(false) } };
+                });
+
+            SkseTestKit::AddCommand("asr.foe", "<ref>",
+                "Why the crew shoots an actor or not (Crew::IsFoe's inputs, its combat target, and each follower's distance, sight and range)",
+                [](Call& a_call) -> Json {
+                    auto* ref = SkseTestKit::FindRef(a_call.Text("ref"));
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    if (!actor) {
+                        throw Error("ref is an actor");
+                    }
+                    const auto info = Homies::DebugFoe(RE::PlayerCharacter::GetSingleton(), actor);
+                    JsonArray  followers;
+                    for (const auto& f : info.followers) {
+                        followers.emplace_back(JsonObject{ { "ref", SkseTestKit::FormId(f.id) }, { "metres", Round(f.metres, 0.1) }, { "sight", f.sight },
+                            { "mayShoot", f.mayShoot }, { "weapon", f.weapon } });
+                    }
+                    return JsonObject{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "dead", actor->IsDead() }, { "foe", info.foe }, { "hostile", info.hostile },
+                        { "fightsUs", info.fightsUs }, { "fleeing", info.fleeing }, { "animal", info.animal }, { "aggressive", info.aggressive },
+                        { "combatTarget", info.combatTarget ? SkseTestKit::FormId(info.combatTarget) : std::string() }, { "metres", Round(info.metres, 0.1) },
+                        { "followers", std::move(followers) } };
+                });
+
+            SkseTestKit::AddTarget("asr.free", "<n>", "The nth (from 0) nearest homie standing about (not of the crew): where he is, facing his way",
+                [](std::string_view a_index) -> SkseTestKit::Place {
+                    const auto n = WholeNumber(a_index);
+                    auto*      actor = n ? Homies::DebugFree(RE::PlayerCharacter::GetSingleton(), static_cast<int>(*n)) : nullptr;
+                    if (!actor) {
+                        throw Error(std::format("no homie stands about as asr.free:{}", a_index));
+                    }
+                    const auto at = actor->GetPosition();
+                    JsonObject details{ { "ref", SkseTestKit::FormId(actor->GetFormID()) } };
+                    AddProbe(details, actor);
+                    return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = actor->GetAngleZ(), .root = actor->Get3D(), .details = std::move(details) };
+                });
+
+            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>] [dismiss=<bool>]",
+                "The Grove Street crew: plays as a Thane of thanes (1) holds (-1: the titles the game has), waits for the spots round CJ to fill, has the recruit (2) nearest "
+                "homies join and answers once they follow, with each follower's reference (refs, for record start) and what he carries and "
+                "runs (gear, hands, weaponDrawn, followPackage, canTalk, rides, target)",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    if (a_call.Flag("dismiss", false)) {
+                        Homies::DebugDismissAll();  // a scenario's crew from scratch: the one an earlier scenario left sent off
+                    }
                     const int recruit = static_cast<int>(a_call.Number("recruit", 2.0));
                     Homies::DebugThanes(static_cast<int>(a_call.Number("thanes", 1.0)));
                     g_homies = {};
@@ -1067,6 +1208,9 @@ namespace AhShitRim::TestKit
                     return [recruit, joined](Call& a_call) -> std::optional<Json> {
                         auto* player = RE::PlayerCharacter::GetSingleton();
                         if (!*joined) {
+                            if (Homies::DebugCount(false) < recruit && a_call.Frames() % 120 == 0) {
+                                Homies::DebugFresh();  // the spots fill even where the camera looks
+                            }
                             if (Homies::DebugCount(false) < recruit && a_call.Seconds() < 25.0) {
                                 return std::nullopt;  // the spots fill out of view, a few seconds after the Thane read
                             }
@@ -1077,6 +1221,7 @@ namespace AhShitRim::TestKit
                         }
                         JsonArray   followers;
                         std::string refs;
+                        int         riding = 0;
                         // The followers: the loaded homies on the player's team (Homies' Join makes them teammates).
                         if (auto* processes = RE::ProcessLists::GetSingleton()) {
                             for (auto& handle : processes->highActorHandles) {
@@ -1084,13 +1229,15 @@ namespace AhShitRim::TestKit
                                 if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
                                     const auto ref = SkseTestKit::FormId(actor->GetFormID());
                                     refs += (refs.empty() ? "" : ",") + ref;
-                                    followers.emplace_back(
-                                        JsonObject{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } });
+                                    JsonObject follower{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } };
+                                    AddProbe(follower, actor.get());
+                                    riding += Homies::DebugProbeOf(actor.get()).rides ? 1 : 0;
+                                    followers.emplace_back(std::move(follower));
                                 }
                             }
                         }
                         return JsonObject{ { "about", Homies::DebugCount(false) }, { "joined", **joined }, { "following", Homies::DebugCount(true) },
-                            { "followers", std::move(followers) }, { "refs", refs } };
+                            { "followers", std::move(followers) }, { "riding", riding }, { "refs", refs } };
                     };
                 });
 
@@ -1133,6 +1280,7 @@ namespace AhShitRim::TestKit
                     if (auto* package = actor->GetCurrentPackage()) {
                         details.Set("package", static_cast<int>(package->packData.packType.get()));
                     }
+                    AddProbe(details, actor);
                     if (auto* controller = actor->GetCharController()) {
                         RE::NiPoint3 velocity;
                         actor->GetLinearVelocity(velocity);

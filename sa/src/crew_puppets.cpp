@@ -211,15 +211,6 @@ namespace AhShitRim::CrewPuppets
             return &entry;
         }
 
-        // His seat fades out. It's a partial anim, and BlendAnimation only fades out those as partial as the one it
-        // blends in, so his walk, run, idle or fall never would: he'd sit on top of them for good.
-        void StandUp(CPed* a_ped)
-        {
-            if (auto* seat = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, kSeatIdle)) {
-                seat->m_fBlendDelta = -4.0f;  // SEAT_idle is blend-auto-remove: gone once faded
-            }
-        }
-
         // How far through its cycle a_assoc is, 0 to 1 (-1 for none).
         float PhaseOf(const CAnimBlendAssociation* a_assoc)
         {
@@ -227,6 +218,15 @@ namespace AhShitRim::CrewPuppets
                 return -1.0f;
             }
             return a_assoc->m_fCurrentTime / a_assoc->m_pHierarchy->m_fTotalTime;
+        }
+
+        // His seat fades out. It's a partial anim, and BlendAnimation only fades out those as partial as the one it
+        // blends in, so his walk, run, idle or fall never would: he'd sit on top of them for good.
+        void StandUp(CPed* a_ped)
+        {
+            if (auto* seat = RpAnimBlendClumpGetAssociation(a_ped->m_pRwClump, kSeatIdle)) {
+                seat->m_fBlendDelta = -4.0f;  // SEAT_idle is blend-auto-remove: gone once faded
+            }
         }
 
         // His walk, run, idle or seat, blended straight onto his clump the moment the gait changes. Not through a task:
@@ -238,12 +238,12 @@ namespace AhShitRim::CrewPuppets
         {
             a_ped->m_pIntelligence->m_TaskMgr.SetTask(nullptr, kTaskPrimary, false);
             auto*       clump = a_ped->m_pRwClump;
-            if (a_motion != Scene::Motion::Seated) {
-                StandUp(a_ped);
-            }
             const bool  walk = a_motion == Scene::Motion::Walk;
             const float phase = walk || a_motion == Scene::Motion::Run ? PhaseOf(RpAnimBlendClumpGetAssociation(clump, walk ? kMoveRun : kMoveWalk)) : -1.0f;
             CAnimBlendAssociation* assoc = nullptr;
+            if (a_motion != Scene::Motion::Seated) {
+                StandUp(a_ped);
+            }
             switch (a_motion) {
             case Scene::Motion::Seated: CAnimManager::BlendAnimation(clump, kGroupDefault, kSeatIdle, 4.0f); break;
             case Scene::Motion::Walk: assoc = CAnimManager::BlendAnimation(clump, a_ped->m_nAnimGroup, kMoveWalk, 4.0f); break;
