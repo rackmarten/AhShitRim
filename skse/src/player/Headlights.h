@@ -1,6 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace AhShitRim::Protocol
 {
@@ -25,4 +29,9 @@ namespace AhShitRim::Headlights
 
     // Back to Skyrim's own player, or a re-anchor: every light out.
     void Clear();
+
+    // The test kit (debug): sets one of [Headlights]' values (its ini key, as AhShitRim.ini has it: metres for the
+    // distances) until the game closes, false for a key it doesn't know. DebugTuning lists them all, in the ini's units.
+    bool DebugTune(std::string_view a_key, float a_value);
+    std::vector<std::pair<std::string, float>> DebugTuning();
 }

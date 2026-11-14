@@ -167,13 +167,12 @@ TEST_CASE("vehicle lights: one light per end, clear of the car")
 
     REQUIRE(LightOf(lights, 1, tuning, glow));  // both tail lights: one red light behind, below them
     CHECK(glow.at.x == 0.0f);
-    CHECK(glow.at.y < -197.0f);
+    CHECK(glow.at.y == doctest::Approx(-197.0f - tuning.tailBack));  // just behind the car: the road there reddens
     CHECK(glow.at.z == doctest::Approx(8.0f - tuning.tailDrop));
     CHECK(glow.radius == tuning.tailRadius);
     CHECK(glow.colour[0] == 1.0f);
     CHECK(glow.colour[1] < 0.1f);  // red
-    CHECK(distance(glow, 57.0f, -197.0f, 8.0f) >= glow.radius + kLampClear - 0.01f);
-    // It reaches the road under the tail lights' height (about 0.6 m below them on a car).
+    // It reaches the road under the tail lights' height (about 0.6 m below them on a car), and the lamps themselves.
     CHECK(glow.radius > tuning.tailDrop + 0.3f * Pose::kUnitsPerMeter);
 
     // Braking: the tail light larger, brighter and further out; the headlights' as it was.
@@ -183,8 +182,7 @@ TEST_CASE("vehicle lights: one light per end, clear of the car")
     CHECK(brake.radius == tuning.brakeRadius);
     CHECK(brake.intensity == tuning.brakeIntensity);
     CHECK(tuning.brakeIntensity > tuning.tailIntensity);
-    CHECK(brake.at.y < glow.at.y);
-    CHECK(distance(brake, 57.0f, -197.0f, 8.0f) >= brake.radius + kLampClear - 0.01f);
+    CHECK(brake.at.y == glow.at.y);  // in the same place, reaching further
     REQUIRE(LightOf(lights, 0, tuning, glow));
     CHECK(glow.intensity == tuning.beamIntensity);
 

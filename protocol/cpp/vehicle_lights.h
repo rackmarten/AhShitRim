@@ -186,23 +186,28 @@ namespace AhShitRim::VehicleLights
     //  - One light per end, not per lamp: Skyrim lights each mesh (the ground under the car among them) with about 4
     //    dynamic lights, so 4 per vehicle crowded each other out (one tail light lit, or none beside a second vehicle).
     //    It sits midway between a pair, or at the one lamp burning (a bike's, or a pair with one smashed).
-    //  - Far enough out that its reach ends kLampClear short of the lamps: the car itself isn't lit by its own lights
-    //    (a light-blue car lit up all over from in front, the plate glowing pink).
+    //  - The headlights' far enough out that its reach ends kLampClear short of the lamps: the car itself isn't lit by its
+    //    own headlights (a light-blue car lit up all over from in front). The tail lights' sits TailBack behind them and
+    //    low, so the road reddens from right behind the car (and the bumper a little, as a real brake light's does): set
+    //    clear of the car too, its patch started 1.5 m back and looked detached from the lamps.
     // The numbers are a matter of taste, so AhShitRim.ini's [Headlights] may change them (skse/src/player/Headlights.cpp).
     inline constexpr float kLampClear = 0.3f * Pose::kUnitsPerMeter;
 
     struct Tuning
     {
+        // Set from the test kit's night shots in Riverwood (scenarios/vehicle-lights*.json): Skyrim's moonlit road is
+        // already bright and blue, so a pool the player clearly sees takes several times a torch's light, warm white.
         float beamAhead = 6.0f * Pose::kUnitsPerMeter;   // at least this far ahead of the headlights
         float beamRaise = 0.8f * Pose::kUnitsPerMeter;   // above them, so the pool spreads over the road
-        float beamRadius = 8.0f * Pose::kUnitsPerMeter;
-        float beamIntensity = 3.0f;                       // the point light's fade: Skyrim's torch is about 1
-        float tailDrop = 0.3f * Pose::kUnitsPerMeter;    // below the tail lights, toward the road behind
-        float tailRadius = 1.2f * Pose::kUnitsPerMeter;
-        float tailIntensity = 1.5f;
-        float brakeRadius = 2.0f * Pose::kUnitsPerMeter;
-        float brakeIntensity = 3.0f;
-        float lampGlow = 3.0f;   // a burning lamp's mesh: its emissive strength (Skyrim's shader)
+        float beamRadius = 10.0f * Pose::kUnitsPerMeter;
+        float beamIntensity = 10.0f;                      // the point light's fade: Skyrim's torch is about 1
+        float tailDrop = 0.45f * Pose::kUnitsPerMeter;   // below the tail lights, toward the road behind
+        float tailBack = 1.2f * Pose::kUnitsPerMeter;    // and behind them
+        float tailRadius = 2.2f * Pose::kUnitsPerMeter;
+        float tailIntensity = 5.0f;
+        float brakeRadius = 3.0f * Pose::kUnitsPerMeter;
+        float brakeIntensity = 10.0f;
+        float lampGlow = 6.0f;   // a burning lamp's mesh and its corona: their emissive strength (Skyrim's shader)
         float brakeGlow = 2.0f;  // a tail lamp's, times this while braking
     };
 
@@ -245,11 +250,12 @@ namespace AhShitRim::VehicleLights
             a_out.at.y = static_cast<float>(dummy[1]) + OutFrom(a_out.radius, a_tuning.beamRaise, a_tuning.beamAhead);
             a_out.at.z = static_cast<float>(dummy[2]) + a_tuning.beamRaise;
         } else {
-            a_out.at.y = static_cast<float>(dummy[1]) - OutFrom(a_out.radius, a_tuning.tailDrop, 0.0f);
+            a_out.at.y = static_cast<float>(dummy[1]) - a_tuning.tailBack;
             a_out.at.z = static_cast<float>(dummy[2]) - a_tuning.tailDrop;
         }
-        // San Andreas's headlight colour (160, 160, 140) brought up to full, and its tail lights' red.
-        const float  white[3] = { 1.0f, 1.0f, 0.875f };
+        // San Andreas's headlight colour (160, 160, 140) brought up to full and a little warmer, so the pool stands out
+        // against Skyrim's blue moonlight, and its tail lights' red.
+        const float  white[3] = { 1.0f, 0.92f, 0.7f };
         const float  red[3] = { 1.0f, 0.06f, 0.03f };
         const float* colour = front ? white : red;
         std::copy(colour, colour + 3, a_out.colour);

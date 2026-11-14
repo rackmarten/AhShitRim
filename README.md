@@ -203,9 +203,9 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 | `[Input]` | `PadLookSpeed`, `PadAimSpeed`, `PadInvertY` | The right stick's camera speed (1400), its share while LT aims (0.55), `1` to invert it |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
-| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `3.0`, Skyrim's torch is about 1), how far round (`8` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`0.8` m) |
-| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`1.5`, `1.2` m), while braking (`3.0`, `2` m), and how far below the lamps (`0.3` m) |
-| `[Headlights]` | `LampGlow`, `BrakeGlow` | How brightly a burning lamp itself glows (`3.0`; `0` leaves the lamps unlit), and a tail lamp's times this while braking (`2.0`) |
+| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `10`, Skyrim's torch is about 1), how far round (`10` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`0.8` m) |
+| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`5`, `2.2` m), while braking (`10`, `3` m), and how far below and behind the lamps it sits (`TailDrop` `0.45` m, `TailBack` `1.2` m) |
+| `[Headlights]` | `LampGlow`, `BrakeGlow` | How brightly a burning lamp and its corona glow (`6`; `0` leaves the lamps unlit), and a tail lamp's times this while braking (`2`) |
 
 ## Combat balance
 

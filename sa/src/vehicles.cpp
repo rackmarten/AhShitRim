@@ -108,6 +108,8 @@ namespace AhShitRim::Vehicles
             int            trackSteps = 0;          // corner-steps the Rhino's tracks gripped for (TrackGrip) since the last driving line
             float          trackTaken = 0.0f;       // and the sliding they took off, m/s summed
             bool          weatherForced = false;  // San Andreas's weather is kept dry for Skyrim's sky (SetSky)
+            int           brakeLogs = 0;          // the driven vehicle's brake lights' inputs, logged as they change (a few dozen times)
+            std::uint32_t brakeSeen = 0;
         } state;
 
         Pose::Vec3 Vec(const CVector& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -689,6 +691,17 @@ namespace AhShitRim::Vehicles
             lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
             lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
             lamps.braking = a_vehicle->m_pDriver && a_vehicle->m_fBreakPedal > 0.0f && !a_vehicle->bIsHandbrakeOn;
+            if (a_vehicle->m_pDriver && a_vehicle->m_pDriver->IsPlayer()) {
+                // What the brake lights go by, logged as it changes: the brake pedal, the handbrake, the gas.
+                const std::uint32_t seen = (a_vehicle->m_fBreakPedal > 0.0f ? 1u : 0u) | (a_vehicle->bIsHandbrakeOn ? 2u : 0u) | (a_vehicle->m_fGasPedal > 0.0f ? 4u : 0u) |
+                                           (a_vehicle->m_fGasPedal < 0.0f ? 8u : 0u);
+                if (seen != state.brakeSeen && state.brakeLogs < 40) {
+                    state.brakeLogs++;
+                    Log(std::format("vehicle: brake lights' inputs: brake pedal {:.2f}, gas {:.2f}{}", a_vehicle->m_fBreakPedal, a_vehicle->m_fGasPedal,
+                        a_vehicle->bIsHandbrakeOn ? ", handbrake on" : ""));
+                }
+                state.brakeSeen = seen;
+            }
             lamps.twin = a_vehicle->m_nVehicleClass == VEHICLE_AUTOMOBILE;  // a bike has one lamp of each
             lamps.hasFront = !IsZero(front);
             lamps.hasRear = !IsZero(rear);

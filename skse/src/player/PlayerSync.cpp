@@ -2051,10 +2051,10 @@ namespace AhShitRim::PlayerSync
     }
     void DebugWait() { WaitKey(); }
 
-    void DebugHold(const std::optional<DebugInput>& a_input)
+    void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for)
     {
         state.debugInput = a_input;
-        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        state.debugInputUntil = std::chrono::steady_clock::now() + a_for;
         Publish();
     }
 

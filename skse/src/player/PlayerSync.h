@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -82,14 +83,15 @@ namespace AhShitRim::PlayerSync
 
     // The test kit (debug): input held for CJ on top of the keyboard's while San Andreas has the player and no menu has
     // the input: the stick (moveX right, moveY forward, -1 to 1; San Andreas moves CJ that way from its camera's view)
-    // and Protocol::kButton* bits. nullopt lets go; so does 0.3 s without another call (a test whose request went away).
+    // and Protocol::kButton* bits. nullopt lets go; so does a_for (0.3 s) without another call (a test whose request
+    // went away).
     struct DebugInput
     {
         float         moveX = 0.0f;
         float         moveY = 0.0f;
         std::uint32_t buttons = 0;
     };
-    void DebugHold(const std::optional<DebugInput>& a_input);
+    void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for = std::chrono::milliseconds(300));
 
     // The test kit (debug): called for each vehicle about to be drawn this frame, with its smoothed pose (which it may
     // change, for what's drawn this frame only) and its position in Skyrim's world. An empty function takes it out.

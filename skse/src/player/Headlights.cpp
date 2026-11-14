@@ -2,6 +2,9 @@
 
 #include "Ini.h"
 #include "body/ModelView.h"
+#include "body/SceneLights.h"
+#include "corona_model.h"
+#include "skin_model.h"
 #include "vehicle_hits.h"
 #include "vehicle_lights.h"
 
@@ -14,6 +17,9 @@ namespace AhShitRim::Headlights
     {
         constexpr int kEnds = 2;  // a point light for the headlights, one for the tail lights (VehicleLights::LightOf)
         constexpr int kLogsPerModel = 8;  // the lamps of each model logged this many times as they change
+        constexpr std::uint32_t kCoronaModel = 0xC0A00000;  // + 2 per slot: even, so never an id San Andreas sends
+        constexpr float         kCoronaFront = 40.0f;       // Skyrim units from a headlight corona's middle to its edge (57 cm)
+        constexpr float         kCoronaRear = 28.0f;        // a tail light's
 
         struct State
         {
@@ -23,12 +29,36 @@ namespace AhShitRim::Headlights
             std::uint32_t                   model[Protocol::kVehicleMax] = {};
             std::map<std::uint32_t, int>    logged;  // by model
             bool                            failed = false;
+            bool                            coronasFailed = false;
+            std::uint32_t                   coronaFrame = 0;
             bool                            tuned = false;
             VehicleLights::Tuning           tuning;
         } state;
 
+        // [Headlights]' keys: each value's field and its scale from the ini's units (metres for the distances).
+        struct Key
+        {
+            const char*                  name;
+            float VehicleLights::Tuning::* field;
+            float                        scale;
+        };
+        constexpr Key kKeys[] = {
+            { "Ahead", &VehicleLights::Tuning::beamAhead, Pose::kUnitsPerMeter },
+            { "Raise", &VehicleLights::Tuning::beamRaise, Pose::kUnitsPerMeter },
+            { "Radius", &VehicleLights::Tuning::beamRadius, Pose::kUnitsPerMeter },
+            { "Intensity", &VehicleLights::Tuning::beamIntensity, 1.0f },
+            { "TailRadius", &VehicleLights::Tuning::tailRadius, Pose::kUnitsPerMeter },
+            { "TailIntensity", &VehicleLights::Tuning::tailIntensity, 1.0f },
+            { "BrakeRadius", &VehicleLights::Tuning::brakeRadius, Pose::kUnitsPerMeter },
+            { "BrakeIntensity", &VehicleLights::Tuning::brakeIntensity, 1.0f },
+            { "TailDrop", &VehicleLights::Tuning::tailDrop, Pose::kUnitsPerMeter },
+            { "TailBack", &VehicleLights::Tuning::tailBack, Pose::kUnitsPerMeter },
+            { "LampGlow", &VehicleLights::Tuning::lampGlow, 1.0f },
+            { "BrakeGlow", &VehicleLights::Tuning::brakeGlow, 1.0f },
+        };
+
         // [Headlights] in AhShitRim.ini, each optional: Ahead, Raise, Radius (metres) and Intensity for the headlights'
-        // light on the road; TailDrop, TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights';
+        // light on the road; TailDrop, TailBack, TailRadius, TailIntensity, BrakeRadius, BrakeIntensity for the tail lights';
         // LampGlow and BrakeGlow for the lamps' meshes. Read once.
         const VehicleLights::Tuning& Tuning()
         {
@@ -37,24 +67,13 @@ namespace AhShitRim::Headlights
             }
             state.tuned = true;
             auto& t = state.tuning;
-            const auto read = [](const char* a_key, float& a_value, float a_scale) {
-                const auto text = Ini::Value("Headlights", a_key);
+            for (const auto& key : kKeys) {
+                const auto text = Ini::Value("Headlights", key.name);
                 float      value = 0.0f;
                 if (!text.empty() && std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{} && std::isfinite(value) && value >= 0.0f) {
-                    a_value = value * a_scale;
+                    t.*key.field = value * key.scale;
                 }
-            };
-            read("Ahead", t.beamAhead, Pose::kUnitsPerMeter);
-            read("Raise", t.beamRaise, Pose::kUnitsPerMeter);
-            read("Radius", t.beamRadius, Pose::kUnitsPerMeter);
-            read("Intensity", t.beamIntensity, 1.0f);
-            read("TailRadius", t.tailRadius, Pose::kUnitsPerMeter);
-            read("TailIntensity", t.tailIntensity, 1.0f);
-            read("BrakeRadius", t.brakeRadius, Pose::kUnitsPerMeter);
-            read("BrakeIntensity", t.brakeIntensity, 1.0f);
-            read("TailDrop", t.tailDrop, Pose::kUnitsPerMeter);
-            read("LampGlow", t.lampGlow, 1.0f);
-            read("BrakeGlow", t.brakeGlow, 1.0f);
+            }
             ModelView::SetLampTuning(t);
             SKSE::log::info("headlights: beam at least {:.1f} m ahead, {:.1f} m up, {:.1f} m round at {:.2f}; tail lights {:.1f} m down, {:.1f} m round at {:.2f}, "
                             "braking {:.1f} m at {:.2f}; lamps glow {:.2f}, {:.1f} times braking",
@@ -71,16 +90,16 @@ namespace AhShitRim::Headlights
             return root ? root->parent : nullptr;
         }
 
-        // The point light for one end of a vehicle, made the first time it burns (as the muzzle flash's).
+        // The point light for one end of a vehicle, made the first time it burns (as the muzzle flash's), and kept among
+        // the renderer's lights (a load door drops them).
         RE::NiPointLight* Ensure(std::uint32_t a_slot, int a_end)
         {
             auto& light = state.lights[a_slot][a_end];
             if (light || state.failed) {
-                return light.get();
+                return light && SceneLights::Keep(light.get()) ? light.get() : nullptr;
             }
             auto* scene = Scene();
-            auto* shadowScene = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0];
-            if (!scene || !shadowScene) {
+            if (!scene) {
                 return nullptr;  // not up yet: tried again next frame
             }
             auto* made = RE::NiPointLight::Create();
@@ -90,21 +109,58 @@ namespace AhShitRim::Headlights
                 return nullptr;
             }
             made->name = a_end == 0 ? "AhShitRimHeadlight" : "AhShitRimTailLight";
-            auto& data = made->GetLightRuntimeData();
+            // Its colour and reach before it joins the renderer, which weighs a light by them as it's added (a light added
+            // black had luminance 0 there).
+            const auto& tuning = Tuning();
+            const float radius = a_end == 0 ? tuning.beamRadius : tuning.brakeRadius;
+            auto&       data = made->GetLightRuntimeData();
             data.ambient = RE::NiColor(0.0f, 0.0f, 0.0f);
+            data.diffuse = a_end == 0 ? RE::NiColor(1.0f, 0.92f, 0.7f) : RE::NiColor(1.0f, 0.06f, 0.03f);
+            data.radius = RE::NiPoint3(radius, radius, radius);
+            made->SetLightAttenuation(radius);
             data.fade = 0.0f;
             light.reset(made);
             scene->AttachChild(made, true);
-            RE::ShadowSceneNode::LIGHT_CREATE_PARAMS params{};
-            params.dynamic = true;
-            params.shadowLight = false;
-            params.portalStrict = false;
-            params.affectLand = true;
-            params.affectWater = true;
-            params.neverFades = true;
-            params.falloff = 1.0f;
-            shadowScene->AddLight(made, params);
-            return made;
+            return SceneLights::Keep(made) ? made : nullptr;
+        }
+
+        // A vehicle slot's coronas (CoronaModel), built the first time its lamps burn.
+        bool EnsureCoronas(std::uint32_t a_id)
+        {
+            if (ModelView::Has(a_id)) {
+                return true;
+            }
+            if (state.coronasFailed) {
+                return false;
+            }
+            if (!ModelView::AddModel(a_id, SkinModel::Serialize(CoronaModel::Build(kCoronaFront, kCoronaRear)))) {
+                state.coronasFailed = true;
+                SKSE::log::warn("headlights: the coronas' model did not build, the lamps show no corona");
+                return false;
+            }
+            return true;
+        }
+
+        // The coronas over a vehicle's burning lamps, facing the camera, glowing as its lamps do.
+        void ShowCoronas(std::uint32_t a_slot, const Protocol::BodyState& a_pose, const VehicleHits::Frame& a_frame, const RE::NiPoint3& a_feet,
+            std::uint8_t a_lit)
+        {
+            const auto* camera = RE::Main::WorldRootCamera();
+            const auto  id = kCoronaModel + a_slot * 2;
+            if (!camera || !EnsureCoronas(id)) {
+                return;
+            }
+            Protocol::BodyState coronas{};
+            coronas.frame = ++state.coronaFrame;
+            coronas.flags = Protocol::kBodyValid;
+            coronas.model = id;
+            coronas.lights = a_pose.lights;
+            coronas.lights.lit = a_lit;
+            coronas.cameraForward[1] = 1.0f;
+            const auto& eye = camera->world.translate;
+            if (CoronaModel::Pose(coronas.lights, a_frame, { eye.x, eye.y, eye.z }, { a_feet.x, a_feet.y, a_feet.z }, coronas) > 0) {
+                ModelView::Show(coronas, a_feet);  // not shown, it's hidden at the frame's end
+            }
         }
 
         void Out(std::uint32_t a_slot)
@@ -185,6 +241,7 @@ namespace AhShitRim::Headlights
         }
         const auto& tuning = Tuning();
         const auto  frame = VehicleHits::FrameOf(a_pose->vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
+        ShowCoronas(a_slot, *a_pose, frame, a_feet, lit);
         for (int end = 0; end < kEnds; end++) {
             VehicleLights::Glow glow;
             if (!VehicleLights::LightOf(a_pose->lights, end, tuning, glow)) {
@@ -201,6 +258,29 @@ namespace AhShitRim::Headlights
                     glow.radius / Pose::kUnitsPerMeter, glow.intensity, state.lights[a_slot][end] ? "" : " (no light made)");
             }
         }
+    }
+
+    bool DebugTune(std::string_view a_key, float a_value)
+    {
+        Tuning();
+        for (const auto& key : kKeys) {
+            if (a_key == key.name && std::isfinite(a_value) && a_value >= 0.0f) {
+                state.tuning.*key.field = a_value * key.scale;
+                ModelView::SetLampTuning(state.tuning);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::vector<std::pair<std::string, float>> DebugTuning()
+    {
+        Tuning();
+        std::vector<std::pair<std::string, float>> out;
+        for (const auto& key : kKeys) {
+            out.emplace_back(key.name, state.tuning.*key.field / key.scale);
+        }
+        return out;
     }
 
     void Clear()

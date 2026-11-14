@@ -189,7 +189,10 @@ never need it). To use it:
    | `asr.notify <text...>` | shows a Skyrim notification through Skyrim's HUD; answers `action` `hidden`, `help` or `kept`, with the rule | `asr.notify Iron Sword added` |
    | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
    | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows; `release=true` lets a held flash go | `asr.muzzle` |
-   | `asr.lamps <on\|off>` | every vehicle drawn and lit as if its lamps were out, for A/B shots (needs the headlights, v36) | `asr.lamps off` |
+   | `asr.lamps <on\|off\|brake\|nobrake>` | every vehicle drawn and lit as if its lamps were out (`off`), or its driver braked (`brake`) or didn't (`nobrake`), for A/B shots; `on` gives San Andreas's back (needs the headlights, v36) | `asr.lamps brake` |
+   | `asr.lamptune [key] [value]` | sets one of `AhShitRim.ini`'s `[Headlights]` values (metres for the distances) until the game closes, for trying values; answers them all | `asr.lamptune Intensity 6` |
+   | `asr.pedals [gas=] [brake=] [handbrake=] [steer=] [seconds=]` | holds CJ's vehicle controls (W, S, Space, the stick sideways) for `seconds` (10, at most 30) or until the next `asr.pedals`; none of them lets go | `asr.pedals brake=true` |
+   | `asr.oil [seconds=]` | places three fresh oil pools on Bleak Falls Barrow's first floor (the player there first), lights them by a bullet, a Molotov and a rocket through `ObjectHits`, answers once they burnt out: per pool its lowest health and whether it burned | `asr.oil` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
 

@@ -1,0 +1,23 @@
+// Oil burns GTA style: CJ's bullet landing in a pool of Skyrim's oil, a Molotov's burst and a rocket's blast on one each
+// light it. Three fresh pools (TrapOilPool01) at three of the pools on Bleak Falls Barrow's first floor (the save's own
+// may have burnt out already), lit through what CJ's shots and projectiles call (ObjectHits), watched until they burn
+// out. Skyrim keeps the player (god mode: it stands in the fire); no handover is needed for the oil.
+// scripts/skytest.ps1 run scenarios/oil.json (scenarios/README.md). Needs the oil (the headlights pull request).
+//
+// Measured with scripts/hit-test.ps1's old oil scenario: all three burn through their stages and are gone in about 12 s.
+{
+  "name": "oil",
+  "steps": [
+    { "label": "Skyrim keeps the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "to Bleak Falls Barrow", "cmd": "console", "command": "coc BleakFallsBarrow01" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "the player stands in the fire unharmed", "cmd": "console", "command": "tgm" },
+    { "label": "by the oil on the first floor", "cmd": "console", "command": "player.moveto 0009B0E6" },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "three pools lit by a bullet, a Molotov and a rocket all burn", "cmd": "asr.oil", "seconds": 30,
+      "expect": ["burned == 3", "pools.0.burned == true", "pools.1.burned == true", "pools.2.burned == true"] },
+    { "label": "god mode off again", "cmd": "console", "command": "tgm" },
+    { "label": "back to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 }
+  ]
+}
