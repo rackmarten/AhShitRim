@@ -1169,7 +1169,7 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
                 "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
-                "above where he started (metres), his top and lowest speed (km/h), the most the camera turned either way, whether he left the "
+                "above where he started (metres), his top and lowest speed (km/h), the lowest and highest speed along the way he faces (aheadLow, aheadHigh: below 0 reversing), the most the camera turned either way, whether he left the "
                 "ground, and the menus that were open. keep= and vs= as asr.since",
                 [](Call& a_call) -> Step {
                     const double seconds = a_call.Number("seconds", 1.0);
@@ -1183,6 +1183,8 @@ namespace AhShitRim::TestKit
                         double    rose = 0.0;
                         double    top = 0.0;
                         double    low = 1e9;
+                        double    aheadLow = 1e9;   // the speed along the way he faces, its lowest and highest (km/h)
+                        double    aheadHigh = -1e9;
                         double    left = 0.0;
                         double    right = 0.0;
                         bool      airborne = false;
@@ -1199,6 +1201,8 @@ namespace AhShitRim::TestKit
                         watch->rose = (std::max)(watch->rose, static_cast<double>(pose->offset[2] - watch->mark.pose.offset[2]) * Pose::kMetersPerUnit);
                         watch->top = (std::max)(watch->top, speed);
                         watch->low = (std::min)(watch->low, speed);
+                        watch->aheadLow = (std::min)(watch->aheadLow, Ahead(*pose));
+                        watch->aheadHigh = (std::max)(watch->aheadHigh, Ahead(*pose));
                         watch->left = (std::min)(watch->left, turned);
                         watch->right = (std::max)(watch->right, turned);
                         watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
@@ -1214,6 +1218,8 @@ namespace AhShitRim::TestKit
                         out["rose"] = Round(watch->rose);
                         out["topSpeed"] = Round(watch->top, 0.1);
                         out["lowSpeed"] = Round(watch->low, 0.1);
+                        out["aheadLow"] = Round(watch->aheadLow, 0.1);
+                        out["aheadHigh"] = Round(watch->aheadHigh, 0.1);
                         out["turnedLeft"] = Round(watch->left, 0.1);
                         out["turnedRight"] = Round(watch->right, 0.1);
                         out["airborne"] = watch->airborne;

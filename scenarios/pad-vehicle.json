@@ -53,7 +53,7 @@
     { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
     { "cmd": "pad", "buttons": "rb", "value": 0 },
     { "label": "LT held from a standstill", "cmd": "pad", "buttons": "lt", "value": 1 },
-    { "label": "it backs up", "cmd": "asr.watch", "seconds": 3, "expect": "ahead < -3" },
+    { "label": "it backs up", "cmd": "asr.watch", "seconds": 3, "expect": "aheadLow < -3" },
     { "cmd": "pad", "buttons": "lt", "value": 0 },
     { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
     { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
