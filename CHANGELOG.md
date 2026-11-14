@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - For developers: the test kit's probes and recorder see San Andreas's vehicles: `asr.vehicle:` gives the kit the 3D the vehicle is drawn under and its slot and model, so `node`, `probe`, `project`, `pixels`, `ab` and `record` work on it.
 - For developers: scenarios for the in-game checks of the muzzle flash, the vehicles' lamps and the Grove Street crew (`scenarios/muzzle-flash.json`, `vehicle-lights.json`, `crew-follow.json`), each with its pass/fail limits written in the file. New kit commands drive CJ for them: `asr.walk` (waypoints at a walk, run or sprint), `asr.fire` and `asr.muzzle` (the flash against the drawn gun's muzzle), `asr.lamps` (the lamps off for an A/B pair), `asr.exit`, `asr.cheat` and `asr.crew`; and targets for the probes and the recorder: `asr.flash:`, `asr.weapon:`, `asr.lamp:<lamp>`, `asr.homie:<n>`. `asr.vehicle:` also reports its lamps and lights.
 - For developers: `asr.drive` drives CJ's vehicle with held keys in a test session and measures each leg (its turn, radius, slip off its heading, tilt, roll and rise; `protocol/cpp/ride.h`), and `scenarios/rhino.json` drives the Rhino on Riverwood's road, the plain below Pelagia Farm and rock piles beside it.
+- For developers: `scenarios/camera-modes.json` checks San Andreas's camera modes in a test session, with the kit commands `asr.camera` (where San Andreas's camera is from CJ and his vehicle, and its scope) and `asr.view` (V pressed, until the first-person view if asked).
 
 ### Changed
 

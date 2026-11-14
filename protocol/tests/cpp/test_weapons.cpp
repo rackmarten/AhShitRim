@@ -242,7 +242,7 @@ TEST_CASE("v23: the armed aircraft's first-person camera shows the rocket sight,
 {
     CHECK(ScopeOf(kCamFirstPerson, 520) == Scope::Rocket);
     CHECK(ScopeOf(kCamFirstPerson, 425) == Scope::Rocket);
-    CHECK(ScopeOf(kCamFirstPerson, 447) == Scope::Rocket);              // #911: the Seasparrow
+    CHECK(ScopeOf(kCamFirstPerson, 447) == Scope::Rocket);              // the Seasparrow
     CHECK(ScopeOf(kCamFirstPerson, 476) == Scope::Rocket);              // and the Rustler
     CHECK(ScopeOf(kCamFirstPerson, 487) == ScopeOf(kCamFirstPerson));   // not an unarmed Maverick
     CHECK(ScopeOf(kCamFirstPerson, 0) == ScopeOf(kCamFirstPerson));     // on foot as before
