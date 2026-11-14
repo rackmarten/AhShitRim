@@ -73,7 +73,7 @@ namespace AhShitRim::Parked
     inline constexpr Spot kSpots[] = {
         // A Sanchez at each of the five stables, beside the carriage driver.
         { 1, kSanchez, Hold::Whiterun, World::Tamriel, { 17480.0f, -11640.0f, -4700.0f }, 4.8f, "the Whiterun stables" },
-        { 2, kSanchez, Hold::Haafingar, World::Tamriel, { -73700.0f, 98500.0f, -11200.0f }, 4.0f, "the Solitude stables at Katla's Farm" },
+        { 2, kSanchez, Hold::Haafingar, World::Tamriel, { -73500.0f, 98500.0f, -11150.0f }, 1.57f, "the Solitude stables at Katla's Farm" },
         { 3, kSanchez, Hold::Eastmarch, World::Tamriel, { 136900.0f, 25100.0f, -12790.0f }, 3.2f, "the Windhelm stables" },
         { 4, kSanchez, Hold::Rift, World::Tamriel, { 173450.0f, -91450.0f, 11130.0f }, 2.1f, "the Riften stables" },
         { 5, kSanchez, Hold::Reach, World::Tamriel, { -169500.0f, 5650.0f, -4060.0f }, 6.14f, "the Markarth stables" },
@@ -170,6 +170,11 @@ namespace AhShitRim::Parked
     // that ground, as a spawned vehicle's go from CJ's feet.
     inline constexpr float kGroundAbove = 3.0f;  // metres, as a pickup's ray (Pickups::kRayAbove): a roof or a tree over the spot isn't its ground
     inline constexpr float kGroundBelow = 30.0f;
+
+    // How uneven the ground under a parked vehicle's footprint may be, metres from its highest to its lowest. A spawned
+    // vehicle may stand on up to 0.8 m of slope for a bike (VehicleKinds::Traits), but one left standing on a ledge or a
+    // cobbled hillside falls over and rolls (the Solitude stables' Sanchez did), so a parked one needs flatter ground.
+    inline constexpr float kMaxUneven = 0.35f;
 
     // The spots to try for a parked vehicle at a_at (San Andreas metres, z its ground) facing a_heading (San Andreas
     // radians), best first: the spot itself, then kAroundRings rings of kAroundSteps round it, each facing the same way.

@@ -176,6 +176,8 @@ namespace AhShitRim::TestKit
             bool               on = false;
             VehicleHits::Frame frame;
             std::uint32_t      flags = 0;
+            float              health = 0.0f;       // San Andreas's vehicle health (1000 new)
+            float              boxBottom = 0.0f;    // the collision box's bottom, in the vehicle's frame, Skyrim units
             bool               lamps = false;  // the slot carries lamps (kHasLamps)
             std::uint8_t       lit = 0;        // the lamps burning as San Andreas sent them (asr.lamps off draws none of them)
             std::uint8_t       lampState = 0;
@@ -195,6 +197,8 @@ namespace AhShitRim::TestKit
             seen.on = true;
             seen.frame = VehicleHits::FrameOf(a_pose.vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
             seen.flags = a_pose.flags;
+            seen.health = a_pose.health;
+            seen.boxBottom = a_pose.boxMin[2];
             if constexpr (kHasLamps<T>) {
                 seen.lamps = true;
                 seen.lit = a_pose.lights.lit;
@@ -214,6 +218,52 @@ namespace AhShitRim::TestKit
                     }
                 }
             }
+        }
+
+        // Skyrim's ground under a point: what a ray down through the line-of-sight layer hits first, from a_above units above
+        // it to a_below below: the land and the statics on it (the cobbles of a village), not what grows or stands on it
+        // (trees, bushes, clutter, people), which the ray goes on through.
+        std::optional<float> GroundUnder(const RE::NiPoint3& a_at, float a_above = 20.0f, float a_below = 600.0f)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return std::nullopt;
+            }
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            const float         scale = RE::bhkWorld::GetWorldScale();
+            const float         bottom = a_at.z - a_below;
+            float               top = a_at.z + a_above;
+            for (int pass = 0; pass < 8 && top > bottom; pass++) {
+                RE::hkpWorldRayCastInput input;
+                input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+                input.from = RE::hkVector4(a_at.x * scale, a_at.y * scale, top * scale, 0.0f);
+                input.to = RE::hkVector4(a_at.x * scale, a_at.y * scale, bottom * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return std::nullopt;
+                }
+                const float z = top + (bottom - top) * output.hitFraction;
+                switch (output.rootCollidable ? output.rootCollidable->GetCollisionLayer() : RE::COL_LAYER::kUnidentified) {
+                case RE::COL_LAYER::kTrees:
+                case RE::COL_LAYER::kClutter:
+                case RE::COL_LAYER::kProps:
+                case RE::COL_LAYER::kDebrisSmall:
+                case RE::COL_LAYER::kDebrisLarge:
+                case RE::COL_LAYER::kBiped:
+                case RE::COL_LAYER::kDeadBip:
+                case RE::COL_LAYER::kCharController:
+                case RE::COL_LAYER::kTransparent:
+                case RE::COL_LAYER::kTransparentSmall:
+                    top = z - 1.0f;
+                    continue;
+                default: return z;
+                }
+            }
+            return std::nullopt;
         }
 
         RE::NiNode* WorldScene()
@@ -1358,6 +1408,47 @@ namespace AhShitRim::TestKit
                     };
                 });
 
+            SkseTestKit::AddCommand("asr.ground", "<x> <y> [radius] [step]",
+                "Skyrim's ground height (a ray down from 400 above the player to 800 below) on a square of sample points round x, y: rows of "
+                "heights, and the lowest, the highest and the steepest slope between neighbours (degrees)",
+                [](Call& a_call) -> Json {
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const auto from = player ? player->GetPosition() : RE::NiPoint3{};
+                    const float x = static_cast<float>(a_call.Number("x", from.x)), y = static_cast<float>(a_call.Number("y", from.y));
+                    const float radius = static_cast<float>(a_call.Number("radius", 200.0));
+                    const float step = (std::max)(10.0f, static_cast<float>(a_call.Number("step", 50.0)));
+                    const int   n = static_cast<int>(radius / step);
+                    JsonArray   rows;
+                    float       low = 1e9f, high = -1e9f, steepest = 0.0f;
+                    std::vector<std::vector<float>> grid;
+                    for (int j = -n; j <= n; j++) {
+                        JsonArray   row;
+                        std::vector<float> line;
+                        for (int i = -n; i <= n; i++) {
+                            const auto ground = GroundUnder({ x + i * step, y + j * step, from.z }, 400.0f, 800.0f);
+                            line.push_back(ground ? *ground : std::nanf(""));
+                            row.emplace_back(ground ? Json(Round(*ground, 0.1)) : Json());
+                            if (ground) {
+                                low = (std::min)(low, *ground);
+                                high = (std::max)(high, *ground);
+                            }
+                        }
+                        rows.emplace_back(std::move(row));
+                        grid.push_back(std::move(line));
+                    }
+                    for (std::size_t j = 0; j < grid.size(); j++) {
+                        for (std::size_t i = 0; i < grid[j].size(); i++) {
+                            for (const auto& [dj, di] : { std::pair{ 0, 1 }, std::pair{ 1, 0 } }) {
+                                if (j + dj < grid.size() && i + di < grid[j].size() && !std::isnan(grid[j][i]) && !std::isnan(grid[j + dj][i + di])) {
+                                    const float rise = std::fabs(grid[j + dj][i + di] - grid[j][i]);
+                                    steepest = (std::max)(steepest, static_cast<float>(std::atan2(rise, step) * 57.29578));
+                                }
+                            }
+                        }
+                    }
+                    return JsonObject{ { "step", step }, { "low", low }, { "high", high }, { "steepest", Round(steepest, 0.1) }, { "rows", std::move(rows) } };
+                });
+
             SkseTestKit::AddCommand("asr.night", "[hour]", "Sets the game's hour (default 23, night for the lights and the HUD clock)", [](Call& a_call) -> Json {
                 const double hour = a_call.Number("hour", 23.0);
                 if (hour < 0.0 || hour >= 24.0) {
@@ -1599,6 +1690,41 @@ namespace AhShitRim::TestKit
                         PlayerSync::DebugHold(input);
                         return std::nullopt;
                     };
+                });
+
+            SkseTestKit::AddCommand("asr.vehicles", "[within=<units>]",
+                "San Andreas's vehicles drawn now (every slot, a parked one too): count, and each one's slot, model (ModelView's id), where "
+                "and how far from the player, its health (1000 new), wrecked, burning, smoking (health under 650), up (1 upright: its frame's Z) "
+                "and above (how far its box's bottom is over Skyrim's ground there, units; missing with no ground); within (default everywhere) "
+                "counts only those that close",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    const double within = a_call.Number("within", (std::numeric_limits<double>::max)());
+                    auto*        player = RE::PlayerCharacter::GetSingleton();
+                    const auto   from = player ? player->GetPosition() : RE::NiPoint3{};
+                    JsonArray    vehicles;
+                    for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                        RE::NiPoint3  at;
+                        float         heading = 0.0f;
+                        std::uint32_t model = 0;
+                        if (!PlayerSync::DebugVehicle(i, at, heading, &model)) {
+                            continue;
+                        }
+                        const double distance = std::hypot(at.x - from.x, at.y - from.y);
+                        if (distance <= within) {
+                            const auto& seen = g_seen[i];
+                            const bool  wrecked = seen.on && (seen.flags & Protocol::kBodyWrecked) != 0;
+                            JsonObject  one{ { "slot", i }, { "model", std::format("{:08X}", model) }, { "at", Point(at) }, { "distance", Round(distance, 1.0) },
+                                { "health", seen.health }, { "wrecked", wrecked }, { "burning", seen.on && (seen.flags & Protocol::kBodyBurning) != 0 },
+                                { "smoking", seen.on && !wrecked && seen.health < 650.0f }, { "up", seen.frame.up.z } };
+                            if (const auto ground = GroundUnder(at)) {
+                                one.Set("above", at.z + seen.boxBottom - *ground);
+                            }
+                            vehicles.emplace_back(std::move(one));
+                        }
+                    }
+                    const auto count = vehicles.size();
+                    return JsonObject{ { "count", count }, { "vehicles", std::move(vehicles) } };
                 });
 
             // A scenario: a row a frame, for skytest run's CSV.

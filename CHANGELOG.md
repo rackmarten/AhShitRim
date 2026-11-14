@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - For developers: `asr.drive` drives CJ's vehicle with held keys in a test session and measures each leg (its turn, radius, slip off its heading, tilt, roll and rise; `protocol/cpp/ride.h`), and `scenarios/rhino.json` drives the Rhino on Riverwood's road, the plain below Pelagia Farm and rock piles beside it.
 - For developers: `scenarios/camera-modes.json` checks San Andreas's camera modes in a test session, with the kit commands `asr.camera` (where San Andreas's camera is from CJ and his vehicle, and its scope) and `asr.view` (V pressed, until the first-person view if asked).
 - For developers: `scenarios/hud-texts.json` checks the zone and vehicle names and what becomes of Skyrim's HUD messages in a test session, with the kit commands `asr.hud` (San Andreas's names and help box as drawn, Skyrim's messages restyled or hidden, the player's location), `asr.notify` (a Skyrim notification through its HUD) and `asr.walk untilZone=true`.
+- For developers: `asr.vehicles` lists the vehicles drawn in a test session (health, wrecked, burning, upright, and how far above Skyrim's ground), `asr.ground` the height of Skyrim's ground round a point, and `scenarios/parked.json` checks a Sanchez stays whole, upright and on the ground at each stable for a minute, a BMX parks in Riverwood and nothing parks on the road below Fort Greymoor.
 
 ### Changed
 
