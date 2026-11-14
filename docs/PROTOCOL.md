@@ -172,7 +172,7 @@ Keys map to actions with GTA's keyboard layout (`input.h`): W/S/A/D or the arrow
 | 84 | `shots` | u16: counts the shots fired, from the held weapon's rounds going down; wraps. Skyrim flashes for each |
 | 86 | `cameraMode` | u8: San Andreas's `eCamMode`: 0x07 and 0x27 the sniper scope, 0x08, 0x28, 0x33 and 0x34 a rocket sight, 0x22 the first-person rifle, 0x2E the camera, 0x35 free aim |
 | 87 | `ammoStyle` | u8: how the HUD writes the rounds: `kAmmoTotal` 0 ("200"), `kAmmoClip` 1 ("83-17", the rest then the clip), `kAmmoFlame` 2 (the same in tenths) |
-| 88 | `muzzle[2][3]` | where the shots leave, relative to CJ's feet, Skyrim units: the middle of the model's `gunflash` part (the weapon's fire offset on its frame for a model without one). `[1]` is the left hand's |
+| 88 | `muzzle[2][3]` | where the shots leave, relative to CJ's feet, Skyrim units: the weapon's fire offset on its frame. `[1]` is the left hand's |
 | 112 | `crosshair[2]` | where San Andreas's crosshair sits on the screen, as fractions of its width and height |
 | 120 | `loadout[13]` | `WeaponEntry` (8 bytes: `type` u8, reserved, `clip` u16, `ammo` u32 up to 99,999): San Andreas's weapons, one per slot, type 0 for an empty slot |
 | 224 | `skills[11]` | u16 (v13): San Andreas's weapon skill stats, `STAT_PISTOL_SKILL` (69) to `STAT_SNIPERRIFLE_SKILL` (79) in order (pistol, silenced pistol, Desert Eagle, shotgun, sawn-off, combat shotgun, micro SMG, SMG, AK-47, M4, sniper rifle), 0 to 1000: poor, gangster and hitman by `weapon.dat`'s thresholds |

@@ -2,6 +2,7 @@
 #include "debug/TestKit.h"
 
 #include "Ini.h"
+#include "aim.h"
 #include "body/ModelView.h"
 #include "body/MuzzleFlash.h"
 #include "debug/HitTest.h"
@@ -488,6 +489,8 @@ namespace AhShitRim::TestKit
             std::size_t         vertices = 0;
             double              heading = 0.0;  // the barrel's, radians as a reference's angle z
             double              pitch = 0.0;    // degrees above level
+            double              roll = 0.0;     // degrees the gun's top leans right of up about its barrel (Aim::RollOf)
+            bool                turned = false; // its first part faces back along the barrel, read turned round
         };
 
         Barrel BarrelOf(std::uint32_t a_hand)
@@ -499,6 +502,17 @@ namespace AhShitRim::TestKit
             }
             const auto& t = out.pose.bones[0].translation;
             out.frame = VehicleHits::FrameOf(out.pose.bones[0], { feet.x + t[0], feet.y + t[1], feet.z + t[2] });
+            // A model whose first part faces back along the barrel (the sawn-off's) is turned round about its Z, so its
+            // X points where San Andreas's camera looks, the way the gun fires: otherwise its stock would read as the muzzle.
+            // Only while he aims: then the gun points where the camera looks, hanging down or from the hip it needn't.
+            if (const auto pose = CjPose(); pose && (pose->weaponFlags & Protocol::kWeaponAiming) != 0) {
+                const auto& b = out.frame.right;
+                if (b.x * std::sin(pose->viewHeading) + b.y * std::cos(pose->viewHeading) < 0.0f) {
+                    out.frame.right = Body::Scale(out.frame.right, -1.0f);
+                    out.frame.forward = Body::Scale(out.frame.forward, -1.0f);
+                    out.turned = true;
+                }
+            }
             std::vector<RE::NiPoint3> vertices;
             if (!ModelView::DebugPosed(out.pose.model, vertices) || vertices.empty()) {
                 throw Error("the weapon's model isn't drawn");
@@ -525,6 +539,8 @@ namespace AhShitRim::TestKit
             const auto& b = out.frame.right;  // its X
             out.heading = std::atan2(b.x, b.y);
             out.pitch = std::atan2(b.z, std::hypot(b.x, b.y)) * 180.0 / std::numbers::pi;
+            // Its top is its Z, the left hand's gun included: the drawn gun's frame is already turned over for it.
+            out.roll = Aim::RollOf(out.frame.right, out.frame.up) * 180.0 / std::numbers::pi;
             return out;
         }
 
@@ -536,7 +552,7 @@ namespace AhShitRim::TestKit
             JsonObject out{ { "hand", a_hand },
                 { "weapon", JsonObject{ { "model", std::format("{:08X}", barrel.pose.model) }, { "vertices", barrel.vertices },
                                 { "origin", Point(barrel.frame.pos) }, { "tip", Point(barrel.tip) }, { "tipLocal", Point(barrel.tipLocal) },
-                                { "heading", Round(barrel.heading * 180.0 / std::numbers::pi, 0.1) }, { "pitch", Round(barrel.pitch, 0.1) } } } };
+                                { "heading", Round(barrel.heading * 180.0 / std::numbers::pi, 0.1) }, { "pitch", Round(barrel.pitch, 0.1) }, { "roll", Round(barrel.roll, 0.1) }, { "turned", barrel.turned } } } };
             JsonObject flashJson{ { "shown", flash.shown }, { "fired", flash.fired }, { "left", Round(flash.left, 0.001) }, { "strength", Round(flash.strength) } };
             if (flash.fired > 0) {
                 flashJson.Set("at", Point(flash.at));
@@ -884,7 +900,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.muzzle", "[hand] [release=<bool>]",
                 "The weapon drawn in a hand (0 right, 1 left) against its muzzle flash: the barrel's end (its farthest vertex along the "
                 "barrel), the flash as last shown (shown in the last frame, seconds left, where), along (units the flash is past the "
-                "muzzle's end) and across (off the barrel's line). release=true lets go of a flash asr.fire hold=true kept, after measuring",
+                "muzzle's end) and across (off the barrel's line), and weapon.roll (degrees its top leans right of up about the barrel; weapon.turned: a model whose first part faces back, read turned round while he aims). release=true lets go of a flash asr.fire hold=true kept, after measuring",
                 [](Call& a_call) -> Json {
                     auto out = MuzzleCheck(HandOf(a_call));
                     if (a_call.Flag("release", false)) {
@@ -949,6 +965,7 @@ namespace AhShitRim::TestKit
                             auto out = MuzzleCheck(hand);
                             out["weaponType"] = static_cast<int>(pose->weaponType);
                             out["aimed"] = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+                            out["twin"] = (pose->weaponFlags & Protocol::kWeaponTwin) != 0;
                             out["shots"] = flash.fired - fire->firedBefore;
                             return out;
                         }
