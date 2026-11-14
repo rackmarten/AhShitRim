@@ -54,6 +54,7 @@ namespace AhShitRim::PlayerSync
     // gamepad events would set them.
     void DebugPad(std::uint32_t a_id, float a_value);
     void DebugStick(bool a_right, float a_x, float a_y);
+    int  DebugPadCheats();  // console cheat sequences finished on the pad so far
 
     void Restore(const Cosave::Record& a_record);
     void Revert();

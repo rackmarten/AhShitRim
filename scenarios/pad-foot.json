@@ -10,7 +10,7 @@
 // walks (under 9 km/h) and full runs, at least half as fast again; A held sprints, at least 15 % faster than the run;
 // the right stick full right for a second turns the camera at least 30 degrees right; X leaves the ground and rises
 // 0.25 m; L3 crouches and stands; LB talks to Bjorlam in front of CJ (the log says Skyrim activated him for LB); the d-pad changes the weapon; LT aims and RT
-// fires a pistol; B opens Skyrim's tween menu and Start its journal; Y gets CJ in and out of a car; Back held a second
+// fires a pistol; B held opens Skyrim's tween menu and Start its journal; Y gets CJ in and out of a car; Back held a second
 // hands the player over both ways.
 {
   "name": "pad-foot",
@@ -98,8 +98,9 @@
     { "label": "Bjorlam free to move again", "cmd": "console", "ref": "00013698", "command": "setdontmove 0" },
     { "label": "Bjorlam 35 m behind CJ, out of later checks' way (the gun lock's)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 2500, "angle": 180 },
 
-    // Skyrim's menus on the pad while CJ has the player: B the tween menu, Start the journal; B closes the tween menu, Start the journal.
-    { "label": "B tapped", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    // Skyrim's menus on the pad while CJ has the player: B held the tween menu (a tap is Circle in a cheat sequence),
+    // Start the journal; B closes the tween menu, Start the journal.
+    { "label": "B held 0.5 s", "cmd": "pad", "buttons": "b", "seconds": 0.5 },
     { "label": "Skyrim's tween menu", "cmd": "wait", "until": "menus contains TweenMenu", "for": "asr.pose", "timeout": 5 },
     { "label": "the tween menu", "cmd": "screenshot", "name": "tween-menu", "hud": true },
     { "label": "B closes it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },

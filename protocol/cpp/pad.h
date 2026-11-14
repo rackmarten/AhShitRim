@@ -46,6 +46,8 @@ namespace AhShitRim::Pad
     inline constexpr std::uint32_t kRightTrigger = 0x000A;
 
     inline constexpr float kTriggerHeld = 0.3f;   // a trigger pulled this far holds its action
+    inline constexpr float kTriggerPress = 0.5f;  // and this far is a press in a cheat sequence
+    inline constexpr float kHoldGate = 0.3f;      // B and RB held this long do Skyrim's thing (the tween menu, the Shout) while CJ has the player
     inline constexpr float kTurretHeld = 0.5f;    // the right stick this far is a turret key (hydraulics, the Hydra's nozzles)
     inline constexpr float kBackHold = 1.0f;      // Back held this long hands the player over (F10)
     inline constexpr float kCameraPulse = 0.12f;  // a tap of Back holds the camera key this long, so San Andreas's frame sees it
@@ -100,18 +102,18 @@ namespace AhShitRim::Pad
     class Mapper
     {
     public:
-        // A button event: a_id a Skyrim gamepad id code, a_value its value (0 or 1, a trigger's pull).
-        void SetButton(std::uint32_t a_id, float a_value)
+        // A button event: a_id a Skyrim gamepad id code, a_value its value (0 or 1, a trigger's pull). Returns whether it
+        // was a press: a button going down, a trigger pulled past half (for the cheat sequences, PadCheats).
+        bool SetButton(std::uint32_t a_id, float a_value)
         {
-            if (a_id == kLeftTrigger) {
-                _lt = a_value;
-                return;
-            }
-            if (a_id == kRightTrigger) {
-                _rt = a_value;
-                return;
+            if (a_id == kLeftTrigger || a_id == kRightTrigger) {
+                float&     pull = a_id == kLeftTrigger ? _lt : _rt;
+                const bool press = pull < kTriggerPress && a_value >= kTriggerPress;
+                pull = a_value;
+                return press;
             }
             const bool down = a_value > 0.0f;
+            const bool press = down && !(_held & a_id);
             if (down && !(_held & a_id)) {
                 _pressed |= a_id;
                 if (a_id == kBack) {
@@ -122,6 +124,7 @@ namespace AhShitRim::Pad
                 _backReleased = true;
             }
             _held = down ? (_held | a_id) : (_held & ~a_id);
+            return press;
         }
 
         // A thumbstick event.
@@ -262,6 +265,33 @@ namespace AhShitRim::Pad
     };
 
     inline constexpr std::uint16_t kModelHydra = 520;  // its right stick's up and down are the nozzles
+
+    // B's and RB's hold while CJ has the player (DESIGN.md, Controller, Cheats on the pad): a tap is only Circle or R1 in a
+    // cheat sequence, held kHoldGate it opens Skyrim's tween menu or starts the Shout. Update returns true once per hold,
+    // when it opens; Open says whether this hold is past it.
+    class HoldGate
+    {
+    public:
+        bool Update(bool a_held, float a_seconds)
+        {
+            if (!a_held) {
+                _seconds = 0.0f;
+                _open = false;
+                return false;
+            }
+            _seconds += a_seconds;
+            if (!_open && _seconds >= kHoldGate) {
+                _open = true;
+                return true;
+            }
+            return false;
+        }
+        bool Open() const { return _open; }
+
+    private:
+        float _seconds = 0.0f;
+        bool  _open = false;
+    };
 
     // The pad's name for the activate key the help box names ("E: Open Breezehome" -> "LB: Open Breezehome").
     inline constexpr const char* kActivateName = "LB";
