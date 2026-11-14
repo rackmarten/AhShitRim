@@ -1,0 +1,69 @@
+// San Andreas's console cheat sequences on the pad (pad_cheats.h), entered with the kit's pad command (Skyrim's own
+// input events, so the presses go through AhShitRim's input sink and its hooks on Skyrim's menu and shout handlers as a
+// real pad's): HESOYAM, AEZAKMI (whose B taps must open no tween menu) and the jetpack, each a press every 0.15 s; then
+// B and RB held, which do Skyrim's thing once held 0.3 s (the tween menu, the Shout); then HESOYAM again in a car. CJ
+// on foot in Riverwood. scripts/skytest.ps1 run scenarios/pad-cheats.json (scenarios/README.md).
+//
+// The checks: each sequence finishes exactly one cheat (asr.since's padCheats, and its "entered on the pad" line in the
+// log), "Cheat activated" shows on San Andreas's HUD (cheat-hesoyam.png), no Skyrim menu opens on the way; B held 0.5 s
+// opens the tween menu; RB held starts Skyrim's Shout (AhShitRim's log line; the new character knows no shout,
+// so Skyrim plays nothing).
+{
+  "name": "pad-cheats",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "no actors left from an earlier run (asr.place)", "cmd": "asr.place", "clear": true },
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim's gamepad on, as a pad player has it", "cmd": "console", "command": "setini \"bGamepadEnable:Controls\" 1" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+
+    { "cmd": "asr.mark" },
+    { "label": "HESOYAM: RB RT LB A left down right up left down right up", "cmd": "pad",
+      "buttons": "rb rt lb a left down right up left down right up", "seconds": 0.08, "gap": 0.07 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "one cheat finished, no menu", "cmd": "asr.since", "expect": "padCheats == 1" },
+    { "label": "Cheat activated", "cmd": "screenshot", "name": "cheat-hesoyam", "hud": true },
+    { "label": "logged as HESOYAM", "cmd": "log", "lines": 1, "match": "HESOYAM entered on the pad", "expect": "lines.length == 1" },
+    { "cmd": "asr.pose", "expect": "menus.length == 0" },
+
+    { "cmd": "asr.mark" },
+    { "label": "AEZAKMI: B right B right left X Y up", "cmd": "pad", "buttons": "b right b right left x y up", "seconds": 0.08, "gap": 0.07 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "one cheat finished", "cmd": "asr.since", "expect": "padCheats == 1" },
+    { "label": "B's taps opened no tween menu", "cmd": "asr.pose", "expect": "menus.length == 0" },
+    { "cmd": "log", "lines": 1, "match": "AEZAKMI entered on the pad", "expect": "lines.length == 1" },
+
+    { "cmd": "asr.mark" },
+    { "label": "the jetpack: left right LB LT RB RT up down left right", "cmd": "pad", "buttons": "left right lb lt rb rt up down left right",
+      "seconds": 0.08, "gap": 0.07 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "one cheat finished", "cmd": "asr.since", "expect": "padCheats == 1" },
+    { "cmd": "log", "lines": 1, "match": "YECGAA entered on the pad", "expect": "lines.length == 1" },
+    { "label": "CJ with the jetpack", "cmd": "screenshot", "name": "jetpack", "camera": "orbit player yaw=180 distance=350 pitch=10" },
+    { "label": "off it again (Y)", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "cmd": "wait", "seconds": 2 },
+
+    { "label": "B held 0.5 s", "cmd": "pad", "buttons": "b", "seconds": 0.5 },
+    { "label": "Skyrim's tween menu", "cmd": "wait", "until": "menus contains TweenMenu", "for": "asr.pose", "timeout": 5 },
+    { "label": "B closes it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    { "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+    { "label": "RB held", "cmd": "pad", "buttons": "rb" },
+    { "label": "Skyrim's Shout starts once it's held 0.3 s", "cmd": "wait", "log": "RB held on the pad: Skyrim's Shout", "timeout": 3 },
+    { "label": "RB let go", "cmd": "pad", "buttons": "rb", "value": 0 },
+
+    { "label": "a Sandking", "cmd": "asr.spawn", "model": 495, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "asr.mark" },
+    { "label": "HESOYAM in the car", "cmd": "pad", "buttons": "rb rt lb a left down right up left down right up", "seconds": 0.08, "gap": 0.07 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "one cheat finished", "cmd": "asr.since", "expect": "padCheats == 1" },
+    { "label": "Y: out", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "cmd": "wait", "until": ["onFoot == true", "gettingInOut == false"], "for": "asr.pose", "timeout": 10 },
+    { "label": "nothing left held", "cmd": "input", "expect": "idle == true" }
+  ]
+}
