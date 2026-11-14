@@ -3,6 +3,7 @@
 
 #include "Ini.h"
 #include "aim.h"
+#include "ini_text.h"
 #include "body/ModelView.h"
 #include "body/MuzzleFlash.h"
 #include "debug/HitTest.h"
@@ -43,8 +44,10 @@
 #include <bit>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -3267,6 +3270,93 @@ namespace AhShitRim::TestKit
                     };
                 });
         }
+
+        // ---- Skyrim's look sensitivity and CJ's camera (scenarios/look-sensitivity.json) ----
+
+        struct LookMark
+        {
+            float                                 view = 0.0f;
+            std::uint32_t                         handover = 0;
+            std::chrono::steady_clock::time_point at{};
+        };
+        std::optional<LookMark>     g_lookMark;
+        std::map<std::string, Json> g_lookKept;
+
+        // CJ's camera heading from a_from to a_to, -180 to 180 degrees.
+        double ViewTurned(float a_from, float a_to)
+        {
+            double d = (a_to - a_from) * 180.0 / std::numbers::pi;
+            while (d > 180.0) {
+                d -= 360.0;
+            }
+            while (d < -180.0) {
+                d += 360.0;
+            }
+            return d;
+        }
+
+        void AddLookChecks()
+        {
+            SkseTestKit::AddCommand("asr.look", "[mouse=<value>] [pad=<value>] [reset=<bool>] [mark=<bool>] [keep=<name>] [vs=<name>]",
+                "Skyrim's look sensitivity sliders (mouse, pad: their live values; their ends) and the scales CJ's look counts get from them, "
+                "with [Input] LookReset. mouse= and pad= set a slider's live value first (as its menu does); reset=true moves both to their "
+                "middle again as a first start does ([Input] LookReset forgotten first), its SkyrimPrefs.ini write going to a copy in the "
+                "temp folder instead, read back as prefsCopy (written, path, mouse, pad). mark=true marks CJ's camera heading; without it, "
+                "turned is how far it turned since (degrees), keep=<name> keeps that and vs=<name> adds turned over the kept one's",
+                [](Call& a_call) -> Json {
+                    if (a_call.Has("mouse") || a_call.Has("pad")) {
+                        PlayerSync::DebugSetLook(static_cast<float>(a_call.Number("mouse", -1.0)), static_cast<float>(a_call.Number("pad", -1.0)));
+                    }
+                    std::optional<Json> copy;
+                    if (a_call.Flag("reset", false)) {
+                        const auto path = std::filesystem::temp_directory_path() / "AhShitRim-look-prefs.ini";
+                        const bool written = PlayerSync::DebugResetLook(path);
+                        std::string text;
+                        if (std::ifstream in(path, std::ios::binary); in) {
+                            text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                        }
+                        copy = JsonObject{ { "written", written }, { "path", path.string() },
+                            { "mouse", IniText::ValueIn(text, "Controls", "fMouseHeadingSensitivity") },
+                            { "pad", IniText::ValueIn(text, "Controls", "fGamepadHeadingSensitivity") } };
+                    }
+                    const auto look = PlayerSync::DebugLook();
+                    JsonObject out{ { "mouse", Round(look.mouse, 0.0001) }, { "pad", Round(look.pad, 0.0001) }, { "mouseMin", Round(look.mouseMin, 0.0001) },
+                        { "mouseMax", Round(look.mouseMax, 0.0001) }, { "padMin", Round(look.padMin, 0.0001) }, { "padMax", Round(look.padMax, 0.0001) },
+                        { "mouseScale", Round(look.mouseScale, 0.001) }, { "padScale", Round(look.padScale, 0.001) },
+                        { "lookReset", Ini::Value("Input", "LookReset") } };
+                    if (copy) {
+                        out["prefsCopy"] = std::move(*copy);
+                    }
+                    const auto pose = CjPose();
+                    if (a_call.Flag("mark", false)) {
+                        if (!pose) {
+                            throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
+                        }
+                        g_lookMark = LookMark{ .view = pose->viewHeading, .handover = PlayerSync::DebugHandover(), .at = std::chrono::steady_clock::now() };
+                        return out;
+                    }
+                    if (!g_lookMark) {
+                        return out;
+                    }
+                    if (!pose || g_lookMark->handover != PlayerSync::DebugHandover()) {
+                        throw Error("the handover changed since asr.look mark=true (or San Andreas has no pose of CJ): mark again");
+                    }
+                    out["turned"] = Round(ViewTurned(g_lookMark->view, pose->viewHeading), 0.1);
+                    out["seconds"] = Round(std::chrono::duration<double>(std::chrono::steady_clock::now() - g_lookMark->at).count());
+                    if (const auto keep = a_call.Text("keep"); !keep.empty()) {
+                        g_lookKept[keep] = out["turned"];
+                    }
+                    if (const auto vs = a_call.Text("vs"); !vs.empty()) {
+                        const auto kept = g_lookKept.find(vs);
+                        if (kept == g_lookKept.end()) {
+                            throw Error(std::format("nothing kept as {} (an earlier asr.look keep={})", vs, vs));
+                        }
+                        const double base = kept->second.AsNumber();
+                        out["vs"] = base != 0.0 ? Json(Round(out["turned"].AsNumber() / base, 0.001)) : Json();
+                    }
+                    return out;
+                });
+        }
     }
 
     void Load()
@@ -3275,6 +3365,7 @@ namespace AhShitRim::TestKit
         const SkseTestKit::Hooks hooks{ .arrived = &Arrived, .ready = &CjReady, .hud = [](bool a_visible) { Overlay::SetHidden(!a_visible); } };
         if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = hooks })) {
             AddCommands();
+            AddLookChecks();
             AddTests();
             AddFeatureChecks();
             AddStealthKills();

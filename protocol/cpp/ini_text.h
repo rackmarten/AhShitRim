@@ -5,7 +5,8 @@
 #include <vector>
 
 // Setting one key in an ini file's text, the rest left as it was (comments, other sections, the line endings), for the
-// plugin's own records in AhShitRim.ini (LookSensitivity's one-time reset).
+// plugin's own records in AhShitRim.ini (LookSensitivity's one-time reset) and the look sliders in SkyrimPrefs.ini; and
+// reading one back.
 
 namespace IniText
 {
@@ -16,6 +17,30 @@ namespace IniText
             return {};
         }
         return a_text.substr(first, a_text.find_last_not_of(" \t\r") - first + 1);
+    }
+
+    // a_key's value in [a_section] of a_text, trimmed; empty when it isn't there.
+    inline std::string ValueIn(std::string_view a_text, std::string_view a_section, std::string_view a_key)
+    {
+        const std::string wanted = "[" + std::string(a_section) + "]";
+        bool              inSection = false;
+        for (std::size_t start = 0; start < a_text.size();) {
+            auto end = a_text.find('\n', start);
+            if (end == std::string_view::npos) {
+                end = a_text.size();
+            }
+            const auto line = Trim(a_text.substr(start, end - start));
+            start = end + 1;
+            if (line.starts_with('[')) {
+                inSection = line == wanted;
+                continue;
+            }
+            const auto equals = line.find('=');
+            if (inSection && equals != std::string_view::npos && Trim(line.substr(0, equals)) == a_key) {
+                return std::string(Trim(line.substr(equals + 1)));
+            }
+        }
+        return {};
     }
 
     // a_text with a_key=a_value in [a_section]: the key's line replaced where the section has it, else added after the

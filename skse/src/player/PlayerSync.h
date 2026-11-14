@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -66,6 +67,26 @@ namespace AhShitRim::PlayerSync
     void DebugPad(std::uint32_t a_id, float a_value);
     void DebugStick(bool a_right, float a_x, float a_y);
     int  DebugPadCheats();  // console cheat sequences finished on the pad so far
+
+    // The test kit (debug): Skyrim's look sensitivity sliders (their live values and their ends) and the scales CJ's look
+    // counts get from them (look_sensitivity.h); setting a slider's live value (below 0 leaves it), as its menu does; and
+    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first), in memory: its write
+    // goes to a_copy (SkyrimPrefs.ini with the sliders set), not to SkyrimPrefs.ini, which in a test session is the
+    // player's own file once Skyrim has loaded. False when the copy couldn't be written.
+    struct DebugLookState
+    {
+        float  mouse = 0.0f;
+        float  pad = 0.0f;
+        float  mouseMin = 0.0f;
+        float  mouseMax = 0.0f;
+        float  padMin = 0.0f;
+        float  padMax = 0.0f;
+        double mouseScale = 1.0;
+        double padScale = 1.0;
+    };
+    DebugLookState DebugLook();
+    void           DebugSetLook(float a_mouse, float a_pad);
+    bool           DebugResetLook(const std::filesystem::path& a_copy);
     // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
     void DebugKey(std::uint32_t a_dik, bool a_down);
     // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San

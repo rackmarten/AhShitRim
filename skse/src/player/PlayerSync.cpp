@@ -1,6 +1,7 @@
 #include "player/PlayerSync.h"
 
 #include "Ini.h"
+#include "ini_text.h"
 #include "anchor.h"
 #include "audio/SaAudio.h"
 #include "body/ModelView.h"
@@ -194,9 +195,61 @@ namespace AhShitRim::PlayerSync
             return LookSensitivity::Checked({ min->GetFloat(), max->GetFloat() }, a_fallback);
         }
 
+        // The look sliders' live values written into SkyrimPrefs.ini itself (the prefs collection's own file, its [Controls]),
+        // the rest of the file as it was. Skyrim's WriteAllSettings, called here, left the file untouched (a test session:
+        // its date and both values stayed), so the move to the middle lasted only until Skyrim quit. False when it can't.
+        // a_to: write the result there instead (the test kit's copy), the player's file only read.
+        bool WriteLookPrefs(const std::filesystem::path* a_to = nullptr)
+        {
+            auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
+            if (!prefs || !prefs->subKey[0]) {
+                SKSE::log::warn("player sync: no SkyrimPrefs.ini path to write the look sliders to");
+                return false;
+            }
+            // The collection's own path; relative, it's beside SKSE's log folder (My Games\Skyrim Special Edition).
+            std::filesystem::path path(prefs->subKey);
+            if (path.is_relative()) {
+                const auto logs = SKSE::log::log_directory();
+                if (!logs) {
+                    SKSE::log::warn("player sync: SkyrimPrefs.ini's path ({}) is relative and there's no log folder to find it by", prefs->subKey);
+                    return false;
+                }
+                path = logs->parent_path() / path.filename();
+            }
+            std::string text;
+            if (std::ifstream in(path, std::ios::binary); in) {
+                text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+            if (text.empty()) {
+                SKSE::log::warn("player sync: {} is missing or empty: the look sliders aren't written to it", path.string());
+                return false;
+            }
+            for (auto [setting, name] : { std::pair{ state.mouseSensitivity, LookSensitivity::kMouseSetting },
+                     std::pair{ state.padSensitivity, LookSensitivity::kPadSetting } }) {
+                if (!setting) {
+                    continue;
+                }
+                const std::string_view full(name);  // "fMouseHeadingSensitivity:Controls"
+                const auto             colon = full.find(':');
+                text = IniText::WithValue(text, full.substr(colon + 1), full.substr(0, colon), std::format("{:.4f}", setting->GetFloat()));
+            }
+            if (a_to) {
+                path = *a_to;
+            }
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out << text;
+            if (!out.flush()) {
+                SKSE::log::warn("player sync: couldn't write the look sliders to {}", path.string());
+                return false;
+            }
+            SKSE::log::info("player sync: wrote the look sliders to {} (the prefs collection's path: {})", path.string(), prefs->subKey);
+            return true;
+        }
+
         // Once (until [Input] LookReset=1 is recorded): both look sliders to their middle, San Andreas's own speed, so
-        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini.
-        void ResetLookOnce()
+        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini (unless
+        // a_write is false: the test kit's replay, whose session prefs aren't the file on disk).
+        void ResetLookOnce(bool a_write = true)
         {
             const auto recorded = Ini::Value("Input", "LookReset");
             if (!LookSensitivity::ResetDue(recorded) || (!state.mouseSensitivity && !state.padSensitivity)) {
@@ -211,8 +264,8 @@ namespace AhShitRim::PlayerSync
                         name, old, setting->GetFloat(), LookSensitivity::Scale(old, range));
                 }
             }
-            if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton()) {
-                prefs->WriteAllSettings();  // as Skyrim's Settings menu does on closing
+            if (a_write && !WriteLookPrefs()) {
+                return;  // not recorded: tried again next start
             }
             if (Ini::Set("Input", "LookReset", "1", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)")) {
                 SKSE::log::info("player sync: recorded [Input] LookReset=1 in {}", Ini::kPath);
@@ -1928,6 +1981,33 @@ namespace AhShitRim::PlayerSync
     }
 
     int DebugPadCheats() { return state.padCheatsDone; }
+
+    DebugLookState DebugLook()
+    {
+        return DebugLookState{ .mouse = state.mouseSensitivity ? state.mouseSensitivity->GetFloat() : 0.0f,
+            .pad = state.padSensitivity ? state.padSensitivity->GetFloat() : 0.0f, .mouseMin = state.mouseRange.min, .mouseMax = state.mouseRange.max,
+            .padMin = state.padRange.min, .padMax = state.padRange.max, .mouseScale = LookScale(state.mouseSensitivity, false),
+            .padScale = LookScale(state.padSensitivity, true) };
+    }
+
+    void DebugSetLook(float a_mouse, float a_pad)
+    {
+        if (a_mouse >= 0.0f && state.mouseSensitivity) {
+            state.mouseSensitivity->data.f = a_mouse;
+        }
+        if (a_pad >= 0.0f && state.padSensitivity) {
+            state.padSensitivity->data.f = a_pad;
+        }
+    }
+
+    bool DebugResetLook(const std::filesystem::path& a_copy)
+    {
+        Ini::Set("Input", "LookReset", "0", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)");
+        // Not written to SkyrimPrefs.ini: in a test session the file on disk is the player's own once Skyrim has loaded.
+        // The same write goes to a_copy instead.
+        ResetLookOnce(false);
+        return WriteLookPrefs(&a_copy);
+    }
 
     void DebugStick(bool a_right, float a_x, float a_y)
     {
