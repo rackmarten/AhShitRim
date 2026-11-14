@@ -16,7 +16,10 @@
 // [245 to 725; CJ's sprint, about 600 units/s, outruns Skyrim's follower run, 2050 behind at most]; once gathered and
 // once caught up, each stands over 105 off CJ (1.5 m: on Skyrim's follower package they keep 256 to 384 off, never glued
 // to him; the route itself runs CJ back through where they wait, so the closest pass isn't a check). CJ: each walk
-// takes no more than about twice its time on open ground, so the crew never holds him up [13, 3 and 5 s]. Contacts
+// takes no more than about twice its time on open ground, so the crew never holds him up [13, 3 and 5 s]. Last, a follower
+// put 70 m behind (asr.stray) while CJ stands is put back (about 9 m behind him, out of view) and walks up: all three are
+// within 800 (11 m; the follower package settles three of them 241 to 716 off a standing CJ) 12 s later; before, a
+// regrouped homie stood 18 m off (1251) until CJ was 25 m away. Contacts
 // with fences and walls aren't in the summary (the kit counts them for references, and the homies are targets here:
 // their references are made at run time); each sample's details carry want, got and obstacle [at most 0.2 s a homie].
 {
@@ -68,6 +71,10 @@
       "expect": ["followers.0.followPackage == true", "followers.1.followPackage == true", "followers.2.followPackage == true",
                  "followers.0.distance > 105", "followers.1.distance > 105", "followers.2.distance > 105"] },
     { "label": "all three still follow", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "following == 3" },
+    { "label": "one left far behind, as a car or a sprint leaves him", "cmd": "asr.stray", "metres": 70, "expect": "metres > 50" },
+    { "label": "CJ stands: the regroup puts him back and he walks up", "cmd": "wait", "seconds": 12 },
+    { "label": "all three back with CJ (within 11 m: Skyrim's follower package settles three of them 3.5 to 10 m off)", "cmd": "asr.crew", "recruit": 0, "thanes": 2,
+      "expect": ["followers.0.distance < 800", "followers.1.distance < 800", "followers.2.distance < 800"] },
     { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]

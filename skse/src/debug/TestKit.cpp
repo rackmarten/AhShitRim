@@ -829,6 +829,18 @@ namespace AhShitRim::TestKit
                     return JsonObject{ { "ref", SkseTestKit::FormId(hurt->GetFormID()) }, { "dead", hurt->IsDead() } };
                 });
 
+            SkseTestKit::AddCommand("asr.stray", "[metres]",
+                "Puts CJ's first follower metres (70) behind the player, as a car ride or a sprint leaves one: the regroup should bring him "
+                "back near CJ, and he walks up. Answers with how far he was put",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    const float put = Homies::DebugStray(RE::PlayerCharacter::GetSingleton(), static_cast<float>(a_call.Number("metres", 70.0)));
+                    if (put < 0.0f) {
+                        throw Error("no follower, or no ground that far behind the player");
+                    }
+                    return JsonObject{ { "metres", Round(put, 0.1) } };
+                });
+
             SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",
                 "The crew's counters since the last reset: Skyrim subtitles of theirs taken off and voice handles stopped (Hush), puts "
                 "of the follow package, gear taken off, and everyone a follower has had as his target (targeted, refs)",
@@ -894,8 +906,14 @@ namespace AhShitRim::TestKit
                     return [recruit, joined](Call& a_call) -> std::optional<Json> {
                         auto* player = RE::PlayerCharacter::GetSingleton();
                         if (!*joined) {
-                            if (Homies::DebugCount(false) < recruit && a_call.Frames() % 120 == 0) {
-                                Homies::DebugFresh();  // the spots fill even where the camera looks
+                            // The spots near CJ fill first, also where the camera looks (a spot fills out of view, and
+                            // after another scenario the camera may face the stables: the nearest homies would be
+                            // the gate's, 58 m off, and the regroup would leave them 18 m behind CJ).
+                            if (recruit > 0 && (a_call.Frames() == 0 || (Homies::DebugCount(false) < recruit && a_call.Frames() % 120 == 0))) {
+                                Homies::DebugFresh();
+                            }
+                            if (recruit > 0 && a_call.Seconds() < 1.5) {
+                                return std::nullopt;
                             }
                             if (Homies::DebugCount(false) < recruit && a_call.Seconds() < 25.0) {
                                 return std::nullopt;  // the spots fill out of view, a few seconds after the Thane read

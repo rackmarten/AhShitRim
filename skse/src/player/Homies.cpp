@@ -45,6 +45,7 @@ namespace AhShitRim::Homies
         constexpr int        kRegroupTries = 5;          // spots behind CJ tried to put a straggler back on
         constexpr float      kRegroupRise = 300.0f;      // units: a spot this far above or below the player is a ledge
         constexpr float      kRegroupGain = 10.0f;       // metres nearer CJ a straggler must come to be moved at all
+        constexpr float      kRegroupNear = 650.0f;      // units behind CJ a straggler is put first (out of view: the camera is behind CJ)
         constexpr std::uint32_t kCopyBase = 0x6A000000;  // even ids for the homies' copies of San Andreas's models
 
         // The stables and the open towns' ways in (Skyrim.esm's spots, as the parked vehicles' table has them), in
@@ -672,7 +673,9 @@ namespace AhShitRim::Homies
             return Crew::kFollowerMax - 1;
         }
 
-        void TellPlace(RE::PlayerCharacter* a_player, Homie& a_homie)
+        // a_repath: he was just moved (a regroup), so his package starts over from where he is now: still running from
+        // before the move, it kept him standing there until CJ was 25 m off (the test kit saw it).
+        void TellPlace(RE::PlayerCharacter* a_player, Homie& a_homie, bool a_repath = false)
         {
             auto* actor = Get(a_homie);
             if (!actor) {
@@ -683,7 +686,9 @@ namespace AhShitRim::Homies
                 // 5.5 m off and stops there. Put on him as a temporary package, which his AI drops when it re-evaluates
                 // (a fight called off, a door): looked at again every kFollowEvery.
                 a_homie.offsetIn = kFollowEvery;
-                if (actor->GetCurrentPackage() == state.follow) {
+                if (a_repath) {
+                    actor->EvaluatePackage(true, false);
+                } else if (actor->GetCurrentPackage() == state.follow) {
                     return;
                 }
                 actor->PutCreatedPackage(state.follow, true, false, true);
@@ -708,8 +713,11 @@ namespace AhShitRim::Homies
             const auto  feet = a_player->GetPosition();
             const auto  camera = Wanted::CameraOf(Flat(feet), a_viewHeading);
             const float was = a_actor->GetPosition().GetDistance(feet) / Crew::kMeter;
-            for (int i = 0; i < kRegroupTries; i++) {
-                const auto   spot = Wanted::SpawnSpot(Flat(feet), a_viewHeading, i, Wanted::kSpawnNear + 100.0f);
+            // About 9 m behind CJ first (behind the camera, so out of view, and near enough that he walks straight up),
+            // else the wanted level's near ring, 19 m.
+            for (int i = 0; i < 2 * kRegroupTries; i++) {
+                const float  distance = i < kRegroupTries ? kRegroupNear : Wanted::kSpawnNear + 100.0f;
+                const auto   spot = Wanted::SpawnSpot(Flat(feet), a_viewHeading, i % kRegroupTries, distance);
                 RE::NiPoint3                     at;
                 RE::NiPointer<RE::TESObjectREFR> marker;
                 if (!GroundAt(a_player, RE::NiPoint3(spot.x, spot.y, feet.z + 50.0f), at, &marker) || std::abs(at.z - feet.z) > kRegroupRise ||
@@ -717,7 +725,7 @@ namespace AhShitRim::Homies
                     continue;
                 }
                 a_actor->MoveTo(marker.get());  // into the marker's cell, which SetPosition wouldn't change
-                TellPlace(a_player, a_homie);
+                TellPlace(a_player, a_homie, true);
                 state.regrouped++;
                 SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back {:.0f} m behind him", a_homie.id, was, at.GetDistance(feet) / Crew::kMeter);
                 return;
@@ -735,7 +743,7 @@ namespace AhShitRim::Homies
                     const bool  seen = Wanted::InView(camera, a_viewHeading, Flat(at));
                     if (was - off >= kRegroupGain && std::abs(at.z - feet.z) <= kRegroupRise && !seen) {
                         a_actor->MoveTo(marker.get());
-                        TellPlace(a_player, a_homie);
+                        TellPlace(a_player, a_homie, true);
                         state.regrouped++;
                         SKSE::log::info("homies: {:08X} was {:.0f} m off with no way to CJ: put back on the navmesh nearest him, {:.0f} m off", a_homie.id, was, off);
                         return;
