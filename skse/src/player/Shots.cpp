@@ -6,6 +6,7 @@
 #include "mega_punch.h"
 #include "player/CheatCodes.h"
 #include "player/Particles.h"
+#include "player/PlayerSync.h"
 #include "player/Chatter.h"
 #include "player/ObjectHits.h"
 #include "player/CombatBalance.h"
@@ -48,6 +49,7 @@ namespace AhShitRim::Shots
             Damage::SkillHits                hits;
             RE::COL_LAYER                    layer = RE::COL_LAYER::kProjectile;
             RE::BGSImpactDataSet*            bulletSet = nullptr;
+            BlowDebug                        lastBlow;  // the test kit's view (DebugLastBlow)
             RE::BGSImpactDataSet*            bladeSet = nullptr;
             RE::BGSImpactDataSet*            bluntSet = nullptr;
             ProcessHitFn                     processHit = nullptr;
@@ -574,13 +576,14 @@ namespace AhShitRim::Shots
                     MegaBlow(a_player, victim, a_shot, facing, sa);
                 } else {
                     // v38: Skyrim's sneak attack for a crouched knife blow on someone who doesn't detect the player.
-                    const float sneak = a_shot.weaponType == Weapons::Knife && a_player->IsSneaking()
+                    const float sneak = a_shot.weaponType == Weapons::Knife && Damage::CrouchedBlow(a_player->IsSneaking(), PlayerSync::SinceCrouched())
                                             ? Damage::SneakMultiplier(a_shot.weaponType, true, actor->RequestDetectionLevel(a_player) > 0)
                                             : 1.0f;
                     if (sneak > 1.0f) {
                         sa *= sneak;
                         SneakAttack(actor, sneak);
                     }
+                    state.lastBlow = { state.lastBlow.blows + 1, actor->GetFormID(), a_shot.weaponType, sneak, landed, sa };
                     Hurt(a_player, victim, a_shot, facing, sa);
                 }
                 landedAny = true;
@@ -721,4 +724,6 @@ namespace AhShitRim::Shots
     }
 
     Damage::Class ClassOf(RE::Actor* a_actor) { return ClassOfRace(a_actor); }
+
+    BlowDebug DebugLastBlow() { return state.lastBlow; }
 }

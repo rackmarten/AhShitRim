@@ -42,4 +42,17 @@ namespace AhShitRim::Shots
 
     // Who a_actor is to the damage table: a giant or mammoth, a dragon, or anyone else.
     Damage::Class ClassOf(RE::Actor* a_actor);
+
+    // The test kit (debug): CJ's blows landed so far, and the last one's victim, weapon, sneak attack multiplier (1
+    // without one), how well it landed (Damage::Blows) and San Andreas's damage after both.
+    struct BlowDebug
+    {
+        int          blows = 0;
+        RE::FormID   victim = 0;
+        std::uint8_t weapon = 0;
+        float        sneak = 1.0f;
+        float        landed = 0.0f;
+        float        saDamage = 0.0f;
+    };
+    BlowDebug DebugLastBlow();
 }

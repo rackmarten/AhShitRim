@@ -196,11 +196,17 @@ never need it). To use it:
    | `asr.oil [seconds=]` | places three fresh oil pools on Bleak Falls Barrow's first floor (the player there first), lights them by a bullet, a Molotov and a rocket through `ObjectHits`, answers once they burnt out: per pool its lowest health and whether it burned | `asr.oil` |
    | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
    | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers | `asr.crew recruit=3 thanes=2` |
+   | `asr.victim [meters] [toward=]` | a calm Whiterun guard `meters` (1.05) ahead of CJ, his back to him (the one placed before taken out) | `asr.victim 0.9` |
+   | `asr.seated [radius] [lean=]`, `asr.behind [ref] [meters]` | the nearest person on a chair or a bench (`lean=true`: or leaning on a counter, the same sit state) a stealth kill may take, with room behind (no guards: they lean on walls); Skyrim's player put `meters` behind them, before `asr.cj` | `asr.seated 6000 lean=true` |
+   | `asr.stealth [until] [crouch=] [aim=]` | the knife stealth kill as a player does it (crouch, the right button held `aim` s, the left clicked): answers at the `grab`, the `stab` or once it's `over`, with the victim and CJ against where they stood at the grab | `asr.stealth until=grab crouch=true` |
+   | `asr.swing [ref] [crouch=]` | one knife blow on the victim, crouched or not: the health it took, the sneak attack multiplier, and `vsLast` against the last swing's | `asr.swing crouch=true` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
    rearRight|rearLeft>[@slot]` (a vehicle's lamp dummy in its whole frame, slope included) and `asr.homie:<n>` (CJ's nth
-   follower, with his character controller's numbers in its details, since the kit records a target by its place).
+   follower, with his character controller's numbers in its details, since the kit records a target by its place);
+   `asr.cj:` (CJ's feet in Skyrim's world) and `asr.victim:` (the stealth kill's victim's feet, with dead, in a kill move
+   and ragdolled in its details).
 
    `scenarios/test-kit-smoke.json` runs them all with checks. The in-game tests are scenarios too (`scenarios/README.md`
    lists them, their starts and saves); their commands (`skse/src/debug/`, game logic kept apart from the kit):

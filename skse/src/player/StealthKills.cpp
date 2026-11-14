@@ -28,6 +28,7 @@ namespace AhShitRim::StealthKills
             RE::NiPoint3 pushed;           // how far the move pushed the player since last frame
             RE::NiPoint3 pinAt;            // the victim's feet and heading at the grab, where it's held for the move
             float        pinHeading = 0.0f;
+            Debug        debug;            // the test kit's view (DebugState)
         } state;
 
         constexpr int kTraceFrames = 24;
@@ -145,11 +146,14 @@ namespace AhShitRim::StealthKills
                     state.moving = a_actor->GetFormID();
                     state.movingFor = 0.0f;
                     state.confirmed = false;
+                    state.owed = false;
                     state.loggedIdles = true;
                     state.traced = 0;
                     state.pushed = {};
                     state.pinAt = at;
                     state.pinHeading = a_actor->GetAngleZ();
+                    state.debug.idle = move.editorId;
+                    state.debug.moveSeconds = 0.0f;
                     SKSE::log::info("stealth kill: {} plays on {} ({:08X})", move.editorId, a_actor->GetName(), a_actor->GetFormID());
                     Trace(a_player, a_actor);
                     return true;
@@ -170,6 +174,12 @@ namespace AhShitRim::StealthKills
             }
             state.held = a_actor->GetFormID();
             state.heldFor = 0.0f;
+            state.debug.grabs++;
+            state.debug.victim = state.held;
+            state.debug.grabbedAt = a_actor->GetPosition();
+            state.debug.died = false;
+            state.debug.idle = {};
+            state.debug.moveSeconds = 0.0f;
             const auto at = a_actor->GetPosition();
             SKSE::log::info("stealth kill: CJ grabs {} ({:08X}) {:.2f} m off", a_actor->GetName(), a_actor->GetFormID(),
                 feet.GetDistance(at) * Pose::kMetersPerUnit);
@@ -203,6 +213,8 @@ namespace AhShitRim::StealthKills
                 }
             }
             state.kills++;
+            state.debug.stabs++;
+            state.debug.died = dead;
             SKSE::log::info("stealth kill #{}: CJ stabs {} ({:08X}){}{}", state.kills, a_actor->GetName(), a_actor->GetFormID(),
                 dead ? ", who dies" : ", who lives (Skyrim's hit didn't kill)", killMove ? " in the kill move" : ", into a ragdoll");
         }
@@ -308,6 +320,7 @@ namespace AhShitRim::StealthKills
                 }
                 state.moving = 0;
             } else if (state.confirmed && (!in || state.movingFor >= StealthKill::kKillMoveMax)) {
+                state.debug.moveSeconds = state.movingFor;
                 SKSE::log::info("stealth kill: the kill move on {:08X} is over after {:.2f} s, the victim {}", state.moving, state.movingFor,
                     victim && victim->IsDead() ? "dead" : "alive");
                 if (state.owed && victim && victim->IsDead()) {
@@ -338,9 +351,19 @@ namespace AhShitRim::StealthKills
         }
     }
 
+    Debug DebugState()
+    {
+        auto out = state.debug;
+        out.held = state.held;
+        out.killMove = state.moving != 0 && state.confirmed;
+        return out;
+    }
+
     void Clear()
     {
         state.held = 0;
         state.moving = 0;
+        state.confirmed = false;
+        state.owed = false;  // a move cut short (a re-anchor, Skyrim taking the player back) owes nobody a stab
     }
 }

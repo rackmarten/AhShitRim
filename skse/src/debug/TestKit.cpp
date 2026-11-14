@@ -18,8 +18,11 @@
 #include "player/ObjectHits.h"
 #include "player/PlayerSync.h"
 #include "ride.h"
+#include "player/Shots.h"
+#include "player/StealthKills.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
+#include "wanted.h"
 #include "weapons.h"
 
 // The Grove Street crew's command builds once the crew is in (player/Homies.h, protocol v39); before, asr.crew isn't
@@ -1768,6 +1771,406 @@ namespace AhShitRim::TestKit
                     };
                 });
         }
+
+        // ---- The knife stealth kill (v36): scenarios/stealth-kill.json ----
+
+        struct Kill
+        {
+            RE::FormID   victim = 0;
+            RE::NiPoint3 victimAt;  // where it stood at the grab
+            RE::NiPoint3 cjAt;      // CJ's feet then
+        } g_kill;
+        float      g_lastPerLanded = 0.0f;  // asr.swing's last health drop per landed (Damage::Blows), for vsLast
+        RE::FormID g_victim = 0;            // the last asr.victim placed or asr.seated found: asr.victim:, and ref's default
+        RE::FormID g_placed = 0;            // the last guard asr.victim placed, taken out by the next
+
+        RE::NiPoint3 CjFeet()
+        {
+            RE::NiPoint3 feet;
+            float        heading = 0.0f;
+            if (!PlayerSync::DebugCj(feet, heading)) {
+                throw Error("San Andreas doesn't have the player: asr.cj first");
+            }
+            return feet;
+        }
+
+        float Flat(const RE::NiPoint3& a_a, const RE::NiPoint3& a_b) { return std::hypot(a_a.x - a_b.x, a_a.y - a_b.y); }
+
+        Json Spot(const RE::NiPoint3& a_p) { return JsonObject{ { "x", Round(a_p.x, 0.1) }, { "y", Round(a_p.y, 0.1) }, { "z", Round(a_p.z, 0.1) } }; }
+
+        RE::Actor* ActorArg(Call& a_call)
+        {
+            if (!a_call.Has("ref") || a_call.Text("ref") == "victim") {
+                auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr;
+                if (!victim) {
+                    throw Error("no victim: asr.victim or asr.seated first, or ref=");
+                }
+                return victim;
+            }
+            auto* ref = SkseTestKit::FindRef(a_call.Text("ref"));
+            auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+            if (!actor) {
+                throw Error("ref isn't an actor");
+            }
+            return actor;
+        }
+
+        // Whether there's room to stand behind a_actor, from half a metre (its seat's back) to a_meters + 0.35, at
+        // waist height: nothing in the way on Skyrim's line-of-sight layer (walls, tables, doors).
+        bool RoomBehind(RE::Actor* a_actor, float a_meters)
+        {
+            auto* cell = a_actor->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return false;
+            }
+            const float        heading = a_actor->GetAngleZ();
+            const RE::NiPoint3 back(-std::sin(heading), -std::cos(heading), 0.0f);
+            const RE::NiPoint3 waist = a_actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 60.0f);
+            const auto         from = waist + back * (0.5f * Pose::kUnitsPerMeter);
+            const auto         to = waist + back * ((a_meters + 0.35f) * Pose::kUnitsPerMeter);
+            const float        scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            input.from = RE::hkVector4(from.x * scale, from.y * scale, from.z * scale, 0.0f);
+            input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+            RE::hkpWorldRayCastOutput output;
+            RE::BSReadLockGuard       lock(bhk->worldLock);
+            world->CastRay(input, output);
+            return !output.HasHit();
+        }
+
+        // Whether the furniture a_actor uses is a seat (a chair, a bench), not something to lean on.
+        bool OnASeat(RE::Actor* a_actor)
+        {
+            const auto furniture = a_actor->GetOccupiedFurniture().get();
+            auto*      base = furniture ? furniture->GetBaseObject() : nullptr;
+            auto*      seat = base ? base->As<RE::TESFurniture>() : nullptr;
+            return seat && seat->furnFlags.any(RE::TESFurniture::ActiveMarker::kCanSit) && seat->furnFlags.none(RE::TESFurniture::ActiveMarker::kCanLean);
+        }
+
+        float HealthOf(RE::Actor* a_actor) { return a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth); }
+
+        // CJ crouched (San Andreas toggles it on the press) or standing, as Skyrim's player sneaks: presses crouch every
+        // 1.5 s until Skyrim's player is as asked. True once it is.
+        bool Crouch(Call& a_call, bool a_crouch)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (player && player->IsSneaking() == a_crouch) {
+                return true;
+            }
+            const bool press = std::fmod(a_call.Seconds(), 1.5) < 0.15;
+            PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCrouch }) : std::nullopt);
+            return false;
+        }
+
+        // The knife in CJ's hands (asr.give 4 first): asks San Andreas for it; true once his pose holds it.
+        bool KnifeInHands()
+        {
+            const auto pose = CjPose();
+            if (pose && pose->weaponType == Weapons::Knife) {
+                return true;
+            }
+            if (!Arms::DebugHoldWeapon(Weapons::Knife)) {
+                throw Error("CJ doesn't carry the knife: asr.give 4 first");
+            }
+            return false;
+        }
+
+        // The victim and CJ against where they stood at the grab, flat, in units.
+        JsonObject KillState(RE::Actor* a_victim)
+        {
+            auto*      player = RE::PlayerCharacter::GetSingleton();
+            const auto cj = CjFeet();
+            const auto debug = StealthKills::DebugState();
+            JsonObject out{ { "victim", SkseTestKit::FormId(g_kill.victim) }, { "sneaking", player->IsSneaking() }, { "cj", Spot(cj) },
+                { "cjMoved", Round(Flat(cj, g_kill.cjAt), 0.1) }, { "playerFromCj", Round(Flat(player->GetPosition(), cj), 0.1) },
+                { "grabs", debug.grabs }, { "stabs", debug.stabs }, { "held", debug.held != 0 } };
+            if (a_victim) {
+                const auto at = a_victim->GetPosition();
+                out.Set("at", Spot(at));
+                out.Set("victimMoved", Round(Flat(at, g_kill.victimAt), 0.1));
+                out.Set("cjToVictim", Round(Flat(cj, at) * Pose::kMetersPerUnit, 0.01));
+                out.Set("victimDead", a_victim->IsDead());
+                out.Set("health", Round(HealthOf(a_victim), 0.1));
+                out.Set("inKillMove", a_victim->IsInKillMove());
+                out.Set("ragdoll", a_victim->IsInRagdollState());
+            }
+            return out;
+        }
+
+        void AddStealthKills()
+        {
+            SkseTestKit::AddTarget("asr.cj", "", "CJ's feet in Skyrim's world, where San Andreas's last pose puts him, facing his way", [](std::string_view) {
+                RE::NiPoint3 feet;
+                float        heading = 0.0f;
+                if (!PlayerSync::DebugCj(feet, heading)) {
+                    throw Error("San Andreas doesn't have the player");
+                }
+                return SkseTestKit::Place{ .x = feet.x, .y = feet.y, .z = feet.z, .heading = heading };
+            });
+
+            SkseTestKit::AddTarget("asr.victim", "", "The last guard asr.victim placed or person asr.seated found: its feet, facing its way",
+                [](std::string_view) {
+                    auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr;
+                    if (!victim) {
+                        throw Error("no victim: asr.victim or asr.seated first");
+                    }
+                    const auto at = victim->GetPosition();
+                    return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = victim->GetAngleZ(),
+                        .details = JsonObject{ { "dead", victim->IsDead() }, { "inKillMove", victim->IsInKillMove() }, { "ragdoll", victim->IsInRagdollState() } } };
+                });
+
+            SkseTestKit::AddCommand("asr.victim", "[meters] [toward=<bool>]",
+                "Places a Whiterun guard meters (1.05) ahead of CJ, his back to him (toward=true: facing him), and takes out the one it placed "
+                "before (dead or alive); answers with the guard",
+                [](Call& a_call) -> Json {
+                    RE::NiPoint3 feet;
+                    float        heading = 0.0f;
+                    if (!PlayerSync::DebugCj(feet, heading)) {
+                        throw Error("San Andreas doesn't have the player: asr.cj first");
+                    }
+                    if (auto* before = g_placed ? RE::TESForm::LookupByID<RE::Actor>(g_placed) : nullptr; before && !before->IsDisabled()) {
+                        before->Disable();
+                        before->SetDelete(true);
+                    }
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
+                    auto  placed = player && base ? player->PlaceObjectAtMe(base, false) : nullptr;
+                    auto* ref = placed ? placed->As<RE::Actor>() : nullptr;
+                    if (!ref) {
+                        throw Error("couldn't place a Whiterun guard");
+                    }
+                    const float meters = static_cast<float>(a_call.Number("meters", 1.05));
+                    const auto  at = feet + RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * (meters * Pose::kUnitsPerMeter);
+                    ref->SetPosition(at, true);
+                    ref->SetHeading(a_call.Flag("toward", false) ? heading + std::numbers::pi_v<float> : heading);
+                    // Calm: a guard placed while the last kill's alarm still runs would come out fighting CJ (whom a stealth
+                    // kill rightly refuses, as San Andreas does someone attacking him).
+                    ref->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, 0.0f);
+                    ref->StopCombat();
+                    g_victim = ref->GetFormID();
+                    g_placed = g_victim;
+                    return JsonObject{ { "ref", SkseTestKit::FormId(ref->GetFormID()) }, { "name", ref->GetName() }, { "at", Spot(at) },
+                        { "distance", Round(Flat(at, feet) * Pose::kMetersPerUnit) } };
+                });
+
+            SkseTestKit::AddCommand("asr.seated", "[radius] [lean=<bool>]",
+                "The nearest loaded person sitting on furniture within radius (4000) of the player that a stealth kill may take (not a "
+                "child, not essential; not a guard, who leans on a wall; on a chair or a bench, or with lean=true leaning on a counter; with "
+                "room to stand behind them), with its sit state",
+                [](Call& a_call) -> Json {
+                    auto*       player = RE::PlayerCharacter::GetSingleton();
+                    auto*       lists = RE::ProcessLists::GetSingleton();
+                    const float radius = static_cast<float>(a_call.Number("radius", 4000.0));
+                    const bool  lean = a_call.Flag("lean", false);  // also someone leaning on a counter (the same sit state)
+                    if (!player || !lists) {
+                        throw Error("no player yet");
+                    }
+                    RE::Actor*  best = nullptr;
+                    float       bestDistance = radius;
+                    std::string others;  // the seated it can't take, and why
+                    for (auto& handle : lists->highActorHandles) {
+                        auto  actor = handle.get();
+                        auto* state = actor ? actor->AsActorState() : nullptr;
+                        if (!actor || actor.get() == player || !state || !StealthKill::Seated(static_cast<std::uint32_t>(state->GetSitSleepState()))) {
+                            continue;
+                        }
+                        if (std::string_view(actor->GetName()).find("Guard") != std::string_view::npos) {
+                            continue;  // guards lean on walls, where nobody stands behind them
+                        }
+                        // On a chair or a bench, not leaning on a counter or a wall (the same sit state): its furniture
+                        // a seat, not a lean.
+                        if (!lean && !OnASeat(actor.get())) {
+                            others += std::format("{}{} (leaning, not on a seat)", others.empty() ? "" : ", ", actor->GetName());
+                            continue;
+                        }
+                        if (!RoomBehind(actor.get(), 1.05f)) {
+                            others += std::format("{}{} (no room behind)", others.empty() ? "" : ", ", actor->GetName());
+                            continue;
+                        }
+                        if (const auto why = StealthKill::Excluded(Weapons::Knife, StealthKills::TargetOf(actor.get(), player)); why != StealthKill::Verdict::Yes) {
+                            others += std::format("{}{} ({})", others.empty() ? "" : ", ", actor->GetName(), StealthKill::Why(why));
+                            continue;
+                        }
+                        const float d = actor->GetPosition().GetDistance(player->GetPosition());
+                        if (d < bestDistance) {
+                            best = actor.get();
+                            bestDistance = d;
+                        }
+                    }
+                    if (!best) {
+                        throw Error(std::format("nobody a stealth kill may take sits within {:.0f} of the player (seated: {})", radius, others.empty() ? "none" : others));
+                    }
+                    g_victim = best->GetFormID();
+                    return JsonObject{ { "ref", SkseTestKit::FormId(best->GetFormID()) }, { "name", best->GetName() }, { "at", Spot(best->GetPosition()) },
+                        { "heading", Round(best->GetAngleZ()) }, { "sitState", static_cast<int>(best->AsActorState()->GetSitSleepState()) },
+
+                        { "distance", Round(bestDistance, 1.0) } };
+                });
+
+            SkseTestKit::AddCommand("asr.behind", "[ref] [meters]",
+                "Puts Skyrim's player (asr.cj on=false first) meters (1.05) behind ref (the last asr.victim or asr.seated), facing the way it faces, for a handover there",
+                [](Call& a_call) -> Json {
+                    if (PlayerSync::DebugOwned()) {
+                        throw Error("San Andreas has the player: asr.cj on=false first");
+                    }
+                    auto*       player = RE::PlayerCharacter::GetSingleton();
+                    auto*       victim = ActorArg(a_call);
+                    const float meters = static_cast<float>(a_call.Number("meters", 1.05));
+                    const float heading = victim->GetAngleZ();
+                    const auto  at = victim->GetPosition() - RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * (meters * Pose::kUnitsPerMeter);
+                    player->SetPosition(at, true);
+                    player->SetHeading(heading);
+                    return JsonObject{ { "at", Spot(at) }, { "heading", Round(heading) } };
+                });
+
+            SkseTestKit::AddTask("asr.stealth", "[until] [crouch=<bool>] [aim=<seconds>]",
+                "CJ's knife stealth kill on his lock-on target, as a player does it. until=grab (crouched first with crouch=true, the right "
+                "button held aim (1.2) s, then the left one clicked) answers in the frame Skyrim takes the grab; until=stab in the frame of "
+                "the stab; until=over once the victim is dead and let go. Each answers with the victim and CJ (cjMoved, victimMoved: flat "
+                "units from where they stood at the grab; playerFromCj: Skyrim's hidden player from CJ)",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto   until = a_call.Text("until", "grab");
+                    const bool   crouch = a_call.Flag("crouch", false);
+                    const double aim = a_call.Number("aim", 1.2);
+                    if (until != "grab" && until != "stab" && until != "over") {
+                        throw Error("until is grab, stab or over");
+                    }
+                    if (until != "grab" && !g_kill.victim) {
+                        throw Error("no grab yet: asr.stealth until=grab first");
+                    }
+                    a_call.DefaultTimeout(15.0);
+                    struct Run
+                    {
+                        int    grabs = 0;
+                        int    stabs = 0;
+                        bool   ready = false;
+                        double readyAt = 0.0;
+                    };
+                    const auto before = StealthKills::DebugState();
+                    auto       run = std::make_shared<Run>(Run{ .grabs = before.grabs, .stabs = before.stabs });
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        const auto debug = StealthKills::DebugState();
+                        if (until == "grab") {
+                            if (debug.grabs > run->grabs) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                g_kill = { debug.victim, debug.grabbedAt, CjFeet() };
+                                return KillState(RE::TESForm::LookupByID<RE::Actor>(debug.victim));
+                            }
+                            if (!run->ready) {
+                                if (!KnifeInHands() || (crouch && !Crouch(a_call, true))) {
+                                    return std::nullopt;
+                                }
+                                run->ready = true;
+                                run->readyAt = a_call.Seconds();
+                            }
+                            const double held = a_call.Seconds() - run->readyAt;
+                            if (held > aim + 3.0) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                std::string why = "no victim placed";
+                                if (auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr) {
+                                    const auto feet = CjFeet();
+                                    const auto target = StealthKills::TargetOf(victim, RE::PlayerCharacter::GetSingleton());
+                                    const auto verdict = StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target);
+                                    why = std::format("{} is {} ({}{:.2f} m, {})", victim->GetName(), StealthKill::Why(verdict),
+                                        verdict == StealthKill::Verdict::NotStanding ? StealthKills::OffItsFeet(victim) + ", " : std::string(),
+                                        StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), victim->IsInCombat() ? "in combat" : "not in combat");
+                                }
+                                throw Error("no grab: " + why);
+                            }
+                            const bool click = held >= aim && held < aim + 0.25;
+                            PlayerSync::DebugHold(PlayerSync::DebugInput{ .buttons = Protocol::kButtonAim | (click ? Protocol::kButtonFire : 0u) });
+                            return std::nullopt;
+                        }
+                        auto* victim = RE::TESForm::LookupByID<RE::Actor>(g_kill.victim);
+                        if (until == "stab") {
+                            return debug.stabs > run->stabs ? std::optional<Json>(KillState(victim)) : std::nullopt;
+                        }
+                        if (victim && victim->IsDead() && debug.held == 0 && !victim->IsInKillMove()) {
+                            return KillState(victim);
+                        }
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.swing", "[ref] [crouch=<bool>]",
+                "CJ swings the knife once (the left button) at ref (the last asr.victim), crouched or standing (crouch, false) as Skyrim's player "
+                "sneaks; answers once the blow lands with ref's health before and after, the drop, the blow's sneak attack multiplier, how "
+                "well it landed (Damage::Blows), and vsLast: this drop per landed against the last asr.swing's",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto id = ActorArg(a_call)->GetFormID();
+                    const bool crouch = a_call.Flag("crouch", false);
+                    a_call.DefaultTimeout(12.0);
+                    struct Swing
+                    {
+                        bool             ready = false;
+                        double           readyAt = 0.0;
+                        int              blows = 0;
+                        float            before = 0.0f;
+                        int              after = -1;  // frames since it landed
+                        Shots::BlowDebug blow;
+                    };
+                    auto swing = std::make_shared<Swing>();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        if (!actor || !player) {
+                            throw Error("ref is gone");
+                        }
+                        if (!swing->ready) {
+                            if (!KnifeInHands() || !Crouch(a_call, crouch)) {
+                                return std::nullopt;
+                            }
+                            swing->ready = true;
+                            swing->readyAt = a_call.Seconds();
+                            swing->blows = Shots::DebugLastBlow().blows;
+                            swing->before = HealthOf(actor);
+                        }
+                        if (swing->after < 0) {
+                            const auto blow = Shots::DebugLastBlow();
+                            if (blow.blows > swing->blows && blow.victim == id) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                swing->blow = blow;
+                                swing->after = 0;
+                                return std::nullopt;
+                            }
+                            const double held = a_call.Seconds() - swing->readyAt;
+                            if (held > 4.0) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                throw Error("CJ's blow never landed on ref");
+                            }
+                            const bool press = held > 0.5 && held < 0.7;  // settled in the stance first
+                            PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonFire }) : std::nullopt);
+                            return std::nullopt;
+                        }
+                        if (++swing->after < 3) {
+                            return std::nullopt;  // Skyrim's hit applied
+                        }
+                        const float now = HealthOf(actor);
+                        const float drop = swing->before - now;
+                        const float perLanded = swing->blow.landed > 0.0f ? drop / swing->blow.landed : 0.0f;
+                        JsonObject  out{ { "before", Round(swing->before, 0.1) }, { "after", Round(now, 0.1) }, { "drop", Round(drop, 0.01) },
+                            { "sneak", Round(swing->blow.sneak) }, { "landed", Round(swing->blow.landed, 0.001) }, { "saDamage", Round(swing->blow.saDamage) },
+                            { "weapon", static_cast<int>(swing->blow.weapon) }, { "sneaking", player->IsSneaking() },
+                            { "detection", actor->RequestDetectionLevel(player) } };
+                        if (g_lastPerLanded > 0.0f) {
+                            out.Set("vsLast", Round(perLanded / g_lastPerLanded, 0.01));
+                        }
+                        g_lastPerLanded = perLanded;
+                        return out;
+                    };
+                });
+        }
     }
 
     void Load()
@@ -1778,6 +2181,7 @@ namespace AhShitRim::TestKit
             AddCommands();
             AddTests();
             AddFeatureChecks();
+            AddStealthKills();
         }
     }
 

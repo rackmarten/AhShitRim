@@ -46,6 +46,10 @@ namespace AhShitRim::PlayerSync
     // Whether the gamepad was the last thing used (DESIGN.md, Controller): the help box names its buttons ("LB: Open").
     bool PadInUse();
 
+    // Seconds since CJ was last seen crouching (Skyrim's player sneaking for him), -1 when never: Shots' sneak attack
+    // counts a knife blow swung from a crouch that stood him up (Damage::CrouchedBlow).
+    float SinceCrouched();
+
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
@@ -69,6 +73,8 @@ namespace AhShitRim::PlayerSync
     bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
     // The hit test's respawns scenario (debug): / pressed, Skyrim's wait menu as the key opens it.
     void DebugWait();
+    // The test kit: CJ's feet in Skyrim's world (where his last pose puts him) and his heading. False when San Andreas hasn't the player.
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading);
 
     void Restore(const Cosave::Record& a_record);
     void Revert();
