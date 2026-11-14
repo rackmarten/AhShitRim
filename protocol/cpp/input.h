@@ -253,7 +253,22 @@ namespace AhShitRim::Input
         float         moveX = 0.0f;
         float         moveY = 0.0f;
         std::uint32_t buttons = 0;
+        float         throttle = 0.0f;  // v40, in a vehicle: RT's pull, 0..1
+        float         brake = 0.0f;     // LT's
+        float         lean = 0.0f;      // the left stick's up and down, -1..1, up positive
     };
+
+    // A pull or a stick as the slot's analog byte: 0..1 -> 0..255, -1..1 -> -127..127.
+    constexpr std::uint8_t Pull(float a_value)
+    {
+        const float v = a_value < 0.0f ? 0.0f : a_value > 1.0f ? 1.0f : a_value;
+        return static_cast<std::uint8_t>(v * 255.0f + 0.5f);
+    }
+    constexpr std::int8_t Tilt(float a_value)
+    {
+        const float v = a_value < -1.0f ? -1.0f : a_value > 1.0f ? 1.0f : a_value;
+        return static_cast<std::int8_t>(v * 127.0f + (v < 0.0f ? -0.5f : 0.5f));
+    }
 
     // Accumulates held keys and mouse movement and produces the InputState to publish.
     class Builder
@@ -456,6 +471,9 @@ namespace AhShitRim::Input
             s.buttons |= _pad.buttons;
             if (s.moveX == 0.0f) s.moveX = _pad.moveX;
             if (s.moveY == 0.0f) s.moveY = _pad.moveY;
+            s.throttle = Pull(_pad.throttle);  // v40: the pad's analog driving
+            s.brake = Pull(_pad.brake);
+            s.lean = Tilt(_pad.lean);
             return s;
         }
 
@@ -549,6 +567,11 @@ namespace AhShitRim::Input
             // v23: W and S each held as they are, so both together are San Andreas's burnout (moveY cancels them out).
             p.buttonCross = a_input.moveY > 0.0f || (a_input.buttons & Protocol::kButtonAccelerate) ? 255 : 0;
             p.buttonSquare = a_input.moveY < 0.0f || (a_input.buttons & Protocol::kButtonBrake) ? 255 : 0;
+            // v40: the pad's triggers and stick as San Andreas reads them in pad mode 0, analog (CPad::GetAccelerate is
+            // ButtonCross as it is); a key held wins.
+            if (a_input.throttle && !(a_input.moveY > 0.0f)) p.buttonCross = a_input.throttle;
+            if (a_input.brake && !(a_input.moveY < 0.0f)) p.buttonSquare = a_input.brake;
+            if (a_input.lean && lean == 0.0f) p.leftStickY = static_cast<std::int16_t>(-a_input.lean * 128 / 127);
             p.rightShoulder1 = held(Protocol::kButtonHandbrake);
             p.shockButtonL = held(Protocol::kButtonHorn);
             p.buttonCircle = held(Protocol::kButtonFire | Protocol::kButtonVehicleFire);

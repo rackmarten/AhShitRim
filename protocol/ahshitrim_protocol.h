@@ -18,7 +18,7 @@
 namespace AhShitRim::Protocol
 {
     inline constexpr std::uint32_t kMagic = 0x4D525341;  // "ASRM" in memory
-    inline constexpr std::uint32_t kProtocolVersion = 38;
+    inline constexpr std::uint32_t kProtocolVersion = 40;
 
     // Shared memory section, per Windows session. Whichever game starts first creates it.
     inline constexpr const wchar_t* kMappingName = L"Local\\AhShitRim.Link";
@@ -190,6 +190,10 @@ namespace AhShitRim::Protocol
         std::uint16_t minuteOfDay;       // v36, with kSkyClock: Skyrim's time of day in minutes (0..1439), San Andreas's clock
         std::uint8_t  world;             // v37 (a reserved byte before): kWorld*, the worldspace the player is in now (parked vehicles' spots, protocol/cpp/parked.h)
         std::uint8_t  reserved3;
+        std::uint8_t  throttle;          // v40: the pad's RT in a vehicle, 0..255 (San Andreas's analog Cross); 0 = the buttons say
+        std::uint8_t  brake;             // v40: its LT, 0..255 (the analog Square); 0 = the buttons say
+        std::int8_t   lean;              // v40: the left stick's up and down in a vehicle, -127..127, up (lean forward, nose down) positive; 0 = the buttons say
+        std::uint8_t  reserved4[5];
     };
 
     inline constexpr std::uint8_t kSpawnAirborne = 0x1;  // InputState.spawnFlags: a plane comes flying, CJ at its controls (AIR + its name)
@@ -208,7 +212,7 @@ namespace AhShitRim::Protocol
         std::uint32_t seq;
         std::uint32_t reserved;
         InputState    value;
-        std::uint8_t  pad[8];  // v9: keeps the later slots on a 64-byte boundary (v24, v29, v36: fewer for the larger input)
+        // v9 to v38 a pad here kept the later slots on a 64-byte boundary; v40's larger input fills the 144 bytes itself
     };
 
     inline constexpr std::uint32_t kPlayerValid = 0x1;     // PlayerState.flags: San Andreas is simulating CJ for this handover
@@ -747,7 +751,7 @@ namespace AhShitRim::Protocol
     static_assert((offsetof(LinkHeader, peers) + sizeof(PeerInfo) + offsetof(PeerInfo, heartbeat)) % 8 == 0);
 
     // Slots. Doubles sit on 8-byte boundaries in the mapping.
-    static_assert(sizeof(InputState) == 128);
+    static_assert(sizeof(InputState) == 136);
     static_assert(offsetof(InputState, sky) == 115);
     static_assert(offsetof(InputState, minuteOfDay) == 124);
     static_assert(offsetof(InputState, world) == 126);

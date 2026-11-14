@@ -46,7 +46,6 @@ namespace AhShitRim::Pad
     inline constexpr std::uint32_t kRightTrigger = 0x000A;
 
     inline constexpr float kTriggerHeld = 0.3f;   // a trigger pulled this far holds its action
-    inline constexpr float kLeanHeld = 0.5f;      // the left stick this far up or down leans a bike (digital until the analog lean)
     inline constexpr float kTurretHeld = 0.5f;    // the right stick this far is a turret key (hydraulics, the Hydra's nozzles)
     inline constexpr float kBackHold = 1.0f;      // Back held this long hands the player over (F10)
     inline constexpr float kCameraPulse = 0.12f;  // a tap of Back holds the camera key this long, so San Andreas's frame sees it
@@ -203,10 +202,13 @@ namespace AhShitRim::Pad
                 f.insult = (pressed & kRightThumb) != 0;
             } else {
                 a.moveX = Clamp(_lx);  // steering, analog
+                // v40: the triggers and the stick's lean go as they are (InputState.throttle, brake, lean); the buttons stay
+                // for Skyrim's side (the burnout, the shop).
+                a.throttle = _rt;
+                a.brake = _lt;
+                a.lean = Clamp(_ly);
                 bit(rt, Protocol::kButtonAccelerate);
                 bit(lt, Protocol::kButtonBrake);
-                bit(_ly >= kLeanHeld, Protocol::kButtonLeanForward);
-                bit(_ly <= -kLeanHeld, Protocol::kButtonLeanBack);
                 bit(Held(kA), Protocol::kButtonVehicleFire);
                 bit(Held(kLeftShoulder), Protocol::kButtonVehicleFireAlt);
                 bit(Held(kRightShoulder), Protocol::kButtonHandbrake);
