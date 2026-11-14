@@ -898,6 +898,8 @@ namespace AhShitRim::SaHud
         state.help.Show(std::move(a_text), a_seconds);
     }
 
+    std::string DebugHelp() { return state.help.hold > 0.0f ? state.help.text : std::string(); }
+
     void PlayHudSound(HudSounds::Sound a_sound)
     {
         Protocol::FrontendSoundCommand command{};

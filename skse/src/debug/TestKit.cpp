@@ -11,6 +11,8 @@
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
 #include "hud/SkyrimMessages.h"
+#include "input.h"
+#include "cheats.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
 #include "player/Headlights.h"
@@ -2356,6 +2358,108 @@ namespace AhShitRim::TestKit
                         { "objectives", std::move(objectives) } };
                 });
         }
+
+        // ---- Keys through Skyrim's own input (the wait key, docs/DESIGN.md) ----
+
+        // A key event as the keyboard sends it, through Skyrim's input device manager: Skyrim's handlers (the menu open
+        // one with its user event, Wait for T) and AhShitRim's input sink see it as they see a real key.
+        void SendKey(std::uint32_t a_dik, bool a_down)
+        {
+            auto* devices = RE::BSInputDeviceManager::GetSingleton();
+            auto* map = RE::ControlMap::GetSingleton();
+            if (!devices) {
+                throw Error("no input device manager");
+            }
+            // The user event of the context on top (a menu's while one has the input: Escape is Cancel there, not Journal).
+            auto context = RE::ControlMap::InputContextID::kGameplay;
+            if (map && !map->GetRuntimeData().contextPriorityStack.empty()) {
+                context = map->GetRuntimeData().contextPriorityStack.back();
+            }
+            const RE::BSFixedString user(map ? map->GetUserEventName(a_dik, RE::INPUT_DEVICE::kKeyboard, context) : std::string_view{});
+            auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, user, a_dik, a_down ? 1.0f : 0.0f, a_down ? 0.0f : 0.1f);
+            if (!event) {
+                throw Error("no button event");
+            }
+            RE::InputEvent* chain = event;
+            devices->SendEvent(&chain);
+            RE::free(event);
+        }
+
+        // "T", "WANRLTW", "/", "dik:0x35": the scan codes, a US keyboard's places for letters and digits.
+        std::vector<std::uint32_t> ParseKeys(const std::string& a_keys)
+        {
+            std::vector<std::uint32_t> out;
+            if (a_keys.starts_with("dik:")) {
+                out.push_back(static_cast<std::uint32_t>(std::stoul(a_keys.substr(4), nullptr, 0)));
+                return out;
+            }
+            for (const char raw : a_keys) {
+                const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(raw)));
+                if (c == '/') {
+                    out.push_back(Input::kDikWait);
+                    continue;
+                }
+                std::uint32_t found = 0;
+                for (std::uint32_t dik = 1; dik < 0x100 && !found; dik++) {
+                    if (Cheats::LetterOf(dik) == c) {
+                        found = dik;
+                    }
+                }
+                if (!found) {
+                    throw Error(std::format("'{}' isn't a key asr.key knows (letters, digits, /, or dik:<code>)", raw));
+                }
+                out.push_back(found);
+            }
+            if (out.empty()) {
+                throw Error("no keys");
+            }
+            return out;
+        }
+
+        void AddKeyChecks()
+        {
+            SkseTestKit::AddTask("asr.key", "<keys> [frames=<n>] [close=<bool>]",
+                "Presses keys through Skyrim's own input, as the keyboard sends them (letters, digits, /, or dik:<code>), a press and a release "
+                "every two frames. Answers frames (20) later: whether Skyrim's wait menu opened meanwhile and what San Andreas's help box says "
+                "then; close=true (the default) closes the wait menu again",
+                [](Call& a_call) -> Step {
+                    const auto keys = ParseKeys(a_call.Text("keys"));
+                    const int  frames = static_cast<int>(a_call.Number("frames", 20.0));
+                    const bool close = a_call.Flag("close", true);
+                    struct Progress
+                    {
+                        std::size_t next = 0;
+                        bool        down = false;
+                        int         after = 0;
+                        bool        opened = false;
+                    };
+                    auto progress = std::make_shared<Progress>();
+                    return [keys, frames, close, progress, text = a_call.Text("keys")](Call&) -> std::optional<Json> {
+                        auto*      ui = RE::UI::GetSingleton();
+                        const bool open = ui && ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME);
+                        progress->opened = progress->opened || open;
+                        if (progress->next < keys.size()) {
+                            SendKey(keys[progress->next], !progress->down);
+                            if (progress->down) {
+                                progress->next++;
+                            }
+                            progress->down = !progress->down;
+                            return std::nullopt;
+                        }
+                        if (progress->after++ < frames) {
+                            return std::nullopt;
+                        }
+                        const auto help = SaHud::DebugHelp();
+                        if (close && open) {
+                            if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                                queue->AddMessage(RE::SleepWaitMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                            }
+                        }
+                        return JsonObject{ { "keys", text }, { "pressed", keys.size() }, { "waitMenu", progress->opened }, { "open", open && !close }, { "help", help },
+                            { "cj", PlayerSync::DebugOwned() } };
+                    };
+                });
+        }
     }
 
     void Load()
@@ -2368,6 +2472,7 @@ namespace AhShitRim::TestKit
             AddFeatureChecks();
             AddStealthKills();
             AddRespawnChecks();
+            AddKeyChecks();
         }
     }
 

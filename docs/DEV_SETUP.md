@@ -205,6 +205,7 @@ never need it). To use it:
    | `asr.killed [forget=]` | everyone `asr.kill` killed: dead or up, waiting to come back, held in view, how far from their editor spot; with the counts | `asr.killed` |
    | `asr.later <hours>` | Skyrim's clock that many game hours on (days passed and the hour), as a wait would | `asr.later 1.1` |
    | `asr.objectives <quest>` | a quest as Respawns reads it: running, its stage, each objective's index, state and the references its target aliases hold | `asr.objectives DB01` |
+   | `asr.key <keys> [frames=] [close=]` | presses keys through Skyrim's own input as the keyboard sends them (letters, digits, `/`, `dik:<code>`); answers whether the wait menu opened and what the help box says; `close=true` (the default) closes the wait menu again | `asr.key /` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
