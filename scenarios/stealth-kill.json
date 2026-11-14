@@ -1,13 +1,20 @@
-// The knife stealth kill (v36), as a player does it: in Riverwood by day, CJ with the knife, a Whiterun guard placed
-// 1.05 m ahead with his back to him, the guard, CJ and Skyrim's hidden player recorded at 30 Hz; CJ crouches, holds the
-// right button and clicks the left one; paused on the grab and on the stab for a shot from the side, and once from
-// behind CJ. scripts/skytest.ps1 run scenarios/stealth-kill.json (scenarios/README.md). One kill a run, from a fresh
-// session (skytest stop, then session): a kill is a crime, and a guard placed after one comes out fighting CJ, whom a
-// stealth kill rightly refuses, as San Andreas does.
+// The knife stealth kill (v36) and Skyrim's sneak kill move on its victim (v36), as a player does it: in Riverwood by
+// day, CJ with the knife, a Whiterun guard placed 1.05 m ahead with his back to him, the guard, CJ and Skyrim's hidden
+// player recorded at 30 Hz; CJ crouches, holds the right button and clicks the left one; paused on the grab and on the
+// stab for a shot from the side, and once from behind CJ. scripts/skytest.ps1 run scenarios/stealth-kill.json
+// (scenarios/README.md). One kill a run, from a fresh session (skytest stop, then session): a kill is a crime, and a
+// guard placed after one comes out fighting CJ, whom a stealth kill rightly refuses, as San Andreas does.
 //
-// The limits: the guard grabbed within 1.3 m and dead; Skyrim's stagger walks him forward and San Andreas's hold (a
-// metre behind, 5 cm a step) takes CJ along, so CJ's path stays under 120 units (no teleport: the playtest's was 100 m);
-// the hidden player never 3 m from CJ. Measured on the test desktop (13 November 2026): CJ 51 to 107 units on.
+// The limits, from the playtest's report (the guard walked forward in the move, CJ once thrown 100 m) and San
+// Andreas's own stealth kill (CTaskSimpleStealthKill moves only CJ, holding him a metre behind the victim, 5 cm a
+// step): Skyrim's sneak kill from behind (pa_1HMSneakKillBackA) on the guard by the stab; the guard pinned where CJ
+// grabbed him (his feet under 5 units off at the stab, under 10 when it's over; his recorded path under 60, which
+// takes in his body's fall after the move, about 30); CJ 1.0 m
+// (within 0.1) behind him from the stab on, his path under 40 units (the hold may pull him back to it from a closer
+// grab, never carry him on); the move about as long as CJ's anim (2.7 s, within 0.4); the hidden player never 3 m from
+// CJ (the teleport was 100 m); the guard dead. Measured on the test desktop (13 November 2026, four kills): the guard's path through the move 0.0 to 0.2 (27 to 31 more
+// as his body falls after it),
+// CJ pulled back 22 units from a 0.68 m grab to 1.00 m, the move 2.57 s, the hidden player at most 18.5 from CJ.
 {
   "name": "stealth-kill",
   "steps": [
@@ -25,22 +32,22 @@
     { "cmd": "wait", "seconds": 1 },
     { "label": "record the guard, CJ and the hidden player", "cmd": "record", "action": "start", "refs": "asr.victim:,asr.cj:,player",
       "leader": "asr.cj:", "hz": 30, "name": "kill", "near": 1000 },
-    { "label": "crouched, the knife raised, the grab", "cmd": "asr.stealth", "until": "grab", "crouch": true,
-      "expect": ["sneaking == true", "cjToVictim < 1.3", "health > 0"] },
+    { "label": "crouched, the knife raised, the grab: the kill move starts", "cmd": "asr.stealth", "until": "grab", "crouch": true,
+      "expect": ["sneaking == true", "cjToVictim < 1.3", "health > 0", "idle == pa_1HMSneakKillBackA"] },
     "pause",
     { "cmd": "screenshot", "name": "grab", "camera": "orbit asr.victim: yaw=90 distance=280 pitch=10 height=70" },
     "resume",
-    { "label": "the stab: the guard dies into a ragdoll", "cmd": "asr.stealth", "until": "stab",
-      "expect": ["cjMoved < 120", "playerFromCj < 210"] },
+    { "label": "the stab, in the kill move, the guard where CJ grabbed him", "cmd": "asr.stealth", "until": "stab",
+      "expect": ["killMove == true", "inKillMove == true", "victimMoved < 5", "cjToVictim ~ 1.0 +- 0.1", "cjMoved < 40", "playerFromCj < 210"] },
     "pause",
     { "cmd": "screenshot", "name": "stab", "camera": "orbit asr.victim: yaw=90 distance=280 pitch=10 height=70" },
     { "cmd": "screenshot", "name": "stab-behind", "camera": "orbit asr.cj: yaw=0 distance=300 pitch=15 height=80" },
     "resume",
-    { "label": "the guard dead and let go", "cmd": "asr.stealth", "until": "over",
-      "expect": ["victimDead == true", "cjMoved < 120", "playerFromCj < 210"] },
+    { "label": "the move over, the guard dead and let go", "cmd": "asr.stealth", "until": "over",
+      "expect": ["moveSeconds ~ 2.7 +- 0.4", "victimDead == true", "victimMoved < 10", "cjToVictim ~ 1.0 +- 0.1", "cjMoved < 40", "playerFromCj < 210"] },
     { "cmd": "screenshot", "name": "after", "camera": "orbit asr.victim: yaw=90 distance=300 pitch=15 height=70" },
-    { "label": "the tracks: no teleport, the hidden player by CJ", "cmd": "record", "action": "stop",
-      "expect": ["tracks.1.pathLength < 130", "tracks.2.leader.max < 210"] },
+    { "label": "the tracks: the guard pinned, CJ held, the hidden player by him", "cmd": "record", "action": "stop",
+      "expect": ["tracks.0.pathLength < 60", "tracks.1.pathLength < 40", "tracks.2.leader.max < 210"] },
     { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
     { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
   ]
