@@ -1,4 +1,5 @@
 #include "player/People.h"
+#include "player/Homies.h"
 
 #include "Ini.h"
 #include "hud/SaHud.h"
@@ -74,7 +75,7 @@ namespace AhShitRim::People
             auto*             race = a_actor->GetRace();
             person.npc = race && race->HasKeywordString("ActorTypeNPC");
             person.dead = a_actor->IsDead();
-            person.follower = a_actor->IsPlayerTeammate() || a_actor->IsCommandedActor();
+            person.follower = a_actor->IsPlayerTeammate() || a_actor->IsCommandedActor() || Homies::IsHomie(a_actor);  // v39: the crew, standing or not
             person.guard = a_actor->IsGuard();
             person.hostile = a_actor->IsHostileToActor(a_player);
             person.fighting = a_actor->IsInCombat();

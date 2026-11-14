@@ -57,14 +57,16 @@ Press **F10** in Skyrim and CJ takes over from the Dragonborn. Press it again to
 - **Every land and air vehicle San Andreas has**: cars, bikes, bicycles, quads, monster trucks, the Rhino, helicopters, planes, the jetpack and the parachute, with San Andreas's own physics, radio, sounds and particles. Run people over (honk and they jump aside; a giant stops a car, but the Rhino sends it flying), take your followers along, and watch Skyrim's bandits, wolves and giants wreck your car until it burns.
 - **San Andreas's guns**, switched on the mouse wheel, hurting Skyrim's people and creatures: headshots count, damage scales with the target (the minigun is for dragons), the Dragonborn gets the kill and the bounty, and San Andreas's weapon skills grow. Rockets, grenades, Molotovs, tear gas, the flamethrower and satchel charges all work, and the heat seeker locks on to dragons.
 - **Fist fights** with San Andreas's lock-on: CJ turns to his target, and a small triangle over their head goes from green to red with their health.
+- **Knife stealth kills** as in San Andreas: behind someone who hasn't noticed CJ, hold the right mouse button with the knife and CJ raises it, click the left one and he grabs and stabs them. People only, never children or anyone essential. A crouched knife hit on someone who can't see the Dragonborn is Skyrim's 3x sneak attack.
 - **Ammu-Nation** at the blacksmiths of the hold capitals (Warmaiden's in Whiterun first), and guns as rewards from the main quest and a few bosses.
 - **Looting without menus**: walk over a body, or press E on a chest, and its gold and quest items are yours.
 - **Pickups** spinning around Skyrim: hearts, armour, parachutes, weapons and money, with a heart turning up when you're low.
+- **Parked vehicles** waiting around the world: a Sanchez at every stable, a BMX in every village, a quad at a hunters' camp and a chopper outside a roadside inn. Only bikes and the quad, so nothing blocks a road.
 - **Wanted stars**, one level for all of Skyrim, endless reinforcements (with the hold's wolves from 3 stars), and **Busted** when a guard drags CJ out of a stopped car.
 - **Wasted** when Skyrim's health runs out: CJ wakes at the hold's temple.
 - **Quests as San Andreas missions**: mission titles, MISSION PASSED with its tune, odd jobs for the small quests, and the line the mod is named after in the Helgen cart.
 - **CJ's own voice**: he answers in Skyrim's conversations (played like San Andreas cutscenes), comments on fights, loot and shopping, sings when he's bored, and shouts the Thu'um in his own words.
-- **San Andreas's HUD** with its **radar**, fonts and text styles, its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
+- **San Andreas's HUD** with its **radar**, fonts and text styles, zone and vehicle names (Skyrim's junk notifications gone), its radio (plus Radio Sovngarde and our own Sweetroll FM), and **its cheat codes**, typed straight into Skyrim.
 
 Skyrim's player stays the real player underneath, so quests, dialogue, bounties, kill credit and saves keep working. CJ's weapons, armour, skills, car and wanted level go in the SKSE co-save next to your Skyrim save. Load a save made while CJ had the player and he takes over again a couple of seconds after the loading screen, once the world is in.
 
@@ -72,48 +74,54 @@ Skyrim's player stays the real player underneath, so quests, dialogue, bounties,
 
 While CJ has the player (F10), the keys follow San Andreas's keyboard layout, modern by default. `KeyLayout=Classic` under `[Input]` in `Data/SKSE/Plugins/AhShitRim.ini` switches to San Andreas's own PC defaults (the keys in bold differ):
 
-| Key (modern) | Key (classic) | On foot | In a vehicle |
-|---|---|---|---|
-| F10 | F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) |
-| F11 | F11 | Screenshot with the HUDs on it, to `Screenshots` next to `Start AhShitRim.bat` (also while Skyrim has the player) | Same |
-| W / S | W / S | Walk forwards / back | Accelerate / brake, then reverse; both together a burnout (A / D turn the car on the spot) |
-| Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps); pitch an aircraft |
-| A / D, arrows left / right | A / D, arrows left / right | Walk left / right | Steer |
-| Mouse | Mouse | Look around | Look around |
-| Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | |
-| Space | **Left Shift or Right Ctrl** | Jump | |
-| Space | **Space or Right Ctrl** | | Handbrake; in the Hydra or the Hunter, held, the heat-seeker lock-on (see the mouse buttons) |
-| Left Ctrl | **C** | Crouch (Skyrim sneaks) | |
-| Left Alt | Left Alt | Walk | |
-| F or Enter | F or Enter | Get into the nearest vehicle | Get out |
-| H or Caps Lock | Caps Lock or H | | Horn: people and animals in the way jump aside; with hydraulics (LOWRIDER), raise and lower the car; a police helicopter's searchlight |
-| Q / E | Q / E | E: activate what the crosshair is on (or else what CJ faces), through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop; standing on a weapon pickup while CJ carries another gun of its kind, it swaps his for it | Look left / right (both together: look behind); an aircraft's rudder |
-| Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Rhino's turret, the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car |
-| Numpad 5, 2 or numpad + | Same | | San Andreas's sub-mission key: a plane's landing gear up and down, the crop duster's and Stuntplane's smoke, the hydraulics' jump with the numpad's arrows |
-| Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air and shouts one of his own lines instead of the dragon words | Skyrim's shout and CJ's line, no gesture |
-| ] | ] | Spawn a Sandking | |
-| [ | [ | Spawn a ZR-350 | |
-| `\` | `\` | Spawn a Sanchez dirt bike | |
-| Mouse wheel | Mouse wheel | Next or previous weapon (San Andreas's slots) | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) |
-| Insert or 4 / Delete or R | Same | | Next / previous radio station |
-| Right mouse button | Right mouse button | Aim: San Andreas's free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights. With fists or a melee weapon, locks on to the nearest enemy in front and turns CJ to face them; with a gun, the enemy nearest the crosshair is marked (aim stays free) | The vehicle's second weapon: the Hunter's machine gun, the Hydra's missiles (heat-seeking once Space has held a dragon, mammoth, giant, centurion or rider in view until its marker turns red), the Rustler's and Seasparrow's guns; on a BMX or mountain bike the bunny hop (hold to crouch, let go to jump) |
-| Left Ctrl or numpad 0 | Left Ctrl or numpad 0 | Left Ctrl: crouch (modern layout) | Same as the right mouse button |
-| Left mouse button | Left mouse button | Fire (a melee weapon attacks, turning CJ to the nearest enemy in reach in front); with the parachute in the air, open it | The vehicle's weapon: the Hunter's rockets (heat-seeking once Space has locked on, as the Hydra's), the Hydra's flares, the Rhino's cannon (its turret follows the camera); a car's nitro |
-| Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) |
-| X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) |
-| Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind |
-| V or Home | V or Home | | Change the camera distance (San Andreas's camera key) |
-| W / S, arrows up / down | W / S, arrows up / down | In Ammu-Nation: browse | |
-| E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | |
-| F or Enter | F or Enter | In Ammu-Nation: back, then leave | |
+| Key (modern) | Key (classic) | On foot | In a vehicle | Pad |
+|---|---|---|---|---|
+| F10 | F10 | Hand the player back to Skyrim | Hand the player back to Skyrim (CJ comes out of the vehicle at the next handover) | Back, held a second |
+| F11 | F11 | Screenshot with the HUDs on it, to `Screenshots` next to `Start AhShitRim.bat` (also while Skyrim has the player) | Same |  |
+| W / S | W / S | Walk forwards / back | Accelerate / brake, then reverse; both together a burnout (A / D turn the car on the spot) | Left stick up / down; in a vehicle RT / LT |
+| Arrows up / down | Arrows up / down | Walk forwards / back | Lean a bike forward / back (stoppies, wheelies, clearing bumps); pitch an aircraft | Left stick up / down (in a vehicle: lean, pitch) |
+| A / D, arrows left / right | A / D, arrows left / right | Walk left / right | Steer | Left stick |
+| Mouse | Mouse | Look around | Look around | Right stick |
+| Left Shift | **Space** | Sprint (mash it for San Andreas's faster sprint) | | A |
+| Space | **Left Shift or Right Ctrl** | Jump | | X |
+| Space | **Space or Right Ctrl** | | Handbrake; in the Hydra or the Hunter, held, the heat-seeker lock-on (see the mouse buttons) | RB |
+| Left Ctrl | **C** | Crouch (Skyrim sneaks) | | L3 |
+| Left Alt | Left Alt | Walk | | Left stick, pushed lightly |
+| F or Enter | F or Enter | Get into the nearest vehicle | Get out | Y |
+| H or Caps Lock | Caps Lock or H | | Horn: people and animals in the way jump aside; with hydraulics (LOWRIDER), raise and lower the car; a police helicopter's searchlight | L3 |
+| Q / E | Q / E | E: activate what the crosshair is on (or else what CJ faces), through Skyrim (open a door, pull a lever, pick up an item, talk, sit down); the help box top left says what ("E: Open Breezehome"). On a body or an unlocked chest it takes the gold and quest items, no menu; on a blacksmith with an Ammu-Nation it opens the shop; standing on a weapon pickup while CJ carries another gun of its kind, it swaps his for it | Look left / right (both together: look behind); an aircraft's rudder | LB (activate); in a vehicle the d-pad's left / right |
+| Numpad 8 / 2 (or Page Up / Page Down), numpad 4 / 6 | Same | | San Andreas's turret keys: the Rhino's turret, the Hydra's nozzles between hovering and forward flight; with hydraulics (LOWRIDER), held with numpad 5, they bounce the car | R3 held with the right stick (hydraulics); in the Hydra the right stick's up / down |
+| Numpad 5, 2 or numpad + | Same | | San Andreas's sub-mission key: a plane's landing gear up and down, the crop duster's and Stuntplane's smoke, the hydraulics' jump with the numpad's arrows | R3 |
+| / | / | Skyrim's wait menu (T, Skyrim's own wait key, is a letter of the cheat codes while CJ has the player) | Nothing: get out first | |
+| Skyrim's Shout key (Z) | Skyrim's Shout key (Z) | Shout, as in Skyrim (hold for more words), from where CJ stands, where the camera looks; CJ shoves the air and shouts one of his own lines instead of the dragon words | Skyrim's shout and CJ's line, no gesture | RB (on foot) |
+| ] | ] | Spawn a Sandking | |  |
+| [ | [ | Spawn a ZR-350 | |  |
+| `\` | `\` | Spawn a Sanchez dirt bike | |  |
+| Mouse wheel | Mouse wheel | Next or previous weapon (San Andreas's slots) | Next or previous radio station (San Andreas's stations, Radio Sovngarde, Sweetroll FM, off) | D-pad left / right; in a vehicle d-pad up / down |
+| Insert or 4 / Delete or R | Same | | Next / previous radio station | D-pad up / down |
+| Right mouse button | Right mouse button | Aim (on the pad LT also locks a gun on to a target and turns the camera onto it: the d-pad shifts it, the right stick pushed hard lets go): San Andreas's free aim; the sniper rifle, rocket launchers, M4 and camera go to their own first-person sights. With fists or a melee weapon, locks on to the nearest enemy in front and turns CJ to face them; with a gun, the enemy nearest the crosshair is marked (aim stays free) | The vehicle's second weapon: the Hunter's machine gun, the Hydra's missiles (heat-seeking once Space has held a dragon, mammoth, giant, centurion or rider in view until its marker turns red), the Rustler's and Seasparrow's guns; on a BMX or mountain bike the bunny hop (hold to crouch, let go to jump) | LT |
+| Left Ctrl or numpad 0 | Left Ctrl or numpad 0 | Left Ctrl: crouch (modern layout) | Same as the right mouse button | LB (in a vehicle) |
+| Left mouse button | Left mouse button | Fire (a melee weapon attacks, turning CJ to the nearest enemy in reach in front); with the parachute in the air, open it | The vehicle's weapon: the Hunter's rockets (heat-seeking once Space has locked on, as the Hydra's), the Hydra's flares, the Rhino's cannon (its turret follows the camera); a car's nitro | RT; in a vehicle A |
+| Left Alt or Right Ctrl | Left Alt or **Right Ctrl** | Left Alt: walk (classic: Right Ctrl also jumps) | Same as the left mouse button (in the classic layout Right Ctrl is the handbrake too, as San Andreas binds it) | A (in a vehicle) |
+| G | G | Grove Street crew, while aiming (right mouse button) at a homie: recruit him (they stand about at the way into a hold's capital where the Dragonborn is Thane), or send him off if he's of the crew. Without aiming G does nothing | |  |
+| X | X | Insult: CJ shouts one of his insults at whoever's about and gives the finger | Insult out of the window (no finger) | R3 |
+| Middle mouse button | Middle mouse button | Swear: CJ swears to himself ("oh shit") | Look behind | X (look behind, in a vehicle) |
+| V or Home | V or Home | Change the camera distance: San Andreas's three chase distances (San Andreas's camera key) | Change the camera distance; one step is the view from the front of the vehicle, with San Andreas's crosshair in the Hunter, Hydra, Seasparrow and Rustler | Back |
+| W / S, arrows up / down | W / S, arrows up / down | In Ammu-Nation: browse | | Left stick or d-pad up / down |
+| E, Left Shift | E, **Space** | In Ammu-Nation: choose a category, buy | | A or LB |
+| F or Enter | F or Enter | In Ammu-Nation: back, then leave | | Y |
 
-Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu.
+CJ's camera turns at Skyrim's own look sensitivity (Settings, Controls, Look Sensitivity, for the mouse and the pad alike), changed in the menu at any time: the slider's middle is San Andreas's own speed, its bottom a quarter of it and its top four times it. Skyrim's own default sits near the bottom of the slider, so the first time AhShitRim starts it moves both sliders (the mouse's and the pad's) to their middle, once, and records that as `LookReset=1` under `[Input]` in `AhShitRim.ini`; after that the sliders are yours and AhShitRim never moves them again. This changes Skyrim's own look too, outside F10: at the middle it turns 2.4 times as fast as Skyrim's default with the mouse and 1.5 times with the pad, so move the slider back down there if you play Skyrim's own character a lot. San Andreas's own mouse sensitivity applies on top.
 
-The build also has a few developer keys, off Skyrim's default binds: `;` picks a vehicle from a list (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute) and `'` spawns it, `=` hands out San Andreas's weapon sets, and `/` shows each of San Andreas's text styles. `[Debug] VehicleKeys=0` and `WeaponKey=0` in `AhShitRim.ini` turn the first three off.
+On a gamepad (the Pad column): turn on Skyrim's own gamepad setting (Settings, Controls, Gamepad), AhShitRim reads the pad through Skyrim. B opens Skyrim's tween menu (the map, items, magic, skills) and Start its journal, as in Skyrim; Skyrim's menus, dialogue and the map work on the pad as Skyrim's own. In a dialogue A skips a line, in a seat the left stick or A stands up. Back tapped changes the camera distance; held a second it hands the player over, either way (with Skyrim on the player a tap opens the wait menu as usual). The d-pad's up and down do nothing on foot for now. The spawn keys, F11, the swear and the developer keys are keyboard only, and so is the Shout from a vehicle (RB is the handbrake there). `[Input]` in `AhShitRim.ini` has `Pad` (`0` turns the pad off for CJ), `PadLookSpeed` (1400, the right stick's camera speed), `PadAimSpeed` (0.55, its share while LT aims) and `PadInvertY` (`1` inverts it).
+
+Escape, Tab and the console stay Skyrim's. M doesn't open Skyrim's map while CJ has the player (it's a letter of the cheat codes): the map is in Tab's menu, as San Andreas's is in its pause menu. T doesn't open the wait menu either, for the same reason: `/` does, on foot.
+
+The build also has a few developer keys, off Skyrim's default binds: `;` picks a vehicle from a list (NRG-500, BMX, Quad, Monster, Rhino, Hunter, Hydra, Sparrow, Maverick, Dodo, Stuntplane, Vortex, the jetpack, the parachute) and `'` spawns it and `=` hands out San Andreas's weapon sets. `[Debug] VehicleKeys=0` and `WeaponKey=0` in `AhShitRim.ini` turn them off.
 
 ## Playing as CJ
 
-**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half).
+**Vehicles.** A spawned vehicle is parked across CJ's path, on the first flat, clear spot in front of him. In a helicopter or a plane W and S are the throttle, A and D roll, the arrows pitch and Q and E the rudder, as in San Andreas. On the jetpack Shift goes up and Space down (Space and Shift in the classic layout), F takes it off standing still. Carrying the parachute, CJ skydives off anything high enough: W dives, S slows, A and D turn, the left mouse button opens the chute. Up to four vehicles exist at once; another one replaces the oldest one CJ isn't in. Followers within 30 m ride along when CJ gets in, and Skyrim's attacks hit the car instead of anyone in it (a bike shields half). Headlights and tail lights come on as in San Andreas, by Skyrim's clock: at night (each vehicle from its own minute between 20:00 and 21:00 until one between 6:00 and 7:00), in rain or snow and in interiors, while the engine runs; a smashed lamp stays dark and a wreck has none. The lamps themselves glow, the headlights light the road ahead and the tail lights the ground behind, and the tail lights glow brighter while braking, by day too.
 
 **The Hydra is experimental.** Skyrim streams its land fast enough for it, but only has collision for the ground about a second ahead at that speed, so flying low and fast you can fly through hills. Out over the Sea of Ghosts Skyrim drops to a few frames a second. Fly high, or slow down to land.
 
@@ -123,7 +131,9 @@ The build also has a few developer keys, off Skyrim's default binds: `;` picks a
 
 **Pickups.** Hearts, body armour, parachutes, weapons and wads of gold float and spin at spots across Skyrim. Walk into one to take it; a weapon pickup of a kind CJ already carries swaps his gun only when you press E, as in San Andreas. When CJ is down to a quarter of his health a heart turns up in front of him.
 
-**Nobody important stays dead.** Every named NPC CJ kills (the blacksmiths, the Jarl, Farengar, Delphine, the Greybeards, anyone unique) gets up again an in-game hour later, back where they belong, once their body and their spot are out of CJ's sight. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
+**Parked vehicles.** A Sanchez waits at each of the five stables, a BMX in every village and town, a quad at Hunter's Rest and a Freeway chopper outside Old Hroldan ([docs/DESIGN.md](docs/DESIGN.md#vehicles) lists them). Only bicycles, motorbikes and the quad wait parked: they fit anywhere without blocking a road or a gate. One appears once CJ is within 100 m of its spot (never on top of him) and goes again when he goes through a door or when he's 160 m away without having used it. Take one or wreck it and another is there a minute later, once CJ has been away. They count towards the four vehicles that exist at once, but never push one of yours out.
+
+**The dead come back.** Everyone CJ kills who wasn't out to get the player on sight (guards, citizens, merchants, the blacksmiths, the Jarl, Farengar, chickens and cows) gets up again an in-game hour later, back at their spot, as soon as neither their body nor that spot is in view, in cities and outside. Bandits, necromancers, draugr and wild predators stay dead until Skyrim brings them back itself, and so do the deaths a quest needs: a quest's kill target, or a death that moves on a quest you're in. Only CJ's kills: what Skyrim's own player or a dragon kills stays dead.
 
 **Quests** start and end like San Andreas missions: a quest's name comes up as a mission title, finishing one is MISSION PASSED with San Andreas's tune, and a small quest done (a favour, a delivery) is an odd job, MISSION PASSED without the title. A new game opens with the line AhShitRim is named after: right after Ralof wakes you in the Helgen cart, CJ says "Ah shit, here we go again."
 
@@ -157,7 +167,7 @@ While CJ has the player, crime works like San Andreas's: stars only, one wanted 
 
 ## Cheat codes
 
-Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for a toggle) with San Andreas's beep. San Andreas's alternative spellings work too (ROCKETMAN, FULLCLIP...). Some favourites:
+Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no console, just the letters, and the help box says "Cheat activated" (or "Cheat deactivated" for a toggle) with San Andreas's beep. San Andreas's alternative spellings work too (ROCKETMAN, FULLCLIP...). On a gamepad, enter San Andreas's console button sequences instead, the PlayStation 2's buttons by position: L1 is LB, L2 LT, R1 RB, R2 RT, Cross A, Circle B, Square X, Triangle Y (HESOYAM: RB, RT, LB, A, left, down, right, up, left, down, right, up). The buttons keep doing what they do while you enter one, as on the console, but B and RB need a short hold to open Skyrim's tween menu or shout, so their taps are only part of a code. AhShitRim's own codes, the vehicle names and VKYPQCF have no console sequence and stay on the keyboard. Some favourites:
 
 | Code | What |
 |---|---|
@@ -179,7 +189,7 @@ Type San Andreas's PC cheat codes while CJ has the player, as in San Andreas: no
 
 Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and a plane comes already flying with AIR before its name (AIRAT400). Every code, with its aliases: [docs/CHEATS.md](docs/CHEATS.md).
 
-> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. The named ones come back an hour later like anyone named, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
+> **NOMERCY can break quests.** It takes the essential flag off every person and creature but the player, so quest givers, followers and anyone a quest still needs can die. They come back an hour later like anyone else CJ kills, but a quest that failed when they died stays failed, and Skyrim's own quests weren't written for that. Typing NOMERCY again gives exactly those flags back. It stays on in your saves until you type it again, so **save before you try it**.
 
 ## Settings
 
@@ -188,8 +198,14 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 | Section | Key | What |
 |---|---|---|
 | `[Input]` | `KeyLayout` | `Modern` (default) or `Classic`, the keys above |
+| `[Input]` | `Pad` | `1` (default): CJ plays on the gamepad too (the Pad column above, Skyrim's gamepad setting on); `0`: the pad stays Skyrim's |
+| `[Input]` | `LookReset` | Written by AhShitRim: `1` once it has moved Skyrim's Look Sensitivity sliders to their middle (see the keys above); delete the line to have it do that again |
+| `[Input]` | `PadLookSpeed`, `PadAimSpeed`, `PadInvertY` | The right stick's camera speed (1400), its share while LT aims (0.55), `1` to invert it |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
+| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `10`, Skyrim's torch is about 1), how far round (`10` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`0.8` m) |
+| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`5`, `2.2` m), while braking (`10`, `3` m), and how far below and behind the lamps it sits (`TailDrop` `0.45` m, `TailBack` `1.2` m) |
+| `[Headlights]` | `LampGlow`, `BrakeGlow` | How brightly a burning lamp and its corona glow (`6`; `0` leaves the lamps unlit), and a tail lamp's times this while braking (`2`) |
 
 ## Combat balance
 
@@ -206,6 +222,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 - So a level 6 bandit takes 6 Colt 45 body shots at Adept and 18 at Master (5 at Master before). `CJDamage=0.25` with `FollowDifficulty=0` gives Master's at any difficulty.
 - CJ's body armour (the blue bar) takes the damage first, as San Andreas's does: weapons, arrows, creatures' bites, claws and clubs, traps (blades, spikes, rocks), blasts, and fire, frost and shock from spells, enchantments, traps and burning oil. A hit's share of his health bar comes off the armour point for point, and only what's left over comes off his health. Poison, disease, drowning and falls go straight to his health.
 - Skyrim's fire (a fire spell, a fire trap, burning oil, a dragon's breath) sets CJ alight in San Andreas, with his scream and the burn, as San Andreas's own fire does.
+- Oil burns GTA style: the oil on Skyrim's floors (and the oil a shot-down lamp spills) catches fire when CJ's bullets land in it, as well as from his flamethrower, Molotovs and explosions.
 - `DamageTaken` multiplies every hit Skyrim's people and creatures land on CJ. Guards (and the reinforcements) also hit by the stars, on top of it (see below); nobody else does.
 - BAGUVIX still blocks everything.
 
@@ -213,7 +230,7 @@ FollowDifficulty=1   ; 1: Skyrim's difficulty scales CJ's guns too, 0: it doesn'
 
 - **The main quest** beyond Helgen isn't fully played through as CJ yet. If something blocks the way (a scene, a door, a menu), F10 hands the player back to Skyrim.
 - **Helgen**: the intro (the cart and the execution) isn't supported as CJ: play it as Skyrim's own player and press F10 afterwards. CJ's "Ah shit, here we go again." still plays in the cart.
-- **Camera**: San Andreas's third-person camera only, no first person.
+- **Camera**: no first person on foot (San Andreas has none either). A vehicle's first-person view sits just in front of it, so driving into a wall puts the camera in the wall.
 - **CJ and the vehicles** cast no shadow, and CJ always wears his starting clothes.
 - **Vehicle looks**: damage isn't shown (dents, broken windows and lost doors), and lights aren't drawn. The Hydra's flares are invisible (they still work), and its jet exhaust, missile trails, heat haze, a submerged exhaust's bubbles and the rotor dust's sand and water versions aren't drawn. Muzzle flashes are round where San Andreas stretches them along the barrel.
 - **Vehicles are temporary**: they live only while CJ has the player. They're hidden when Skyrim takes it back, and the next F10, load door or fast travel removes them. Fast travelling in a vehicle leaves it behind.

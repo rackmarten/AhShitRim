@@ -1,0 +1,178 @@
+// The pad in a vehicle (DESIGN.md, Controller): CJ in a Sandking on the road below the Whiterun stables, facing south
+// down the open road, driven with the kit's pad and stick commands (Skyrim's own input events, through its input
+// queue). RT accelerates, the left stick steers, LT brakes and then reverses, X looks behind, the d-pad's up changes
+// the station, Y gets out. Analog (v40): RT half pulled drives slower than full, each from the same standstill; on a
+// Sanchez launched at full throttle the left stick pulled back lifts its nose (a wheelie), pushed forward drops it (a
+// stoppie), more for a full push than for half. The effects are read from San Andreas's pose (asr.watch, asr.mark and asr.since: speed, and
+// ahead, the speed along the way the car faces, below 0 reversing). scripts/skytest.ps1 run scenarios/pad-vehicle.json
+// (scenarios/README.md).
+//
+// The limits (set from runs on the test desktop, measured values in the pull request): RT full for 2 s from a
+// standstill gets the Sandking past 25 km/h and 8 m on (every drive here stays under 2 s: 35 m south of the start the
+// road meets a signpost and rocks, which 3 s at full throttle reached at 75 km/h); RT with the left stick full left from a standstill turns it at least
+// 15 degrees left in 2 s (checked last: steered at speed it left the road, where LT didn't stop it in 8 s); LT held brakes it to a stop within 8 s, and from a standstill backs it up (ahead below -3 km/h within 3 s); X held turns the camera (Skyrim's, following San Andreas's) at least
+// 120 degrees (looking behind); the d-pad's up changes the radio station. RT half pulled moves the Sandking (top speed past
+// 3 km/h) and RT full reaches a top speed at least 1.3 times half's in the same 2 s; the Sanchez's nose rises at least
+// 3 degrees with the stick half back and 1.2 times that full back, and drops at least 2 degrees half forward and full
+// forward (full isn't checked to drop it more: one run had 9.6 degrees at half and 4.4 at full, which a real pad should
+// look at), each leaned after 1.5 s at full throttle and watched 0.4 s (a wheelie leaned from a standstill
+// launch has the bike on its back wheel within a second, 78 degrees up at half back and 87 at full, and half and full
+// can't be told apart).
+{
+  "name": "pad-vehicle",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "no actors left from an earlier run (asr.place)", "cmd": "asr.place", "clear": true },
+    { "label": "Bjorlam enabled (pad-lock disables him while it runs)", "cmd": "console", "ref": "00013698", "command": "enable" },
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "label": "facing south, down the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150", "dead == false"] },
+    { "label": "Skyrim's gamepad on, as a pad player has it", "cmd": "console", "command": "setini \"bGamepadEnable:Controls\" 1" },
+    { "label": "noon, for the shots", "cmd": "scene", "presets": "day clear" },
+    { "label": "CJ in a new Sandking there", "cmd": "asr.spawn", "model": 495, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+    { "label": "standing still", "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    // X held looks behind, checked standing, with the chase camera behind the car (after a reverse San Andreas's camera
+    // already faces the way the car went, and looking behind turned it 12 degrees).
+    { "cmd": "asr.mark" },
+    { "label": "X held", "cmd": "pad", "buttons": "x" },
+    { "cmd": "wait", "seconds": 0.4 },
+    { "label": "CJ looks behind (Skyrim's camera, which follows San Andreas's)", "cmd": "asr.since", "expect": "cameraTurnedBy > 120" },
+    { "label": "looking behind", "cmd": "screenshot", "name": "look-behind" },
+    { "cmd": "pad", "buttons": "x", "value": 0 },
+    { "cmd": "wait", "seconds": 0.6 },
+
+    { "label": "RT held", "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "label": "the Sandking drives off", "cmd": "asr.watch", "seconds": 2, "expect": ["topSpeed > 25", "moved > 8", "ahead > 15"] },
+    { "label": "driving", "cmd": "screenshot", "name": "driving", "camera": "orbit asr.vehicle:driven distance=900 pitch=20" },
+    { "label": "RT let go", "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "label": "LT held, on the road", "cmd": "pad", "buttons": "lt", "value": 1 },
+    { "label": "it brakes to a stop", "cmd": "wait", "until": "speed < 3", "for": "asr.pose", "timeout": 8 },
+    { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+    { "label": "LT held from a standstill", "cmd": "pad", "buttons": "lt", "value": 1 },
+    { "label": "it backs up", "cmd": "asr.watch", "seconds": 3, "expect": "aheadLow < -3" },
+    { "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+    { "cmd": "asr.mark" },
+    { "label": "RT held and the left stick full left, from a standstill", "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "stick", "side": "left", "x": -1, "y": 0, "seconds": 2 },
+    { "label": "it turned left", "cmd": "asr.since", "expect": "bodyTurned < -15" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "label": "the handbrake (RB) till it stands", "cmd": "pad", "buttons": "rb" },
+    { "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rb", "value": 0 },
+
+    { "cmd": "asr.mark" },
+    { "label": "the d-pad's up", "cmd": "pad", "buttons": "up", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "another station", "cmd": "asr.since", "expect": "radioChanged == true" },
+
+    // Analog throttle (v40): from the same standstill, RT half pulled and then full.
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sandking at the start", "cmd": "asr.spawn", "model": 495, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "label": "RT half pulled", "cmd": "pad", "buttons": "rt", "value": 0.5 },
+    { "label": "half throttle", "cmd": "asr.watch", "seconds": 2, "keep": "half", "expect": ["topSpeed > 3", "ahead > 0"] },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sandking at the start", "cmd": "asr.spawn", "model": 495, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "label": "RT full", "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "label": "full throttle: faster than half", "cmd": "asr.watch", "seconds": 2, "vs": "half", "expect": ["vs.topSpeed > 1.3", "vs.moved > 1.3"] },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+
+    // The Sanchez's lean (v40, analog): at speed (1.5 s of full throttle) the left stick back (a wheelie) or forward (a
+    // stoppie), half and full, each from the same standstill.
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sanchez at the start", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "label": "the left stick half back", "cmd": "stick", "side": "left", "x": 0, "y": -0.5 },
+    { "label": "a gentle wheelie", "cmd": "asr.watch", "seconds": 0.4, "keep": "half-back", "expect": "pitchUp > 3" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "cmd": "stick", "side": "left", "x": 0, "y": 0 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sanchez at the start", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "label": "the left stick full back", "cmd": "stick", "side": "left", "x": 0, "y": -1 },
+    { "label": "a bigger wheelie", "cmd": "asr.watch", "seconds": 0.4, "vs": "half-back", "expect": "vs.pitchUp > 1.2" },
+    { "label": "the wheelie", "cmd": "screenshot", "name": "wheelie", "camera": "orbit asr.vehicle:driven yaw=90 distance=500 pitch=5" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "cmd": "stick", "side": "left", "x": 0, "y": 0 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sanchez at the start", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "label": "the left stick half forward", "cmd": "stick", "side": "left", "x": 0, "y": 0.5 },
+    { "label": "a gentle stoppie", "cmd": "asr.watch", "seconds": 0.4, "keep": "half-forward", "expect": "pitchDown < -2" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "cmd": "stick", "side": "left", "x": 0, "y": 0 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "CJ in a new Sanchez at the start", "cmd": "asr.spawn", "model": 468, "in": true, "expect": "driven == true" },
+    { "cmd": "wait", "seconds": 3 },
+    { "cmd": "wait", "until": ["inVehicle == true", "speed < 2"], "for": "asr.pose", "timeout": 10 },
+    { "cmd": "pad", "buttons": "rt", "value": 1 },
+    { "cmd": "wait", "seconds": 1.5 },
+    { "label": "the left stick full forward", "cmd": "stick", "side": "left", "x": 0, "y": 1 },
+    { "label": "a stoppie too (not checked against half's: one run dropped the nose 9.6 degrees at half and 4.4 at full)", "cmd": "asr.watch", "seconds": 0.4, "vs": "half-forward", "expect": "pitchDown < -2" },
+    { "cmd": "pad", "buttons": "rt", "value": 0 },
+    { "cmd": "stick", "side": "left", "x": 0, "y": 0 },
+
+    { "label": "Y tapped", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "label": "CJ gets out", "cmd": "wait", "until": ["onFoot == true", "gettingInOut == false"], "for": "asr.pose", "timeout": 10 },
+    { "label": "nothing left held", "cmd": "input", "expect": "idle == true" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

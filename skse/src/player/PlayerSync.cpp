@@ -1,6 +1,7 @@
 #include "player/PlayerSync.h"
 
 #include "Ini.h"
+#include "ini_text.h"
 #include "anchor.h"
 #include "audio/SaAudio.h"
 #include "body/ModelView.h"
@@ -14,8 +15,13 @@
 #include "cosave.h"
 #include "hud/Overlay.h"
 #include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
 #include "input.h"
 #include "knock.h"
+#include "look_sensitivity.h"
+#include "pad.h"
+#include "pad_cheats.h"
+#include "pickups.h"
 #include "settle.h"
 #include "wanted.h"
 #include "link/LinkService.h"
@@ -38,9 +44,12 @@
 #include "player/Hitboxes.h"
 #include "player/Projectiles.h"
 #include "player/Riders.h"
+#include "player/Homies.h"
 #include "player/Shots.h"
 #include "player/Shouting.h"
+#include "player/StealthKills.h"
 #include "player/VehicleFx.h"
+#include "player/Headlights.h"
 #include "player/Vitals.h"
 #include "player/WorldPickups.h"
 #include "standing.h"
@@ -49,6 +58,8 @@
 #include "scene.h"
 #include "vehicle_kinds.h"
 #include "weapons.h"
+
+#include <bitset>
 
 namespace AhShitRim::PlayerSync
 {
@@ -83,17 +94,25 @@ namespace AhShitRim::PlayerSync
             int            sneakResend = 0;   // frames until a sneak event the graph ignored is sent again
             std::uint32_t  inputFrame = 0;
             Input::Builder input;
+            std::bitset<256> debugKeys;  // held by the hit test (DebugKey), not by the keyboard
+            Protocol::BodyState drawnPose{};  // the hit test's: CJ as DrawCj drew him (DebugDrawn)
+            bool                drawnThisFrame = false;
             Body::Interpolator body;      // CJ's skeleton and San Andreas's camera, smoothed
             Body::Interpolator vehicles[Protocol::kVehicleMax];  // each vehicle's parts, smoothed
+            Body::Follow       vehicleFollow[Protocol::kVehicleMax];  // each drawn at CJ's moment (bodyTime)
+            double             bodyTime = 0.0;    // the moment on San Andreas's clock CJ was drawn at this frame
+            bool               haveBodyTime = false;
             struct Drawn
             {
                 bool          on = false;
                 RE::NiPoint3  position;
                 float         heading = 0.0f;
                 std::uint32_t model = 0;
+                float         rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };  // its frame (BodyState.vehicleFrame), for the test kit's asr.drive
             };
             Drawn          vehiclesDrawn[Protocol::kVehicleMax];  // where each was drawn last (the test kit's cameras)
             Body::Interpolator gear;      // v19: the jetpack or the parachute on CJ, smoothed
+            Body::Follow       gearFollow;  // drawn at CJ's moment (bodyTime), as the vehicles are
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
@@ -109,6 +128,21 @@ namespace AhShitRim::PlayerSync
             Knock::Down    down;                  // the player knocked down (ragdolled) in Skyrim, and for how long
             Knock::Skeleton skeleton;             // its skeleton left behind in its ragdoll after it's up again
             bool           standing = false;      // CJ stands (Standing::Stands), so the player does too
+            Pad::Mapper    pad;                   // the gamepad (DESIGN.md, Controller), from Skyrim's own gamepad events
+            Pad::Look      padLook;               // [Input] PadLookSpeed, PadAimSpeed, PadInvertY
+            RE::Setting*   mouseSensitivity = nullptr;  // Skyrim's look sensitivity, read live: CJ's camera follows it
+            RE::Setting*   padSensitivity = nullptr;
+            LookSensitivity::Range mouseRange = LookSensitivity::kMouseRange;  // its sliders' ends
+            LookSensitivity::Range padRange = LookSensitivity::kPadRange;
+            bool           padOn = true;          // [Input] Pad
+            bool           padLast = false;       // the pad was the last thing used: the help box names its buttons
+            std::chrono::steady_clock::time_point padTime{};  // the last pad update, for Back's hold in real time
+            bool           gunLock = false;       // the pad's gun lock holds someone (LockOn): the d-pad shifts it
+            PadCheats::Buttons padCheats;         // San Andreas's console cheat sequences, as the pad's presses come
+            Pad::HoldGate  tweenGate;             // B held: Skyrim's tween menu, while CJ has the player
+            Pad::HoldGate  shoutGate;             // RB held: Skyrim's Shout, while CJ has the player on foot
+            int            padCheatsDone = 0;     // console sequences finished, for the hit test
+            int            padShift = 0;          // the d-pad's left or right for the gun lock, for LockOn's next frame
 
             // Per-second stats while owned.
             float         statTime = 0.0f;
@@ -119,13 +153,125 @@ namespace AhShitRim::PlayerSync
             std::uint32_t lastPoseFrame = 0;
 
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
+            std::optional<std::chrono::steady_clock::time_point> crouchedAt;  // CJ last seen crouching (SinceCrouched)
+            std::optional<std::pair<RE::NiPoint3, float>> debugCj;  // CJ's feet in Skyrim's world and his heading, from the last pose (DebugCj)
+            std::function<void()>     debugFrame;    // the test kit's (SetDebugFrameHook)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
 
+        void UpdatePad(RE::PlayerCharacter* a_player);  // the gamepad's frame, below its menu hooks
+
         double NowMs()
         {
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        // Skyrim's look sensitivity now (its Settings, Controls, Look Sensitivity), along its slider: the scale for CJ's look
+        // counts, San Andreas's own speed at the slider's middle (look_sensitivity.h).
+        double LookScale(RE::Setting* a_setting, bool a_pad)
+        {
+            const float live = a_setting ? a_setting->GetFloat() : 0.0f;
+            return LookSensitivity::Scale(live, a_pad ? state.padRange : state.mouseRange);
+        }
+
+        // A slider's ends, from Skyrim.ini's settings (or SkyrimPrefs.ini's), else the ones Skyrim SE ships with.
+        LookSensitivity::Range LookRange(const char* a_min, const char* a_max, LookSensitivity::Range a_fallback)
+        {
+            auto find = [](const char* a_name) -> RE::Setting* {
+                auto* ini = RE::INISettingCollection::GetSingleton();
+                auto* setting = ini ? ini->GetSetting(a_name) : nullptr;
+                if (!setting) {
+                    auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
+                    setting = prefs ? prefs->GetSetting(a_name) : nullptr;
+                }
+                return setting;
+            };
+            auto* min = find(a_min);
+            auto* max = find(a_max);
+            if (!min || !max) {
+                return a_fallback;
+            }
+            return LookSensitivity::Checked({ min->GetFloat(), max->GetFloat() }, a_fallback);
+        }
+
+        // The look sliders' live values written into SkyrimPrefs.ini itself (the prefs collection's own file, its [Controls]),
+        // the rest of the file as it was. Skyrim's WriteAllSettings, called here, left the file untouched (a test session:
+        // its date and both values stayed), so the move to the middle lasted only until Skyrim quit. False when it can't.
+        // a_to: write the result there instead (the test kit's copy), the player's file only read.
+        bool WriteLookPrefs(const std::filesystem::path* a_to = nullptr)
+        {
+            auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
+            if (!prefs || !prefs->subKey[0]) {
+                SKSE::log::warn("player sync: no SkyrimPrefs.ini path to write the look sliders to");
+                return false;
+            }
+            // The collection's own path; relative, it's beside SKSE's log folder (My Games\Skyrim Special Edition).
+            std::filesystem::path path(prefs->subKey);
+            if (path.is_relative()) {
+                const auto logs = SKSE::log::log_directory();
+                if (!logs) {
+                    SKSE::log::warn("player sync: SkyrimPrefs.ini's path ({}) is relative and there's no log folder to find it by", prefs->subKey);
+                    return false;
+                }
+                path = logs->parent_path() / path.filename();
+            }
+            std::string text;
+            if (std::ifstream in(path, std::ios::binary); in) {
+                text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+            if (text.empty()) {
+                SKSE::log::warn("player sync: {} is missing or empty: the look sliders aren't written to it", path.string());
+                return false;
+            }
+            for (auto [setting, name] : { std::pair{ state.mouseSensitivity, LookSensitivity::kMouseSetting },
+                     std::pair{ state.padSensitivity, LookSensitivity::kPadSetting } }) {
+                if (!setting) {
+                    continue;
+                }
+                const std::string_view full(name);  // "fMouseHeadingSensitivity:Controls"
+                const auto             colon = full.find(':');
+                text = IniText::WithValue(text, full.substr(colon + 1), full.substr(0, colon), std::format("{:.4f}", setting->GetFloat()));
+            }
+            if (a_to) {
+                path = *a_to;
+            }
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out << text;
+            if (!out.flush()) {
+                SKSE::log::warn("player sync: couldn't write the look sliders to {}", path.string());
+                return false;
+            }
+            SKSE::log::info("player sync: wrote the look sliders to {} (the prefs collection's path: {})", path.string(), prefs->subKey);
+            return true;
+        }
+
+        // Once (until [Input] LookReset=1 is recorded): both look sliders to their middle, San Andreas's own speed, so
+        // the player has room either way (Skyrim's defaults sit near their bottoms), written to SkyrimPrefs.ini (unless
+        // a_write is false: the test kit's replay, whose session prefs aren't the file on disk).
+        void ResetLookOnce(bool a_write = true)
+        {
+            const auto recorded = Ini::Value("Input", "LookReset");
+            if (!LookSensitivity::ResetDue(recorded) || (!state.mouseSensitivity && !state.padSensitivity)) {
+                return;
+            }
+            for (auto [setting, range, name] : { std::tuple{ state.mouseSensitivity, state.mouseRange, "mouse" },
+                     std::tuple{ state.padSensitivity, state.padRange, "pad" } }) {
+                if (setting) {
+                    const float old = setting->GetFloat();
+                    setting->data.f = LookSensitivity::Middle(range);
+                    SKSE::log::info("player sync: Skyrim's {} look sensitivity moved once to its slider's middle: {:.4f} -> {:.4f} (x{:.2f} -> x1)",
+                        name, old, setting->GetFloat(), LookSensitivity::Scale(old, range));
+                }
+            }
+            if (a_write && !WriteLookPrefs()) {
+                return;  // not recorded: tried again next start
+            }
+            if (Ini::Set("Input", "LookReset", "1", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)")) {
+                SKSE::log::info("player sync: recorded [Input] LookReset=1 in {}", Ini::kPath);
+            } else {
+                SKSE::log::warn("player sync: couldn't record [Input] LookReset=1 in {}: the look sliders move to the middle again next start", Ini::kPath);
+            }
         }
 
         // A Skyrim menu has the input: the game is paused, or it shows its cursor (dialogue, which
@@ -222,6 +368,12 @@ namespace AhShitRim::PlayerSync
             input.anchor[0] = state.anchor.x;
             input.anchor[1] = state.anchor.y;
             input.anchor[2] = state.anchor.z;
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                // v37: the world the player is in now, for the parked vehicles' spots (an interior's coordinates are no place in Tamriel).
+                const auto* cell = player->GetParentCell();
+                const auto* worldspace = player->GetWorldspace();
+                input.world = Pickups::WorldByteOf(worldspace ? worldspace->GetFormID() : 0, !cell || cell->IsInteriorCell());
+            }
             input.shoutCount = state.shoutCount;
             if (auto* player = RE::PlayerCharacter::GetSingleton(); player && state.owned) {
                 const auto feet = player->GetPosition();
@@ -238,6 +390,7 @@ namespace AhShitRim::PlayerSync
                     Scene::Face(input, feet.x, feet.y, at.x, at.y);
                 }
             }
+            Headlights::Sky(input);  // v36: San Andreas's clock and sky for its vehicles' lights
             link.WriteInput(input);
         }
 
@@ -252,7 +405,7 @@ namespace AhShitRim::PlayerSync
             }
             const auto& down = keyboard->GetRuntimeData().curState;
             for (std::uint32_t dik = 0; dik < 0x100; dik++) {
-                if ((down[dik] & 0x80) == 0 && state.input.IsKeyDown(dik)) {
+                if ((down[dik] & 0x80) == 0 && state.input.IsKeyDown(dik) && !state.debugKeys.test(dik)) {
                     state.input.SetKey(dik, false);
                     SKSE::log::info("player sync: released stuck key (scan code {:02X})", dik);
                 }
@@ -351,6 +504,7 @@ namespace AhShitRim::PlayerSync
                 drawn.on = false;
             }
             state.gear.Reset();
+            state.gearFollow.Reset();
         }
 
         constexpr float kCameraShakeMax = 0.5f;  // radians Skyrim's camera may be off its own axes and still count as a shake
@@ -448,12 +602,21 @@ namespace AhShitRim::PlayerSync
         void DrawCj(RE::PlayerCharacter* a_player, float a_fromHeading, float a_fromPitch, bool a_menu, bool a_hideBody)
         {
             const double        now = NowMs();
+            state.drawnThisFrame = false;
+            state.haveBodyTime = false;
             Protocol::BodyState body{};
             if (LinkService::Get().ReadBody(body) && (body.flags & Protocol::kBodyValid) != 0 && body.handover == state.handover &&
                 body.boneCount <= Protocol::kBodyBoneMax && Body::Finite(body)) {
                 state.body.Push(body, now);
             }
             Protocol::BodyState pose{};
+            if (state.body.Count() > 0) {
+                // Never past his newest frame: Sample holds him there, and a vehicle that already has the next frame would be drawn
+                // a frame or two ahead of him. San Andreas writes at 30 fps, Skyrim reads at 60, and about once a second a read
+                // lands on the write and his frame comes a frame late: he dropped 0.3 m back in his seat at 18 m/s.
+                state.bodyTime = (std::min)(state.body.TimeAt(now), static_cast<double>(state.body.Frame(state.body.Count() - 1).timeMs));
+                state.haveBodyTime = true;
+            }
             // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
             if (!state.body.Sample(now, pose) || pose.handover != state.handover ||
                 (!a_hideBody && !ModelView::Show(pose, state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2])))) {
@@ -464,6 +627,8 @@ namespace AhShitRim::PlayerSync
             state.reanchoring = false;
             PoseCamera(pose, a_fromHeading, a_fromPitch, a_menu);
             state.drawn++;
+            state.drawnPose = pose;
+            state.drawnThisFrame = true;
             if (!state.cjLogged) {
                 state.cjLogged = true;
                 SKSE::log::info("player sync: CJ drawn from San Andreas's model {:08X}, Skyrim's camera on San Andreas's (fov {:.0f})", pose.model,
@@ -485,17 +650,22 @@ namespace AhShitRim::PlayerSync
                 if (LinkService::Get().ReadVehicle(i, vehicle)) {
                     if ((vehicle.flags & Protocol::kBodyValid) == 0 || vehicle.handover != state.handover) {
                         state.vehicles[i].Reset();
+                        state.vehicleFollow[i].Reset();
                         state.vehiclesDrawn[i].on = false;
                         VehicleFx::Show(a_player, i, nullptr, {}, state.handover, a_delta);
                         Particles::ShowVehicle(i, nullptr, {}, a_delta);
+                        Headlights::Show(i, nullptr, {});
                         continue;
                     }
                     if (vehicle.boneCount <= Protocol::kBodyBoneMax && Body::Finite(vehicle)) {
                         state.vehicles[i].Push(vehicle, now);
                     }
                 }
+                // At CJ's moment, so he sits where the vehicle is drawn (Body::Follow).
                 Protocol::BodyState pose{};
-                if (state.vehicles[i].Sample(now, pose)) {
+                const bool          sampled = state.haveBodyTime ? state.vehicleFollow[i].Sample(state.body, state.bodyTime, state.vehicles[i], now, pose) :
+                                                                   state.vehicles[i].Sample(now, pose);
+                if (sampled) {
                     const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                     if (state.debugVehicle) {
                         state.debugVehicle(i, pose, feet);
@@ -505,20 +675,28 @@ namespace AhShitRim::PlayerSync
                     const float* q = pose.vehicleFrame.rotation;
                     const float  forwardX = 2.0f * (q[0] * q[1] - q[3] * q[2]);
                     const float  forwardY = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
-                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model };
+                    state.vehiclesDrawn[i] = { true, feet, forwardX == 0.0f && forwardY == 0.0f ? 0.0f : std::atan2(forwardX, forwardY), pose.model,
+                        { q[0], q[1], q[2], q[3] } };
                     VehicleFx::Show(a_player, i, &pose, feet, pose.handover, a_delta);
                     Particles::ShowVehicle(i, &pose, feet, a_delta);
+                    Headlights::Show(i, &pose, feet);  // v36
                     if ((pose.flags & Protocol::kBodyDriven) != 0) {
                         driven = pose;
                         drivenFeet = feet;
                         anyDriven = true;
                     }
                 } else {
+                    Headlights::Show(i, nullptr, {});
                     state.vehiclesDrawn[i].on = false;  // nothing drawn this frame
                 }
             }
             // CJ's followers ride in his (v28), smoothed with it, and Skyrim's attacks hit its shape (v31).
-            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet);
+            // Getting in or out: San Andreas's enter or leave task, or already out while the smoothed vehicle is still drawn
+            // driven (a frame or two), which isn't him staying in.
+            Protocol::PlayerState player{};
+            const bool            gettingInOut = LinkService::Get().ReadPlayer(player) && player.handover == state.handover &&
+                                      ((player.flags & Protocol::kPlayerGettingInOut) != 0 || (player.flags & Protocol::kPlayerInVehicle) == 0);
+            Riders::Update(a_player, anyDriven ? &driven : nullptr, drivenFeet, gettingInOut, a_delta);
             Hitboxes::SetVehicle(anyDriven ? &driven : nullptr, drivenFeet);
         }
 
@@ -531,6 +709,7 @@ namespace AhShitRim::PlayerSync
             if (LinkService::Get().ReadGear(gear)) {
                 if ((gear.flags & Protocol::kBodyValid) == 0 || gear.handover != state.handover) {
                     state.gear.Reset();
+                    state.gearFollow.Reset();
                     Particles::ShowGear(nullptr, {}, a_delta);
                     return;
                 }
@@ -539,7 +718,8 @@ namespace AhShitRim::PlayerSync
                 }
             }
             Protocol::BodyState pose{};
-            if (state.gear.Sample(now, pose)) {
+            const bool sampled = state.haveBodyTime ? state.gearFollow.Sample(state.body, state.bodyTime, state.gear, now, pose) : state.gear.Sample(now, pose);
+            if (sampled) {
                 const RE::NiPoint3 feet = state.anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
                 ModelView::Show(pose, feet);
                 Particles::ShowGear(&pose, feet, a_delta);
@@ -570,11 +750,13 @@ namespace AhShitRim::PlayerSync
             Projectiles::Clear();
             WorldPickups::Clear();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear(!a_loading);
             CarHits::Clear();
             LockOn::Clear();
             Riders::Clear();
+            Homies::OnRelease(a_loading);  // v39: the crew goes, its followers come back at the next handover
             Hitboxes::Clear();
             DrawSkyrimPlayer();
             SaHud::ClearText();
@@ -584,6 +766,7 @@ namespace AhShitRim::PlayerSync
                 player->NotifyAnimationGraph("SneakStop"sv);
             }
             state.sneak = false;
+            state.crouchedAt.reset();
             KeepAwake::Display(false);
             if (state.wasThirdPerson) {
                 if (auto* camera = RE::PlayerCamera::GetSingleton()) {
@@ -664,12 +847,15 @@ namespace AhShitRim::PlayerSync
                 drawn.on = false;
             }
             state.gear.Reset();
+            state.gearFollow.Reset();
             VehicleFx::Clear();
+            Headlights::Clear();
             Particles::Clear();
             People::Clear();
             CarHits::Clear();
             LockOn::Clear();
             Riders::Clear();
+            Homies::OnReanchor();  // v39: the followers come again behind CJ
             Hitboxes::Clear();
             Activation::Clear();
             AmmuNation::Close();
@@ -765,6 +951,9 @@ namespace AhShitRim::PlayerSync
             // are both kept in step, and the event is sent again if the graph ignored it.
             const bool sneak = (a_pose.flags & Protocol::kPlayerCrouching) != 0;
             auto*      actorState = a_player->AsActorState();
+            if (sneak) {
+                state.crouchedAt = std::chrono::steady_clock::now();
+            }
             if (actorState && sneak != state.sneak) {
                 state.sneak = sneak;
                 a_player->NotifyAnimationGraph(sneak ? "SneakStart"sv : "SneakStop"sv);
@@ -853,6 +1042,14 @@ namespace AhShitRim::PlayerSync
             if (state.owned && !MenuHasInput() && !Vitals::IsWasted() && !Police::IsBusted() && Cheats::LetterOf(a_dik)) {
                 static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
                 CheatCodes::Key(a_dik, world);
+            }
+        }
+
+        // v39: San Andreas's group key on foot, G: aimed at a homie, recruit or dismiss him (Homies::OnKey).
+        void CrewKey(std::uint32_t a_dik)
+        {
+            if (a_dik == Input::kDikG && state.owned && !InVehicle() && !MenuHasInput() && !AmmuNation::IsOpen() && !Vitals::IsWasted() && !Police::IsBusted()) {
+                Homies::OnKey(state.input.Aiming());
             }
         }
 
@@ -970,6 +1167,12 @@ namespace AhShitRim::PlayerSync
                 Release("the player died");
                 return;
             }
+            // A stealth kill's kill move eases the player it pairs with the victim into place: that isn't the game
+            // moving it (a re-anchor would carry CJ off wherever the move took the hidden player).
+            if (StealthKills::HoldsPlayer(a_player)) {
+                StealthKills::Pushed(a_player->GetPosition() - state.lastPlaced);
+                state.lastPlaced = a_player->GetPosition();
+            }
             if (const auto move = MovedByGame(a_player); Anchor::Reanchors(move)) {
                 Reanchor(a_player, move);
             }
@@ -1039,7 +1242,14 @@ namespace AhShitRim::PlayerSync
                 Police::Retarget(a_player);
             }
             state.standing = false;  // Place says whether CJ stands
-            if (valid && !scene && !unpinned) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
+            state.debugCj = valid ? std::optional(std::pair(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]), pose.heading)) : std::nullopt;
+            // In a stealth kill's kill move the hidden player is the pair's to line up with the victim (put at CJ's
+            // feet every frame, Skyrim's move waits on it and runs twice as long), as long as it stays within
+            // StealthKill::kKillMoveStray of him.
+            const bool killMove = valid && StealthKills::HoldsPlayer(a_player) &&
+                                  a_player->GetPosition().GetDistance(state.anchor + RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2])) <=
+                                      StealthKill::kKillMoveStray * Pose::kUnitsPerMeter;
+            if (valid && !scene && !unpinned && !killMove) {  // in a scene Skyrim moves the player, and San Andreas puts CJ there
                 Place(a_player, pose);
                 state.placed++;
                 if (pose.frame != state.lastPoseFrame) {
@@ -1066,18 +1276,26 @@ namespace AhShitRim::PlayerSync
                 AmmuNation::Close();
             }
             if (AmmuNation::IsOpen() && !MenuHasInput()) {
-                const auto actions = state.input.Build(0, true, true);
+                auto actions = state.input.Build(0, true, true);
+                // On the pad the d-pad browses too (on foot its up and down are the crew's, nothing of San Andreas's).
+                actions.buttons |= (state.pad.Held(Pad::kUp) ? Protocol::kButtonLeanForward : 0u) | (state.pad.Held(Pad::kDown) ? Protocol::kButtonLeanBack : 0u);
                 AmmuNation::Update(a_player, { actions.moveY, actions.buttons, std::exchange(state.shopActivate, false) }, a_delta, valid ? &pose : nullptr);
             }
             Activation::Update(a_player, state.anchor, valid ? &pose : nullptr, MenuHasInput() || scene || AmmuNation::IsOpen());
             const auto scope = valid ? Weapons::ScopeOf(pose.cameraMode) : Weapons::Scope::None;
-            const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera;
+            // A vehicle's first-person view sits out in front of it (Camera::OutOfBox), and CJ isn't drawn in it: San
+            // Andreas puts it at his head (on a bike at his neck), where he would only be in the way.
+            const bool bumper = valid && (pose.flags & Protocol::kPlayerInVehicle) && pose.cameraMode == Weapons::kCamFirstPerson;
+            const bool lookingThrough = scope == Weapons::Scope::Sniper || scope == Weapons::Scope::Rocket || scope == Weapons::Scope::Camera || bumper;
             DrawCj(a_player, fromHeading, fromPitch, MenuHasInput(), lookingThrough);
             DrawVehicles(a_player, a_delta);
             DrawGear(a_delta);
             Particles::Update(a_delta);
             if (valid) {
-                Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough);
+                Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough, state.haveBodyTime ? &state.body : nullptr, state.bodyTime);
+            }
+            if (state.debugFrame) {
+                state.debugFrame();
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
@@ -1088,12 +1306,26 @@ namespace AhShitRim::PlayerSync
             if (onFoot && !MenuHasInput()) {
                 aim.melee = (pose.weaponFlags & Protocol::kWeaponMelee) != 0;
                 aim.gun = Weapons::Flashes(pose.weaponType) && scope == Weapons::Scope::Aim;
-                aim.aim = state.input.Aiming();
-                aim.fire = state.input.Firing();
+                // The test kit's held buttons (DebugHold) count as the mouse's, so its lock-on and stealth kill go as a player's.
+                const std::uint32_t kit = state.debugInput ? state.debugInput->buttons : 0u;
+                aim.aim = state.input.Aiming() || (kit & Protocol::kButtonAim) != 0;
+                aim.fire = state.input.Firing() || (kit & Protocol::kButtonFire) != 0;
                 aim.heading = pose.heading;
+                aim.weapon = pose.weaponType;
+                // The pad's LT (not the mouse's button) locks a gun on (DESIGN.md, Controller).
+                aim.padLock = state.padOn && state.pad.LeftTrigger() >= Pad::kTriggerHeld && !state.input.MouseAiming();
+                aim.shift = std::exchange(state.padShift, 0);
+                aim.rightX = state.pad.RightX();
+                aim.rightY = state.pad.RightY();
             }
+            state.padShift = 0;
             const auto target = LockOn::Update(a_player, cjFeet, aim, a_delta);
-            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target);
+            state.gunLock = target.gunLock;
+            if (target.gunLock) {
+                state.input.AddMouseCounts(target.mouseX, target.mouseY);  // the camera onto the target, published next frame
+            }
+            CarHits::Update(a_player, state.anchor, state.handover, valid && (pose.flags & Protocol::kPlayerInVehicle) != 0 && !scene, onFoot, target.id, target.stealth);
+            StealthKills::Update(a_player, a_delta);
             // The horn clears the way: the people and animals ahead of CJ's vehicle dive aside.
             const bool honking = valid && (pose.flags & Protocol::kPlayerInVehicle) && !scene && !held && !MenuHasInput() && state.input.HornHeld();
             CarHits::Horn(a_player, honking, cjFeet + RE::NiPoint3(pose.vehicleOffset[0], pose.vehicleOffset[1], pose.vehicleOffset[2]),
@@ -1107,6 +1339,7 @@ namespace AhShitRim::PlayerSync
                 valid ? pose.weaponType : 0, seekerAimed, vehicleModel);
             People::Update(a_player, state.anchor, valid ? &pose : nullptr, scene || MenuHasInput());
             WorldPickups::Update(a_player, state.anchor, state.handover, a_delta, valid ? &pose : nullptr, Vitals::IsWasted() || state.reanchoring);
+            Homies::Update(a_player, state.anchor, state.handover, valid ? &pose : nullptr, onFoot && !MenuHasInput(), target.id, a_delta);  // v39: the Grove Street crew
             ModelView::EndFrame();
             HideSneakEye(!state.sneak);
 
@@ -1183,6 +1416,7 @@ namespace AhShitRim::PlayerSync
                     LinkService::ShowMismatch();
                 }
                 state.linkUp = up;
+                UpdatePad(a_player);  // before Drive publishes the input
                 if (state.owned && a_delta > 0.0f) {
                     Drive(a_player, a_delta);
                 } else if (state.resumePending && !state.owned) {
@@ -1196,6 +1430,7 @@ namespace AhShitRim::PlayerSync
                 Arms::Update();
                 CheatCodes::Update();
                 Police::Sweep(a_delta);
+                Homies::Sweep(a_delta);
                 GunRewards::Update();
                 Respawns::Update(state.owned, a_delta);
                 if (a_delta > 0.0f) {
@@ -1212,6 +1447,7 @@ namespace AhShitRim::PlayerSync
                 if (Overlay::ScreenshotSaved()) {
                     SaHud::ShowHelp("Screenshot saved", 3.0f);
                 }
+                SkyrimMessages::Update(state.owned);
                 SaHud::Update(a_delta, state.owned, MenuHasInput());
                 Audio::Update(a_delta, state.owned, GamePaused(), posed ? &pose : nullptr, Missions::CuePlaying());
             }
@@ -1252,11 +1488,26 @@ namespace AhShitRim::PlayerSync
         };
 
         // Only Escape, Tab and the console open Skyrim's menus while San Andreas has the player (Input::OpensSkyrimMenu).
-        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu.
+        // M, the map, doesn't: it's a letter of the cheat codes, and the map is in Tab's menu. Nor does T, the wait menu:
+        // / opens it instead (WaitKey).
+        // On the pad (DESIGN.md, Controller) Back is held back from Skyrim's wait menu in either game, so a second's hold can
+        // hand the player over (Pad::Mapper), and a tap with Skyrim on the player opens the menu through Skyrim's own
+        // handler (OpenWaitMenu). While CJ has the player only the pad's journal (Start) and tween menu (B) open.
         struct MenuOpenHook
         {
             static bool thunk(RE::MenuOpenHandler* a_handler, RE::InputEvent* a_event)
             {
+                if (state.padOn && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kGamepad) {
+                    auto* button = a_event->AsButtonEvent();
+                    auto* events = RE::UserEvents::GetSingleton();
+                    if (button && events) {
+                        const auto& event = button->QUserEvent();
+                        // B's tween menu waits for its hold while CJ has the player (UpdatePad opens it): a tap is Circle in a cheat.
+                        if (event == events->wait || (state.owned && event != events->journal)) {
+                            return false;
+                        }
+                    }
+                }
                 if (state.owned && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
                     if (auto* button = a_event->AsButtonEvent(); button && !Input::OpensSkyrimMenu(button->GetIDCode())) {
                         return false;
@@ -1266,6 +1517,186 @@ namespace AhShitRim::PlayerSync
             }
             static inline REL::Relocation<decltype(thunk)> original;
         };
+
+        // Back tapped on the pad while Skyrim has the player, or / while CJ has it: its wait menu, through Skyrim's own
+        // menu open handler (which refuses it where Skyrim would: in combat, in the air), as the press MenuOpenHook held back.
+        void OpenMenu(const RE::BSFixedString& a_userEvent, std::uint32_t a_id, RE::INPUT_DEVICE a_device = RE::INPUT_DEVICE::kGamepad)
+        {
+            auto* controls = RE::MenuControls::GetSingleton();
+            auto* handler = controls ? controls->menuOpenHandler : nullptr;
+            if (!handler) {
+                return;
+            }
+            for (const float value : { 1.0f, 0.0f }) {
+                auto* event = RE::ButtonEvent::Create(a_device, a_userEvent, a_id, value, value > 0.0f ? 0.0f : 0.1f);
+                if (!event) {
+                    return;
+                }
+                if (MenuOpenHook::original(handler, event)) {
+                    handler->ProcessButton(event);
+                }
+                RE::free(event);
+            }
+        }
+
+        void OpenWaitMenu()
+        {
+            if (auto* events = RE::UserEvents::GetSingleton()) {
+                OpenMenu(events->wait, Pad::kBack);
+            }
+        }
+
+        // / while CJ has the player, on foot: Skyrim's wait menu, since T is a letter of the cheat codes here.
+        void WaitKey()
+        {
+            if (!state.owned || MenuHasInput() || AmmuNation::IsOpen() || Vitals::IsWasted() || Police::IsBusted()) {
+                return;
+            }
+            if (InVehicle()) {
+                SaHud::ShowHelp("Get out of the vehicle to wait.", 3.0f);
+                return;
+            }
+            auto* events = RE::UserEvents::GetSingleton();
+            if (!events) {
+                return;
+            }
+            SKSE::log::info("player sync: / pressed: Skyrim's wait menu, as T without CJ");
+            OpenMenu(events->wait, Input::kDikWait, RE::INPUT_DEVICE::kKeyboard);
+        }
+
+        // Skyrim's Shout on the pad (RB) is the handbrake while CJ is in a vehicle (DESIGN.md, Controller): Z still shouts.
+        struct ShoutHook
+        {
+            static bool thunk(RE::ShoutHandler* a_handler, RE::InputEvent* a_event)
+            {
+                if (state.owned && state.padOn && a_event && a_event->GetDevice() == RE::INPUT_DEVICE::kGamepad && (InVehicle() || !state.shoutGate.Open())) {
+                    return false;  // a tap of RB is R1 in a cheat; held, UpdatePad starts the Shout and the rest of the hold comes through
+                }
+                return original(a_handler, a_event);
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
+        // RB held kHoldGate on foot: Skyrim's Shout starts, as its press would have (ShoutHook held the press back).
+        void StartShout()
+        {
+            auto* controls = RE::PlayerControls::GetSingleton();
+            auto* events = RE::UserEvents::GetSingleton();
+            auto* handler = controls ? controls->shoutHandler : nullptr;
+            auto* event = handler && events ? RE::ButtonEvent::Create(RE::INPUT_DEVICE::kGamepad, events->shout, Pad::kRightShoulder, 1.0f, 0.0f) : nullptr;
+            if (!event) {
+                return;
+            }
+            if (ShoutHook::original(handler, event)) {
+                handler->ProcessButton(event, &controls->data);
+            }
+            RE::free(event);
+        }
+
+        // A pad press while CJ has the player: into San Andreas's console cheat sequences (PadCheats).
+        void PadCheat(std::uint32_t a_id)
+        {
+            if (!state.owned || MenuHasInput() || AmmuNation::IsOpen() || Vitals::IsWasted() || Police::IsBusted()) {
+                return;
+            }
+            if (const auto* cheat = state.padCheats.Press(a_id)) {
+                static const CheatCodes::World world{ CheatSpawn, CjVehicle, CjHydraulics };
+                SKSE::log::info("cheats: {} entered on the pad, as San Andreas's console sequence", cheat->code);
+                state.padCheatsDone++;
+                CheatCodes::Finish(*cheat, world);
+            }
+        }
+
+        // F10, or Back held a second on the pad: the player to CJ or back to Skyrim.
+        void ToggleHandover(const char* a_reason)
+        {
+            if (state.owned) {
+                Release(a_reason);
+            } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                TakeOver(player);
+            }
+        }
+
+        // E pressed, or LB on the pad, with CJ on foot: buys in Ammu-Nation, swaps for a weapon pickup he stands on, or
+        // activates what he faces through Skyrim.
+        void ActivateKey(RE::PlayerCharacter* a_player)
+        {
+            if (MenuHasInput() || Police::IsBusted()) {
+                return;
+            }
+            if (AmmuNation::IsOpen()) {
+                state.shopActivate = true;  // buys, in the shop
+            } else if (WorldPickups::Activate()) {
+                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
+            } else if (a_player) {
+                Activation::Activate(a_player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
+            }
+        }
+
+        // Once a frame, whoever has the player: the pad's actions (Pad::Mapper) into the input CJ gets, Back's tap and hold.
+        void UpdatePad(RE::PlayerCharacter* a_player)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const float seconds = state.padTime == std::chrono::steady_clock::time_point{} ? 0.0f
+                                                                                           : (std::min)(std::chrono::duration<float>(now - state.padTime).count(), 0.25f);
+            state.padTime = now;
+            if (!state.padOn) {
+                return;
+            }
+            Protocol::PlayerState pose{};
+            const bool posed = state.owned && LinkService::Get().ReadPlayer(pose) && pose.handover == state.handover;
+            const bool inVehicle = posed && (pose.flags & Protocol::kPlayerInVehicle) != 0;
+            const auto context = !inVehicle ? Pad::Context::OnFoot : pose.vehicleModel == Pad::kModelHydra ? Pad::Context::Hydra : Pad::Context::Vehicle;
+            const bool scoped = posed && !inVehicle && Weapons::ScopeOf(pose.cameraMode) != Weapons::Scope::None;
+            const bool live = state.owned && !MenuHasInput();
+            const auto frame = state.pad.Update(seconds, context, state.owned, live, scoped, state.padLook);
+            if (frame.handover) {
+                SKSE::log::info("player sync: Back held on the pad: the handover, as F10");
+                ToggleHandover("Back held on the pad");
+                return;
+            }
+            if (frame.waitTap && !state.owned && !MenuHasInput()) {
+                OpenWaitMenu();
+            }
+            if (!state.owned) {
+                state.tweenGate.Update(false, seconds);
+                state.shoutGate.Update(false, seconds);
+                return;
+            }
+            // B and RB do Skyrim's thing once held (DESIGN.md, Controller): their taps are Circle and R1 in a cheat sequence.
+            if (state.tweenGate.Update(state.pad.Held(Pad::kB) && !MenuHasInput(), seconds)) {
+                if (auto* events = RE::UserEvents::GetSingleton()) {
+                    SKSE::log::info("player sync: B held on the pad: Skyrim's tween menu");
+                    OpenMenu(events->tweenMenu, Pad::kB);
+                }
+            }
+            if (state.shoutGate.Update(state.pad.Held(Pad::kRightShoulder) && live && !inVehicle, seconds)) {
+                SKSE::log::info("player sync: RB held on the pad: Skyrim's Shout");
+                StartShout();
+            }
+            state.input.SetPad(frame.actions);
+            const bool locked = state.gunLock && !inVehicle && state.pad.LeftTrigger() >= Pad::kTriggerHeld;
+            if (!locked) {
+                // The right stick looks, but not while the gun lock steers the camera (pushed hard it drops the lock instead).
+                const double scale = LookScale(state.padSensitivity, true);
+                state.input.AddMouseCounts(frame.mouseX * scale, AmmuNation::IsOpen() ? 0.0 : frame.mouseY * scale);
+            }
+            const bool forCj = live && !AmmuNation::IsOpen();
+            const bool own = forCj && state.control == Scene::Control::Cj && !Vitals::IsDown();
+            if (locked) {
+                state.padShift = frame.nextSteps - frame.prevSteps;  // the d-pad shifts the lock, as San Andreas's L2 and R2 while targeting
+            } else {
+                for (int i = 0; i < frame.nextSteps + frame.prevSteps && forCj; ++i) {
+                    state.input.AddWheel(i < frame.nextSteps);  // weapons on foot, stations in a vehicle
+                }
+            }
+            if (frame.insult && own) {
+                state.input.AddInsult();
+            }
+            if (frame.activate && !inVehicle) {
+                ActivateKey(a_player);
+            }
+        }
 
         // F5 and F9: as in San Andreas, no saving (or loading) while wanted. Skyrim's load clearing the world with the
         // pursuit mid-fight in it crashed in its combat code; quicksaves and quickloads wait until the heat is gone.
@@ -1303,11 +1734,32 @@ namespace AhShitRim::PlayerSync
             {
                 bool changed = false;
                 for (auto* e = a_event ? *a_event : nullptr; e; e = e->next) {
+                    if (e->GetDevice() == RE::INPUT_DEVICE::kGamepad) {
+                        // The pad (DESIGN.md, Controller): its state here, its actions once a frame in UpdatePad.
+                        if (!state.padOn) {
+                            continue;
+                        }
+                        if (e->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick) {
+                            auto* stick = static_cast<RE::ThumbstickEvent*>(e);
+                            state.pad.SetStick(stick->IsRight(), stick->xValue, stick->yValue);
+                            state.padLast = true;
+                        } else if (auto* pressed = e->AsButtonEvent()) {
+                            if (state.pad.SetButton(pressed->GetIDCode(), pressed->Value())) {
+                                PadCheat(pressed->GetIDCode());
+                            }
+                            state.padLast = true;
+                        }
+                        continue;
+                    }
+                    if (e->GetDevice() == RE::INPUT_DEVICE::kKeyboard || e->GetEventType() == RE::INPUT_EVENT_TYPE::kButton) {
+                        state.padLast = false;  // a key or a mouse button: the help box names keys again
+                    }
                     if (auto* move = e->AsMouseMoveEvent()) {
                         if (MenuHasInput() || AmmuNation::IsOpen()) {
                             continue;  // moves the menu's cursor, not San Andreas's camera
                         }
-                        state.input.AddMouse(move->mouseInputX, move->mouseInputY);
+                        const double scale = LookScale(state.mouseSensitivity, false);
+                        state.input.AddMouseCounts(move->mouseInputX * scale, move->mouseInputY * scale);
                         changed = true;
                         continue;
                     }
@@ -1368,15 +1820,15 @@ namespace AhShitRim::PlayerSync
                         }
                         continue;
                     }
+                    if (code == Input::kDikG && state.owned && !InVehicle()) {
+                        if (button->IsDown()) {
+                            CrewKey(code);
+                        }
+                        continue;
+                    }
                     if (code == Input::kDikE && state.owned && !InVehicle()) {
-                        if (button->IsDown() && !MenuHasInput() && !Police::IsBusted()) {
-                            if (AmmuNation::IsOpen()) {
-                                state.shopActivate = true;  // buys, in the shop
-                            } else if (WorldPickups::Activate()) {
-                                // CJ stands on a weapon pickup: E swaps his gun for it, and nothing of Skyrim's is activated
-                            } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                                Activation::Activate(player, state.input.Layout());  // what CJ faces, through Skyrim's own activation
-                            }
+                        if (button->IsDown()) {
+                            ActivateKey(RE::PlayerCharacter::GetSingleton());
                         }
                         continue;
                     }
@@ -1403,9 +1855,9 @@ namespace AhShitRim::PlayerSync
                     if (code == Input::kDikApostrophe && !state.devKeys) {
                         continue;
                     }
-                    if (code == Input::kDikSlash && state.owned) {
-                        if (button->IsDown() && !MenuHasInput()) {
-                            SaHud::NextDemo();  // the dev key: San Andreas's text styles in turn
+                    if (code == Input::kDikWait && state.owned) {
+                        if (button->IsDown()) {
+                            WaitKey();  // Skyrim's wait menu, as T opens it without CJ
                         }
                         continue;
                     }
@@ -1435,14 +1887,7 @@ namespace AhShitRim::PlayerSync
                 SKSE::log::info("player sync: dev pick {}", VehicleKinds::Label(model));
             }
 
-            static void Toggle()
-            {
-                if (state.owned) {
-                    Release("F10");
-                } else if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                    TakeOver(player);
-                }
-            }
+            static void Toggle() { ToggleHandover("F10"); }
         };
 
         // Skyrim positioning the player: a load door (a city's gate too), fast travel, coc, a script's
@@ -1501,6 +1946,8 @@ namespace AhShitRim::PlayerSync
         FavoritesHook::original = favorites.write_vfunc(0x1, FavoritesHook::thunk);
         REL::Relocation<std::uintptr_t> menuOpen{ RE::VTABLE_MenuOpenHandler[0] };
         MenuOpenHook::original = menuOpen.write_vfunc(0x1, MenuOpenHook::thunk);
+        REL::Relocation<std::uintptr_t> shout{ RE::VTABLE_ShoutHandler[0] };
+        ShoutHook::original = shout.write_vfunc(0x1, ShoutHook::thunk);
         REL::Relocation<std::uintptr_t> quick{ RE::VTABLE_QuickSaveLoadHandler[0] };
         QuickSaveLoadHook::original = quick.write_vfunc(0x1, QuickSaveLoadHook::thunk);
         BlockHook<kMovementHook>::Install(RE::VTABLE_MovementHandler[0]);
@@ -1523,15 +1970,83 @@ namespace AhShitRim::PlayerSync
         SKSE::log::info("player sync: PlayerCharacter::Update and Skyrim's player input handlers hooked, F10 hands the player to San Andreas");
     }
 
+    bool PadInUse() { return state.padOn && state.padLast; }
+
+    void DebugPad(std::uint32_t a_id, float a_value)
+    {
+        if (state.pad.SetButton(a_id, a_value)) {
+            PadCheat(a_id);  // as the input sink does
+        }
+        state.padLast = true;
+    }
+
+    int DebugPadCheats() { return state.padCheatsDone; }
+
+    DebugLookState DebugLook()
+    {
+        return DebugLookState{ .mouse = state.mouseSensitivity ? state.mouseSensitivity->GetFloat() : 0.0f,
+            .pad = state.padSensitivity ? state.padSensitivity->GetFloat() : 0.0f, .mouseMin = state.mouseRange.min, .mouseMax = state.mouseRange.max,
+            .padMin = state.padRange.min, .padMax = state.padRange.max, .mouseScale = LookScale(state.mouseSensitivity, false),
+            .padScale = LookScale(state.padSensitivity, true) };
+    }
+
+    void DebugSetLook(float a_mouse, float a_pad)
+    {
+        if (a_mouse >= 0.0f && state.mouseSensitivity) {
+            state.mouseSensitivity->data.f = a_mouse;
+        }
+        if (a_pad >= 0.0f && state.padSensitivity) {
+            state.padSensitivity->data.f = a_pad;
+        }
+    }
+
+    bool DebugResetLook(const std::filesystem::path& a_copy)
+    {
+        Ini::Set("Input", "LookReset", "0", "1: AhShitRim has moved Skyrim's Look Sensitivity sliders to their middle once (never again)");
+        // Not written to SkyrimPrefs.ini: in a test session the file on disk is the player's own once Skyrim has loaded.
+        // The same write goes to a_copy instead.
+        ResetLookOnce(false);
+        return WriteLookPrefs(&a_copy);
+    }
+
+    void DebugStick(bool a_right, float a_x, float a_y)
+    {
+        state.pad.SetStick(a_right, a_x, a_y);
+        state.padLast = true;
+    }
+
     void OnDataLoaded()
     {
         static InputSink inputSink;
         static MenuSink  menuSink;
         Conversation::OnDataLoaded();
+        SkyrimMessages::OnDataLoaded();
         const auto layout = Ini::Value("Input", "KeyLayout");
         state.input.SetLayout(Input::ParseKeyLayout(layout));
         SKSE::log::info("player sync: {} key layout ([Input] KeyLayout={} in {})", Input::NameOf(state.input.Layout()), layout.empty() ? "unset" : layout,
             Ini::kPath);
+        // The pad (DESIGN.md, Controller), from Skyrim's own gamepad events: Skyrim's gamepad setting has to be on.
+        const auto pad = Ini::Value("Input", "Pad");
+        state.padOn = pad.empty() || pad != "0";
+        state.padLook.lookSpeed = Pad::ParseNumber(Ini::Value("Input", "PadLookSpeed"), state.padLook.lookSpeed, 100.0f, 10000.0f);
+        state.padLook.aimShare = Pad::ParseNumber(Ini::Value("Input", "PadAimSpeed"), state.padLook.aimShare, 0.05f, 2.0f);
+        state.padLook.invertY = Ini::Value("Input", "PadInvertY") == "1";
+        if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton()) {
+            state.mouseSensitivity = prefs->GetSetting(LookSensitivity::kMouseSetting);
+            state.padSensitivity = prefs->GetSetting(LookSensitivity::kPadSetting);
+        }
+        state.mouseRange = LookRange(LookSensitivity::kMouseMinSetting, LookSensitivity::kMouseMaxSetting, LookSensitivity::kMouseRange);
+        state.padRange = LookRange(LookSensitivity::kPadMinSetting, LookSensitivity::kPadMaxSetting, LookSensitivity::kPadRange);
+        SKSE::log::info("player sync: look sliders: mouse {:.4f} to {:.4f}, pad {:.4f} to {:.4f}", state.mouseRange.min, state.mouseRange.max,
+            state.padRange.min, state.padRange.max);
+        ResetLookOnce();
+        SKSE::log::info("player sync: CJ's look follows Skyrim's look sensitivity: mouse {}, pad {}",
+            state.mouseSensitivity ? std::format("{:.4f} (x{:.2f})", state.mouseSensitivity->GetFloat(), LookScale(state.mouseSensitivity, false)) : "not found, x1",
+            state.padSensitivity ? std::format("{:.4f} (x{:.2f})", state.padSensitivity->GetFloat(), LookScale(state.padSensitivity, true)) : "not found, x1");
+        auto*      devices = RE::BSInputDeviceManager::GetSingleton();
+        const bool skyrimPad = devices && devices->IsGamepadEnabled();
+        SKSE::log::info("player sync: the pad is {} ([Input] Pad), look speed {:.0f}, aiming {:.2f}{}; Skyrim's gamepad setting is {}", state.padOn ? "on" : "off",
+            state.padLook.lookSpeed, state.padLook.aimShare, state.padLook.invertY ? ", inverted" : "", skyrimPad ? "on" : "off (Settings, Controls, Gamepad: no pad events reach us)");
         const auto devKeys = Ini::Value("Debug", "VehicleKeys");
         state.devKeys = devKeys.empty() || devKeys != "0";
         const auto devList = Ini::Value("Debug", "Vehicles");
@@ -1543,7 +2058,9 @@ namespace AhShitRim::PlayerSync
         Balance::OnDataLoaded();
         Arms::OnDataLoaded();
         CheatCodes::OnDataLoaded();
+        Homies::OnDataLoaded();
         Shots::OnDataLoaded();
+        StealthKills::OnDataLoaded();
         People::OnDataLoaded();
         Projectiles::OnDataLoaded();
         GunRewards::OnDataLoaded();
@@ -1580,7 +2097,22 @@ namespace AhShitRim::PlayerSync
 
     std::uint32_t DebugHandover() { return state.handover; }
 
-    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model)
+    float SinceCrouched()
+    {
+        return state.crouchedAt ? std::chrono::duration<float>(std::chrono::steady_clock::now() - *state.crouchedAt).count() : -1.0f;
+    }
+
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading)
+    {
+        if (!state.owned || !state.debugCj) {
+            return false;
+        }
+        a_feet = state.debugCj->first;
+        a_heading = state.debugCj->second;
+        return true;
+    }
+
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model, float (*a_rotation)[4])
     {
         if (!state.owned || a_slot >= Protocol::kVehicleMax || !state.vehiclesDrawn[a_slot].on) {
             return false;
@@ -1589,6 +2121,9 @@ namespace AhShitRim::PlayerSync
         a_heading = state.vehiclesDrawn[a_slot].heading;
         if (a_model) {
             *a_model = state.vehiclesDrawn[a_slot].model;
+        }
+        if (a_rotation) {
+            std::copy(std::begin(state.vehiclesDrawn[a_slot].rotation), std::end(state.vehiclesDrawn[a_slot].rotation), std::begin(*a_rotation));
         }
         return true;
     }
@@ -1603,10 +2138,34 @@ namespace AhShitRim::PlayerSync
         }
     }
 
-    void DebugHold(const std::optional<DebugInput>& a_input)
+    void DebugButtons(bool a_aim, bool a_fire)
+    {
+        state.input.SetAim(a_aim);
+        state.input.SetFire(a_fire);
+    }
+
+    void DebugKey(std::uint32_t a_dik, bool a_down)
+    {
+        if (a_dik < 256) {
+            state.debugKeys.set(a_dik, a_down);
+            state.input.SetKey(a_dik, a_down);
+        }
+    }
+
+    bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera)
+    {
+        const auto& p = state.drawnPose;
+        a_pose = p;
+        a_feet = state.anchor + RE::NiPoint3(p.feet[0], p.feet[1], p.feet[2]);
+        a_camera = state.anchor + RE::NiPoint3(p.cameraPosition[0], p.cameraPosition[1], p.cameraPosition[2]);
+        return state.drawnThisFrame;
+    }
+    void DebugWait() { WaitKey(); }
+
+    void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for)
     {
         state.debugInput = a_input;
-        state.debugInputUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        state.debugInputUntil = std::chrono::steady_clock::now() + a_for;
         Publish();
     }
 
@@ -1615,12 +2174,20 @@ namespace AhShitRim::PlayerSync
         state.debugVehicle = std::move(a_hook);
     }
 
+    void SetDebugFrameHook(std::function<void()> a_hook)
+    {
+        state.debugFrame = std::move(a_hook);
+    }
+
     void DebugType(const char* a_code)
     {
         for (const char* c = a_code; c && *c; ++c) {
             for (std::uint32_t dik = 0; dik < 0x100; dik++) {
                 if (Cheats::LetterOf(dik) == *c) {
                     TypeCheat(dik);
+                    if (dik == Input::kDikG) {
+                        CrewKey(dik);  // as the key does: the hit test types G with a crew and no aim
+                    }
                     break;
                 }
             }

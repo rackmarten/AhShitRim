@@ -38,11 +38,17 @@ namespace AhShitRim::CheatCodes
     // A key went down while CJ has the player and no menu has the input.
     void Key(std::uint32_t a_dik, const World& a_world);
 
+    // A cheat finished some other way than typing it: San Andreas's console sequence on the pad (protocol/cpp/pad_cheats.h).
+    void Finish(const Cheats::Cheat& a_cheat, const World& a_world);
+
     // Every frame, owned or not: toggles sent again once the link is back up, NOMERCY's flags kept cleared.
     void Update();
 
     // Whether the toggle with San Andreas's index a_cheat is on (v22: AEZAKMI, for the wanted level).
     bool On(Cheats::SaCheat a_cheat);
+
+    // Whether NOMERCY cleared the essential flag of the actor a_id or of its base a_base (Respawns: they come back).
+    bool Spared(std::uint32_t a_id, std::uint32_t a_base);
 
     // A game loads or a new one starts: San Andreas's toggles and BAGUVIX off.
     void OnGameLoad();

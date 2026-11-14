@@ -28,9 +28,27 @@ TEST_CASE("the frozen header layout")
     CHECK(offsetof(LinkHeader, peers) + static_cast<std::size_t>(Side::SanAndreas) * sizeof(PeerInfo) == 48);
 }
 
+TEST_CASE("protocol v36: vehicle lights")
+{
+    CHECK(offsetof(InputState, sky) == 115);  // the reserved byte before
+    CHECK(offsetof(InputState, minuteOfDay) == 124);
+    CHECK(sizeof(InputState) == 136);  // v40
+    CHECK(sizeof(InputSlot) == 144);  // the pad shrank: the slots after it stay where they were
+    CHECK(kSkyClock == 0x1);
+    CHECK(kSkyWet == 0x2);
+    CHECK(kSkyDark == 0x4);
+    CHECK(sizeof(BodyLights) == 16);
+    CHECK(offsetof(BodyState, lights) == 2088);
+    CHECK(sizeof(BodyState) == 2104);
+    CHECK(sizeof(BodySlot) == 2112);  // in the slot's padding
+    CHECK(kLightFrontRight == 0x1);
+    CHECK(kLightFrontLeft == 0x2);
+    CHECK(kLightRearRight == 0x4);
+    CHECK(kLightRearLeft == 0x8);
+}
+
 TEST_CASE("protocol v35: passengers, busts and vehicle proofs")
 {
-    CHECK(kProtocolVersion == 35);
     CHECK(static_cast<std::uint8_t>(EffectKind::HitVehicle) == 6);
     CHECK(kPlayerGettingInOut == 0x40);
     CHECK(kBodyBulletProof == 0x80);
@@ -50,6 +68,8 @@ TEST_CASE("protocol v33: fist fights and lock-on")
 {
     CHECK(kProxyTarget == 0x4);
     CHECK((kProxyTarget & (kProxyHeavy | kProxyPerson)) == 0);
+    CHECK(kProxyStealthKill == 0x8);
+    CHECK((kProxyStealthKill & (kProxyHeavy | kProxyPerson | kProxyTarget)) == 0);
 }
 
 TEST_CASE("protocol v32: the burnout")
@@ -64,7 +84,6 @@ TEST_CASE("protocol v31: Skyrim's hits on CJ's vehicle")
     CHECK(offsetof(BodyState, vehicleFrame) == 2036);
     CHECK(offsetof(BodyState, boxMin) == 2064);
     CHECK(offsetof(BodyState, boxMax) == 2076);
-    CHECK(sizeof(BodyState) == 2088);
     CHECK(sizeof(BodySlot) == 2112);  // 64 bytes larger: every slot after the body slot and both rings move
 }
 
@@ -75,7 +94,6 @@ TEST_CASE("protocol v30: HUD sounds")
 
 TEST_CASE("protocol v29: CJ talking on his own")
 {
-    CHECK(sizeof(InputState) == 124);
     CHECK(offsetof(InputState, stealthKillCount) == 116);
     CHECK(offsetof(InputState, cashCount) == 118);
     CHECK(offsetof(InputState, shopBuyCount) == 120);
@@ -200,7 +218,10 @@ TEST_CASE("protocol v19 constants")
     CHECK(offsetof(ShotEvent, origin) == 16);
     CHECK(offsetof(ShotEvent, direction) == 28);
     CHECK(offsetof(ShotEvent, range) == 40);
+    CHECK(offsetof(ShotEvent, target) == 44);
     CHECK(kShotFlame == 2);
+    CHECK(kShotStealthGrab == 3);
+    CHECK(kShotStealthStab == 4);
     CHECK(static_cast<std::uint16_t>(MessageType::Projectile) == 5);
     CHECK(kProjectileBurst == 0x1);
     CHECK(kProjectilePartMax == 2);
@@ -268,7 +289,7 @@ TEST_CASE("protocol v19 constants")
     CHECK(kBodyDriven == 0x2);
     CHECK(kVehicleMax == 4);
     CHECK(kSkinModelVehicle == 1);
-    CHECK(kMappingSize == 8407360);
+    CHECK(kOffsetCrewInput == 8407360);  // v39: the old mapping's end, where the crew's slots start
     CHECK(kCollisionChunkUnits == 2048);
     CHECK(static_cast<std::uint16_t>(MessageType::CollisionChunk) == 1);
     CHECK(static_cast<std::uint16_t>(MessageType::ModelChunk) == 2);
@@ -284,7 +305,7 @@ TEST_CASE("the v31 slot and ring layout")
 {
     CHECK(kOffsetInputSlot == 128);
     CHECK(kOffsetPlayerSlot == 272);
-    CHECK(sizeof(InputState) == 124);
+    CHECK(sizeof(InputState) == 136);  // v40  // v36
     CHECK(offsetof(InputState, anchor) == 44);
     CHECK(offsetof(InputState, spawnModel) == 56);
     CHECK(offsetof(InputState, spawnCount) == 58);
@@ -338,7 +359,7 @@ TEST_CASE("the v31 slot and ring layout")
     CHECK(kOffsetBodySlot == 640);
     CHECK(sizeof(BodySlot) == 2112);
     CHECK(offsetof(BodySlot, value) == 8);
-    CHECK(sizeof(BodyState) == 2088);  // v31: the vehicle frame and box after the seats
+    CHECK(sizeof(BodyState) == 2104);  // v31: the vehicle frame and box after the seats; v36: the lights
     CHECK(offsetof(BodyState, seatCount) == 1948);
     CHECK(offsetof(BodyState, seats) == 1952);
     CHECK(offsetof(BodyState, cameraUp) == 1856);
@@ -360,4 +381,68 @@ TEST_CASE("the v31 slot and ring layout")
     CHECK(sizeof(ModelChunkHeader) == 16);
     CHECK(sizeof(SkinVertex) == 52);
     CHECK(sizeof(CollisionChunkHeader) == 40);
+}
+
+TEST_CASE("protocol v37: the worldspace the player is in, for the parked vehicles")
+{
+    CHECK(offsetof(InputState, world) == 126);  // a byte reserved since v36, clear of sky (115)
+    CHECK(offsetof(InputState, sky) == 115);
+    CHECK(sizeof(InputState) == 136);  // v40
+    CHECK(kWorldNone == 0);
+    CHECK(kWorldTamriel == 1);
+    CHECK(kWorldWhiterun == 2);
+}
+
+TEST_CASE("protocol v38: the knife stealth kill, and every layout change since v35 side by side")
+{
+    CHECK(kProtocolVersion >= 38);
+    CHECK(kProxyStealthKill == 0x8);
+    CHECK(offsetof(ShotEvent, target) == 44);
+    CHECK(sizeof(ShotEvent) == 64);
+    // v36's sky (115) and minuteOfDay (124), v37's world (126): no two share a byte
+    CHECK(offsetof(InputState, sky) == 115);
+    CHECK(offsetof(InputState, minuteOfDay) == 124);
+    CHECK(offsetof(InputState, world) == 126);
+    CHECK(sizeof(InputState) == 136);  // v40
+}
+
+TEST_CASE("protocol v40: the pad's analog driving in the input")
+{
+    CHECK(kProtocolVersion == 40);
+    CHECK(offsetof(InputState, world) == 126);
+    CHECK(offsetof(InputState, throttle) == 128);
+    CHECK(offsetof(InputState, brake) == 129);
+    CHECK(offsetof(InputState, lean) == 130);
+    CHECK(sizeof(InputState) == 136);
+    CHECK(sizeof(InputSlot) == 144);  // still inside the slot: the slots after it stay where they were
+}
+
+TEST_CASE("protocol v39: the Grove Street crew's slots after the rings, and the shooter of a shot")
+{
+    CHECK(kProtocolVersion >= 39);  // v40 sits beside it, in the input
+    CHECK(kCrewMax == 24);
+    CHECK(kOffsetCrewInput == kOffsetRingToSkyrim + sizeof(RingHeader) + kRingToSkyrimCapacity);  // nothing before it moved
+    CHECK(kOffsetCrewSlots == 8408576);
+    CHECK(kMappingSize == 8509952);
+    CHECK(sizeof(CrewMember) == 48);
+    CHECK(sizeof(CrewSlot) == 4224);
+    CHECK(offsetof(ShotEvent, shooter) == 48);  // out of v38's reserved bytes, after target
+    CHECK(offsetof(ShotEvent, target) == 44);
+    CHECK(sizeof(ShotEvent) == 64);
+    CHECK((kCrewPresent | kCrewAiming | kCrewFiring | kCrewDead | kCrewSeated | kCrewFollower) == 0x3F);
+}
+
+TEST_CASE("protocol v40 holds the crew's v39 layout and the pad's: neither moved the other's offsets")
+{
+    CHECK(kProtocolVersion == 40);
+    CHECK(sizeof(InputState) == 136);
+    CHECK(offsetof(InputState, throttle) == 128);
+    CHECK(sizeof(InputSlot) == 144);
+    CHECK(kOffsetProxySlot + sizeof(ProxySlot) == kOffsetRingToSanAndreas);
+    CHECK(kOffsetCrewInput == 8407360);
+    CHECK(kOffsetCrewSlots == 8408576);
+    CHECK(kMappingSize == 8509952);
+    CHECK(offsetof(ShotEvent, target) == 44);
+    CHECK(offsetof(ShotEvent, shooter) == 48);
+    CHECK(sizeof(ShotEvent) == 64);
 }

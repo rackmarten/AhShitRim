@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../ahshitrim_protocol.h"
+#include "body.h"
 
 class CPlayerPed;
 class CVector;
@@ -40,7 +41,10 @@ namespace AhShitRim::CjBody
     // left) as last posed; false when he has no such bone.
     bool BoneWorld(CPlayerPed* a_ped, int a_boneId, RwMatrixTag& a_out);
 
-    // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call).
+    // San Andreas's real-time clock the body slots are stamped with (milliseconds since the first call), read once a
+    // frame (BeginFrame, after San Andreas's own frame): CJ, his vehicles, his gear and his weapons carry the same stamp
+    // for the same frame, so Skyrim draws them at the same moment.
+    void          BeginFrame();
     std::uint32_t NowMs();
 
     // Another skinned clump read the way CJ's is (v19: the parachute's canopy): its model as a SkinModel of kind
@@ -51,4 +55,12 @@ namespace AhShitRim::CjBody
     // That clump's bones as its skeleton has them now, relative to a_feet (San Andreas metres) as CJ's are, into
     // a_out.bones; false when it has no skeleton or skin.
     bool PoseSkinned(RpClump* a_clump, std::uint32_t a_boneCount, const CVector& a_feet, Protocol::BodyState& a_out);
+
+    // v39, a homie's puppet: his right arm turned onto the line from his shoulder to a_target and his hand so the gun's
+    // barrel points at it, as CJ's one-handed aim is posed (Aim::ReachAlong). a_forward is the way he faces. After his
+    // bones are posed for the frame.
+    void AimRightArm(RpClump* a_clump, const CVector& a_forward, const CVector& a_target);
+
+    // A RenderWare matrix as the rows Body::ToBone takes.
+    Body::RwRows Rows(const RwMatrixTag& a_m);
 }

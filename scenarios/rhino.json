@@ -1,0 +1,101 @@
+// How the Rhino drives on Skyrim's ground (the tank's turn and its tracks, protocol/cpp/tracks.h): CJ in a Rhino,
+// driven by held keys (asr.drive, which measures each leg with protocol/cpp/ride.h), with shots from above.
+// scripts/skytest.ps1 run scenarios/rhino.json (scenarios/README.md).
+//
+// 1. Riverwood's road to Helgen, at the coc spot: a short straight run along it and a gentle left, between the rocks.
+// 2. The same road on the open plain below Pelagia Farm, on the way to Whiterun: full right, full right with the
+//    handbrake, full left. A tank turns about its middle: its middle moves along its heading (slip), where San Andreas's
+//    own turn about the rear axle slid it 14 to 17 degrees off (fake_vehicles' handling check). The handbrake turns it
+//    tighter, as in San Andreas.
+// 3. Rough ground on the same plain: from flat open ground, straight on over a cluster of small rock piles 15 to 30 m
+//    ahead (Skyrim.esm's RockPileS01 to 03 and a few larger rocks), then a full right among them. It never tips past
+//    60 degrees (on its side is 90), never rolls past 35, and never goes up faster than 6 m/s: climbing the piles at
+//    11 m/s nose up 23 degrees it rose 4.6 m/s (11 x sin 23 is 4.3), as its tracks climb; a hull thrown off a rock rises
+//    faster than that. (The rock field on the slope north of Riverwood and the riverbank north-east of it were tried
+//    first: the spawn rule put the tank between boulders taller than its tracks there, or the player slid into the
+//    river and the tank went over the falls.)
+//
+// Measured (13 November 2026): slip off its heading 0.3 to 0.9 degrees straight on; full right on the plain 171 degrees
+// round 7.4 m with a median slip of 5.7, with the handbrake round 4.6 m, full left round 9.9 m at 3.1; over the rock
+// piles 2.3 m up and down with 23 degrees of tilt, the turn among them round 9.2 m at 6.5 and 13 degrees of roll.
+// The limits, adjustable: the median slip under 8 degrees in a full turn without the handbrake, over at least 30
+// samples faster than 2 m/s (4 in Riverwood's short legs, where the session's first frames are slow) (fake_vehicles' limit, there on the mean); the
+// median, since a leg that ends against a tree or a rock face is thrown sideways at 50 degrees and more for a few frames
+// (asr.drive counts those as impacts). Over the rock piles the tank must go up and down at least
+// 1 m (measured 2.3), or it missed them. The handbrake's turn is tighter than the plain one (read from the answers'
+// radiusM: the checks can't compare two steps).
+{
+  "name": "rhino",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "facing along the road (east)", "cmd": "console", "command": "player.setangle z 82" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    "wait frames=45",
+    { "label": "CJ in a Rhino on Riverwood's road", "cmd": "asr.spawn", "model": 432, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "from above", "cmd": "camera", "mode": "top", "at": "asr.vehicle:driven", "distance": 2200 },
+    "wait frames=10",
+    { "cmd": "screenshot", "name": "riverwood-start" },
+    { "label": "Riverwood: straight on, 1.5 s", "cmd": "asr.drive", "seconds": 1.5,
+      "expect": ["topSpeed > 2", "slipSamples > 3", "maxTilt < 30", "medianSlip < 5"] },
+    { "label": "Riverwood: a gentle left, 1.5 s", "cmd": "asr.drive", "steer": -0.4, "seconds": 1.5,
+      "expect": ["turned < -3", "slipSamples > 3", "medianSlip < 8"] },
+    { "cmd": "screenshot", "name": "riverwood-turned" },
+    { "label": "Riverwood: stop", "cmd": "asr.drive", "gas": "back", "seconds": 1.5 },
+
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "to the plain below Pelagia Farm", "cmd": "console", "command": "player.setpos x 13843" },
+    { "cmd": "console", "command": "player.setpos y -13466" },
+    { "cmd": "console", "command": "player.setpos z -4700" },
+    { "cmd": "console", "command": "player.setangle z 0" },
+    { "cmd": "wait", "seconds": 4 },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    "wait frames=45",
+    { "label": "CJ in a Rhino on the plain", "cmd": "asr.spawn", "model": 432, "in": true, "expect": ["driven == true"] },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "from above", "cmd": "camera", "mode": "top", "at": "asr.vehicle:driven", "distance": 3000 },
+    "wait frames=10",
+    { "cmd": "screenshot", "name": "plain-start" },
+    { "label": "plain: up to speed, 2 s", "cmd": "asr.drive", "seconds": 2, "expect": ["topSpeed > 2"] },
+    { "label": "plain: full right, 4 s", "cmd": "asr.drive", "steer": 1, "seconds": 4,
+      "expect": ["turned > 20", "slipSamples > 30", "medianSlip < 8"] },
+    { "cmd": "screenshot", "name": "plain-right" },
+    { "label": "plain: full right with the handbrake, 3 s", "cmd": "asr.drive", "steer": 1, "handbrake": true, "seconds": 3,
+      "expect": ["turned > 20"] },
+    { "cmd": "screenshot", "name": "plain-handbrake" },
+    { "label": "plain: stop", "cmd": "asr.drive", "gas": "back", "seconds": 2 },
+    { "label": "plain: full left, 5 s", "cmd": "asr.drive", "steer": -1, "seconds": 5,
+      "expect": ["turned < -20", "slipSamples > 30", "medianSlip < 8"] },
+    { "cmd": "screenshot", "name": "plain-left" },
+    { "label": "plain: stop", "cmd": "asr.drive", "gas": "back", "seconds": 2 },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "to open ground below Pelagia Farm, rock piles ahead", "cmd": "console", "command": "player.setpos x 12443" },
+    { "cmd": "console", "command": "player.setpos y -14516" },
+    { "cmd": "console", "command": "player.setpos z -4750" },
+    { "label": "facing the rock piles", "cmd": "console", "command": "player.setangle z 311" },
+    { "label": "the player settles", "cmd": "wait", "seconds": 6 },
+    { "label": "on the ground there", "cmd": "state", "ref": "player", "expect": ["position.z > -4850", "position.z < -4700"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    "wait frames=45",
+    { "label": "CJ in a Rhino facing the rocks", "cmd": "asr.spawn", "model": 432, "in": true, "expect": ["driven == true"] },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "from above", "cmd": "camera", "mode": "top", "at": "asr.vehicle:driven", "distance": 2200 },
+    "wait frames=10",
+    { "cmd": "screenshot", "name": "rocks-start" },
+    { "label": "rocks: straight on over the rock piles, 5 s", "cmd": "asr.drive", "seconds": 5,
+      "expect": ["topSpeed > 5", "heightRange > 1", "maxTilt < 60", "maxRoll < 35", "maxRise < 6"] },
+    { "cmd": "screenshot", "name": "rocks-straight" },
+    { "label": "rocks: a full right among them, 4 s", "cmd": "asr.drive", "steer": 1, "seconds": 4,
+      "expect": ["turned > 20", "slipSamples > 30", "medianSlip < 8", "maxTilt < 60", "maxRoll < 35", "maxRise < 6"] },
+    { "cmd": "screenshot", "name": "rocks-right" },
+    { "label": "from its side", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:driven", "yaw": 90, "distance": 900, "pitch": 10 },
+    "wait frames=10",
+    { "cmd": "screenshot", "name": "rocks-side" },
+    { "label": "on its tracks at the end", "cmd": "asr.drive", "gas": "none", "seconds": 0.5, "expect": ["maxTilt < 60"] },
+    { "label": "the game's camera again", "cmd": "camera", "mode": "player" }
+  ]
+}

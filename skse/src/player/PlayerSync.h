@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -27,6 +29,11 @@ namespace AhShitRim::Cosave
     struct Record;
 }
 
+namespace AhShitRim::Protocol
+{
+    struct BodyState;
+}
+
 namespace AhShitRim::PlayerSync
 {
     void Install();       // hooks; call at SKSE load
@@ -37,14 +44,58 @@ namespace AhShitRim::PlayerSync
     // once the game is up), and a new game or a load starting over.
     void Snapshot(Cosave::Record& a_out);
 
+    // Whether the gamepad was the last thing used (DESIGN.md, Controller): the help box names its buttons ("LB: Open").
+    bool PadInUse();
+
+    // Seconds since CJ was last seen crouching (Skyrim's player sneaking for him), -1 when never: Shots' sneak attack
+    // counts a knife blow swung from a crouch that stood him up (Damage::CrouchedBlow).
+    float SinceCrouched();
+
     // The load test (debug): whether San Andreas has the player, F10's toggle, and a cheat typed as its letters.
     bool          DebugOwned();
     std::uint32_t DebugHandover();  // the test kit: the current handover (InputState.handover), to match San Andreas's answers to it
     // The test kit: where vehicle slot a_slot was drawn last (its position, Skyrim world units), its heading (radians, Skyrim's:
-    // 0 north, clockwise) and the model drawn (ModelView's id). False when San Andreas hasn't the player or the slot draws nothing.
-    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr);
+    // 0 north, clockwise), the model drawn (ModelView's id) and its frame (BodyState.vehicleFrame's quaternion x, y, z, w). False when
+    // San Andreas hasn't the player or the slot draws nothing.
+    bool DebugVehicle(std::uint32_t a_slot, RE::NiPoint3& a_position, float& a_heading, std::uint32_t* a_model = nullptr, float (*a_rotation)[4] = nullptr);
     void DebugToggle();
     void DebugType(const char* a_code);
+    // The hit test's stealth scenario (debug, v38): the mouse's aim and fire buttons held as if pressed.
+    void DebugButtons(bool a_aim, bool a_fire);
+    // The hit test's pad scenario (debug): a gamepad button (a Skyrim gamepad id code, Pad::k*) or stick as Skyrim's
+    // gamepad events would set them.
+    void DebugPad(std::uint32_t a_id, float a_value);
+    void DebugStick(bool a_right, float a_x, float a_y);
+    int  DebugPadCheats();  // console cheat sequences finished on the pad so far
+
+    // The test kit (debug): Skyrim's look sensitivity sliders (their live values and their ends) and the scales CJ's look
+    // counts get from them (look_sensitivity.h); setting a slider's live value (below 0 leaves it), as its menu does; and
+    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first), in memory: its write
+    // goes to a_copy (SkyrimPrefs.ini with the sliders set), not to SkyrimPrefs.ini, which in a test session is the
+    // player's own file once Skyrim has loaded. False when the copy couldn't be written.
+    struct DebugLookState
+    {
+        float  mouse = 0.0f;
+        float  pad = 0.0f;
+        float  mouseMin = 0.0f;
+        float  mouseMax = 0.0f;
+        float  padMin = 0.0f;
+        float  padMax = 0.0f;
+        double mouseScale = 1.0;
+        double padScale = 1.0;
+    };
+    DebugLookState DebugLook();
+    void           DebugSetLook(float a_mouse, float a_pad);
+    bool           DebugResetLook(const std::filesystem::path& a_copy);
+    // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
+    void DebugKey(std::uint32_t a_dik, bool a_down);
+    // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San
+    // Andreas's camera in the world; false on a frame he wasn't drawn.
+    bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
+    // The hit test's respawns scenario (debug): / pressed, Skyrim's wait menu as the key opens it.
+    void DebugWait();
+    // The test kit: CJ's feet in Skyrim's world (where his last pose puts him) and his heading. False when San Andreas hasn't the player.
+    bool DebugCj(RE::NiPoint3& a_feet, float& a_heading);
 
     void Restore(const Cosave::Record& a_record);
     void Revert();
@@ -59,17 +110,22 @@ namespace AhShitRim::PlayerSync
 
     // The test kit (debug): input held for CJ on top of the keyboard's while San Andreas has the player and no menu has
     // the input: the stick (moveX right, moveY forward, -1 to 1; San Andreas moves CJ that way from its camera's view)
-    // and Protocol::kButton* bits. nullopt lets go; so does 0.3 s without another call (a test whose request went away).
+    // and Protocol::kButton* bits. nullopt lets go; so does a_for (0.3 s) without another call (a test whose request
+    // went away).
     struct DebugInput
     {
         float         moveX = 0.0f;
         float         moveY = 0.0f;
         std::uint32_t buttons = 0;
     };
-    void DebugHold(const std::optional<DebugInput>& a_input);
+    void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for = std::chrono::milliseconds(300));
 
     // The test kit (debug): called for each vehicle about to be drawn this frame, with its smoothed pose (which it may
     // change, for what's drawn this frame only) and its position in Skyrim's world. An empty function takes it out.
     using DebugVehicleHook = std::function<void(std::uint32_t a_slot, Protocol::BodyState& a_pose, const RE::NiPoint3& a_feet)>;
     void SetDebugVehicleHook(DebugVehicleHook a_hook);
+
+    // The test kit (debug): called once a frame San Andreas has the player, after CJ, his vehicles and his weapons are
+    // drawn (so DebugDrawn, DebugVehicle and Arms::DebugWeapon say what this frame shows). An empty function takes it out.
+    void SetDebugFrameHook(std::function<void()> a_hook);
 }

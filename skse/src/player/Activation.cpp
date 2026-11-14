@@ -5,7 +5,10 @@
 #include "link/LinkService.h"
 #include "player/AmmuNation.h"
 #include "player/Conversation.h"
+#include "player/Homies.h"
 #include "player/Looting.h"
+#include "player/PlayerSync.h"
+#include "pad.h"
 #include "reactions.h"
 #include "weapons.h"
 
@@ -217,7 +220,7 @@ namespace AhShitRim::Activation
                 text = "";
             }
             const char* name = a_ref->GetDisplayFullName();
-            return Activate::Prompt(text.c_str() ? text.c_str() : "", name ? name : "");
+            return Activate::Prompt(text.c_str() ? text.c_str() : "", name ? name : "", PlayerSync::PadInUse() ? Pad::kActivateName : "E");
         }
     }
 
@@ -240,7 +243,7 @@ namespace AhShitRim::Activation
         std::vector<Activate::Candidate>   candidates;
         std::vector<RE::TESObjectREFR*>    refs;
         tes->ForEachReferenceInRange(a_player, reach + kSearchSlack, [&](RE::TESObjectREFR* a_ref) {
-            if (a_ref && a_ref != a_player && !a_ref->IsDisabled() && !a_ref->IsDeleted() && Activatable(a_ref)) {
+            if (a_ref && a_ref != a_player && !a_ref->IsDisabled() && !a_ref->IsDeleted() && !Homies::IsHomie(a_ref) && Activatable(a_ref)) {  // v39: a homie has nothing to say, G (aimed) is his key
                 if (auto* root = a_ref->Get3D(); root && !root->GetAppCulled()) {
                     auto* actor = a_ref->As<RE::Actor>();
                     auto* base = a_ref->GetBaseObject();
@@ -259,6 +262,9 @@ namespace AhShitRim::Activation
 
         // A reference Skyrim has words for (or that keeps a shop) is it.
         const auto take = [&](RE::TESObjectREFR* a_ref) {
+            if (Homies::IsHomie(a_ref)) {
+                return false;
+            }
             auto shop = AmmuNation::PromptFor(a_ref);
             if (auto prompt = shop.empty() ? PromptOf(a_ref) : std::move(shop); !prompt.empty()) {
                 state.target = a_ref->GetHandle();

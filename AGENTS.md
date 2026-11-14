@@ -17,7 +17,7 @@ Both games, MSVC and the scripts are here, so build and test locally instead of 
 - `scripts/load-test.ps1` runs hundreds of loads unattended on a test session and counts the crashes and hangs, starting the session again after each (`docs/DEV_SETUP.md`, Load test).
 - You may close Skyrim and San Andreas whenever a deploy or test needs it; say so in your reply. Check the games lock first: a `skytest` session holds it while its games run. Never run `fake_skyrim`, `fake_weapons` or `fake_vehicles` while Skyrim is running: they write the input slot and fight over the handover.
 - When the user is testing with you, skip the fake checks for anything visual or feel-based (models, animations, camera, effects, handling). They take minutes while the user waits, and the user checks those faster in game: build, run `scripts/test.ps1`, deploy with `restart-games.ps1` and hand over. Keep them for logic the user can't see, or for runs where nobody is waiting.
-- Dev and test keys stay off Skyrim's default binds (F9 is quick load; `/` is the HUD demo). Check the README's keys table first.
+- Dev and test keys stay off Skyrim's default binds (F9 is quick load; `/` is Skyrim's wait menu while CJ has the player). Check the README's keys table first.
 - Another session may be using the main checkout. Work in a git worktree of your own, and don't switch branches or commit in someone else's.
 - Files are LF (`.gitattributes`). Edit them with the editor tools; PowerShell's `Set-Content` and Python's default text mode on Windows write CRLF.
 

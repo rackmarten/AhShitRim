@@ -2,18 +2,34 @@
 #include "debug/TestKit.h"
 
 #include "Ini.h"
+#include "aim.h"
+#include "ini_text.h"
 #include "body/ModelView.h"
 #include "body/MuzzleFlash.h"
 #include "debug/HitTest.h"
 #include "debug/LoadTest.h"
 #include "debug/StreamTest.h"
 #include "hud/Overlay.h"
+#include "hud/SaHud.h"
+#include "hud/SkyrimMessages.h"
+#include "input.h"
+#include "cheats.h"
 #include "link/LinkService.h"
 #include "player/Arms.h"
+#include "player/Headlights.h"
+#include "player/LockOn.h"
 #include "player/Missions.h"
+#include "player/ObjectHits.h"
 #include "player/PlayerSync.h"
+#include "ride.h"
+#include "player/Shots.h"
+#include "player/StealthKills.h"
+#include "player/Respawns.h"
+#include "pose.h"
+#include "player/Riders.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
+#include "wanted.h"
 #include "weapons.h"
 
 // The Grove Street crew's command builds once the crew is in (player/Homies.h, protocol v39); before, asr.crew isn't
@@ -29,8 +45,10 @@
 #include <bit>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -138,6 +156,19 @@ namespace AhShitRim::TestKit
 
         // ---- The feature checks (scenarios/vehicle-lights.json, muzzle-flash.json, crew-follow.json) ----
 
+        // The vehicle slot CJ drives in this handover, if any.
+        std::optional<std::uint32_t> DrivenSlot()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                    vehicle.handover == PlayerSync::DebugHandover()) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        }
+
         Json Point(const RE::NiPoint3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
         Json Point(const Body::Vec3& a_p) { return JsonObject{ { "x", a_p.x }, { "y", a_p.y }, { "z", a_p.z } }; }
         double Round(double a_v, double a_step = 0.01) { return std::round(a_v / a_step) * a_step; }
@@ -158,6 +189,8 @@ namespace AhShitRim::TestKit
             bool               on = false;
             VehicleHits::Frame frame;
             std::uint32_t      flags = 0;
+            float              health = 0.0f;       // San Andreas's vehicle health (1000 new)
+            float              boxBottom = 0.0f;    // the collision box's bottom, in the vehicle's frame, Skyrim units
             bool               lamps = false;  // the slot carries lamps (kHasLamps)
             std::uint8_t       lit = 0;        // the lamps burning as San Andreas sent them (asr.lamps off draws none of them)
             std::uint8_t       lampState = 0;
@@ -165,6 +198,7 @@ namespace AhShitRim::TestKit
         };
         std::array<Seen, Protocol::kVehicleMax> g_seen;
         bool                                    g_lampsOff = false;  // asr.lamps off: drawn and lit as if every lamp were out
+        std::optional<bool>                     g_braking;            // asr.lamps brake / nobrake: drawn and lit as if braking, or not
 
         template <class T>
         void SeeVehicle(std::uint32_t a_slot, T& a_pose, const RE::NiPoint3& a_feet)
@@ -176,6 +210,8 @@ namespace AhShitRim::TestKit
             seen.on = true;
             seen.frame = VehicleHits::FrameOf(a_pose.vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
             seen.flags = a_pose.flags;
+            seen.health = a_pose.health;
+            seen.boxBottom = a_pose.boxMin[2];
             if constexpr (kHasLamps<T>) {
                 seen.lamps = true;
                 seen.lit = a_pose.lights.lit;
@@ -185,7 +221,62 @@ namespace AhShitRim::TestKit
                 if (g_lampsOff) {
                     a_pose.lights.lit = 0;
                 }
+                if (g_braking) {
+                    a_pose.lights.state = static_cast<std::uint8_t>(*g_braking ? (a_pose.lights.state | Protocol::kLightBraking) : (a_pose.lights.state & ~Protocol::kLightBraking));
+                    // The tail lamps burn for the brake by day too (VehicleLights::Lit). Both bits: a bike's one tail light
+                    // sits on its middle line, where the mirrored one falls too.
+                    const bool rear = a_pose.lights.rear[0] != 0 || a_pose.lights.rear[1] != 0 || a_pose.lights.rear[2] != 0;
+                    if (*g_braking && rear && !g_lampsOff && (a_pose.flags & Protocol::kBodyWrecked) == 0) {
+                        a_pose.lights.lit |= static_cast<std::uint8_t>(Protocol::kLightRearRight | Protocol::kLightRearLeft);
+                    }
+                }
             }
+        }
+
+        // Skyrim's ground under a point: what a ray down through the line-of-sight layer hits first, from a_above units above
+        // it to a_below below: the land and the statics on it (the cobbles of a village), not what grows or stands on it
+        // (trees, bushes, clutter, people), which the ray goes on through.
+        std::optional<float> GroundUnder(const RE::NiPoint3& a_at, float a_above = 20.0f, float a_below = 600.0f)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return std::nullopt;
+            }
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            const float         scale = RE::bhkWorld::GetWorldScale();
+            const float         bottom = a_at.z - a_below;
+            float               top = a_at.z + a_above;
+            for (int pass = 0; pass < 8 && top > bottom; pass++) {
+                RE::hkpWorldRayCastInput input;
+                input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+                input.from = RE::hkVector4(a_at.x * scale, a_at.y * scale, top * scale, 0.0f);
+                input.to = RE::hkVector4(a_at.x * scale, a_at.y * scale, bottom * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return std::nullopt;
+                }
+                const float z = top + (bottom - top) * output.hitFraction;
+                switch (output.rootCollidable ? output.rootCollidable->GetCollisionLayer() : RE::COL_LAYER::kUnidentified) {
+                case RE::COL_LAYER::kTrees:
+                case RE::COL_LAYER::kClutter:
+                case RE::COL_LAYER::kProps:
+                case RE::COL_LAYER::kDebrisSmall:
+                case RE::COL_LAYER::kDebrisLarge:
+                case RE::COL_LAYER::kBiped:
+                case RE::COL_LAYER::kDeadBip:
+                case RE::COL_LAYER::kCharController:
+                case RE::COL_LAYER::kTransparent:
+                case RE::COL_LAYER::kTransparentSmall:
+                    top = z - 1.0f;
+                    continue;
+                default: return z;
+                }
+            }
+            return std::nullopt;
         }
 
         RE::NiNode* WorldScene()
@@ -272,6 +363,37 @@ namespace AhShitRim::TestKit
 
         std::array<RE::FormID, 8> g_homies{};  // asr.homie:<n>'s follower, pinned the first time it's found (asr.crew lets go)
 
+#ifdef AHSHITRIM_TEST_CREW
+        // What a homie carries and runs (Homies::DebugProbeOf), into a target's details: gear (Skyrim weapons, ammo,
+        // shields, torches in his inventory, names), hands (what his hands hold), weaponDrawn, followPackage (Skyrim's
+        // follower package running), canTalk (to the player: his hellos), rides (in CJ's vehicle), target (his crew target).
+        void AddProbe(JsonObject& a_details, RE::Actor* a_actor)
+        {
+            const auto probe = Homies::DebugProbeOf(a_actor);
+            JsonArray  gear, hands;
+            for (const auto& name : probe.gear) {
+                gear.emplace_back(name);
+            }
+            for (const auto& name : probe.hands) {
+                hands.emplace_back(name);
+            }
+            a_details.Set("gear", std::move(gear));
+            a_details.Set("hands", std::move(hands));
+            a_details.Set("weaponDrawn", probe.weaponDrawn);
+            a_details.Set("followPackage", probe.followPackage);
+            a_details.Set("canTalk", probe.canTalk);
+            a_details.Set("rides", probe.rides);
+            a_details.Set("target", probe.target ? SkseTestKit::FormId(probe.target) : std::string());
+            a_details.Set("waiting", probe.waiting);
+            a_details.Set("greetingTimer", probe.greetingTimer);
+            a_details.Set("detectGreetTimer", probe.detectGreetTimer);
+            a_details.Set("checkToTalkTimer", probe.checkToTalkTimer);
+            a_details.Set("voiceTimer", probe.voiceTimer);
+            a_details.Set("greeting", probe.greeting);
+            a_details.Set("greetingPlayer", probe.greetingPlayer);
+        }
+#endif
+
         Json LampNames(std::uint8_t a_bits)
         {
             JsonArray                                          out;
@@ -297,7 +419,7 @@ namespace AhShitRim::TestKit
                 return;
             }
             a_details.Set("lamps", JsonObject{ { "lit", LampNames(seen.lit) }, { "litCount", std::popcount(seen.lit) }, { "braking", (seen.lampState & 0x1) != 0 },
-                                       { "forcedOff", g_lampsOff }, { "frontDummy", Point(seen.front) }, { "rearDummy", Point(seen.rear) } });
+                                       { "forcedOff", g_lampsOff }, { "forcedBraking", g_braking ? Json(*g_braking) : Json() }, { "frontDummy", Point(seen.front) }, { "rearDummy", Point(seen.rear) } });
             JsonArray lights;
             for (auto* light : LampLightsOf(a_slot)) {
                 const auto& data = light->GetLightRuntimeData();
@@ -321,6 +443,74 @@ namespace AhShitRim::TestKit
             return pose;
         }
 
+        // How far the camera sees along San Andreas's camera's forward before something solid (land, a tree, a building;
+        // not people, the hidden player among them), from the camera the frame is rendered with; a_max when nothing is.
+        float ClearAhead(const float a_forward[3], float a_max)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* camera = RE::Main::WorldRootCamera();
+            auto* cell = player ? player->GetParentCell() : nullptr;
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!camera || !world) {
+                return -1.0f;
+            }
+            const auto&              from = camera->world.translate;
+            const RE::NiPoint3       to = from + RE::NiPoint3(a_forward[0], a_forward[1], a_forward[2]) * a_max;
+            const float              scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            float               start = 0.0f;
+            for (int i = 0; i < 4 && start < 1.0f; i++) {
+                const RE::NiPoint3 a = from + (to - from) * start;
+                input.from = RE::hkVector4(a.x * scale, a.y * scale, a.z * scale, 0.0f);
+                input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return a_max;
+                }
+                const float at = start + (1.0f - start) * output.hitFraction;
+                auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
+                if (!hit || !hit->IsActor()) {
+                    return at * a_max;
+                }
+                start = at + 1.0f / a_max;
+            }
+            return a_max;
+        }
+
+        // asr.camera: San Andreas's camera against CJ and his vehicle, from the pose and the body (both relative to the
+        // handover's anchor, Skyrim units).
+        Json CameraNow()
+        {
+            const auto pose = CjPose();
+            Protocol::BodyState body{};
+            if (!pose || !LinkService::Get().ReadBody(body) || (body.flags & Protocol::kBodyValid) == 0) {
+                throw Error("San Andreas has no pose or camera for CJ (asr.cj first)");
+            }
+            const float cam[3] = { body.cameraPosition[0] - pose->offset[0], body.cameraPosition[1] - pose->offset[1],
+                body.cameraPosition[2] - pose->offset[2] };  // from CJ's feet
+            JsonObject out{ { "mode", static_cast<int>(pose->cameraMode) }, { "firstPerson", pose->cameraMode == Weapons::kCamFirstPerson },
+                { "fromFeet", Round(std::hypot(cam[0], cam[1]), 0.1) }, { "height", Round(cam[2], 0.1) },
+                { "forward3", JsonObject{ { "x", Round(body.cameraForward[0]) }, { "y", Round(body.cameraForward[1]) }, { "z", Round(body.cameraForward[2]) } } },
+                { "inVehicle", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "model", static_cast<int>(pose->vehicleModel) },
+                { "ahead", Round(ClearAhead(body.cameraForward, 3000.0f), 1.0) } };
+            const auto scope = Weapons::ScopeOf(pose->cameraMode, (pose->flags & Protocol::kPlayerInVehicle) ? pose->vehicleModel : 0);
+            constexpr const char* kScopes[] = { "none", "sniper", "rocket", "rifle", "camera", "aim" };
+            out.Set("scope", static_cast<std::size_t>(scope) < std::size(kScopes) ? kScopes[static_cast<std::size_t>(scope)] : "?");
+            if ((pose->flags & Protocol::kPlayerInVehicle) && pose->vehicleModel) {
+                const float h = pose->vehicleHeading;
+                const float rel[3] = { cam[0] - pose->vehicleOffset[0], cam[1] - pose->vehicleOffset[1], cam[2] - pose->vehicleOffset[2] };
+                out.Set("forward", Round(rel[0] * std::sin(h) + rel[1] * std::cos(h), 0.1));
+                out.Set("right", Round(rel[0] * std::cos(h) - rel[1] * std::sin(h), 0.1));
+                out.Set("up", Round(rel[2], 0.1));
+                out.Set("looksAhead", Round(body.cameraForward[0] * std::sin(h) + body.cameraForward[1] * std::cos(h)));
+            }
+            return out;
+        }
+
         std::uint32_t HandOf(Call& a_call)
         {
             const double hand = a_call.Number("hand", 0.0);
@@ -342,6 +532,8 @@ namespace AhShitRim::TestKit
             std::size_t         vertices = 0;
             double              heading = 0.0;  // the barrel's, radians as a reference's angle z
             double              pitch = 0.0;    // degrees above level
+            double              roll = 0.0;     // degrees the gun's top leans right of up about its barrel (Aim::RollOf)
+            bool                turned = false; // its first part faces back along the barrel, read turned round
         };
 
         Barrel BarrelOf(std::uint32_t a_hand)
@@ -353,6 +545,17 @@ namespace AhShitRim::TestKit
             }
             const auto& t = out.pose.bones[0].translation;
             out.frame = VehicleHits::FrameOf(out.pose.bones[0], { feet.x + t[0], feet.y + t[1], feet.z + t[2] });
+            // A model whose first part faces back along the barrel (the sawn-off's) is turned round about its Z, so its
+            // X points where San Andreas's camera looks, the way the gun fires: otherwise its stock would read as the muzzle.
+            // Only while he aims: then the gun points where the camera looks, hanging down or from the hip it needn't.
+            if (const auto pose = CjPose(); pose && (pose->weaponFlags & Protocol::kWeaponAiming) != 0) {
+                const auto& b = out.frame.right;
+                if (b.x * std::sin(pose->viewHeading) + b.y * std::cos(pose->viewHeading) < 0.0f) {
+                    out.frame.right = Body::Scale(out.frame.right, -1.0f);
+                    out.frame.forward = Body::Scale(out.frame.forward, -1.0f);
+                    out.turned = true;
+                }
+            }
             std::vector<RE::NiPoint3> vertices;
             if (!ModelView::DebugPosed(out.pose.model, vertices) || vertices.empty()) {
                 throw Error("the weapon's model isn't drawn");
@@ -379,6 +582,8 @@ namespace AhShitRim::TestKit
             const auto& b = out.frame.right;  // its X
             out.heading = std::atan2(b.x, b.y);
             out.pitch = std::atan2(b.z, std::hypot(b.x, b.y)) * 180.0 / std::numbers::pi;
+            // Its top is its Z, the left hand's gun included: the drawn gun's frame is already turned over for it.
+            out.roll = Aim::RollOf(out.frame.right, out.frame.up) * 180.0 / std::numbers::pi;
             return out;
         }
 
@@ -390,7 +595,7 @@ namespace AhShitRim::TestKit
             JsonObject out{ { "hand", a_hand },
                 { "weapon", JsonObject{ { "model", std::format("{:08X}", barrel.pose.model) }, { "vertices", barrel.vertices },
                                 { "origin", Point(barrel.frame.pos) }, { "tip", Point(barrel.tip) }, { "tipLocal", Point(barrel.tipLocal) },
-                                { "heading", Round(barrel.heading * 180.0 / std::numbers::pi, 0.1) }, { "pitch", Round(barrel.pitch, 0.1) } } } };
+                                { "heading", Round(barrel.heading * 180.0 / std::numbers::pi, 0.1) }, { "pitch", Round(barrel.pitch, 0.1) }, { "roll", Round(barrel.roll, 0.1) }, { "turned", barrel.turned } } } };
             JsonObject flashJson{ { "shown", flash.shown }, { "fired", flash.fired }, { "left", Round(flash.left, 0.001) }, { "strength", Round(flash.strength) } };
             if (flash.fired > 0) {
                 flashJson.Set("at", Point(flash.at));
@@ -466,18 +671,150 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.lamps", "<state>",
                 "Vehicle lamps for an A/B pair: off draws and lights every vehicle as if none of its lamps burned (their glow and their "
-                "scene lights), on gives San Andreas's back. Needs a build whose vehicles carry their lamps (protocol v36)",
+                "scene lights), brake as if its driver braked (the tail lamps' brake glow and light), nobrake as if he didn't; on gives "
+                "San Andreas's back. Needs a build whose vehicles carry their lamps (protocol v36)",
                 [](Call& a_call) -> Json {
                     if constexpr (!kHasLamps<Protocol::BodyState>) {
                         throw Error("this build's vehicles carry no lamps (the headlights, protocol v36, aren't in it)");
                     } else {
                         const auto which = a_call.Text("state");
-                        if (which != "on" && which != "off") {
-                            throw Error("asr.lamps on, or asr.lamps off");
+                        if (which == "on") {
+                            g_lampsOff = false;
+                            g_braking.reset();
+                        } else if (which == "off") {
+                            g_lampsOff = true;
+                        } else if (which == "brake" || which == "nobrake") {
+                            g_braking = which == "brake";
+                        } else {
+                            throw Error("asr.lamps on, off, brake or nobrake");
                         }
-                        g_lampsOff = which == "off";
-                        return JsonObject{ { "lampsOff", g_lampsOff } };
+                        return JsonObject{ { "lampsOff", g_lampsOff }, { "braking", g_braking ? Json(*g_braking) : Json() } };
                     }
+                });
+
+            SkseTestKit::AddTask("asr.oil", "[seconds=<s>]",
+                "Oil burning GTA style: places three fresh oil pools (TrapOilPool01) at three of the pools on Bleak Falls Barrow's "
+                "first floor (the player there first: coc BleakFallsBarrow01, player.moveto 0009B0E6), lights the first by a "
+                "bullet landing, the second by a Molotov's burst and the third by a rocket's blast, through what CJ's own "
+                "shots and projectiles call (ObjectHits), and answers once all three burnt out, or after seconds (30): per "
+                "pool its lowest health (of 100; it bursts into flame at 94 and is gone at 7) and whether it burned",
+                [](Call& a_call) -> Step {
+                    constexpr std::uint32_t kOilPool = 0x000862CC;
+                    constexpr std::uint32_t kSpots[3] = { 0x0009B0E6, 0x0009B0E0, 0x0009B0DE };
+                    const char*             by[3] = { "a bullet", "a Molotov", "a rocket" };
+                    auto*                   base = RE::TESForm::LookupByID<RE::TESBoundObject>(kOilPool);
+                    if (!base) {
+                        throw Error("no TrapOilPool01 (000862CC)");
+                    }
+                    struct Pool
+                    {
+                        RE::ObjectRefHandle ref;
+                        const char*         by = "";
+                        float               lowest = 100.0f;
+                        bool                burned = false;
+                        bool                gone = false;
+                    };
+                    auto pools = std::make_shared<std::vector<Pool>>();
+                    for (int i = 0; i < 3; i++) {
+                        auto* at = RE::TESForm::LookupByID<RE::TESObjectREFR>(kSpots[i]);
+                        auto  made = at ? at->PlaceObjectAtMe(base, false) : nullptr;
+                        if (!made) {
+                            throw Error(std::format("couldn't place oil at {:08X}: not in Bleak Falls Barrow (coc BleakFallsBarrow01)?", kSpots[i]));
+                        }
+                        pools->push_back({ made->GetHandle(), by[i] });
+                    }
+                    const double seconds = a_call.Number("seconds", 30.0);
+                    a_call.DefaultTimeout(seconds + 15.0);
+                    auto lit = std::make_shared<bool>(false);
+                    const auto health = [](RE::TESObjectREFR* a_ref) {
+                        const auto* extra = a_ref->extraList.GetByType<RE::ExtraObjectHealth>();
+                        return extra ? extra->health : 100.0f;
+                    };
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        if (!*lit) {
+                            if (a_call.Seconds() < 4.0) {
+                                return std::nullopt;  // the pools' 3D loads
+                            }
+                            for (std::size_t i = 0; i < pools->size(); i++) {
+                                auto  ref = (*pools)[i].ref.get();
+                                auto* root = ref ? ref->Get3D() : nullptr;
+                                if (!root) {
+                                    throw Error(std::format("the oil for {} has no 3D", (*pools)[i].by));
+                                }
+                                const auto at = root->worldBound.center;
+                                if (i == 0) {
+                                    ObjectHits::BulletLanded(player, at, Weapons::Pistol);
+                                } else {
+                                    ObjectHits::Around(player, at, 5.0f, i == 1 ? Traps::Hit::Fire : Traps::Hit::Blast, 0.0f);  // just this pool
+                                }
+                            }
+                            *lit = true;
+                            return std::nullopt;
+                        }
+                        bool all = true;
+                        for (auto& pool : *pools) {
+                            const auto ref = pool.ref.get();
+                            if (!ref || ref->IsDisabled()) {
+                                pool.gone = true;
+                                continue;
+                            }
+                            const float h = health(ref.get());
+                            pool.lowest = (std::min)(pool.lowest, h);
+                            pool.burned = pool.burned || (h < 94.0f && h > 7.0f);
+                            all = false;
+                        }
+                        if (!all && a_call.Seconds() < seconds + 4.0) {
+                            return std::nullopt;
+                        }
+                        JsonArray out;
+                        int       burned = 0;
+                        for (const auto& pool : *pools) {
+                            burned += pool.burned ? 1 : 0;
+                            out.push_back(JsonObject{ { "by", pool.by }, { "lowest", Round(pool.lowest, 0.1) }, { "burned", pool.burned }, { "gone", pool.gone } });
+                        }
+                        return JsonObject{ { "pools", std::move(out) }, { "burned", burned }, { "seconds", Round(a_call.Seconds()) } };
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.lamptune", "[key] [value]",
+                "Sets one of AhShitRim.ini's [Headlights] values (Intensity, Radius, Ahead, Raise, TailRadius, TailIntensity, TailDrop, TailBack, "
+                "BrakeRadius, BrakeIntensity, LampGlow, BrakeGlow; metres for the distances) until the game closes, for trying values; "
+                "answers every value as it is now",
+                [](Call& a_call) -> Json {
+                    if (a_call.Has("key")) {
+                        const auto key = a_call.Text("key");
+                        if (!Headlights::DebugTune(key, static_cast<float>(a_call.Number("value")))) {
+                            throw Error(std::format("no [Headlights] key {} (or a negative value)", key));
+                        }
+                    }
+                    JsonObject out;
+                    for (const auto& [key, value] : Headlights::DebugTuning()) {
+                        out.Set(key, Round(value, 0.001));
+                    }
+                    return out;
+                });
+
+            SkseTestKit::AddCommand("asr.pedals", "[gas=<bool>] [brake=<bool>] [handbrake=<bool>] [steer=<-1..1>] [seconds=<s>]",
+                "Holds CJ's vehicle controls (W, S, Space, the stick sideways) for seconds (10, at most 30) or until the next asr.pedals; "
+                "with none of them it lets go",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    std::uint32_t buttons = 0;
+                    buttons |= a_call.Flag("gas", false) ? Protocol::kButtonAccelerate : 0;
+                    buttons |= a_call.Flag("brake", false) ? Protocol::kButtonBrake : 0;
+                    buttons |= a_call.Flag("handbrake", false) ? Protocol::kButtonHandbrake : 0;
+                    const float steer = std::clamp(static_cast<float>(a_call.Number("steer", 0.0)), -1.0f, 1.0f);
+                    const auto  hold = std::chrono::milliseconds(static_cast<long long>(std::clamp(a_call.Number("seconds", 10.0), 0.1, 30.0) * 1000.0));
+                    // moveY with W and S as Skyrim's keys give it: forward for W, back for S, nothing for both.
+                    const float move = ((buttons & Protocol::kButtonAccelerate) ? 1.0f : 0.0f) - ((buttons & Protocol::kButtonBrake) ? 1.0f : 0.0f);
+                    if (buttons == 0 && steer == 0.0f) {
+                        PlayerSync::DebugHold(std::nullopt);
+                    } else {
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = steer, .moveY = move, .buttons = buttons }, hold);
+                    }
+                    return JsonObject{ { "gas", (buttons & Protocol::kButtonAccelerate) != 0 }, { "brake", (buttons & Protocol::kButtonBrake) != 0 },
+                        { "handbrake", (buttons & Protocol::kButtonHandbrake) != 0 }, { "steer", steer } };
                 });
 
             SkseTestKit::AddCommand("asr.cheat", "<code>", "Types a cheat code for CJ, as its letters (CPKTNWT blows up every vehicle)", [](Call& a_call) -> Json {
@@ -490,15 +827,22 @@ namespace AhShitRim::TestKit
                 return JsonObject{ { "typed", code } };
             });
 
-            SkseTestKit::AddTask("asr.exit", "", "CJ gets out of the vehicle he's in (the enter/exit key pressed); answers once he's on foot",
+            SkseTestKit::AddTask("asr.exit", "[until=<out|start>]",
+                "CJ gets out of the vehicle he's in (the enter/exit key pressed); answers once he's on foot, or with until=start in the "
+                "frame San Andreas's get-out begins (to pause on it)",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     a_call.DefaultTimeout(15.0);
-                    return [](Call& a_call) -> std::optional<Json> {
+                    const bool start = a_call.Text("until", "out") == "start";
+                    return [start](Call& a_call) -> std::optional<Json> {
                         const auto pose = CjPose();
                         if (pose && (pose->flags & Protocol::kPlayerInVehicle) == 0) {
                             PlayerSync::DebugHold(std::nullopt);
                             return JsonObject{ { "onFoot", true }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (start && pose && (pose->flags & Protocol::kPlayerGettingInOut) && a_call.Seconds() > 0.25) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "onFoot", false }, { "gettingOut", true }, { "seconds", Round(a_call.Seconds()) } };
                         }
                         // Held 0.2 s, again every 5 s should he still sit in it: getting out takes about 2 s, and a press
                         // once he's out would put him back in.
@@ -508,9 +852,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>]",
+            SkseTestKit::AddTask("asr.walk", "<points> [gait=<walk|run|sprint>] [arrive=<units>] [stuck=<seconds>] [untilZone=<bool>]",
                 "Walks CJ (San Andreas's stick, from its camera's view) through waypoints x,y; x,y; ... at a gait (run, the default, is San "
-                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s",
+                "Andreas's jog), answering once he's within arrive (100) of the last; fails when he gets no closer to the next for stuck (5) s. "
+                "untilZone=true stops him and answers as soon as Skyrim names a location he walks into (San Andreas's zone name, zone: its "
+                "text), and fails when he reaches the last point without one",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const auto    points = ParseWaypoints(a_call.Text("points"));
@@ -525,6 +871,8 @@ namespace AhShitRim::TestKit
                     }
                     const float  arrive = static_cast<float>(a_call.Number("arrive", 100.0));
                     const double stuck = a_call.Number("stuck", 5.0);
+                    const bool   untilZone = a_call.Flag("untilZone", false);
+                    const auto   zonesBefore = SkyrimMessages::DebugCounted().zones;
                     double       length = 0.0;
                     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
                         Waypoint from{ player->GetPosition().x, player->GetPosition().y };
@@ -569,10 +917,20 @@ namespace AhShitRim::TestKit
                             walk->bestAt = a_call.Seconds();
                             if (walk->next == points.size()) {
                                 PlayerSync::DebugHold(std::nullopt);
+                                if (untilZone) {
+                                    throw Error("CJ reached the last point and Skyrim named no location on the way");
+                                }
                                 return JsonObject{ { "points", points.size() }, { "seconds", Round(a_call.Seconds()) }, { "path", Round(walk->path, 0.1) },
                                     { "at", Point(at) }, { "gait", gait } };
                             }
                             return std::nullopt;
+                        }
+                        if (untilZone) {
+                            if (const auto counts = SkyrimMessages::DebugCounted(); counts.zones != zonesBefore) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                return JsonObject{ { "zone", counts.lastZone }, { "rule", counts.lastRule }, { "seconds", Round(a_call.Seconds()) },
+                                    { "at", Point(at) } };
+                            }
                         }
                         if (d < walk->best - 10.0f) {
                             walk->best = d;
@@ -592,7 +950,7 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.muzzle", "[hand] [release=<bool>]",
                 "The weapon drawn in a hand (0 right, 1 left) against its muzzle flash: the barrel's end (its farthest vertex along the "
                 "barrel), the flash as last shown (shown in the last frame, seconds left, where), along (units the flash is past the "
-                "muzzle's end) and across (off the barrel's line). release=true lets go of a flash asr.fire hold=true kept, after measuring",
+                "muzzle's end) and across (off the barrel's line), and weapon.roll (degrees its top leans right of up about the barrel; weapon.turned: a model whose first part faces back, read turned round while he aims). release=true lets go of a flash asr.fire hold=true kept, after measuring",
                 [](Call& a_call) -> Json {
                     auto out = MuzzleCheck(HandOf(a_call));
                     if (a_call.Flag("release", false)) {
@@ -657,6 +1015,7 @@ namespace AhShitRim::TestKit
                             auto out = MuzzleCheck(hand);
                             out["weaponType"] = static_cast<int>(pose->weaponType);
                             out["aimed"] = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+                            out["twin"] = (pose->weaponFlags & Protocol::kWeaponTwin) != 0;
                             out["shots"] = flash.fired - fire->firedBefore;
                             return out;
                         }
@@ -739,11 +1098,102 @@ namespace AhShitRim::TestKit
                 });
 
 #ifdef AHSHITRIM_TEST_CREW
-            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>]",
+            SkseTestKit::AddCommand("asr.crewkey", "[at] [aim=<bool>]",
+                "G as if pressed on foot: aim (true) says CJ aims, along the way from the player to at (a target spec, asr.homie:<n> or "
+                "asr.free:<n>; without it CJ's heading), his lock-on on nobody, so the crew's own pick by the aim line decides. "
+                "Answers with how many follow and stand about after",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const bool aim = a_call.Flag("aim", true);
+                    float      heading = player->GetAngleZ();
+                    if (const auto pose = CjPose()) {
+                        heading = pose->heading;
+                    }
+                    if (a_call.Has("at")) {
+                        const auto place = SkseTestKit::Locate(a_call.Text("at"));
+                        const auto feet = player->GetPosition();
+                        heading = Pose::HeadingOf(static_cast<float>(place.x) - feet.x, static_cast<float>(place.y) - feet.y);
+                    }
+                    const int following = Homies::DebugCount(true), about = Homies::DebugCount(false);
+                    Homies::DebugKey(player, aim, heading, 0);
+                    return JsonObject{ { "aim", aim }, { "heading", Round(heading, 0.001) }, { "followingBefore", following }, { "aboutBefore", about },
+                        { "following", Homies::DebugCount(true) }, { "about", Homies::DebugCount(false) } };
+                });
+
+            SkseTestKit::AddCommand("asr.hurt", "<ref> [damage=<n>]",
+                "CJ's pistol shot on an actor (Shots::Hurt, the player the aggressor, damage (5) in San Andreas's terms): an animal runs from him",
+                [](Call& a_call) -> Json {
+                    auto* actor = SkseTestKit::FindRef(a_call.Text("ref"));
+                    auto* hurt = actor ? actor->As<RE::Actor>() : nullptr;
+                    if (!hurt) {
+                        throw Error("ref is an actor");
+                    }
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const auto at = hurt->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 0.6f * hurt->GetHeight());
+                    auto       dir = at - player->GetPosition();
+                    dir.Unitize();
+                    Shots::Hurt(player, hurt, 22, static_cast<float>(a_call.Number("damage", 5.0)), at, dir, true);
+                    return JsonObject{ { "ref", SkseTestKit::FormId(hurt->GetFormID()) }, { "dead", hurt->IsDead() } };
+                });
+
+            SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",
+                "The crew's counters since the last reset: Skyrim subtitles of theirs taken off and voice handles stopped (Hush), puts "
+                "of the follow package, gear taken off, and everyone a follower has had as his target (targeted, refs)",
+                [](Call& a_call) -> Json {
+                    const auto stats = Homies::DebugStatsOf(a_call.Flag("reset", false));
+                    JsonArray  targeted;
+                    for (const auto id : stats.targeted) {
+                        targeted.emplace_back(SkseTestKit::FormId(id));
+                    }
+                    return JsonObject{ { "hushedLines", stats.hushedLines }, { "hushedSounds", stats.hushedSounds }, { "followPuts", stats.followPuts },
+                        { "gearStripped", stats.gearStripped }, { "drawnFrames", stats.drawnFrames }, { "fistsFrames", stats.fistsFrames },
+                        { "unwaited", stats.unwaited }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
+                        { "about", Homies::DebugCount(false) } };
+                });
+
+            SkseTestKit::AddCommand("asr.foe", "<ref>",
+                "Why the crew shoots an actor or not (Crew::IsFoe's inputs, its combat target, and each follower's distance, sight and range)",
+                [](Call& a_call) -> Json {
+                    auto* ref = SkseTestKit::FindRef(a_call.Text("ref"));
+                    auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+                    if (!actor) {
+                        throw Error("ref is an actor");
+                    }
+                    const auto info = Homies::DebugFoe(RE::PlayerCharacter::GetSingleton(), actor);
+                    JsonArray  followers;
+                    for (const auto& f : info.followers) {
+                        followers.emplace_back(JsonObject{ { "ref", SkseTestKit::FormId(f.id) }, { "metres", Round(f.metres, 0.1) }, { "sight", f.sight },
+                            { "mayShoot", f.mayShoot }, { "weapon", f.weapon } });
+                    }
+                    return JsonObject{ { "ref", SkseTestKit::FormId(actor->GetFormID()) }, { "dead", actor->IsDead() }, { "foe", info.foe }, { "hostile", info.hostile },
+                        { "fightsUs", info.fightsUs }, { "fleeing", info.fleeing }, { "animal", info.animal }, { "aggressive", info.aggressive },
+                        { "combatTarget", info.combatTarget ? SkseTestKit::FormId(info.combatTarget) : std::string() }, { "metres", Round(info.metres, 0.1) },
+                        { "followers", std::move(followers) } };
+                });
+
+            SkseTestKit::AddTarget("asr.free", "<n>", "The nth (from 0) nearest homie standing about (not of the crew): where he is, facing his way",
+                [](std::string_view a_index) -> SkseTestKit::Place {
+                    const auto n = WholeNumber(a_index);
+                    auto*      actor = n ? Homies::DebugFree(RE::PlayerCharacter::GetSingleton(), static_cast<int>(*n)) : nullptr;
+                    if (!actor) {
+                        throw Error(std::format("no homie stands about as asr.free:{}", a_index));
+                    }
+                    const auto at = actor->GetPosition();
+                    JsonObject details{ { "ref", SkseTestKit::FormId(actor->GetFormID()) } };
+                    AddProbe(details, actor);
+                    return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = actor->GetAngleZ(), .root = actor->Get3D(), .details = std::move(details) };
+                });
+
+            SkseTestKit::AddTask("asr.crew", "[recruit=<n>] [thanes=<n>] [dismiss=<bool>]",
                 "The Grove Street crew: plays as a Thane of thanes (1) holds (-1: the titles the game has), waits for the spots round CJ to fill, has the recruit (2) nearest "
-                "homies join and answers once they follow, with each follower's reference (refs, for record start)",
+                "homies join and answers once they follow, with each follower's reference (refs, for record start) and what he carries and "
+                "runs (gear, hands, weaponDrawn, followPackage, canTalk, rides, target)",
                 [](Call& a_call) -> Step {
                     RequireCj();
+                    if (a_call.Flag("dismiss", false)) {
+                        Homies::DebugDismissAll();  // a scenario's crew from scratch: the one an earlier scenario left sent off
+                    }
                     const int recruit = static_cast<int>(a_call.Number("recruit", 2.0));
                     Homies::DebugThanes(static_cast<int>(a_call.Number("thanes", 1.0)));
                     g_homies = {};
@@ -752,6 +1202,9 @@ namespace AhShitRim::TestKit
                     return [recruit, joined](Call& a_call) -> std::optional<Json> {
                         auto* player = RE::PlayerCharacter::GetSingleton();
                         if (!*joined) {
+                            if (Homies::DebugCount(false) < recruit && a_call.Frames() % 120 == 0) {
+                                Homies::DebugFresh();  // the spots fill even where the camera looks
+                            }
                             if (Homies::DebugCount(false) < recruit && a_call.Seconds() < 25.0) {
                                 return std::nullopt;  // the spots fill out of view, a few seconds after the Thane read
                             }
@@ -762,6 +1215,7 @@ namespace AhShitRim::TestKit
                         }
                         JsonArray   followers;
                         std::string refs;
+                        int         riding = 0;
                         // The followers: the loaded homies on the player's team (Homies' Join makes them teammates).
                         if (auto* processes = RE::ProcessLists::GetSingleton()) {
                             for (auto& handle : processes->highActorHandles) {
@@ -769,13 +1223,15 @@ namespace AhShitRim::TestKit
                                 if (actor && Homies::IsHomie(actor.get()) && actor->IsPlayerTeammate() && !actor->IsDead()) {
                                     const auto ref = SkseTestKit::FormId(actor->GetFormID());
                                     refs += (refs.empty() ? "" : ",") + ref;
-                                    followers.emplace_back(
-                                        JsonObject{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } });
+                                    JsonObject follower{ { "ref", ref }, { "distance", Round(actor->GetPosition().GetDistance(player->GetPosition()), 1.0) } };
+                                    AddProbe(follower, actor.get());
+                                    riding += Homies::DebugProbeOf(actor.get()).rides ? 1 : 0;
+                                    followers.emplace_back(std::move(follower));
                                 }
                             }
                         }
                         return JsonObject{ { "about", Homies::DebugCount(false) }, { "joined", **joined }, { "following", Homies::DebugCount(true) },
-                            { "followers", std::move(followers) }, { "refs", refs } };
+                            { "followers", std::move(followers) }, { "riding", riding }, { "refs", refs } };
                     };
                 });
 
@@ -818,6 +1274,7 @@ namespace AhShitRim::TestKit
                     if (auto* package = actor->GetCurrentPackage()) {
                         details.Set("package", static_cast<int>(package->packData.packType.get()));
                     }
+                    AddProbe(details, actor);
                     if (auto* controller = actor->GetCharController()) {
                         RE::NiPoint3 velocity;
                         actor->GetLinearVelocity(velocity);
@@ -957,6 +1414,402 @@ namespace AhShitRim::TestKit
                 });
         }
 
+        // ---- The controller checks (scenarios/pad-*.json): CJ's pose, and what changed between two steps ----
+        //
+        // The kit's pad, stick and mouse commands feed Skyrim's input queue; these read back what San Andreas made of it.
+
+        double Degrees(float a_radians) { return a_radians * 180.0 / std::numbers::pi; }
+
+        // a_to - a_from, -180 to 180 degrees.
+        double Turned(float a_from, float a_to)
+        {
+            double d = Degrees(a_to - a_from);
+            while (d > 180.0) {
+                d -= 360.0;
+            }
+            while (d < -180.0) {
+                d += 360.0;
+            }
+            return d;
+        }
+
+        double KmH(const float (&a_velocity)[3]) { return std::hypot(a_velocity[0], a_velocity[1]) * Pose::kMetersPerUnit * 3.6; }
+
+        // Which way CJ faces: his vehicle's heading in one, else his body's (radians, Skyrim's: 0 north, clockwise).
+        float Facing(const Protocol::PlayerState& a_pose) { return (a_pose.flags & Protocol::kPlayerInVehicle) ? a_pose.vehicleHeading : a_pose.heading; }
+
+        // His speed along the way he faces, km/h: below 0 reversing.
+        double Ahead(const Protocol::PlayerState& a_pose)
+        {
+            const float h = Facing(a_pose);
+            return (a_pose.velocity[0] * std::sin(h) + a_pose.velocity[1] * std::cos(h)) * Pose::kMetersPerUnit * 3.6;
+        }
+
+        // Skyrim's menus a pad opens, by name, those open now.
+        JsonArray OpenMenus()
+        {
+            static constexpr std::string_view kMenus[] = { RE::TweenMenu::MENU_NAME, RE::JournalMenu::MENU_NAME, RE::SleepWaitMenu::MENU_NAME,
+                RE::DialogueMenu::MENU_NAME, RE::MapMenu::MENU_NAME, RE::InventoryMenu::MENU_NAME, RE::MagicMenu::MENU_NAME, RE::StatsMenu::MENU_NAME,
+                RE::FavoritesMenu::MENU_NAME, RE::ContainerMenu::MENU_NAME, RE::BarterMenu::MENU_NAME, RE::MessageBoxMenu::MENU_NAME,
+                RE::Console::MENU_NAME };
+            JsonArray open;
+            if (auto* ui = RE::UI::GetSingleton()) {
+                for (const auto name : kMenus) {
+                    if (ui->IsMenuOpen(name)) {
+                        open.emplace_back(std::string(name));
+                    }
+                }
+            }
+            return open;
+        }
+
+        // The pitch of the vehicle CJ drives, degrees (its nose up above 0: a wheelie; down below: a stoppie), from its frame;
+        // nullopt on foot.
+        std::optional<double> VehiclePitch()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState v{};
+                if (LinkService::Get().ReadVehicle(i, v) && (v.flags & Protocol::kBodyValid) && (v.flags & Protocol::kBodyDriven) &&
+                    v.handover == PlayerSync::DebugHandover()) {
+                    const auto& q = v.vehicleFrame.rotation;  // x, y, z, w; its Y axis is forward
+                    const double forwardZ = 2.0 * (q[1] * q[2] + q[3] * q[0]);
+                    return Degrees(static_cast<float>(std::asin(std::clamp(forwardZ, -1.0, 1.0))));
+                }
+            }
+            return std::nullopt;
+        }
+
+        Json DescribePose(const Protocol::PlayerState& a_pose)
+        {
+            const bool inVehicle = (a_pose.flags & Protocol::kPlayerInVehicle) != 0;
+            return JsonObject{ { "onFoot", !inVehicle }, { "inVehicle", inVehicle }, { "vehicleModel", inVehicle ? Json(a_pose.vehicleModel) : Json() },
+                { "gettingInOut", (a_pose.flags & Protocol::kPlayerGettingInOut) != 0 }, { "grounded", (a_pose.flags & Protocol::kPlayerGrounded) != 0 },
+                { "crouching", (a_pose.flags & Protocol::kPlayerCrouching) != 0 }, { "at", Point(a_pose.offset) }, { "speed", Round(KmH(a_pose.velocity), 0.1) },
+                { "ahead", Round(Ahead(a_pose), 0.1) }, { "heading", Round(Degrees(Facing(a_pose)), 0.1) }, { "view", Round(Degrees(a_pose.viewHeading), 0.1) },
+                { "pitch", Round(Degrees(a_pose.viewPitch), 0.1) }, { "weapon", a_pose.weaponType },
+                { "aiming", (a_pose.weaponFlags & Protocol::kWeaponAiming) != 0 }, { "shots", a_pose.shots }, { "cameraMode", a_pose.cameraMode },
+                { "radio", a_pose.radioStation } };
+        }
+
+        // asr.mark's pose and when, and asr.since's and asr.watch's results kept by name for vs=.
+        struct Mark
+        {
+            Protocol::PlayerState                 pose{};
+            std::chrono::steady_clock::time_point at{};
+            std::uint32_t                         handover = 0;
+            RE::FormID                            gunTarget = 0;  // the pad's gun lock (LockOn), 0 for none
+            int                                   padCheats = 0;  // console cheat sequences finished on the pad so far
+        };
+        std::optional<Mark>         g_mark;
+        std::optional<double>       g_markCamera;  // Skyrim's camera's heading at asr.mark, degrees
+
+        // Skyrim's camera's heading now, degrees (0 north, clockwise): AhShitRim puts it where San Andreas's camera is,
+        // so it shows what San Andreas's camera does that CJ's view heading doesn't (a vehicle's look behind).
+        std::optional<double> CameraHeading()
+        {
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            auto* root = camera ? camera->cameraRoot.get() : nullptr;
+            if (!root) {
+                return std::nullopt;
+            }
+            const auto& m = root->world.rotate;
+            return std::atan2(m.entry[0][1], m.entry[1][1]) * 180.0 / std::numbers::pi;  // its forward, the Y axis
+        }
+        std::map<std::string, Json> g_kept;
+
+        Mark TakeMark()
+        {
+            const auto pose = CjPose();
+            if (!pose) {
+                throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
+            }
+            return Mark{ .pose = *pose, .at = std::chrono::steady_clock::now(), .handover = PlayerSync::DebugHandover(), .gunTarget = LockOn::DebugGunTarget(),
+                .padCheats = PlayerSync::DebugPadCheats() };
+        }
+
+        // Since a_mark: seconds, metres moved (on the ground's plane) and climbed, degrees the camera turned (either way:
+        // turnedBy) and pitched and CJ or his vehicle turned (bodyTurned), shots fired, the speed now (ahead: along the way
+        // he faces), the weapon and radio station then and now.
+        // The pad's gun lock's target as a form id, null for none.
+        Json GunTarget(RE::FormID a_id) { return a_id ? Json(SkseTestKit::FormId(a_id)) : Json(); }
+
+        JsonObject Since(const Mark& a_mark, const Protocol::PlayerState& a_now)
+        {
+            const auto gunTarget = LockOn::DebugGunTarget();
+            const float dx = a_now.offset[0] - a_mark.pose.offset[0], dy = a_now.offset[1] - a_mark.pose.offset[1];
+            return JsonObject{ { "seconds", Round(std::chrono::duration<double>(std::chrono::steady_clock::now() - a_mark.at).count()) },
+                { "moved", Round(std::hypot(dx, dy) * Pose::kMetersPerUnit) },
+                { "climbed", Round((a_now.offset[2] - a_mark.pose.offset[2]) * Pose::kMetersPerUnit) },
+                { "turned", Round(Turned(a_mark.pose.viewHeading, a_now.viewHeading), 0.1) },
+                { "turnedBy", Round(std::abs(Turned(a_mark.pose.viewHeading, a_now.viewHeading)), 0.1) },
+                { "bodyTurned", Round(Turned(Facing(a_mark.pose), Facing(a_now)), 0.1) },
+                { "pitched", Round(Turned(a_mark.pose.viewPitch, a_now.viewPitch), 0.1) },
+                { "shots", static_cast<std::uint16_t>(a_now.shots - a_mark.pose.shots) }, { "speed", Round(KmH(a_now.velocity), 0.1) },
+                { "ahead", Round(Ahead(a_now), 0.1) }, { "weaponFrom", a_mark.pose.weaponType }, { "weapon", a_now.weaponType },
+                { "weaponChanged", a_now.weaponType != a_mark.pose.weaponType }, { "radioFrom", a_mark.pose.radioStation },
+                { "radio", a_now.radioStation }, { "radioChanged", a_now.radioStation != a_mark.pose.radioStation },
+                { "gunTargetFrom", GunTarget(a_mark.gunTarget) }, { "gunTarget", GunTarget(gunTarget) }, { "gunTargetChanged", gunTarget != a_mark.gunTarget },
+                { "padCheats", PlayerSync::DebugPadCheats() - a_mark.padCheats } };
+        }
+
+        // keep=<name> keeps a_result; vs=<name> adds "vs": each of its numbers over the same one in the result kept as that
+        // name (0 over 0 is 1, anything else over 0 null).
+        void Compare(JsonObject& a_result, Call& a_call)
+        {
+            if (const auto keep = a_call.Text("keep"); !keep.empty()) {
+                g_kept[keep] = Json(a_result);
+            }
+            const auto vs = a_call.Text("vs");
+            if (vs.empty()) {
+                return;
+            }
+            const auto kept = g_kept.find(vs);
+            if (kept == g_kept.end()) {
+                throw Error(std::format("nothing kept as {} (an earlier asr.since or asr.watch with keep={})", vs, vs));
+            }
+            JsonObject ratios;
+            for (const auto& [key, value] : a_result) {
+                const auto* other = kept->second.Find(key);
+                if (!value.IsNumber() || !other || !other->IsNumber()) {
+                    continue;
+                }
+                const double a = value.AsNumber(), b = other->AsNumber();
+                ratios[key] = b != 0.0 ? Json(Round(a / b, 0.001)) : a == 0.0 ? Json(1.0) : Json();
+            }
+            a_result["vs"] = Json(std::move(ratios));
+        }
+
+        void AddPadChecks()
+        {
+            SkseTestKit::AddCommand("asr.pose", "",
+                "CJ as San Andreas has him now: on foot or in a vehicle (its model), getting in or out, grounded, crouching, where (units from the "
+                "handover's anchor), speed (km/h; ahead: along the way he faces), his (or his vehicle's) and the camera's heading and the camera's pitch (degrees), weapon, aiming, shots, radio "
+                "station; the pad's gun lock's target (gunTarget, a form id, null for none); console cheat sequences finished on the pad (padCheats); the pitch of the vehicle he drives (vehiclePitch, degrees, nose up above 0); whether San Andreas has the player, and "
+                "Skyrim's open menus",
+                [](Call&) -> Json {
+                    const auto pose = CjPose();
+                    Json       out = pose ? DescribePose(*pose) : Json(JsonObject{});
+                    out["cj"] = PlayerSync::DebugOwned();
+                    out["posed"] = pose.has_value();
+                    out["gunTarget"] = GunTarget(LockOn::DebugGunTarget());
+                    out["padCheats"] = PlayerSync::DebugPadCheats();
+                    if (const auto pitch = VehiclePitch()) {
+                        out["vehiclePitch"] = Round(*pitch, 0.1);
+                    }
+                    out["menus"] = Json(OpenMenus());
+                    return out;
+                });
+
+            SkseTestKit::AddTask("asr.menus", "[close=<bool>]",
+                "Skyrim's menus a pad opens that are open now (as asr.pose's menus); close=true closes them first, as their own close does "
+                "(a run that stopped early leaves one open, and a menu pauses San Andreas), answering once they're gone",
+                [](Call& a_call) -> Step {
+                    if (a_call.Flag("close", false)) {
+                        if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                            for (const auto& menu : OpenMenus()) {
+                                queue->AddMessage(menu.AsString(), RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                            }
+                        }
+                    }
+                    a_call.DefaultTimeout(5.0);
+                    return [close = a_call.Flag("close", false)](Call&) -> std::optional<Json> {
+                        auto open = OpenMenus();
+                        if (close && !open.empty()) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "menus", Json(std::move(open)) } };
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.mark", "", "Marks CJ's pose now, for asr.since", [](Call&) -> Json {
+                g_mark = TakeMark();
+                g_markCamera = CameraHeading();
+                return DescribePose(g_mark->pose);
+            });
+
+            SkseTestKit::AddCommand("asr.since", "[keep=<name>] [vs=<name>]",
+                "What changed since asr.mark: seconds, moved and climbed (metres), turned (turnedBy: either way) and pitched (degrees, the camera), "
+                "bodyTurned (CJ's or his vehicle's heading), the gun lock's target then and now (gunTargetFrom, gunTarget, gunTargetChanged), console cheat sequences finished on the pad (padCheats), shots, the speed now (km/h; ahead: along the way he faces, below 0 reversing), the "
+                "weapon and radio station then and now; cameraTurned (cameraTurnedBy: either way): Skyrim's camera, which follows San Andreas's (a "
+                "vehicle's look behind turns it, not CJ's view). keep=<name> keeps the result, vs=<name> adds each number over the kept one's",
+                [](Call& a_call) -> Json {
+                    if (!g_mark) {
+                        throw Error("no asr.mark yet");
+                    }
+                    const auto pose = CjPose();
+                    if (!pose || g_mark->handover != PlayerSync::DebugHandover()) {
+                        throw Error("the handover changed since asr.mark (or San Andreas has no pose of CJ): mark again");
+                    }
+                    auto out = Since(*g_mark, *pose);
+                    if (const auto now = CameraHeading(); now && g_markCamera) {
+                        double d = *now - *g_markCamera;
+                        d -= 360.0 * std::round(d / 360.0);
+                        out["cameraTurned"] = Round(d, 0.1);
+                        out["cameraTurnedBy"] = Round(std::abs(d), 0.1);
+                    }
+                    Compare(out, a_call);
+                    return out;
+                });
+
+            SkseTestKit::AddTask("asr.watch", "[seconds] [keep=<name>] [vs=<name>]",
+                "Watches CJ for seconds (1) from now and answers with asr.since's numbers over that time and their peaks: the most he rose "
+                "above where he started (metres), his top and lowest speed (km/h), the lowest and highest speed along the way he faces (aheadLow, aheadHigh: below 0 reversing), the most the camera turned either way, whether he left the "
+                "ground, and the menus that were open; in a vehicle the most its nose went up and down from where it was when the watch started (pitchUp, pitchDown, degrees). keep= and vs= as asr.since",
+                [](Call& a_call) -> Step {
+                    const double seconds = a_call.Number("seconds", 1.0);
+                    if (seconds <= 0.0 || seconds > 600.0) {
+                        throw Error("seconds is up to 600");
+                    }
+                    a_call.DefaultTimeout(seconds + 10.0);
+                    struct Watch
+                    {
+                        Mark      mark;
+                        double    rose = 0.0;
+                        double    top = 0.0;
+                        double    low = 1e9;
+                        double    aheadLow = 1e9;   // the speed along the way he faces, its lowest and highest (km/h)
+                        double    aheadHigh = -1e9;
+                        double    left = 0.0;
+                        double    right = 0.0;
+                        double    pitchUp = -1e9;    // the driven vehicle's pitch, its highest and lowest, from where it started
+                        double    pitchDown = 1e9;
+                        std::optional<double> pitchFrom;
+                        bool      airborne = false;
+                        JsonArray menus;
+                    };
+                    auto watch = std::make_shared<Watch>(Watch{ .mark = TakeMark() });
+                    return [watch, seconds](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose || watch->mark.handover != PlayerSync::DebugHandover()) {
+                            throw Error("the handover changed while watching (or San Andreas lost CJ's pose)");
+                        }
+                        const double speed = KmH(pose->velocity);
+                        const double turned = Turned(watch->mark.pose.viewHeading, pose->viewHeading);
+                        watch->rose = (std::max)(watch->rose, static_cast<double>(pose->offset[2] - watch->mark.pose.offset[2]) * Pose::kMetersPerUnit);
+                        watch->top = (std::max)(watch->top, speed);
+                        watch->low = (std::min)(watch->low, speed);
+                        watch->aheadLow = (std::min)(watch->aheadLow, Ahead(*pose));
+                        watch->aheadHigh = (std::max)(watch->aheadHigh, Ahead(*pose));
+                        watch->left = (std::min)(watch->left, turned);
+                        watch->right = (std::max)(watch->right, turned);
+                        watch->airborne = watch->airborne || (pose->flags & Protocol::kPlayerGrounded) == 0;
+                        if (const auto pitch = VehiclePitch()) {
+                            // From its pitch when the watch started, so the road's slope doesn't count.
+                            if (!watch->pitchFrom) {
+                                watch->pitchFrom = *pitch;
+                            }
+                            watch->pitchUp = (std::max)(watch->pitchUp, *pitch - *watch->pitchFrom);
+                            watch->pitchDown = (std::min)(watch->pitchDown, *pitch - *watch->pitchFrom);
+                        }
+                        for (auto& menu : OpenMenus()) {
+                            if (std::ranges::find(watch->menus, menu) == watch->menus.end()) {
+                                watch->menus.push_back(std::move(menu));
+                            }
+                        }
+                        if (a_call.Seconds() < seconds) {
+                            return std::nullopt;
+                        }
+                        auto out = Since(watch->mark, *pose);
+                        out["rose"] = Round(watch->rose);
+                        out["topSpeed"] = Round(watch->top, 0.1);
+                        out["lowSpeed"] = Round(watch->low, 0.1);
+                        out["aheadLow"] = Round(watch->aheadLow, 0.1);
+                        out["aheadHigh"] = Round(watch->aheadHigh, 0.1);
+                        out["turnedLeft"] = Round(watch->left, 0.1);
+                        out["turnedRight"] = Round(watch->right, 0.1);
+                        out["airborne"] = watch->airborne;
+                        if (watch->pitchUp > -1e8) {
+                            out["pitchUp"] = Round(watch->pitchUp, 0.1);
+                            out["pitchDown"] = Round(watch->pitchDown, 0.1);
+                        }
+                        out["menusSeen"] = Json(watch->menus);
+                        Compare(out, a_call);
+                        return Json(std::move(out));
+                    };
+                });
+
+            // Actors for the activation and the gun lock: placed in front of San Andreas's camera, where CJ looks.
+            SkseTestKit::AddCommand("asr.place", "[count] [base=<form>] [ref=<form>] [distance=<units>] [angle=<degrees>] [spread=<degrees>] [combat=<bool>] [clear=<bool>]",
+                "Places count (1) actors of base (a Whiterun guard) distance (700) in front of San Andreas's camera, angle (0) degrees right of "
+                "its middle, spread (25) degrees apart about that, facing CJ; combat=true sets them on the player. ref=<form> moves that reference there instead (one, never disabled by clear=). clear=true first disables the ones placed before. Answers "
+                "with their form ids",
+                [](Call& a_call) -> Json {
+                    static std::vector<RE::ObjectRefHandle> placed;
+                    const bool clear = a_call.Flag("clear", false);
+                    if (clear) {
+                        for (const auto& handle : placed) {
+                            if (auto ref = handle.get(); ref && !ref->IsDisabled()) {
+                                ref->Disable();
+                            }
+                        }
+                        placed.clear();
+                    }
+                    const double count = a_call.Number("count", clear ? 0.0 : 1.0);
+                    if (count < 0.0 || count > 10.0 || count != std::floor(count)) {
+                        throw Error("count is 0 to 10");
+                    }
+                    JsonArray ids;
+                    if (count > 0.0) {
+                        RequireCj();
+                        auto*      player = RE::PlayerCharacter::GetSingleton();
+                        const auto pose = CjPose();
+                        if (!player || !pose) {
+                            throw Error("no pose of CJ to place them by");
+                        }
+                        auto hex = [&](std::string_view a_key, std::uint32_t a_default) {
+                            const auto    text = a_call.Text(a_key);
+                            std::uint32_t id = a_default;
+                            if (!text.empty()) {
+                                const auto [end, error] = std::from_chars(text.data() + (text.starts_with("0x") ? 2 : 0), text.data() + text.size(), id, 16);
+                                if (error != std::errc{} || end != text.data() + text.size()) {
+                                    throw Error(std::format("{} is a form id in hex", a_key));
+                                }
+                            }
+                            return id;
+                        };
+                        RE::TESObjectREFR* existing = nullptr;
+                        if (a_call.Has("ref")) {
+                            existing = RE::TESForm::LookupByID<RE::TESObjectREFR>(hex("ref", 0));
+                            if (!existing || count != 1.0) {
+                                throw Error("ref= moves one loaded reference (count 1)");
+                            }
+                            if (existing->IsDisabled() || existing->IsDeleted() || !existing->Is3DLoaded()) {
+                                throw Error(std::format("{} is disabled, deleted or not loaded (console ref={} enable)", SkseTestKit::FormId(existing->GetFormID()),
+                                    SkseTestKit::FormId(existing->GetFormID())));
+                            }
+                        }
+                        const auto baseId = hex("base", Wanted::kHolds[0].guard);
+                        auto*      base = RE::TESForm::LookupByID<RE::TESBoundObject>(baseId);
+                        if (!base && !existing) {
+                            throw Error(std::format("no base form {:08X}", baseId));
+                        }
+                        const float distance = static_cast<float>(a_call.Number("distance", 700.0));
+                        const float angle = static_cast<float>(a_call.Number("angle", 0.0) * std::numbers::pi / 180.0);
+                        const float spread = static_cast<float>(a_call.Number("spread", 25.0) * std::numbers::pi / 180.0);
+                        const bool  combat = a_call.Flag("combat", false);
+                        const int   n = static_cast<int>(count);
+                        for (int i = 0; i < n; ++i) {
+                            auto ref = existing ? RE::NiPointer<RE::TESObjectREFR>(existing) : player->PlaceObjectAtMe(base, false);
+                            if (!ref) {
+                                throw Error("PlaceObjectAtMe failed");
+                            }
+                            // The pose's view heading is Skyrim's convention (0 north, clockwise).
+                            const float h = pose->viewHeading + angle + (static_cast<float>(i) - static_cast<float>(n - 1) / 2.0f) * spread;
+                            ref->SetPosition(player->GetPosition() + RE::NiPoint3(std::sin(h) * distance, std::cos(h) * distance, 0.0f));
+                            ref->SetAngle(RE::NiPoint3(0.0f, 0.0f, h + std::numbers::pi_v<float>));  // facing CJ
+                            if (auto* actor = ref->As<RE::Actor>(); actor && combat) {
+                                actor->StartCombat(player);
+                            }
+                            if (!existing) {
+                                placed.push_back(ref->GetHandle());
+                            }
+                            ids.emplace_back(SkseTestKit::FormId(ref->GetFormID()));
+                        }
+                    }
+                    return JsonObject{ { "placed", std::move(ids) }, { "total", placed.size() } };
+                });
+        }
+
         // AhShitRim's commands on the kit's command pipe (docs/DEV_SETUP.md, "Test sessions").
         void AddCommands()
         {
@@ -965,6 +1818,8 @@ namespace AhShitRim::TestKit
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
                     g_lampsOff = false;  // a run that stopped between asr.lamps off and on leaves nothing behind a new handover
+                    g_braking.reset();
+                    PlayerSync::DebugHold(std::nullopt);  // nor held pedals
                     if (want && !PlayerSync::DebugOwned() && !LinkService::Get().IsUp()) {
                         throw Error("San Andreas isn't linked (not running, or still starting): nothing to hand the player to");
                     }
@@ -995,9 +1850,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>]",
+            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>] [tries=<n>]",
                 "Spawns a San Andreas vehicle by model id (400 to 611) where San Andreas puts a cheat's vehicle, in front of CJ; in=true puts CJ "
-                "in a new one where he stands (handing him the player if he hasn't it). Answers with its slot and where it is from the player",
+                "in a new one where he stands (handing him the player if he hasn't it). San Andreas spawns nothing without a flat, clear spot "
+                "in front of him: with tries (1) over 1, CJ walks on a second and it's asked for again. Answers with its slot and where it is "
+                "from the player",
                 [](Call& a_call) -> Step {
                     const double number = a_call.Number("model");
                     if (number < 400 || number > 611 || number != std::floor(number)) {
@@ -1020,8 +1877,16 @@ namespace AhShitRim::TestKit
                         throw Error(refusal);
                     }
                     const auto handover = PlayerSync::DebugHandover();
-                    a_call.DefaultTimeout(20.0);
-                    return [model, before, in, handover](Call& a_call) -> std::optional<Json> {
+                    const int  tries = (std::max)(1, static_cast<int>(a_call.Number("tries", 1.0)));
+                    a_call.DefaultTimeout(20.0 + 7.0 * (tries - 1));
+                    struct Retry
+                    {
+                        int    tried = 1;
+                        double askedAt = 0.0;
+                        double walkUntil = -1.0;
+                    };
+                    auto retry = std::make_shared<Retry>();
+                    return [model, before, in, handover, tries, retry](Call& a_call) -> std::optional<Json> {
                         if (PlayerSync::DebugHandover() != handover) {
                             throw Error("the handover changed while waiting (a load door, fast travel, F10): its vehicles are gone");
                         }
@@ -1059,8 +1924,27 @@ namespace AhShitRim::TestKit
                         if (!found) {
                             // San Andreas answers in a few frames; when it finds no flat, clear spot in front of CJ (another
                             // vehicle in the way) it spawns nothing and only its own log says so.
-                            if (!in && a_call.Seconds() > 5.0) {
-                                throw Error("San Andreas spawned nothing in 5 s: no clear spot in front of CJ? (its AhShitRim.log says why)");
+                            if (!in && retry->walkUntil >= 0.0) {
+                                if (a_call.Seconds() < retry->walkUntil) {
+                                    PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveY = 1.0f });
+                                    return std::nullopt;
+                                }
+                                PlayerSync::DebugHold(std::nullopt);
+                                retry->walkUntil = -1.0;
+                                retry->askedAt = a_call.Seconds();
+                                retry->tried++;
+                                if (const auto refusal = PlayerSync::DebugSpawn(model); !refusal.empty()) {
+                                    throw Error(refusal);
+                                }
+                                SKSE::log::info("test kit: asr.spawn: nothing spawned, CJ walked on and asked again ({} of {})", retry->tried, tries);
+                                return std::nullopt;
+                            }
+                            if (!in && a_call.Seconds() - retry->askedAt > 5.0) {
+                                if (retry->tried < tries) {
+                                    retry->walkUntil = a_call.Seconds() + 1.0;  // a second on, then again
+                                    return std::nullopt;
+                                }
+                                throw Error(std::format("San Andreas spawned nothing in 5 s, {} time(s): no clear spot in front of CJ? (its AhShitRim.log says why)", tries));
                             }
                             return std::nullopt;
                         }
@@ -1114,6 +1998,47 @@ namespace AhShitRim::TestKit
                     };
                 });
 
+            SkseTestKit::AddCommand("asr.ground", "<x> <y> [radius] [step]",
+                "Skyrim's ground height (a ray down from 400 above the player to 800 below) on a square of sample points round x, y: rows of "
+                "heights, and the lowest, the highest and the steepest slope between neighbours (degrees)",
+                [](Call& a_call) -> Json {
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    const auto from = player ? player->GetPosition() : RE::NiPoint3{};
+                    const float x = static_cast<float>(a_call.Number("x", from.x)), y = static_cast<float>(a_call.Number("y", from.y));
+                    const float radius = static_cast<float>(a_call.Number("radius", 200.0));
+                    const float step = (std::max)(10.0f, static_cast<float>(a_call.Number("step", 50.0)));
+                    const int   n = static_cast<int>(radius / step);
+                    JsonArray   rows;
+                    float       low = 1e9f, high = -1e9f, steepest = 0.0f;
+                    std::vector<std::vector<float>> grid;
+                    for (int j = -n; j <= n; j++) {
+                        JsonArray   row;
+                        std::vector<float> line;
+                        for (int i = -n; i <= n; i++) {
+                            const auto ground = GroundUnder({ x + i * step, y + j * step, from.z }, 400.0f, 800.0f);
+                            line.push_back(ground ? *ground : std::nanf(""));
+                            row.emplace_back(ground ? Json(Round(*ground, 0.1)) : Json());
+                            if (ground) {
+                                low = (std::min)(low, *ground);
+                                high = (std::max)(high, *ground);
+                            }
+                        }
+                        rows.emplace_back(std::move(row));
+                        grid.push_back(std::move(line));
+                    }
+                    for (std::size_t j = 0; j < grid.size(); j++) {
+                        for (std::size_t i = 0; i < grid[j].size(); i++) {
+                            for (const auto& [dj, di] : { std::pair{ 0, 1 }, std::pair{ 1, 0 } }) {
+                                if (j + dj < grid.size() && i + di < grid[j].size() && !std::isnan(grid[j][i]) && !std::isnan(grid[j + dj][i + di])) {
+                                    const float rise = std::fabs(grid[j + dj][i + di] - grid[j][i]);
+                                    steepest = (std::max)(steepest, static_cast<float>(std::atan2(rise, step) * 57.29578));
+                                }
+                            }
+                        }
+                    }
+                    return JsonObject{ { "step", step }, { "low", low }, { "high", high }, { "steepest", Round(steepest, 0.1) }, { "rows", std::move(rows) } };
+                });
+
             SkseTestKit::AddCommand("asr.night", "[hour]", "Sets the game's hour (default 23, night for the lights and the HUD clock)", [](Call& a_call) -> Json {
                 const double hour = a_call.Number("hour", 23.0);
                 if (hour < 0.0 || hour >= 24.0) {
@@ -1126,6 +2051,110 @@ namespace AhShitRim::TestKit
                 calendar->gameHour->value = static_cast<float>(hour);
                 return JsonObject{ { "hour", calendar->GetHour() } };
             });
+
+            SkseTestKit::AddCommand("asr.camera", "",
+                "San Andreas's camera now: its mode (eCamMode), where it is from CJ's feet (distance on the ground, height) and, in a "
+                "vehicle, in the vehicle's frame from its middle (forward, right, up: forward > 0 is in front of it); its scope; and ahead: how far "
+                "the rendered camera sees that way before land, a tree or a building (3000 for nothing within 3000 units)",
+                [](Call&) -> Json { return CameraNow(); });
+
+            SkseTestKit::AddTask("asr.view", "[settle=<seconds>] [untilFirstPerson=<bool>] [presses=<n>]",
+                "Presses San Andreas's camera key (V, select on its pad) once, as the player would, and answers settle seconds (1.5) later "
+                "with asr.camera's numbers, before (fromFeet's before the press) and changed (the camera moved more than 20 units). "
+                "untilFirstPerson=true presses again every settle seconds, up to presses (6) times, until the first-person view is up "
+                "(presses: how many it took), and fails when it never comes",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double settle = a_call.Number("settle", 1.5);
+                    const bool   untilFirst = a_call.Flag("untilFirstPerson", false);
+                    const int    most = static_cast<int>(a_call.Number("presses", 6.0));
+                    a_call.DefaultTimeout(settle * (untilFirst ? most : 1) + 10.0);
+                    struct View
+                    {
+                        Json   before;
+                        int    pressed = 0;
+                        double pressedAt = -1.0;
+                    };
+                    auto view = std::make_shared<View>();
+                    view->before = CameraNow();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const double now = a_call.Seconds();
+                        if (view->pressedAt < 0.0 || (now - view->pressedAt >= settle)) {
+                            if (view->pressedAt >= 0.0) {
+                                auto after = CameraNow();
+                                const auto* first = after.AsObject().Find("firstPerson");
+                                const bool  done = !untilFirst || (first && first->AsBool());
+                                if (done) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    const auto num = [](const Json& a_json, std::string_view a_key) {
+                                        const auto* v = a_json.AsObject().Find(a_key);
+                                        return v && v->IsNumber() ? v->AsNumber() : 0.0;
+                                    };
+                                    const double moved = std::hypot(num(after, "fromFeet") - num(view->before, "fromFeet"), num(after, "height") - num(view->before, "height"),
+                                        num(after, "forward") - num(view->before, "forward"));
+                                    auto& out = after.AsObject();
+                                    out.Set("before", num(view->before, "fromFeet"));
+                                    out.Set("changed", moved > 20.0);
+                                    out.Set("presses", view->pressed);
+                                    return after;
+                                }
+                                if (view->pressed >= most) {
+                                    PlayerSync::DebugHold(std::nullopt);
+                                    throw Error(std::format("no first-person view after {} presses", view->pressed));
+                                }
+                            }
+                            view->pressed++;
+                            view->pressedAt = now;
+                        }
+                        const bool press = now - view->pressedAt < 0.15;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCameraView }) : std::nullopt);
+                        return std::nullopt;
+                    };
+                });
+
+            // San Andreas's zone and vehicle names and help box, and what became of Skyrim's HUD messages
+            // (hud/SkyrimMessages: counts since the game started, the last of each).
+            SkseTestKit::AddCommand("asr.hud", "",
+                "San Andreas's zone name, vehicle name and help box as drawn last frame (text, alpha 0 to 1, phase), and Skyrim's HUD messages "
+                "restyled or hidden so far (zones, helps, hidden, the last of each and the rule it went by), and the player's Skyrim location",
+                [](Call&) -> Json {
+                    const auto text = SaHud::DebugTexts();
+                    const auto counts = SkyrimMessages::DebugCounted();
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    auto*      location = player ? player->GetCurrentLocation() : nullptr;
+                    std::string where = location && location->GetName() ? location->GetName() : "";
+                    return JsonObject{ { "zone", text.zone }, { "zoneAlpha", Round(text.zoneAlpha) }, { "zonePhase", text.zonePhase },
+                        { "vehicle", text.vehicle }, { "vehicleAlpha", Round(text.vehicleAlpha) }, { "vehiclePhase", text.vehiclePhase },
+                        { "help", text.help }, { "helpAlpha", Round(text.helpAlpha) }, { "zones", counts.zones }, { "helps", counts.helps },
+                        { "hidden", counts.hidden }, { "lastZone", counts.lastZone }, { "lastHelp", counts.lastHelp },
+                        { "lastHidden", counts.lastHidden }, { "lastRule", counts.lastRule }, { "location", where }, { "cj", PlayerSync::DebugOwned() } };
+                });
+
+            SkseTestKit::AddTask("asr.notify", "<text...>",
+                "Shows a Skyrim notification (Debug.Notification's way: SendHUDMessage::ShowHUDMessage, through Skyrim's HUD) and answers with what became of it: "
+                "hidden, help (San Andreas's help box) or kept (Skyrim's, when nothing took it within 3 s), and the rule it went by",
+                [](Call& a_call) -> Step {
+                    const auto text = a_call.Text("text");
+                    if (text.empty()) {
+                        throw Error("no text");
+                    }
+                    const auto before = SkyrimMessages::DebugCounted();
+                    RE::SendHUDMessage::ShowHUDMessage(text.c_str());
+                    a_call.DefaultTimeout(10.0);
+                    return [before](Call& a_call) -> std::optional<Json> {
+                        const auto now = SkyrimMessages::DebugCounted();
+                        if (now.hidden != before.hidden) {
+                            return JsonObject{ { "action", "hidden" }, { "text", now.lastHidden }, { "rule", now.lastRule } };
+                        }
+                        if (now.helps != before.helps) {
+                            return JsonObject{ { "action", "help" }, { "text", now.lastHelp }, { "rule", now.lastRule } };
+                        }
+                        if (a_call.Seconds() > 3.0) {
+                            return JsonObject{ { "action", "kept" } };
+                        }
+                        return std::nullopt;
+                    };
+                });
 
             // A camera target (asr.vehicle:<slot>, asr.vehicle:driven, asr.vehicle: for the one asr.spawn made last): San Andreas's
             // vehicles are drawn by ModelView, not references, and their node isn't turned (the parts are), so the kit
@@ -1142,13 +2171,7 @@ namespace AhShitRim::TestKit
                         }
                         slot = g_spawned;
                     } else if (a_which == "driven") {
-                        for (std::uint32_t i = 0; i < Protocol::kVehicleMax && !slot; i++) {
-                            Protocol::BodyState vehicle{};
-                            if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
-                                vehicle.handover == PlayerSync::DebugHandover()) {
-                                slot = i;
-                            }
-                        }
+                        slot = DrivenSlot();
                         if (!slot) {
                             throw Error("CJ isn't driving");
                         }
@@ -1171,6 +2194,127 @@ namespace AhShitRim::TestKit
                     DescribeLamps(*slot, details, lights);
                     return SkseTestKit::Place{ .x = position.x, .y = position.y, .z = position.z, .heading = heading, .root = ModelView::Node(model),
                         .lights = std::move(lights), .details = std::move(details) };
+                });
+
+            // A scenario: CJ drives his vehicle with keys held, a row a frame, and how it rode (protocol/cpp/ride.h).
+            SkseTestKit::AddScenario("asr.drive", "[steer=<-1..1>] [gas=<forward|back|none>] [handbrake=<bool>] [seconds=<s>] [minSpeed=<m/s>]",
+                "Holds the driving keys for seconds (3): steer (-1 full left, A; 1 full right, D; 0), gas (forward W, back S, none) and the "
+                "handbrake (Space). A row a frame of the driven vehicle where it's drawn (its position, heading, pitch, roll, tilt, speed and "
+                "slip off its heading); answers with the leg: turned (degrees, right positive), path, moved, radius (units), top speed, mean, median "
+                "and max slip (degrees, counted while faster than minSpeed, 2 m/s), impacts (stopped short by something), max tilt, roll and pitch, the height range and the fastest rise",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const float steer = static_cast<float>(a_call.Number("steer", 0.0));
+                    if (!(steer >= -1.0f && steer <= 1.0f)) {
+                        throw Error("steer is -1 to 1");
+                    }
+                    const auto    gas = a_call.Text("gas", "forward");
+                    float         moveY = 0.0f;
+                    std::uint32_t buttons = 0;
+                    if (gas == "forward") {
+                        moveY = 1.0f;
+                        buttons = Protocol::kButtonAccelerate;
+                    } else if (gas == "back") {
+                        moveY = -1.0f;
+                        buttons = Protocol::kButtonBrake;
+                    } else if (gas != "none") {
+                        throw Error("gas is forward, back or none");
+                    }
+                    if (a_call.Flag("handbrake", false)) {
+                        buttons |= Protocol::kButtonHandbrake;
+                    }
+                    const double seconds = a_call.Number("seconds", 3.0);
+                    if (!(seconds > 0.0 && seconds <= 120.0)) {
+                        throw Error("seconds is over 0, up to 120");
+                    }
+                    const auto slot = DrivenSlot();
+                    if (!slot) {
+                        throw Error("CJ isn't driving (asr.spawn <model> in=true first)");
+                    }
+                    a_call.DefaultTimeout(seconds * 3.0 + 15.0);
+                    const PlayerSync::DebugInput input{ .moveX = steer, .moveY = moveY, .buttons = buttons };
+                    const double minSpeed = a_call.Number("minSpeed", 2.0);
+                    if (!(minSpeed > 0.0)) {
+                        throw Error("minSpeed is over 0 (m/s)");
+                    }
+                    auto leg = std::make_shared<Ride::Leg>(static_cast<float>(minSpeed) * Pose::kUnitsPerMeter);
+                    auto held = std::make_shared<double>(0.0);  // seconds held while the world ran
+                    auto last = std::make_shared<double>(a_call.Seconds());
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const double now = a_call.Seconds();
+                        const double step = now - *last;
+                        *last = now;
+                        if (SkseTestKit::Paused()) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return std::nullopt;
+                        }
+                        if (a_call.Frames() > 0) {
+                            *held += step;  // the time since the last sample: the first one is this one's own frame
+                        }
+                        RE::NiPoint3 at;
+                        float        heading = 0.0f;
+                        float        rotation[4]{};
+                        if (!PlayerSync::DebugVehicle(*slot, at, heading, nullptr, &rotation)) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error(std::format("vehicle slot {} isn't drawn any more", *slot));
+                        }
+                        Protocol::BodyBone frame{};
+                        std::copy(std::begin(rotation), std::end(rotation), std::begin(frame.rotation));
+                        const auto attitude = Ride::AttitudeOf(Body::ToMatrix(frame));
+                        leg->Add(*held, at.x, at.y, at.z, heading, attitude);
+                        a_call.Row(JsonObject{ { "t", Round(*held, 0.001) }, { "frame", a_call.Frames() }, { "x", Round(at.x, 0.1) }, { "y", Round(at.y, 0.1) },
+                            { "z", Round(at.z, 0.1) }, { "heading", Round(heading * Ride::kDegrees, 0.1) }, { "pitch", Round(attitude.pitch, 0.1) },
+                            { "roll", Round(attitude.roll, 0.1) }, { "tilt", Round(attitude.tilt, 0.1) }, { "speed", Round(leg->LastSpeed() / Pose::kUnitsPerMeter, 0.01) },
+                            { "slip", Round(leg->LastSlip(), 0.1) } });
+                        if (*held >= seconds) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            const float m = Pose::kUnitsPerMeter;
+                            return JsonObject{ { "slot", *slot }, { "samples", leg->Samples() }, { "turned", Round(leg->Turned(), 0.1) },
+                                { "path", Round(leg->Path(), 0.1) }, { "moved", Round(leg->Moved(), 0.1) }, { "radius", Round(leg->Radius(), 0.1) },
+                                { "radiusM", Round(leg->Radius() / m, 0.01) }, { "topSpeed", Round(leg->TopSpeed() / m, 0.01) },
+                                { "slip", Round(leg->MeanSlip(), 0.1) }, { "medianSlip", Round(leg->MedianSlip(), 0.1) }, { "maxSlip", Round(leg->MaxSlip(), 0.1) }, { "impacts", leg->Impacts() }, { "slipSamples", leg->SlipSamples() },
+                                { "maxTilt", Round(leg->MaxTilt(), 0.1) }, { "maxRoll", Round(leg->MaxRoll(), 0.1) }, { "maxPitch", Round(leg->MaxPitch(), 0.1) },
+                                { "heightRange", Round(leg->HeightRange() / m, 0.01) }, { "maxRise", Round(leg->MaxRise() / m, 0.01) },
+                                { "at", Point(at) }, { "heading", Round(heading * Ride::kDegrees, 0.1) } };
+                        }
+                        PlayerSync::DebugHold(input);
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.vehicles", "[within=<units>]",
+                "San Andreas's vehicles drawn now (every slot, a parked one too): count, and each one's slot, model (ModelView's id), where "
+                "and how far from the player, its health (1000 new), wrecked, burning, smoking (health under 650), up (1 upright: its frame's Z) "
+                "and above (how far its box's bottom is over Skyrim's ground there, units; missing with no ground); within (default everywhere) "
+                "counts only those that close",
+                [](Call& a_call) -> Json {
+                    RequireCj();
+                    const double within = a_call.Number("within", (std::numeric_limits<double>::max)());
+                    auto*        player = RE::PlayerCharacter::GetSingleton();
+                    const auto   from = player ? player->GetPosition() : RE::NiPoint3{};
+                    JsonArray    vehicles;
+                    for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                        RE::NiPoint3  at;
+                        float         heading = 0.0f;
+                        std::uint32_t model = 0;
+                        if (!PlayerSync::DebugVehicle(i, at, heading, &model)) {
+                            continue;
+                        }
+                        const double distance = std::hypot(at.x - from.x, at.y - from.y);
+                        if (distance <= within) {
+                            const auto& seen = g_seen[i];
+                            const bool  wrecked = seen.on && (seen.flags & Protocol::kBodyWrecked) != 0;
+                            JsonObject  one{ { "slot", i }, { "model", std::format("{:08X}", model) }, { "at", Point(at) }, { "distance", Round(distance, 1.0) },
+                                { "health", seen.health }, { "wrecked", wrecked }, { "burning", seen.on && (seen.flags & Protocol::kBodyBurning) != 0 },
+                                { "smoking", seen.on && !wrecked && seen.health < 650.0f }, { "up", seen.frame.up.z } };
+                            if (const auto ground = GroundUnder(at)) {
+                                one.Set("above", at.z + seen.boxBottom - *ground);
+                            }
+                            vehicles.emplace_back(std::move(one));
+                        }
+                    }
+                    const auto count = vehicles.size();
+                    return JsonObject{ { "count", count }, { "vehicles", std::move(vehicles) } };
                 });
 
             // A scenario: a row a frame, for skytest run's CSV.
@@ -1197,6 +2341,1419 @@ namespace AhShitRim::TestKit
                     };
                 });
         }
+
+        // ---- The knife stealth kill (v36): scenarios/stealth-kill.json ----
+
+        struct Kill
+        {
+            RE::FormID   victim = 0;
+            RE::NiPoint3 victimAt;  // where it stood at the grab
+            RE::NiPoint3 cjAt;      // CJ's feet then
+        } g_kill;
+        float      g_lastPerLanded = 0.0f;  // asr.swing's last health drop per landed (Damage::Blows), for vsLast
+        RE::FormID g_victim = 0;            // the last asr.victim placed or asr.seated found: asr.victim:, and ref's default
+        RE::FormID g_placed = 0;            // the last guard asr.victim placed, taken out by the next
+
+        RE::NiPoint3 CjFeet()
+        {
+            RE::NiPoint3 feet;
+            float        heading = 0.0f;
+            if (!PlayerSync::DebugCj(feet, heading)) {
+                throw Error("San Andreas doesn't have the player: asr.cj first");
+            }
+            return feet;
+        }
+
+        float Flat(const RE::NiPoint3& a_a, const RE::NiPoint3& a_b) { return std::hypot(a_a.x - a_b.x, a_a.y - a_b.y); }
+
+        Json Spot(const RE::NiPoint3& a_p) { return JsonObject{ { "x", Round(a_p.x, 0.1) }, { "y", Round(a_p.y, 0.1) }, { "z", Round(a_p.z, 0.1) } }; }
+
+        RE::Actor* ActorArg(Call& a_call)
+        {
+            if (!a_call.Has("ref") || a_call.Text("ref") == "victim") {
+                auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr;
+                if (!victim) {
+                    throw Error("no victim: asr.victim or asr.seated first, or ref=");
+                }
+                return victim;
+            }
+            auto* ref = SkseTestKit::FindRef(a_call.Text("ref"));
+            auto* actor = ref ? ref->As<RE::Actor>() : nullptr;
+            if (!actor) {
+                throw Error("ref isn't an actor");
+            }
+            return actor;
+        }
+
+        // Whether there's room to stand behind a_actor, from half a metre (its seat's back) to a_meters + 0.35, at
+        // waist height: nothing in the way on Skyrim's line-of-sight layer (walls, tables, doors).
+        bool RoomBehind(RE::Actor* a_actor, float a_meters)
+        {
+            auto* cell = a_actor->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return false;
+            }
+            const float        heading = a_actor->GetAngleZ();
+            const RE::NiPoint3 back(-std::sin(heading), -std::cos(heading), 0.0f);
+            const RE::NiPoint3 waist = a_actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, 60.0f);
+            const auto         from = waist + back * (0.5f * Pose::kUnitsPerMeter);
+            const auto         to = waist + back * ((a_meters + 0.35f) * Pose::kUnitsPerMeter);
+            const float        scale = RE::bhkWorld::GetWorldScale();
+            RE::hkpWorldRayCastInput input;
+            input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+            input.from = RE::hkVector4(from.x * scale, from.y * scale, from.z * scale, 0.0f);
+            input.to = RE::hkVector4(to.x * scale, to.y * scale, to.z * scale, 0.0f);
+            RE::hkpWorldRayCastOutput output;
+            RE::BSReadLockGuard       lock(bhk->worldLock);
+            world->CastRay(input, output);
+            return !output.HasHit();
+        }
+
+        // Whether the furniture a_actor uses is a seat (a chair, a bench), not something to lean on.
+        bool OnASeat(RE::Actor* a_actor)
+        {
+            const auto furniture = a_actor->GetOccupiedFurniture().get();
+            auto*      base = furniture ? furniture->GetBaseObject() : nullptr;
+            auto*      seat = base ? base->As<RE::TESFurniture>() : nullptr;
+            return seat && seat->furnFlags.any(RE::TESFurniture::ActiveMarker::kCanSit) && seat->furnFlags.none(RE::TESFurniture::ActiveMarker::kCanLean);
+        }
+
+        float HealthOf(RE::Actor* a_actor) { return a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth); }
+
+        // CJ crouched (San Andreas toggles it on the press) or standing, as Skyrim's player sneaks: presses crouch every
+        // 1.5 s until Skyrim's player is as asked. True once it is.
+        bool Crouch(Call& a_call, bool a_crouch)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (player && player->IsSneaking() == a_crouch) {
+                return true;
+            }
+            const bool press = std::fmod(a_call.Seconds(), 1.5) < 0.15;
+            PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonCrouch }) : std::nullopt);
+            return false;
+        }
+
+        // The knife in CJ's hands (asr.give 4 first): asks San Andreas for it; true once his pose holds it.
+        bool KnifeInHands()
+        {
+            const auto pose = CjPose();
+            if (pose && pose->weaponType == Weapons::Knife) {
+                return true;
+            }
+            if (!Arms::DebugHoldWeapon(Weapons::Knife)) {
+                throw Error("CJ doesn't carry the knife: asr.give 4 first");
+            }
+            return false;
+        }
+
+        // The victim and CJ against where they stood at the grab, flat, in units.
+        JsonObject KillState(RE::Actor* a_victim)
+        {
+            auto*      player = RE::PlayerCharacter::GetSingleton();
+            const auto cj = CjFeet();
+            const auto debug = StealthKills::DebugState();
+            JsonObject out{ { "victim", SkseTestKit::FormId(g_kill.victim) }, { "sneaking", player->IsSneaking() }, { "cj", Spot(cj) },
+                { "cjMoved", Round(Flat(cj, g_kill.cjAt), 0.1) }, { "playerFromCj", Round(Flat(player->GetPosition(), cj), 0.1) },
+                { "grabs", debug.grabs }, { "stabs", debug.stabs }, { "held", debug.held != 0 }, { "killMove", debug.killMove }, { "idle", std::string(debug.idle) },
+                { "moveSeconds", Round(debug.moveSeconds) } };
+            if (a_victim) {
+                const auto at = a_victim->GetPosition();
+                out.Set("at", Spot(at));
+                out.Set("victimMoved", Round(Flat(at, g_kill.victimAt), 0.1));
+                out.Set("cjToVictim", Round(Flat(cj, at) * Pose::kMetersPerUnit, 0.01));
+                out.Set("victimDead", a_victim->IsDead());
+                out.Set("health", Round(HealthOf(a_victim), 0.1));
+                out.Set("inKillMove", a_victim->IsInKillMove());
+                out.Set("ragdoll", a_victim->IsInRagdollState());
+            }
+            return out;
+        }
+
+        void AddStealthKills()
+        {
+            SkseTestKit::AddTarget("asr.cj", "", "CJ's feet in Skyrim's world, where San Andreas's last pose puts him, facing his way", [](std::string_view) {
+                RE::NiPoint3 feet;
+                float        heading = 0.0f;
+                if (!PlayerSync::DebugCj(feet, heading)) {
+                    throw Error("San Andreas doesn't have the player");
+                }
+                return SkseTestKit::Place{ .x = feet.x, .y = feet.y, .z = feet.z, .heading = heading };
+            });
+
+            SkseTestKit::AddTarget("asr.victim", "", "The last guard asr.victim placed or person asr.seated found: its feet, facing its way",
+                [](std::string_view) {
+                    auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr;
+                    if (!victim) {
+                        throw Error("no victim: asr.victim or asr.seated first");
+                    }
+                    const auto at = victim->GetPosition();
+                    return SkseTestKit::Place{ .x = at.x, .y = at.y, .z = at.z, .heading = victim->GetAngleZ(),
+                        .details = JsonObject{ { "dead", victim->IsDead() }, { "inKillMove", victim->IsInKillMove() }, { "ragdoll", victim->IsInRagdollState() } } };
+                });
+
+            SkseTestKit::AddCommand("asr.victim", "[meters] [toward=<bool>]",
+                "Places a Whiterun guard meters (1.05) ahead of CJ, his back to him (toward=true: facing him), and takes out the one it placed "
+                "before (dead or alive); answers with the guard",
+                [](Call& a_call) -> Json {
+                    RE::NiPoint3 feet;
+                    float        heading = 0.0f;
+                    if (!PlayerSync::DebugCj(feet, heading)) {
+                        throw Error("San Andreas doesn't have the player: asr.cj first");
+                    }
+                    if (auto* before = g_placed ? RE::TESForm::LookupByID<RE::Actor>(g_placed) : nullptr; before && !before->IsDisabled()) {
+                        before->Disable();
+                        before->SetDelete(true);
+                    }
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    auto* base = RE::TESForm::LookupByID<RE::TESBoundObject>(Wanted::kHolds[0].guard);
+                    auto  placed = player && base ? player->PlaceObjectAtMe(base, false) : nullptr;
+                    auto* ref = placed ? placed->As<RE::Actor>() : nullptr;
+                    if (!ref) {
+                        throw Error("couldn't place a Whiterun guard");
+                    }
+                    const float meters = static_cast<float>(a_call.Number("meters", 1.05));
+                    const auto  at = feet + RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * (meters * Pose::kUnitsPerMeter);
+                    ref->SetPosition(at, true);
+                    ref->SetHeading(a_call.Flag("toward", false) ? heading + std::numbers::pi_v<float> : heading);
+                    // Calm: a guard placed while the last kill's alarm still runs would come out fighting CJ (whom a stealth
+                    // kill rightly refuses, as San Andreas does someone attacking him).
+                    ref->AsActorValueOwner()->SetActorValue(RE::ActorValue::kAggression, 0.0f);
+                    ref->StopCombat();
+                    g_victim = ref->GetFormID();
+                    g_placed = g_victim;
+                    return JsonObject{ { "ref", SkseTestKit::FormId(ref->GetFormID()) }, { "name", ref->GetName() }, { "at", Spot(at) },
+                        { "distance", Round(Flat(at, feet) * Pose::kMetersPerUnit) } };
+                });
+
+            SkseTestKit::AddCommand("asr.seated", "[radius] [lean=<bool>]",
+                "The nearest loaded person sitting on furniture within radius (4000) of the player that a stealth kill may take (not a "
+                "child, not essential; not a guard, who leans on a wall; on a chair or a bench, or with lean=true leaning on a counter; with "
+                "room to stand behind them), with its sit state",
+                [](Call& a_call) -> Json {
+                    auto*       player = RE::PlayerCharacter::GetSingleton();
+                    auto*       lists = RE::ProcessLists::GetSingleton();
+                    const float radius = static_cast<float>(a_call.Number("radius", 4000.0));
+                    const bool  lean = a_call.Flag("lean", false);  // also someone leaning on a counter (the same sit state)
+                    if (!player || !lists) {
+                        throw Error("no player yet");
+                    }
+                    RE::Actor*  best = nullptr;
+                    float       bestDistance = radius;
+                    std::string others;  // the seated it can't take, and why
+                    for (auto& handle : lists->highActorHandles) {
+                        auto  actor = handle.get();
+                        auto* state = actor ? actor->AsActorState() : nullptr;
+                        if (!actor || actor.get() == player || !state || !StealthKill::Seated(static_cast<std::uint32_t>(state->GetSitSleepState()))) {
+                            continue;
+                        }
+                        if (std::string_view(actor->GetName()).find("Guard") != std::string_view::npos) {
+                            continue;  // guards lean on walls, where nobody stands behind them
+                        }
+                        // On a chair or a bench, not leaning on a counter or a wall (the same sit state): its furniture
+                        // a seat, not a lean.
+                        if (!lean && !OnASeat(actor.get())) {
+                            others += std::format("{}{} (leaning, not on a seat)", others.empty() ? "" : ", ", actor->GetName());
+                            continue;
+                        }
+                        if (!RoomBehind(actor.get(), 1.05f)) {
+                            others += std::format("{}{} (no room behind)", others.empty() ? "" : ", ", actor->GetName());
+                            continue;
+                        }
+                        if (const auto why = StealthKill::Excluded(Weapons::Knife, StealthKills::TargetOf(actor.get(), player)); why != StealthKill::Verdict::Yes) {
+                            others += std::format("{}{} ({})", others.empty() ? "" : ", ", actor->GetName(), StealthKill::Why(why));
+                            continue;
+                        }
+                        const float d = actor->GetPosition().GetDistance(player->GetPosition());
+                        if (d < bestDistance) {
+                            best = actor.get();
+                            bestDistance = d;
+                        }
+                    }
+                    if (!best) {
+                        throw Error(std::format("nobody a stealth kill may take sits within {:.0f} of the player (seated: {})", radius, others.empty() ? "none" : others));
+                    }
+                    g_victim = best->GetFormID();
+                    return JsonObject{ { "ref", SkseTestKit::FormId(best->GetFormID()) }, { "name", best->GetName() }, { "at", Spot(best->GetPosition()) },
+                        { "heading", Round(best->GetAngleZ()) }, { "sitState", static_cast<int>(best->AsActorState()->GetSitSleepState()) },
+
+                        { "distance", Round(bestDistance, 1.0) } };
+                });
+
+            SkseTestKit::AddCommand("asr.behind", "[ref] [meters]",
+                "Puts Skyrim's player (asr.cj on=false first) meters (1.05) behind ref (the last asr.victim or asr.seated), facing the way it faces, for a handover there",
+                [](Call& a_call) -> Json {
+                    if (PlayerSync::DebugOwned()) {
+                        throw Error("San Andreas has the player: asr.cj on=false first");
+                    }
+                    auto*       player = RE::PlayerCharacter::GetSingleton();
+                    auto*       victim = ActorArg(a_call);
+                    const float meters = static_cast<float>(a_call.Number("meters", 1.05));
+                    const float heading = victim->GetAngleZ();
+                    const auto  at = victim->GetPosition() - RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * (meters * Pose::kUnitsPerMeter);
+                    player->SetPosition(at, true);
+                    player->SetHeading(heading);
+                    return JsonObject{ { "at", Spot(at) }, { "heading", Round(heading) } };
+                });
+
+            SkseTestKit::AddTask("asr.stealth", "[until] [crouch=<bool>] [aim=<seconds>]",
+                "CJ's knife stealth kill on his lock-on target, as a player does it. until=grab (crouched first with crouch=true, the right "
+                "button held aim (1.2) s, then the left one clicked) answers in the frame Skyrim takes the grab; until=stab in the frame of "
+                "the stab; until=over once the victim is dead and let go. Each answers with the victim and CJ (cjMoved, victimMoved: flat "
+                "units from where they stood at the grab; playerFromCj: Skyrim's hidden player from CJ)",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto   until = a_call.Text("until", "grab");
+                    const bool   crouch = a_call.Flag("crouch", false);
+                    const double aim = a_call.Number("aim", 1.2);
+                    if (until != "grab" && until != "stab" && until != "over") {
+                        throw Error("until is grab, stab or over");
+                    }
+                    if (until != "grab" && !g_kill.victim) {
+                        throw Error("no grab yet: asr.stealth until=grab first");
+                    }
+                    a_call.DefaultTimeout(15.0);
+                    struct Run
+                    {
+                        int    grabs = 0;
+                        int    stabs = 0;
+                        bool   ready = false;
+                        double readyAt = 0.0;
+                    };
+                    const auto before = StealthKills::DebugState();
+                    auto       run = std::make_shared<Run>(Run{ .grabs = before.grabs, .stabs = before.stabs });
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        const auto debug = StealthKills::DebugState();
+                        if (until == "grab") {
+                            if (debug.grabs > run->grabs) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                g_kill = { debug.victim, debug.grabbedAt, CjFeet() };
+                                return KillState(RE::TESForm::LookupByID<RE::Actor>(debug.victim));
+                            }
+                            if (!run->ready) {
+                                if (!KnifeInHands() || (crouch && !Crouch(a_call, true))) {
+                                    return std::nullopt;
+                                }
+                                run->ready = true;
+                                run->readyAt = a_call.Seconds();
+                            }
+                            const double held = a_call.Seconds() - run->readyAt;
+                            if (held > aim + 3.0) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                std::string why = "no victim placed";
+                                if (auto* victim = g_victim ? RE::TESForm::LookupByID<RE::Actor>(g_victim) : nullptr) {
+                                    const auto feet = CjFeet();
+                                    const auto target = StealthKills::TargetOf(victim, RE::PlayerCharacter::GetSingleton());
+                                    const auto verdict = StealthKill::Check({ feet.x, feet.y, feet.z }, Weapons::Knife, target);
+                                    why = std::format("{} is {} ({}{:.2f} m, {})", victim->GetName(), StealthKill::Why(verdict),
+                                        verdict == StealthKill::Verdict::NotStanding ? StealthKills::OffItsFeet(victim) + ", " : std::string(),
+                                        StealthKill::Distance({ feet.x, feet.y, feet.z }, target.feet), victim->IsInCombat() ? "in combat" : "not in combat");
+                                }
+                                throw Error("no grab: " + why);
+                            }
+                            const bool click = held >= aim && held < aim + 0.25;
+                            PlayerSync::DebugHold(PlayerSync::DebugInput{ .buttons = Protocol::kButtonAim | (click ? Protocol::kButtonFire : 0u) });
+                            return std::nullopt;
+                        }
+                        auto* victim = RE::TESForm::LookupByID<RE::Actor>(g_kill.victim);
+                        if (until == "stab") {
+                            return debug.stabs > run->stabs ? std::optional<Json>(KillState(victim)) : std::nullopt;
+                        }
+                        if (victim && victim->IsDead() && debug.held == 0 && !victim->IsInKillMove() && !debug.killMove) {
+                            return KillState(victim);
+                        }
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.swing", "[ref] [crouch=<bool>]",
+                "CJ swings the knife once (the left button) at ref (the last asr.victim), crouched or standing (crouch, false) as Skyrim's player "
+                "sneaks; answers once the blow lands with ref's health before and after, the drop, the blow's sneak attack multiplier, how "
+                "well it landed (Damage::Blows), and vsLast: this drop per landed against the last asr.swing's",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto id = ActorArg(a_call)->GetFormID();
+                    const bool crouch = a_call.Flag("crouch", false);
+                    a_call.DefaultTimeout(12.0);
+                    struct Swing
+                    {
+                        bool             ready = false;
+                        double           readyAt = 0.0;
+                        int              blows = 0;
+                        float            before = 0.0f;
+                        int              after = -1;  // frames since it landed
+                        Shots::BlowDebug blow;
+                    };
+                    auto swing = std::make_shared<Swing>();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        if (!actor || !player) {
+                            throw Error("ref is gone");
+                        }
+                        if (!swing->ready) {
+                            if (!KnifeInHands() || !Crouch(a_call, crouch)) {
+                                return std::nullopt;
+                            }
+                            swing->ready = true;
+                            swing->readyAt = a_call.Seconds();
+                            swing->blows = Shots::DebugLastBlow().blows;
+                            swing->before = HealthOf(actor);
+                        }
+                        if (swing->after < 0) {
+                            const auto blow = Shots::DebugLastBlow();
+                            if (blow.blows > swing->blows && blow.victim == id) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                swing->blow = blow;
+                                swing->after = 0;
+                                return std::nullopt;
+                            }
+                            const double held = a_call.Seconds() - swing->readyAt;
+                            if (held > 4.0) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                throw Error("CJ's blow never landed on ref");
+                            }
+                            const bool press = held > 0.5 && held < 0.7;  // settled in the stance first
+                            PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonFire }) : std::nullopt);
+                            return std::nullopt;
+                        }
+                        if (++swing->after < 3) {
+                            return std::nullopt;  // Skyrim's hit applied
+                        }
+                        const float now = HealthOf(actor);
+                        const float drop = swing->before - now;
+                        const float perLanded = swing->blow.landed > 0.0f ? drop / swing->blow.landed : 0.0f;
+                        JsonObject  out{ { "before", Round(swing->before, 0.1) }, { "after", Round(now, 0.1) }, { "drop", Round(drop, 0.01) },
+                            { "sneak", Round(swing->blow.sneak) }, { "landed", Round(swing->blow.landed, 0.001) }, { "saDamage", Round(swing->blow.saDamage) },
+                            { "weapon", static_cast<int>(swing->blow.weapon) }, { "sneaking", player->IsSneaking() },
+                            { "detection", actor->RequestDetectionLevel(player) } };
+                        if (g_lastPerLanded > 0.0f) {
+                            out.Set("vsLast", Round(perLanded / g_lastPerLanded, 0.01));
+                        }
+                        g_lastPerLanded = perLanded;
+                        return out;
+                    };
+                });
+        }
+
+        // ---- Coming back (player/Respawns.cpp) ----
+
+        struct Victim
+        {
+            std::uint32_t id = 0;
+            std::string   name;
+            std::string   verdict;  // Respawns' own words for what the kill does
+        };
+        std::vector<Victim> g_victims;  // asr.kill's, for asr.killed
+
+        // How far a_actor stands from its editor spot, when both are in the same interior or worldspace.
+        std::optional<double> FromSpot(RE::Actor* a_actor)
+        {
+            RE::NiPoint3 position;
+            RE::NiPoint3 angle;
+            RE::TESForm* where = nullptr;
+            const auto*  cell = a_actor->GetParentCell();
+            if (!cell || !a_actor->GetEditorLocation(position, angle, where, nullptr) || !where) {
+                return std::nullopt;
+            }
+            const bool same = where->Is(RE::FormType::Cell) ? where == cell : !cell->IsInteriorCell() && where == a_actor->GetWorldspace();
+            if (!same) {
+                return std::nullopt;
+            }
+            return static_cast<double>(a_actor->GetPosition().GetDistance(position));
+        }
+
+        void AddRespawnChecks()
+        {
+            SkseTestKit::AddTask("asr.kill", "<ref> [all=<radius>]",
+                "The player kills an actor, as CJ's blow would (the player's kill, Skyrim's death event); all=<radius> kills every living actor of "
+                "the same name within that many units of the player too. The kills run from SKSE's task queue (a kill from the kit's point in "
+                "the frame once waited on the engine for good); answers once all are dead, with each one's verdict (what Respawns says the "
+                "death does), and keeps them for asr.killed",
+                [](Call& a_call) -> Step {
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    auto* first = SkseTestKit::FindRef(a_call.Text("ref"))->As<RE::Actor>();
+                    if (!first || !player) {
+                        throw Error("not an actor");
+                    }
+                    std::vector<RE::Actor*> targets{ first };
+                    if (const double radius = a_call.Number("all", 0.0); radius > 0.0) {
+                        const std::string name = first->GetDisplayFullName();
+                        if (auto* lists = RE::ProcessLists::GetSingleton()) {
+                            for (auto& handle : lists->highActorHandles) {
+                                auto  held = handle.get();
+                                auto* other = held.get();
+                                if (other && other != first && !other->IsDead() && name == other->GetDisplayFullName() &&
+                                    other->GetPosition().GetDistance(player->GetPosition()) <= radius) {
+                                    targets.push_back(other);
+                                }
+                            }
+                        }
+                    }
+                    auto killed = std::make_shared<JsonArray>();
+                    std::vector<std::uint32_t> ids;
+                    for (auto* actor : targets) {
+                        if (actor->IsDead()) {
+                            throw Error(std::format("{} ({}) is dead already", actor->GetDisplayFullName(), SkseTestKit::FormId(actor->GetFormID())));
+                        }
+                        Victim victim{ actor->GetFormID(), actor->GetDisplayFullName(), Respawns::DryRun(actor, player) };
+                        killed->push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict } });
+                        ids.push_back(victim.id);
+                        std::erase_if(g_victims, [&](const Victim& a_v) { return a_v.id == victim.id; });
+                        g_victims.push_back(std::move(victim));
+                    }
+                    SKSE::GetTaskInterface()->AddTask([ids] {
+                        auto* killer = RE::PlayerCharacter::GetSingleton();
+                        for (const auto id : ids) {
+                            if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id); actor && killer && !actor->IsDead()) {
+                                actor->KillImpl(killer, 100000.0f, true, true);
+                            }
+                        }
+                    });
+                    a_call.DefaultTimeout(10.0);
+                    return [ids, killed](Call&) -> std::optional<Json> {
+                        for (const auto id : ids) {
+                            auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                            if (actor && !actor->IsDead()) {
+                                return std::nullopt;
+                            }
+                        }
+                        return JsonObject{ { "count", killed->size() }, { "killed", *killed } };
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.judge", "<ref>", "What a kill of an actor by CJ would do, as Respawns judges it (nobody killed)", [](Call& a_call) -> Json {
+                auto* actor = SkseTestKit::FindRef(a_call.Text("ref"))->As<RE::Actor>();
+                if (!actor) {
+                    throw Error("not an actor");
+                }
+                auto*      player = RE::PlayerCharacter::GetSingleton();
+                const auto read = Respawns::DebugJudge(actor, player);
+                return JsonObject{ { "id", SkseTestKit::FormId(actor->GetFormID()) }, { "name", actor->GetDisplayFullName() },
+                    { "verdict", Respawns::DryRun(actor, player) }, { "baseAggression", read.baseAggression }, { "aggression", read.aggression },
+                    { "reaction", read.reaction }, { "hostile", read.hostile }, { "lawful", read.lawful } };
+            });
+
+            SkseTestKit::AddCommand("asr.killed", "[forget=<bool>]",
+                "Everyone asr.kill killed, in that order: dead or up, waiting to come back (and held in view), how far from their editor spot; "
+                "with the counts. forget=true clears the list after answering",
+                [](Call& a_call) -> Json {
+                    JsonArray victims;
+                    int       alive = 0;
+                    int       waiting = 0;
+                    for (const auto& victim : g_victims) {
+                        auto*      actor = RE::TESForm::LookupByID<RE::Actor>(victim.id);
+                        const bool dead = !actor || actor->IsDead();
+                        const bool waits = Respawns::DebugWaiting(victim.id);
+                        alive += dead ? 0 : 1;
+                        waiting += waits ? 1 : 0;
+                        const auto from = actor ? FromSpot(actor) : std::nullopt;
+                        victims.push_back(JsonObject{ { "id", SkseTestKit::FormId(victim.id) }, { "name", victim.name }, { "verdict", victim.verdict },
+                            { "dead", dead }, { "waiting", waits }, { "held", Respawns::DebugHeld(victim.id) }, { "fromSpot", from ? Json(*from) : Json() },
+                            { "loaded", actor && actor->Is3DLoaded() } });
+                    }
+                    const int  count = static_cast<int>(g_victims.size());
+                    JsonObject out{ { "count", count }, { "alive", alive }, { "dead", count - alive }, { "waiting", waiting }, { "victims", std::move(victims) } };
+                    if (a_call.Flag("forget", false)) {
+                        g_victims.clear();
+                    }
+                    return out;
+                });
+
+            SkseTestKit::AddCommand("asr.later", "<hours>",
+                "Moves Skyrim's clock on by that many game hours (days passed and the hour), as a wait would, without the wait menu",
+                [](Call& a_call) -> Json {
+                    const double hours = a_call.Number("hours");
+                    if (hours <= 0.0 || hours > 48.0) {
+                        throw Error("hours is over 0, up to 48");
+                    }
+                    auto* calendar = RE::Calendar::GetSingleton();
+                    if (!calendar || !calendar->gameDaysPassed || !calendar->gameHour) {
+                        throw Error("no calendar yet");
+                    }
+                    calendar->gameDaysPassed->value += static_cast<float>(hours / 24.0);
+                    calendar->gameHour->value = static_cast<float>(std::fmod(calendar->gameHour->value + hours, 24.0));
+                    return JsonObject{ { "daysPassed", calendar->GetDaysPassed() }, { "hour", calendar->GetHour() } };
+                });
+
+            SkseTestKit::AddCommand("asr.objectives", "<quest>",
+                "A quest (editor id) as Respawns reads it: running, its stage, and each objective's index, state and the references its "
+                "target aliases hold",
+                [](Call& a_call) -> Json {
+                    const auto id = a_call.Text("quest");
+                    auto*      quest = RE::TESForm::LookupByEditorID<RE::TESQuest>(id);
+                    if (!quest) {
+                        throw Error(std::format("no quest {}", id));
+                    }
+                    JsonArray objectives;
+                    for (auto* objective : quest->objectives) {
+                        if (!objective) {
+                            continue;
+                        }
+                        JsonArray targets;
+                        for (std::uint32_t i = 0; i < objective->numTargets; i++) {
+                            const auto* target = objective->targets[i];
+                            if (!target) {
+                                continue;
+                            }
+                            JsonObject row{ { "alias", target->alias } };
+                            for (auto* alias : quest->aliases) {
+                                if (!alias || alias->aliasID != target->alias) {
+                                    continue;
+                                }
+                                row["aliasName"] = alias->aliasName.c_str();
+                                if (alias->GetVMTypeID() == RE::BGSRefAlias::VMTYPEID) {
+                                    if (auto* held = static_cast<RE::BGSRefAlias*>(alias)->GetReference()) {
+                                        row["ref"] = SkseTestKit::FormId(held->GetFormID());
+                                        row["refName"] = held->GetDisplayFullName();
+                                    }
+                                }
+                            }
+                            targets.push_back(std::move(row));
+                        }
+                        objectives.push_back(JsonObject{ { "index", objective->index }, { "state", static_cast<int>(objective->state.get()) },
+                            { "text", objective->displayText.c_str() }, { "targets", std::move(targets) } });
+                    }
+                    return JsonObject{ { "quest", id }, { "running", quest->IsRunning() }, { "stage", quest->GetCurrentStageID() },
+                        { "objectives", std::move(objectives) } };
+                });
+        }
+
+        // ---- Keys through Skyrim's own input (the wait key, docs/DESIGN.md) ----
+
+        // A key event as the keyboard sends it, through Skyrim's input device manager: Skyrim's handlers (the menu open
+        // one with its user event, Wait for T) and AhShitRim's input sink see it as they see a real key.
+        void SendKey(std::uint32_t a_dik, bool a_down)
+        {
+            auto* devices = RE::BSInputDeviceManager::GetSingleton();
+            auto* map = RE::ControlMap::GetSingleton();
+            if (!devices) {
+                throw Error("no input device manager");
+            }
+            // The user event of the context on top (a menu's while one has the input: Escape is Cancel there, not Journal).
+            auto context = RE::ControlMap::InputContextID::kGameplay;
+            if (map && !map->GetRuntimeData().contextPriorityStack.empty()) {
+                context = map->GetRuntimeData().contextPriorityStack.back();
+            }
+            const RE::BSFixedString user(map ? map->GetUserEventName(a_dik, RE::INPUT_DEVICE::kKeyboard, context) : std::string_view{});
+            auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, user, a_dik, a_down ? 1.0f : 0.0f, a_down ? 0.0f : 0.1f);
+            if (!event) {
+                throw Error("no button event");
+            }
+            RE::InputEvent* chain = event;
+            devices->SendEvent(&chain);
+            RE::free(event);
+        }
+
+        // "T", "WANRLTW", "/", "dik:0x35": the scan codes, a US keyboard's places for letters and digits.
+        std::vector<std::uint32_t> ParseKeys(const std::string& a_keys)
+        {
+            std::vector<std::uint32_t> out;
+            if (a_keys.starts_with("dik:")) {
+                out.push_back(static_cast<std::uint32_t>(std::stoul(a_keys.substr(4), nullptr, 0)));
+                return out;
+            }
+            for (const char raw : a_keys) {
+                const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(raw)));
+                if (c == '/') {
+                    out.push_back(Input::kDikWait);
+                    continue;
+                }
+                std::uint32_t found = 0;
+                for (std::uint32_t dik = 1; dik < 0x100 && !found; dik++) {
+                    if (Cheats::LetterOf(dik) == c) {
+                        found = dik;
+                    }
+                }
+                if (!found) {
+                    throw Error(std::format("'{}' isn't a key asr.key knows (letters, digits, /, or dik:<code>)", raw));
+                }
+                out.push_back(found);
+            }
+            if (out.empty()) {
+                throw Error("no keys");
+            }
+            return out;
+        }
+
+        void AddKeyChecks()
+        {
+            SkseTestKit::AddTask("asr.key", "<keys> [frames=<n>] [close=<bool>]",
+                "Presses keys through Skyrim's own input, as the keyboard sends them (letters, digits, /, or dik:<code>), a press and a release "
+                "every two frames. Answers frames (20) later: whether Skyrim's wait menu opened meanwhile and what San Andreas's help box says "
+                "then; close=true (the default) closes the wait menu again",
+                [](Call& a_call) -> Step {
+                    const auto keys = ParseKeys(a_call.Text("keys"));
+                    const int  frames = static_cast<int>(a_call.Number("frames", 20.0));
+                    const bool close = a_call.Flag("close", true);
+                    struct Progress
+                    {
+                        std::size_t next = 0;
+                        bool        down = false;
+                        int         after = 0;
+                        bool        opened = false;
+                    };
+                    auto progress = std::make_shared<Progress>();
+                    return [keys, frames, close, progress, text = a_call.Text("keys")](Call&) -> std::optional<Json> {
+                        auto*      ui = RE::UI::GetSingleton();
+                        const bool open = ui && ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME);
+                        progress->opened = progress->opened || open;
+                        if (progress->next < keys.size()) {
+                            SendKey(keys[progress->next], !progress->down);
+                            if (progress->down) {
+                                progress->next++;
+                            }
+                            progress->down = !progress->down;
+                            return std::nullopt;
+                        }
+                        if (progress->after++ < frames) {
+                            return std::nullopt;
+                        }
+                        const auto help = SaHud::DebugHelp();
+                        if (close && open) {
+                            if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                                queue->AddMessage(RE::SleepWaitMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                            }
+                        }
+                        return JsonObject{ { "keys", text }, { "pressed", keys.size() }, { "waitMenu", progress->opened }, { "open", open && !close }, { "help", help },
+                            { "cj", PlayerSync::DebugOwned() } };
+                    };
+                });
+        }
+
+        // ---- Getting in and out, riding, and the gun on CJ's hand (scenarios/car-exit.json) ----
+
+        constexpr std::uint32_t kBoneRightHand = 24;  // San Andreas's node ids, as CJ's model carries them
+        constexpr std::uint32_t kBonePelvis = 2;
+
+        // A point in vehicle slot a_slot's frame (x right, y forward, z up), turned as it's drawn this frame, its slope and lean
+        // too; by its heading alone when the vehicle hook didn't see it.
+        RE::NiPoint3 InVehicle(std::uint32_t a_slot, const RE::NiPoint3& a_point, const RE::NiPoint3& a_vehicle, float a_heading, bool a_level = false)
+        {
+            if (!a_level && a_slot < g_seen.size() && g_seen[a_slot].on) {
+                const auto local = VehicleHits::ToLocal(g_seen[a_slot].frame, { a_point.x, a_point.y, a_point.z });
+                return { local.x, local.y, local.z };
+            }
+            const auto  d = a_point - a_vehicle;
+            const float s = std::sin(a_heading), c = std::cos(a_heading);
+            return { d.x * c - d.y * s, d.x * s + d.y * c, d.z };
+        }
+
+        // CJ as drawn this frame: a bone's place in the world, false when he wasn't drawn or has no such bone.
+        bool CjBone(std::uint32_t a_bone, RE::NiPoint3& a_out)
+        {
+            Protocol::BodyState pose{};
+            RE::NiPoint3        feet, camera;
+            if (!PlayerSync::DebugDrawn(pose, feet, camera)) {
+                return false;
+            }
+            const int i = ModelView::DebugBoneIndex(pose.model, a_bone);
+            if (i < 0 || static_cast<std::uint32_t>(i) >= pose.boneCount) {
+                return false;
+            }
+            const auto& t = pose.bones[i].translation;
+            a_out = feet + RE::NiPoint3(t[0], t[1], t[2]);
+            return true;
+        }
+
+        // The right hand's gun as drawn against CJ's right hand as drawn: units between the gun's root (where San Andreas
+        // puts it, on the hand's matrix) and the hand's joint. Empty when either isn't drawn.
+        std::optional<float> Grip()
+        {
+            Protocol::BodyState gun{};
+            RE::NiPoint3        gunFeet, hand;
+            if (!Arms::DebugWeapon(0, gun, gunFeet) || gun.boneCount == 0 || !CjBone(kBoneRightHand, hand)) {
+                return std::nullopt;
+            }
+            const auto& t = gun.bones[0].translation;
+            return (gunFeet + RE::NiPoint3(t[0], t[1], t[2])).GetDistance(hand);
+        }
+
+        // The vehicle CJ drives, else the one he drove last (or asr.spawn made): its slot.
+        std::optional<std::uint32_t> g_rideSlot;
+
+        // asr.gunwatch: a sample a frame, from the frame hook (after the frame's drawing).
+        struct WatchSample
+        {
+            std::uint64_t frame = 0;
+            double        t = 0.0;  // game seconds since the start
+            bool          in = false, getting = false;
+            std::uint16_t model = 0;
+            std::uint8_t  weapon = 0;
+            bool          inHand = false, gunDrawn = false, aiming = false;
+            bool          switching = false;  // his weapon changed in the last 4 frames: the drawn gun blends from the old one
+            float         grip = -1.0f;
+            float         speed = 0.0f;  // the vehicle's, m/s
+            bool          haveSeat = false;
+            RE::NiPoint3  pelvis;  // CJ's drawn pelvis in the vehicle's frame
+            RE::NiPoint3  level;   // and by its heading alone: a bike rights itself or drops on its stand as he leaves it
+            std::vector<std::pair<RE::FormID, RE::NiPoint3>> riders;  // each follower in the vehicle's frame
+            std::vector<RE::FormID>                          sitting;
+        };
+
+        struct Watch
+        {
+            bool                     on = false;
+            std::uint64_t            frames = 0;
+            double                   t = 0.0;
+            std::vector<WatchSample> samples;
+            std::vector<RE::FormID>  followers;  // everyone who rode, for their tracks after they got out
+            RE::NiPoint3             lastVehicle;
+            bool                     haveLast = false;
+            std::uint8_t             lastWeapon = 0;
+            std::uint64_t            weaponSince = 0;
+        } g_watch;
+
+        void SampleFrame()
+        {
+            // Every frame the world moved, stepped ones too (a paused world's frames have none).
+            const float dt = RE::GetSecondsSinceLastFrame();
+            if (!g_watch.on || dt <= 0.0f) {
+                return;
+            }
+            const auto pose = CjPose();
+            if (!pose) {
+                return;
+            }
+            g_watch.t += dt;
+            WatchSample w;
+            w.frame = g_watch.frames++;
+            w.t = g_watch.t;
+            w.in = (pose->flags & Protocol::kPlayerInVehicle) != 0;
+            w.getting = (pose->flags & Protocol::kPlayerGettingInOut) != 0;
+            w.model = w.in ? pose->vehicleModel : 0;
+            w.weapon = pose->weaponType;
+            if (w.weapon != g_watch.lastWeapon) {
+                g_watch.lastWeapon = w.weapon;
+                g_watch.weaponSince = w.frame;
+            }
+            w.switching = w.frame - g_watch.weaponSince < 4 && w.frame >= 4;
+            w.inHand = (pose->weaponFlags & Protocol::kWeaponInHand) != 0;
+            w.aiming = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+            const auto grip = Grip();
+            w.gunDrawn = grip.has_value();
+            w.grip = grip.value_or(-1.0f);
+            const auto before = g_rideSlot;
+            if (const auto driven = DrivenSlot()) {
+                g_rideSlot = driven;
+            } else if (!g_rideSlot) {
+                g_rideSlot = g_spawned;
+            }
+            if (g_rideSlot != before) {
+                g_watch.haveLast = false;  // another vehicle: no speed from one to the other
+            }
+            RE::NiPoint3 at;
+            float        heading = 0.0f;
+            if (g_rideSlot && PlayerSync::DebugVehicle(*g_rideSlot, at, heading)) {
+                if (g_watch.haveLast && dt > 0.0f) {
+                    w.speed = at.GetDistance(g_watch.lastVehicle) / dt * Pose::kMetersPerUnit;
+                }
+                g_watch.lastVehicle = at;
+                g_watch.haveLast = true;
+                RE::NiPoint3 pelvis;
+                if (CjBone(kBonePelvis, pelvis)) {
+                    w.haveSeat = true;
+                    w.pelvis = InVehicle(*g_rideSlot, pelvis, at, heading);
+                    w.level = InVehicle(*g_rideSlot, pelvis, at, heading, true);
+                }
+                for (const auto id : Riders::Riding()) {
+                    if (std::find(g_watch.followers.begin(), g_watch.followers.end(), id) == g_watch.followers.end()) {
+                        g_watch.followers.push_back(id);
+                    }
+                    if (Riders::Sits(id)) {
+                        w.sitting.push_back(id);
+                    }
+                }
+                for (const auto id : g_watch.followers) {
+                    if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id)) {
+                        w.riders.emplace_back(id, InVehicle(*g_rideSlot, actor->GetPosition(), at, heading));
+                    }
+                }
+            }
+            if (g_watch.samples.size() < 36000) {
+                g_watch.samples.push_back(std::move(w));
+            }
+        }
+
+        constexpr std::size_t kSettleFrames = 8;  // a seat's first frames, judged apart
+
+        // What a watch says: the gun (missing: frames San Andreas has a gun in his hand and none is drawn; its grip, the
+        // gun from his hand's joint), CJ in his seat while he rides (his pelvis from where it sits most, frame to frame),
+        // each get-out (CJ's pelvis across the vehicle, frame to frame, back towards the seat) and each rider's.
+        Json Summarize()
+        {
+            const auto& s = g_watch.samples;
+            int         inHand = 0, missing = 0, longestMissing = 0, run = 0, missingStill = 0, onStill = 0;
+            float       gripMax = 0.0f, gripMaxMoving = 0.0f, gripMaxGetting = 0.0f, gripMaxSwitching = 0.0f;
+            double      gripSum = 0.0, fastest = 0.0;
+            int                gripN = 0;
+            // A weapon switch's frames, three either side of San Andreas's change: the drawn gun blends from the old model to
+            // the new one, and the new one can be in his hand a frame before the pose names it.
+            std::vector<bool> switching(s.size(), false);
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (s[i].weapon != s[i - 1].weapon) {
+                    for (std::size_t k = i >= 3 ? i - 3 : 0; k < (std::min)(s.size(), i + 4); k++) {
+                        switching[k] = true;
+                    }
+                }
+            }
+            std::vector<float> grips;
+            for (std::size_t i = 0; i < s.size(); i++) {
+                if (s[i].gunDrawn && !switching[i]) {
+                    grips.push_back(s[i].grip);
+                }
+            }
+            float gripMedian = 0.0f;
+            if (!grips.empty()) {
+                std::nth_element(grips.begin(), grips.begin() + grips.size() / 2, grips.end());
+                gripMedian = grips[grips.size() / 2];
+            }
+            for (std::size_t i = 0; i < s.size(); i++) {
+                const auto& w = s[i];
+                const bool  miss = w.inHand && !w.gunDrawn;
+                inHand += w.inHand ? 1 : 0;
+                if (miss) {
+                    missing++;
+                    longestMissing = (std::max)(longestMissing, ++run);
+                    if (w.in && w.speed < 0.5f && !w.getting) {
+                        missingStill++;
+                    }
+                } else {
+                    run = 0;
+                }
+                if (w.in && w.speed < 0.5f && !w.getting && w.inHand) {
+                    onStill++;
+                }
+                if (w.gunDrawn && switching[i]) {
+                    gripMaxSwitching = (std::max)(gripMaxSwitching, w.grip);
+                } else if (w.gunDrawn) {
+                    gripMax = (std::max)(gripMax, w.grip);
+                    gripSum += w.grip;
+                    gripN++;
+                    if (w.speed >= 5.0f) {
+                        gripMaxMoving = (std::max)(gripMaxMoving, w.grip);
+                    }
+                    if (w.getting) {
+                        gripMaxGetting = (std::max)(gripMaxGetting, w.grip);
+                    }
+                }
+                fastest = (std::max)(fastest, static_cast<double>(w.speed));
+            }
+            // Seated: in, not getting in or out, per vehicle (a stretch a model). His pelvis against where it sits most (the
+            // median) and frame to frame.
+            JsonArray seats;
+            for (std::size_t i = 0; i < s.size();) {
+                if (!(s[i].in && !s[i].getting && s[i].haveSeat)) {
+                    i++;
+                    continue;
+                }
+                const auto  model = s[i].model;
+                std::size_t end = i;
+                std::vector<float> xs, ys, zs;
+                while (end < s.size() && s[end].in && s[end].model == model) {
+                    if (!s[end].getting && s[end].haveSeat) {
+                        xs.push_back(s[end].pelvis.x);
+                        ys.push_back(s[end].pelvis.y);
+                        zs.push_back(s[end].pelvis.z);
+                    }
+                    end++;
+                }
+                auto median = [](std::vector<float> a_v) {
+                    std::nth_element(a_v.begin(), a_v.begin() + a_v.size() / 2, a_v.end());
+                    return a_v[a_v.size() / 2];
+                };
+                const RE::NiPoint3 mid{ median(xs), median(ys), median(zs) };
+                float              dev = 0.0f, step = 0.0f, fast = 0.0f, settle = 0.0f;
+                int                frames = 0;
+                const WatchSample* last = nullptr;
+                for (std::size_t k = i; k < end; k++) {
+                    const auto& w = s[k];
+                    if (w.getting || !w.haveSeat) {
+                        last = nullptr;
+                        continue;
+                    }
+                    // His first frames in it, apart: San Andreas puts him from the door onto the seat, and his body can be
+                    // off it for a few frames then (getInHop, from where he sits most).
+                    if (k < i + kSettleFrames) {
+                        settle = (std::max)(settle, w.pelvis.GetDistance(mid));
+                        last = nullptr;
+                        continue;
+                    }
+                    frames++;
+                    dev = (std::max)(dev, w.pelvis.GetDistance(mid));
+                    fast = (std::max)(fast, w.speed);
+                    if (last) {
+                        step = (std::max)(step, w.pelvis.GetDistance(last->pelvis));
+                    }
+                    last = &w;
+                }
+                seats.emplace_back(JsonObject{ { "model", model }, { "frames", frames }, { "fastest", Round(fast, 0.1) }, { "seat", Point(mid) },
+                    { "maxDeviation", Round(dev, 0.1) }, { "maxStep", Round(step, 0.1) }, { "getInHop", Round(settle, 0.1) } });
+                i = end;
+            }
+            // Get-outs: from the first frame he's in and getting out (after one in and settled) until 1.5 s after he's out.
+            JsonArray exits;
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (!(s[i].in && s[i].getting) || !(s[i - 1].in && !s[i - 1].getting)) {
+                    continue;
+                }
+                std::size_t end = i;
+                double      outAt = -1.0;
+                while (end + 1 < s.size()) {
+                    if (!s[end].in && outAt < 0.0) {
+                        outAt = s[end].t;
+                    }
+                    if (outAt >= 0.0 && s[end].t - outAt > 1.5) {
+                        break;
+                    }
+                    end++;
+                }
+                float              back = 0.0f, step = 0.0f, startAcross = 0.0f;
+                bool               haveStart = false;
+                const WatchSample* prev = nullptr;
+                for (std::size_t k = i; k <= end; k++) {
+                    if (!s[k].haveSeat) {
+                        continue;
+                    }
+                    const float across = std::abs(s[k].level.x);
+                    if (!haveStart) {
+                        startAcross = across;
+                        haveStart = true;
+                    }
+                    if (prev) {
+                        back = (std::max)(back, std::abs(prev->level.x) - across);
+                        step = (std::max)(step, s[k].level.GetDistance(prev->level));
+                    }
+                    prev = &s[k];
+                }
+                JsonObject exit{ { "at", Round(s[i].t) }, { "model", s[i - 1].model }, { "frames", end - i + 1 }, { "out", outAt >= 0.0 },
+                    { "startAcross", Round(startAcross, 0.1) }, { "endAcross", prev ? Json(Round(std::abs(prev->level.x), 0.1)) : Json() },
+                    { "endAhead", prev ? Json(Round(prev->level.y, 0.1)) : Json() }, { "maxBack", Round(back, 0.1) }, { "maxStep", Round(step, 0.1) } };
+                // Each rider who sat as it began: frames still seated after, his biggest step and where he ended, across.
+                JsonArray riders;
+                for (const auto id : g_watch.followers) {
+                    if (std::find(s[i - 1].sitting.begin(), s[i - 1].sitting.end(), id) == s[i - 1].sitting.end()) {
+                        continue;
+                    }
+                    int                 seated = 0;
+                    float               endAcross = 0.0f, maxAcross = 0.0f, riderStep = 0.0f;
+                    const RE::NiPoint3* prevAt = nullptr;
+                    for (std::size_t k = i; k <= end; k++) {
+                        if (std::find(s[k].sitting.begin(), s[k].sitting.end(), id) != s[k].sitting.end()) {
+                            seated++;
+                        }
+                        for (const auto& [rid, at] : s[k].riders) {
+                            if (rid == id) {
+                                endAcross = std::abs(at.x);
+                                maxAcross = (std::max)(maxAcross, endAcross);
+                                if (prevAt) {
+                                    riderStep = (std::max)(riderStep, at.GetDistance(*prevAt));
+                                }
+                                prevAt = &at;
+                            }
+                        }
+                    }
+                    riders.emplace_back(JsonObject{ { "id", std::format("{:08X}", id) }, { "seatedFrames", seated }, { "endAcross", Round(endAcross, 0.1) }, { "maxAcross", Round(maxAcross, 0.1) },
+                        { "maxStep", Round(riderStep, 0.1) } });
+                }
+                exit.Set("riders", std::move(riders));
+                exits.emplace_back(std::move(exit));
+                i = end;
+            }
+            return JsonObject{ { "frames", s.size() }, { "seconds", Round(g_watch.t) }, { "fastest", Round(fastest, 0.1) },
+                { "gun", JsonObject{ { "inHand", inHand }, { "missing", missing }, { "longestMissing", longestMissing }, { "missingStill", missingStill },
+                             { "onStillVehicle", onStill }, { "gripMax", Round(gripMax, 0.1) }, { "gripMedian", Round(gripMedian, 0.1) },
+                             { "gripSpread", Round(gripMax - gripMedian, 0.1) }, { "gripMean", gripN ? Json(Round(gripSum / gripN, 0.1)) : Json() },
+                             { "gripMaxMoving", Round(gripMaxMoving, 0.1) }, { "gripMaxGetting", Round(gripMaxGetting, 0.1) },
+                             { "gripMaxSwitching", Round(gripMaxSwitching, 0.1) } } },
+                { "seats", std::move(seats) },
+                { "exits", std::move(exits) } };
+        }
+
+        void AddCarExitChecks()
+        {
+            SkseTestKit::AddScenario("asr.gunwatch", "<what>",
+                "Watches every frame (after it's drawn) from asr.gunwatch start to asr.gunwatch stop: CJ in or out and getting in or out, his gun (San Andreas's in "
+                "his hand; the drawn one's grip, units from his drawn right hand's joint), his pelvis in his vehicle's frame, his riders. "
+                "stop answers with a row a frame and a summary: gun.missing (frames a gun in his hand wasn't drawn), gun.gripMax, "
+                "seats (each vehicle he sat in: his pelvis from where it sits most, maxDeviation, and frame to frame, maxStep), exits (each get-out: maxBack towards the seat, maxStep, "
+                "endAcross; each rider's seatedFrames and endAcross)",
+                [](Call& a_call) -> Step {
+                    const auto what = a_call.Text("what");
+                    if (what == "start") {
+                        RequireCj();
+                        g_watch = {};
+                        g_rideSlot.reset();
+                        g_watch.on = true;
+                        PlayerSync::SetDebugFrameHook(&SampleFrame);
+                        return [](Call&) -> std::optional<Json> { return JsonObject{ { "watching", true } }; };
+                    }
+                    if (what != "stop") {
+                        throw Error("asr.gunwatch start or stop");
+                    }
+                    if (!g_watch.on) {
+                        throw Error("asr.gunwatch start first");
+                    }
+                    g_watch.on = false;
+                    PlayerSync::SetDebugFrameHook({});
+                    return [](Call& a_call) -> std::optional<Json> {
+                        for (const auto& w : g_watch.samples) {
+                            JsonObject row{ { "frame", w.frame }, { "t", Round(w.t, 0.001) }, { "in", w.in }, { "getting", w.getting }, { "model", w.model },
+                                { "weapon", w.weapon }, { "switching", w.switching }, { "inHand", w.inHand }, { "gunDrawn", w.gunDrawn }, { "aiming", w.aiming },
+                                { "grip", w.gunDrawn ? Json(Round(w.grip, 0.01)) : Json() }, { "speed", Round(w.speed, 0.01) } };
+                            // Flat and on every row: the CSV takes its columns from the first.
+                            row.Set("pelvisX", w.haveSeat ? Json(Round(w.pelvis.x, 0.01)) : Json());
+                            row.Set("pelvisY", w.haveSeat ? Json(Round(w.pelvis.y, 0.01)) : Json());
+                            row.Set("pelvisZ", w.haveSeat ? Json(Round(w.pelvis.z, 0.01)) : Json());
+                            const bool rider = !w.riders.empty();
+                            row.Set("riderX", rider ? Json(Round(w.riders[0].second.x, 0.01)) : Json());
+                            row.Set("riderY", rider ? Json(Round(w.riders[0].second.y, 0.01)) : Json());
+                            row.Set("riderZ", rider ? Json(Round(w.riders[0].second.z, 0.01)) : Json());
+                            row.Set("riderSits", rider && std::find(w.sitting.begin(), w.sitting.end(), w.riders[0].first) != w.sitting.end());
+                            a_call.Row(std::move(row));
+                        }
+                        return Summarize();
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.cjpose", "", "CJ now: in a vehicle, getting in or out, its model, his weapon, in his hand, the drawn gun's grip (units from his hand)",
+                [](Call&) -> Json {
+                    RequireCj();
+                    const auto pose = CjPose();
+                    if (!pose) {
+                        throw Error("San Andreas hasn't answered this handover yet");
+                    }
+                    const auto grip = Grip();
+                    return JsonObject{ { "in", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "getting", (pose->flags & Protocol::kPlayerGettingInOut) != 0 },
+                        { "model", pose->vehicleModel }, { "weapon", pose->weaponType }, { "inHand", (pose->weaponFlags & Protocol::kWeaponInHand) != 0 },
+                        { "gunDrawn", grip.has_value() }, { "grip", grip ? Json(Round(*grip, 0.01)) : Json() } };
+                });
+
+            SkseTestKit::AddTask("asr.hold", "<weapon>", "CJ takes a weapon he carries (asr.give first) into his hands; answers once San Andreas has it there",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double number = a_call.Number("weapon");
+                    const auto   weapon = static_cast<std::uint8_t>(number);
+                    if (number < 1 || number > 46 || !Arms::DebugHoldWeapon(weapon)) {
+                        throw Error(std::format("CJ doesn't carry weapon {} (asr.give first)", number));
+                    }
+                    a_call.DefaultTimeout(10.0);
+                    return [weapon](Call&) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose || pose->weaponType != weapon || !(pose->weaponFlags & Protocol::kWeaponInHand)) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "weapon", weapon } };
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.enter", "[until=<in|start>]",
+                "CJ gets into the vehicle San Andreas picks near him (the enter/exit key); answers once he sits in it, or with until=start "
+                "in the frame his get-in begins (to pause on it)",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    a_call.DefaultTimeout(20.0);
+                    const bool start = a_call.Text("until", "in") == "start";
+                    auto       began = std::make_shared<bool>(false);
+                    return [start, began](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose) {
+                            return std::nullopt;
+                        }
+                        const bool in = (pose->flags & Protocol::kPlayerInVehicle) != 0;
+                        const bool getting = (pose->flags & Protocol::kPlayerGettingInOut) != 0;
+                        *began = *began || getting;
+                        if (start && getting) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "gettingIn", true }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (in && !getting) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "in", true }, { "model", pose->vehicleModel }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        // Pressed 0.2 s, again every 5 s until his get-in begins (a press while he gets in would stop it).
+                        const bool press = !*began && std::fmod(a_call.Seconds(), 5.0) < 0.2;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonEnterExit }) : std::nullopt);
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.cruise", "[seconds] [points=<x,y; x,y...>] [circle=<units>] [speed=<m/s>] [stop=<bool>]",
+                "CJ drives for seconds (5), or through waypoints (points, as asr.walk takes them) until he's within 400 units of the last, "
+                "else round a circle of radius circle (2500 units, to his right) from where he starts; the accelerator held while he's "
+                "under speed (15 m/s), the stick steering him on. Then he brakes to a stop (stop=true, the default: the brake, then the "
+                "handbrake once slow, so nothing reverses); answers with the fastest speed (m/s), the way driven (m) and the farthest from "
+                "the circle's middle",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double seconds = a_call.Number("seconds", 5.0);
+                    const float  radius = static_cast<float>(a_call.Number("circle", 2500.0));
+                    const double cap = a_call.Number("speed", 15.0);
+                    const bool   stop = a_call.Flag("stop", true);
+                    const auto   points = a_call.Has("points") ? ParseWaypoints(a_call.Text("points")) : std::vector<Waypoint>{};
+                    a_call.DefaultTimeout(seconds + 30.0);
+                    struct Drive
+                    {
+                        std::optional<std::uint32_t> slot;
+                        RE::NiPoint3                 last, centre;
+                        bool                         have = false, haveCentre = false;
+                        double                       fastest = 0.0, path = 0.0, still = 0.0, stopping = 0.0, missing = 0.0, farthest = 0.0;
+                        std::size_t                  next = 0;
+                        bool                         arrived = false;
+                    };
+                    auto drive = std::make_shared<Drive>();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        const float dt = RE::GetSecondsSinceLastFrame();
+                        const auto  pose = CjPose();
+                        if (const auto slot = DrivenSlot()) {
+                            drive->slot = slot;
+                        }
+                        RE::NiPoint3 at;
+                        float        heading = 0.0f;
+                        const bool   in = pose && (pose->flags & Protocol::kPlayerInVehicle);
+                        if (!in || !drive->slot || !PlayerSync::DebugVehicle(*drive->slot, at, heading)) {
+                            // A read torn by San Andreas's writing (a frame) isn't him getting out; half a second is.
+                            drive->missing += dt;
+                            if (drive->missing > 0.5) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                throw Error(std::format("CJ isn't driving (asr.enter first, or he came off after {:.1f} s)", a_call.Seconds()));
+                            }
+                            return std::nullopt;
+                        }
+                        drive->missing = 0.0;
+                        double speed = 0.0;
+                        if (drive->have && dt > 0.0f) {
+                            const double moved = at.GetDistance(drive->last);
+                            drive->path += moved;
+                            speed = moved / dt * Pose::kMetersPerUnit;
+                            drive->fastest = (std::max)(drive->fastest, speed);
+                        }
+                        drive->last = at;
+                        drive->have = true;
+                        if (!drive->haveCentre) {
+                            drive->centre = at + RE::NiPoint3(std::cos(heading) * radius, -std::sin(heading) * radius, 0.0f);
+                            drive->haveCentre = true;
+                        }
+                        const float fromCentre = std::hypot(at.x - drive->centre.x, at.y - drive->centre.y);
+                        drive->farthest = (std::max)(drive->farthest, static_cast<double>(fromCentre));
+                        const double t = a_call.Seconds();
+                        if (!points.empty() && !drive->arrived) {
+                            while (drive->next < points.size() &&
+                                   std::hypot(points[drive->next].x - at.x, points[drive->next].y - at.y) < (drive->next + 1 == points.size() ? 400.0f : 600.0f)) {
+                                drive->next++;
+                            }
+                            drive->arrived = drive->next == points.size();
+                        }
+                        const bool driving = points.empty() ? t < seconds : !drive->arrived && t < seconds;
+                        if (driving) {
+                            float want = 0.0f;
+                            if (!points.empty()) {
+                                const auto& p = points[drive->next];
+                                want = std::atan2(p.x - at.x, p.y - at.y);
+                            } else {
+                                // Clockwise round the middle: the tangent, turned in towards it as he drifts out (and out as he cuts in).
+                                const float toCentre = std::atan2(drive->centre.x - at.x, drive->centre.y - at.y);
+                                const float drift = std::clamp((fromCentre - radius) / radius, -0.5f, 0.5f);
+                                want = toCentre - static_cast<float>(std::numbers::pi / 2.0) + drift * 1.2f;
+                            }
+                            const float error = std::remainder(want - heading, static_cast<float>(2.0 * std::numbers::pi));
+                            const float turn = std::clamp(error * 1.2f, -1.0f, 1.0f);
+                            PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = turn, .buttons = speed < cap ? Protocol::kButtonAccelerate : 0u });
+                            return std::nullopt;
+                        }
+                        drive->stopping += dt;
+                        drive->still = speed < 0.3 ? drive->still + dt : 0.0;
+                        if (!stop || drive->still > 0.5 || drive->stopping > 8.0) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "seconds", Round(t) }, { "fastest", Round(drive->fastest, 0.1) },
+                                { "path", Round(drive->path * Pose::kMetersPerUnit, 0.1) }, { "farthest", Round(drive->farthest, 1.0) },
+                                { "stopped", drive->still > 0.5 }, { "arrived", drive->arrived }, { "at", Point(at) } };
+                        }
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .buttons = speed > 2.0 ? Protocol::kButtonBrake : Protocol::kButtonHandbrake });
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.ahead", "[distance]",
+                "CJ runs straight on (the stick forward, from San Andreas's camera) until he's distance (1000) units from where he started; "
+                "fails when he gets no farther for 5 s",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (!player) {
+                        throw Error("there's no player in the world yet");
+                    }
+                    const float distance = static_cast<float>(a_call.Number("distance", 1000.0));
+                    const auto  from = player->GetPosition();
+                    a_call.DefaultTimeout(distance / 100.0 + 20.0);
+                    auto best = std::make_shared<std::pair<float, double>>(0.0f, 0.0);
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const auto  pose = CjPose();
+                        auto*       p = RE::PlayerCharacter::GetSingleton();
+                        if (!pose || !p || SkseTestKit::Paused()) {
+                            best->second = a_call.Seconds();
+                            return std::nullopt;
+                        }
+                        if (pose->flags & Protocol::kPlayerInVehicle) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error("CJ is in a vehicle (asr.exit first)");
+                        }
+                        const float d = std::hypot(p->GetPosition().x - from.x, p->GetPosition().y - from.y);
+                        if (d >= distance) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "moved", Round(d, 0.1) }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (d > best->first + 10.0f) {
+                            *best = { d, a_call.Seconds() };
+                        } else if (a_call.Seconds() - best->second > 5.0) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error(std::format("CJ got no farther than {:.0f} units for 5 s", d));
+                        }
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveY = 1.0f });
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.follower", "[base] [right=<units>]",
+                "Places an actor (an NPC base form, or a new one of an actor's: Lydia, A2C94, by default) right (150) units to the player's right as a teammate, who "
+                "boards with CJ; answers with its reference (for record and the probes) once it's loaded",
+                [](Call& a_call) -> Step {
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (!player || !player->GetParentCell()) {
+                        throw Error("there's no player in the world yet");
+                    }
+                    const auto base = a_call.Has("base") ? a_call.Text("base") : std::string("A2C94");
+                    RE::FormID id = 0;
+                    const auto [end, error] = std::from_chars(base.data(), base.data() + base.size(), id, 16);
+                    auto*      any = error == std::errc{} ? RE::TESForm::LookupByID(id) : nullptr;
+                    auto*      form = any ? any->As<RE::TESNPC>() : nullptr;
+                    if (auto* ref = any ? any->As<RE::Actor>() : nullptr; !form && ref) {
+                        form = ref->GetActorBase();  // a reference (Lydia's own, A2C94): a new one of its base
+                    }
+                    if (!form) {
+                        throw Error(std::format("{} is neither an NPC base form nor an actor", base));
+                    }
+                    const auto placed = player->PlaceObjectAtMe(form, false);
+                    auto*      actor = placed ? placed->As<RE::Actor>() : nullptr;
+                    if (!actor) {
+                        throw Error("couldn't place it");
+                    }
+                    const float h = player->GetAngleZ();
+                    const float right = static_cast<float>(a_call.Number("right", 150.0));
+                    actor->SetPosition(player->GetPosition() + RE::NiPoint3(std::cos(h) * right, -std::sin(h) * right, 0.0f), true);
+                    RunConsole(std::format("{:08X}.setplayerteammate 1", actor->GetFormID()));
+                    const auto handle = actor->CreateRefHandle();
+                    a_call.DefaultTimeout(15.0);
+                    return [handle](Call&) -> std::optional<Json> {
+                        auto  ref = handle.get();
+                        auto* a = ref ? ref->As<RE::Actor>() : nullptr;
+                        if (!a) {
+                            throw Error("it's gone");
+                        }
+                        if (!a->Is3DLoaded() || !a->IsPlayerTeammate()) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "ref", std::format("0x{:08X}", a->GetFormID()) }, { "name", a->GetName() } };
+                    };
+                });
+        }
+
+        // ---- Skyrim's look sensitivity and CJ's camera (scenarios/look-sensitivity.json) ----
+
+        struct LookMark
+        {
+            float                                 view = 0.0f;
+            std::uint32_t                         handover = 0;
+            std::chrono::steady_clock::time_point at{};
+        };
+        std::optional<LookMark>     g_lookMark;
+        std::map<std::string, Json> g_lookKept;
+
+        // CJ's camera heading from a_from to a_to, -180 to 180 degrees.
+        double ViewTurned(float a_from, float a_to)
+        {
+            double d = (a_to - a_from) * 180.0 / std::numbers::pi;
+            while (d > 180.0) {
+                d -= 360.0;
+            }
+            while (d < -180.0) {
+                d += 360.0;
+            }
+            return d;
+        }
+
+        void AddLookChecks()
+        {
+            SkseTestKit::AddCommand("asr.look", "[mouse=<value>] [pad=<value>] [reset=<bool>] [mark=<bool>] [keep=<name>] [vs=<name>]",
+                "Skyrim's look sensitivity sliders (mouse, pad: their live values; their ends) and the scales CJ's look counts get from them, "
+                "with [Input] LookReset. mouse= and pad= set a slider's live value first (as its menu does); reset=true moves both to their "
+                "middle again as a first start does ([Input] LookReset forgotten first), its SkyrimPrefs.ini write going to a copy in the "
+                "temp folder instead, read back as prefsCopy (written, path, mouse, pad). mark=true marks CJ's camera heading; without it, "
+                "turned is how far it turned since (degrees), keep=<name> keeps that and vs=<name> adds turned over the kept one's",
+                [](Call& a_call) -> Json {
+                    if (a_call.Has("mouse") || a_call.Has("pad")) {
+                        PlayerSync::DebugSetLook(static_cast<float>(a_call.Number("mouse", -1.0)), static_cast<float>(a_call.Number("pad", -1.0)));
+                    }
+                    std::optional<Json> copy;
+                    if (a_call.Flag("reset", false)) {
+                        const auto path = std::filesystem::temp_directory_path() / "AhShitRim-look-prefs.ini";
+                        const bool written = PlayerSync::DebugResetLook(path);
+                        std::string text;
+                        if (std::ifstream in(path, std::ios::binary); in) {
+                            text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                        }
+                        copy = JsonObject{ { "written", written }, { "path", path.string() },
+                            { "mouse", IniText::ValueIn(text, "Controls", "fMouseHeadingSensitivity") },
+                            { "pad", IniText::ValueIn(text, "Controls", "fGamepadHeadingSensitivity") } };
+                    }
+                    const auto look = PlayerSync::DebugLook();
+                    JsonObject out{ { "mouse", Round(look.mouse, 0.0001) }, { "pad", Round(look.pad, 0.0001) }, { "mouseMin", Round(look.mouseMin, 0.0001) },
+                        { "mouseMax", Round(look.mouseMax, 0.0001) }, { "padMin", Round(look.padMin, 0.0001) }, { "padMax", Round(look.padMax, 0.0001) },
+                        { "mouseScale", Round(look.mouseScale, 0.001) }, { "padScale", Round(look.padScale, 0.001) },
+                        { "lookReset", Ini::Value("Input", "LookReset") } };
+                    if (copy) {
+                        out["prefsCopy"] = std::move(*copy);
+                    }
+                    const auto pose = CjPose();
+                    if (a_call.Flag("mark", false)) {
+                        if (!pose) {
+                            throw Error("San Andreas has no pose of CJ for this handover (asr.cj first, or wait for it)");
+                        }
+                        g_lookMark = LookMark{ .view = pose->viewHeading, .handover = PlayerSync::DebugHandover(), .at = std::chrono::steady_clock::now() };
+                        return out;
+                    }
+                    if (!g_lookMark) {
+                        return out;
+                    }
+                    if (!pose || g_lookMark->handover != PlayerSync::DebugHandover()) {
+                        throw Error("the handover changed since asr.look mark=true (or San Andreas has no pose of CJ): mark again");
+                    }
+                    out["turned"] = Round(ViewTurned(g_lookMark->view, pose->viewHeading), 0.1);
+                    out["seconds"] = Round(std::chrono::duration<double>(std::chrono::steady_clock::now() - g_lookMark->at).count());
+                    if (const auto keep = a_call.Text("keep"); !keep.empty()) {
+                        g_lookKept[keep] = out["turned"];
+                    }
+                    if (const auto vs = a_call.Text("vs"); !vs.empty()) {
+                        const auto kept = g_lookKept.find(vs);
+                        if (kept == g_lookKept.end()) {
+                            throw Error(std::format("nothing kept as {} (an earlier asr.look keep={})", vs, vs));
+                        }
+                        const double base = kept->second.AsNumber();
+                        out["vs"] = base != 0.0 ? Json(Round(out["turned"].AsNumber() / base, 0.001)) : Json();
+                    }
+                    return out;
+                });
+        }
     }
 
     void Load()
@@ -1205,8 +3762,14 @@ namespace AhShitRim::TestKit
         const SkseTestKit::Hooks hooks{ .arrived = &Arrived, .ready = &CjReady, .hud = [](bool a_visible) { Overlay::SetHidden(!a_visible); } };
         if (SkseTestKit::Load({ .name = "AhShitRim", .ini = Ini::kPath, .hooks = hooks })) {
             AddCommands();
+            AddLookChecks();
             AddTests();
             AddFeatureChecks();
+            AddStealthKills();
+            AddRespawnChecks();
+            AddKeyChecks();
+            AddCarExitChecks();
+            AddPadChecks();
         }
     }
 

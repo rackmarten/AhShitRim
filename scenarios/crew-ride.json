@@ -1,0 +1,74 @@
+// The Grove Street crew in CJ's vehicles (v39), at the Whiterun stables with two homies following: CJ gets into a
+// Sandking (one passenger seat) and onto a Sanchez (its pillion), a homie rides along in each, sitting on his seat
+// (shots from both sides: his hips on the seat, not a head above it or behind it); once CJ is out again nobody rides,
+// and the homies stand and walk after him (shots of them, a recording of a 10 m walk: each walks, CJ never gets 900
+// ahead of him, and he ends within 700; the same walk before any ride is the baseline. Skyrim's follower package
+// sets off once CJ is about 550 away, as Lydia does).
+// The stables' parked Sanchez is blown up first and CJ stays 18 m south of its burning wreck (crew-checks.json says why).
+// No Skyrim hello or chatter comes from the homies from the moment they join (they came after a join before).
+// scripts/skytest.ps1 run scenarios/crew-ride.json (scenarios/README.md). The crew stays CJ's after it.
+{
+  "name": "crew-ride",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "away from the stables' parked Sanchez (it parks 6 m off)", "cmd": "asr.walk", "points": "17521,-12950", "gait": "run" },
+    { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "Thane of two holds: a crew of three, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "dismiss": true },
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "the Thane titles read, the stables' spots fill (CJ stays 18 m off: the blown-up Sanchez burns there)", "cmd": "wait", "seconds": 15 },
+    { "label": "two homies join", "cmd": "asr.crew", "recruit": 2, "thanes": 2, "expect": ["following == 2", "followers.length == 2"] },
+    { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
+    { "label": "Skyrim lines counted from here", "cmd": "asr.crewstats", "reset": true },
+    { "label": "record them following before any ride", "cmd": "record", "action": "start", "refs": "player,asr.homie:0,asr.homie:1", "leader": "player", "hz": 10, "name": "before-ride" },
+    { "label": "CJ walks off", "cmd": "asr.walk", "points": "17521,-13950", "gait": "walk" },
+    { "cmd": "wait", "seconds": 4 },
+    { "label": "they walked after him", "cmd": "record", "action": "stop", "expect": ["tracks.1.movingSeconds > 1", "tracks.2.movingSeconds > 1", "tracks.1.leader.max < 900", "tracks.2.leader.max < 900", "tracks.1.leader.final < 700", "tracks.2.leader.final < 700"] },
+    { "label": "a Sandking in front of CJ", "cmd": "asr.spawn", "model": 495 },
+    { "label": "CJ gets in", "cmd": "asr.enter", "expect": "model == 495" },
+    { "label": "a homie gets in with him", "cmd": "wait", "seconds": 6 },
+    { "label": "one rides (one passenger seat)", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "riding == 1" },
+    { "label": "the Sandking from its right", "cmd": "screenshot", "name": "sandking-right", "camera": "orbit asr.vehicle:last yaw=90 distance=550 pitch=8" },
+    { "label": "the Sandking from its left", "cmd": "screenshot", "name": "sandking-left", "camera": "orbit asr.vehicle:last yaw=270 distance=550 pitch=8" },
+    { "label": "CJ gets out", "cmd": "asr.exit" },
+    { "cmd": "wait", "seconds": 4 },
+    { "label": "nobody rides", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": ["riding == 0", "following == 2"] },
+    { "label": "record the crew walking after CJ", "cmd": "record", "action": "start", "refs": "player,asr.homie:0,asr.homie:1", "leader": "player", "hz": 10, "name": "after-sandking" },
+    { "label": "CJ walks off", "cmd": "asr.walk", "points": "17521,-12950", "gait": "walk" },
+    { "label": "the homies walking after him", "cmd": "screenshot", "name": "after-sandking-walk", "camera": "orbit asr.homie:0 yaw=90 distance=380 height=90 pitch=5", "settle": 2 },
+    { "cmd": "wait", "seconds": 5 },
+    { "label": "they walked, never stuck", "cmd": "record", "action": "stop", "expect": ["tracks.1.movingSeconds > 1", "tracks.2.movingSeconds > 1", "tracks.1.leader.max < 900", "tracks.2.leader.max < 900", "tracks.1.leader.final < 700", "tracks.2.leader.final < 700"] },
+    { "label": "a homie standing after the ride", "cmd": "screenshot", "name": "after-sandking-stand", "camera": "orbit asr.homie:0 yaw=90 distance=340 height=90 pitch=5" },
+
+    { "label": "a Sanchez in front of CJ", "cmd": "asr.spawn", "model": 468 },
+    { "label": "CJ gets on", "cmd": "asr.enter", "expect": "model == 468" },
+    { "label": "a homie gets on behind him", "cmd": "wait", "seconds": 6 },
+    { "label": "one rides the pillion", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "riding == 1" },
+    { "label": "the Sanchez from its right", "cmd": "screenshot", "name": "sanchez-right", "camera": "orbit asr.vehicle:last yaw=90 distance=400 pitch=8" },
+    { "label": "the Sanchez from its left", "cmd": "screenshot", "name": "sanchez-left", "camera": "orbit asr.vehicle:last yaw=270 distance=400 pitch=8" },
+    { "label": "CJ gets off", "cmd": "asr.exit" },
+    { "cmd": "wait", "seconds": 4 },
+    { "label": "nobody rides", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": ["riding == 0", "following == 2"] },
+    { "label": "record the crew walking after CJ", "cmd": "record", "action": "start", "refs": "player,asr.homie:0,asr.homie:1", "leader": "player", "hz": 10, "name": "after-sanchez" },
+    { "label": "CJ walks off", "cmd": "asr.walk", "points": "17521,-13950", "gait": "walk" },
+    { "label": "the homies walking after him", "cmd": "screenshot", "name": "after-sanchez-walk", "camera": "orbit asr.homie:0 yaw=90 distance=380 height=90 pitch=5", "settle": 2 },
+    { "cmd": "wait", "seconds": 5 },
+    { "label": "they walked, never stuck", "cmd": "record", "action": "stop", "expect": ["tracks.1.movingSeconds > 1", "tracks.2.movingSeconds > 1", "tracks.1.leader.max < 900", "tracks.2.leader.max < 900", "tracks.1.leader.final < 700", "tracks.2.leader.final < 700"] },
+    { "label": "a homie standing after the ride", "cmd": "screenshot", "name": "after-sanchez-stand", "camera": "orbit asr.homie:0 yaw=90 distance=340 height=90 pitch=5" },
+    { "label": "no Skyrim hello or chatter from them all the while (after joining, riding, getting out)", "cmd": "asr.crewstats", "expect": "hushedLines == 0" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

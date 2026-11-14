@@ -6,12 +6,16 @@
 #include "mega_punch.h"
 #include "player/CheatCodes.h"
 #include "player/Particles.h"
+#include "player/PlayerSync.h"
 #include "player/Chatter.h"
 #include "player/ObjectHits.h"
 #include "player/CombatBalance.h"
 #include "player/People.h"
 #include "player/Police.h"
 #include "player/Projectiles.h"
+#include "player/Homies.h"
+#include "player/StealthKills.h"
+#include "crew.h"
 #include "run_over.h"
 #include "weapons.h"
 
@@ -45,9 +49,11 @@ namespace AhShitRim::Shots
             Damage::SkillHits                hits;
             RE::COL_LAYER                    layer = RE::COL_LAYER::kProjectile;
             RE::BGSImpactDataSet*            bulletSet = nullptr;
+            BlowDebug                        lastBlow;  // the test kit's view (DebugLastBlow)
             RE::BGSImpactDataSet*            bladeSet = nullptr;
             RE::BGSImpactDataSet*            bluntSet = nullptr;
             ProcessHitFn                     processHit = nullptr;
+            RE::Actor*                       shooter = nullptr;  // v39: the homie whose shot is being worked out, null for CJ's
             int                              logged = 0;
             int                              loggedBlocks = 0;
             // For the summary.
@@ -174,23 +180,32 @@ namespace AhShitRim::Shots
         }
 
         // a_skyrimDamage, when over 0, is the damage itself (a mega punch's), not worked out from San Andreas's.
+        // a_stealthKill: CJ's knife stealth kill, which CJ may remark on crouched or not.
         void Hurt(RE::PlayerCharacter* a_player, const Victim& a_victim, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_dir, float a_saDamage,
-            bool a_blood = true, float a_skyrimDamage = 0.0f)
+            bool a_blood = true, float a_skyrimDamage = 0.0f, bool a_stealthKill = false)
         {
             auto*      actor = a_victim.actor;
             const auto level = actor->GetLevel();
             const auto cls = ClassOfRace(actor);
-            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * Balance::DealtFactor(a_player, a_shot.weaponType);
+            // v39: the crew. CJ's own hits on a homie have no aggressor and no crime, so he never turns on CJ; a homie's
+            // shot is his own (he is the aggressor, CJ gets no crime or skill for it) and does [Crew] DamageFactor of CJ's.
+            const auto  rule = Crew::RuleFor(Homies::IsHomie(actor), state.shooter != nullptr);
+            const float factor = state.shooter ? Homies::DamageFactor() : Balance::DealtFactor(a_player, a_shot.weaponType);
+            const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * factor;
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
             // v29: a kill made sneaking, of someone not fighting yet, is a stealth kill CJ may remark on.
-            const bool unseen = a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead();
+            const bool unseen = rule.crime && (a_stealthKill || (a_player->IsSneaking() && !actor->IsInCombat() && !actor->IsDead()));
             // Skyrim's hit below may make it a crime; running over an animal isn't one (Wanted::Pardon).
             auto* crimeFaction = actor->GetCrimeFaction();
-            Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
+            if (rule.crime) {
+                Police::NoteHurt(IsPerson(actor), a_shot.weaponType == RunOver::kRammedByCar, crimeFaction ? crimeFaction->GetFormID() : 0);
+            }
 
-            if (state.processHit) {
-                auto* hit = RE::HitData::Create(a_player, actor, nullptr, false);
+            if (!rule.aggressor && !state.shooter) {
+                actor->DoDamage(damage, nullptr, true);  // a homie hit by CJ: no attacker, nothing for his AI to answer
+            } else if (state.processHit) {
+                auto* hit = RE::HitData::Create(state.shooter ? state.shooter : static_cast<RE::Actor*>(a_player), actor, nullptr, false);
                 if (hit) {
                     hit->hitPosition = a_victim.at;
                     hit->hitDirection = a_dir;
@@ -218,7 +233,7 @@ namespace AhShitRim::Shots
                     RE::free(hit);
                 }
             } else {
-                actor->DoDamage(damage, a_player, true);
+                actor->DoDamage(damage, state.shooter ? state.shooter : static_cast<RE::Actor*>(a_player), true);
             }
 
             state.actorHits++;
@@ -343,7 +358,8 @@ namespace AhShitRim::Shots
                     auto*       ref = RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable);
                     auto*       actor = ref ? ref->As<RE::Actor>() : nullptr;
                     const auto  layer = output.rootCollidable->GetCollisionLayer();
-                    if (ref == a_player || (actor && actor->IsDead()) || (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
+                    if (ref == a_player || (actor && actor->IsDead()) || (state.shooter && Homies::IsHomie(ref)) ||
+                        (!actor && !Blocks(layer) && !ObjectHits::Destructible(ref))) {
                         from = distance + 1.0f;  // through the player's own body, the dead and the clutter (not a lamp or a web)
                         continue;
                     }
@@ -386,6 +402,7 @@ namespace AhShitRim::Shots
                     ObjectHits::Struck(a_player, blocker, Traps::Hit::Bullet, a_shot.weaponType,
                         a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType, a_shot.skill));
                 }
+                ObjectHits::BulletLanded(a_player, at, a_shot.weaponType);  // oil there catches fire
             } else {
                 state.misses++;
             }
@@ -399,8 +416,8 @@ namespace AhShitRim::Shots
             if (!(dir.Unitize() >= 1e-4f) || !(a_shot.range > 0.0f) || !std::isfinite(origin.x + origin.y + origin.z)) {
                 return;
             }
-            if (a_shot.flags & Protocol::kShotVehicleGun) {
-                Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas
+            if ((a_shot.flags & Protocol::kShotVehicleGun) || state.shooter) {
+                Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas; v39: a homie's gun
             }
             bool      hit = false;
             const int pellets = (a_shot.flags & Protocol::kShotSpread) ? Damage::Pellets(a_shot.weaponType) : 1;
@@ -408,8 +425,8 @@ namespace AhShitRim::Shots
                 const auto d = Damage::PelletDirection({ dir.x, dir.y, dir.z }, i, pellets, Damage::SpreadDegrees(a_shot.weaponType));
                 hit |= Ray(a_player, a_shot, origin, RE::NiPoint3(d.x, d.y, d.z));
             }
-            if (hit) {
-                state.hits.Add(a_shot.weaponType);  // a shotgun's blast is one hit, as in San Andreas
+            if (hit && !state.shooter) {
+                state.hits.Add(a_shot.weaponType);  // a shotgun's blast is one hit, as in San Andreas; a homie's hits aren't CJ's skill
             }
         }
 
@@ -500,6 +517,24 @@ namespace AhShitRim::Shots
             }
         }
 
+        // Skyrim's own "sneak attack for 3.0X damage" message (its game settings), and a log line for the first few.
+        void SneakAttack(RE::Actor* a_actor, float a_multiplier)
+        {
+            static int logged = 0;
+            if (logged < kLoggedHits) {
+                logged++;
+                SKSE::log::info("shots: knife sneak attack on {} ({:08X}), {:.0f}x damage", a_actor->GetName(), a_actor->GetFormID(), a_multiplier);
+            }
+            auto* settings = RE::GameSettingCollection::GetSingleton();
+            auto* main = settings ? settings->GetSetting("sSuccessfulSneakAttackMain") : nullptr;
+            auto* end = settings ? settings->GetSetting("sSuccessfulSneakAttackEnd") : nullptr;
+            const char* before = main ? main->GetString() : nullptr;
+            const char* after = end ? end->GetString() : nullptr;
+            if (before && *before && after) {
+                RE::SendHUDMessage::ShowHUDMessage(std::format("{}{:.1f}{}", before, a_multiplier, after).c_str(), nullptr, true);
+            }
+        }
+
         void Blow(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             state.blows++;
@@ -536,10 +571,19 @@ namespace AhShitRim::Shots
                 victim.actor = actor;
                 victim.at = RE::NiPoint3(point.x, point.y, feet.z + height);
                 victim.normal = -facing;
-                const float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
+                float sa = Damage::BlowDamage(a_shot.damage > 0.0f ? a_shot.damage : Damage::SanAndreasDamage(a_shot.weaponType), a_shot.weaponType, landed);
                 if (mega) {
                     MegaBlow(a_player, victim, a_shot, facing, sa);
                 } else {
+                    // v38: Skyrim's sneak attack for a crouched knife blow on someone who doesn't detect the player.
+                    const float sneak = a_shot.weaponType == Weapons::Knife && Damage::CrouchedBlow(a_player->IsSneaking(), PlayerSync::SinceCrouched())
+                                            ? Damage::SneakMultiplier(a_shot.weaponType, true, actor->RequestDetectionLevel(a_player) > 0)
+                                            : 1.0f;
+                    if (sneak > 1.0f) {
+                        sa *= sneak;
+                        SneakAttack(actor, sneak);
+                    }
+                    state.lastBlow = { state.lastBlow.blows + 1, actor->GetFormID(), a_shot.weaponType, sneak, landed, sa };
                     Hurt(a_player, victim, a_shot, facing, sa);
                 }
                 landedAny = true;
@@ -619,8 +663,17 @@ namespace AhShitRim::Shots
             }
             if (shot.kind == Protocol::kShotMelee) {
                 Blow(a_player, shot, a_anchor);
+            } else if (shot.kind == Protocol::kShotStealthGrab || shot.kind == Protocol::kShotStealthStab) {
+                StealthKills::OnShot(a_player, shot);
             } else if (shot.kind == Protocol::kShotFlame) {
                 Projectiles::Flame(a_player, shot, a_anchor);
+            } else if (Crew::FromCrew(shot.shooter)) {
+                // v39: a homie's bullet, from his gun, his to answer for
+                state.shooter = Homies::ActorOf(Crew::SlotOf(shot.shooter));
+                if (state.shooter && !state.shooter->IsDead()) {
+                    Bullet(a_player, shot, a_anchor);
+                }
+                state.shooter = nullptr;
             } else {
                 Bullet(a_player, shot, a_anchor);
             }
@@ -631,6 +684,7 @@ namespace AhShitRim::Shots
 
     void Clear()
     {
+        StealthKills::Clear();
         state.queue.clear();
         state.landed.Clear();
         state.hits.Clear();  // hits that never went belong to the game before
@@ -652,5 +706,24 @@ namespace AhShitRim::Shots
         Hurt(a_player, victim, shot, a_dir, a_saDamage, a_blood);
     }
 
+    void Kill(RE::PlayerCharacter* a_player, RE::Actor* a_actor, std::uint8_t a_weapon, const RE::NiPoint3& a_at, const RE::NiPoint3& a_dir)
+    {
+        if (!a_player || !a_actor || a_actor->IsDead()) {
+            return;
+        }
+        Victim victim;
+        victim.actor = a_actor;
+        victim.at = a_at;
+        victim.normal = -a_dir;
+        Protocol::ShotEvent shot{};
+        shot.weaponType = a_weapon;
+        shot.kind = Protocol::kShotMelee;
+        const float health = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+        Hurt(a_player, victim, shot, a_dir, Damage::SanAndreasDamage(a_weapon), true, MegaPunch::DamageFor(health), true);
+        state.hits.Add(a_weapon);
+    }
+
     Damage::Class ClassOf(RE::Actor* a_actor) { return ClassOfRace(a_actor); }
+
+    BlowDebug DebugLastBlow() { return state.lastBlow; }
 }
