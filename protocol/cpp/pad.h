@@ -143,6 +143,8 @@ namespace AhShitRim::Pad
 
         bool  Held(std::uint32_t a_id) const { return (_held & a_id) != 0; }
         float LeftTrigger() const { return _lt; }
+        float RightX() const { return _rx; }
+        float RightY() const { return _ry; }
         float RightTrigger() const { return _rt; }
         bool  Active() const { return _held != 0 || _lt > 0.0f || _rt > 0.0f || _lx != 0.0f || _ly != 0.0f || _rx != 0.0f || _ry != 0.0f; }
 

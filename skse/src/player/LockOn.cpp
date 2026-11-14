@@ -1,5 +1,6 @@
 #include "player/LockOn.h"
 
+#include "gun_lock.h"
 #include "hud/SaHud.h"
 #include "melee.h"
 #include "player/StealthKills.h"
@@ -29,6 +30,10 @@ namespace AhShitRim::LockOn
             RE::FormID  judged = 0;  // whose stealth kill verdict was logged last
             StealthKill::Verdict verdict = StealthKill::Verdict::Yes;
             int         loggedVerdicts = 0;
+            RE::FormID  gunLocked = 0;   // the pad's gun lock
+            bool        gunFree = false;  // dropped by the right stick: free aim until LT is let go
+            GunLock::Breaker breaker;
+            GunLock::Grace   grace;
         } state;
 
         constexpr int kLoggedVerdicts = 40;  // stealth kill verdicts logged as they change, then quiet
@@ -129,15 +134,127 @@ namespace AhShitRim::LockOn
                 Mark(marked);
             }
         }
+
+        void EndGunLock()
+        {
+            if (state.gunLocked) {
+                SKSE::log::info("lock-on: the gun lock lets go");
+            }
+            state.gunLocked = 0;
+            state.gunFree = false;
+            state.breaker.Reset();
+            state.grace.Reset();
+        }
+
+        // The pad's gun lock (protocol/cpp/gun_lock.h): LT held with a gun over the shoulder. Picks or keeps the target,
+        // shifts it on the d-pad, lets go of it on the right stick, marks it and steers the camera onto its chest.
+        Target GunLockOn(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cj, const Aim& a_aim, float a_seconds)
+        {
+            Target out;
+            auto*  camera = RE::Main::WorldRootCamera();
+            float  x = 0.0f, y = 0.0f, aspect = 0.0f;
+            if (!camera || !SaHud::AimCrosshair(x, y, aspect)) {
+                return out;  // no crosshair drawn yet this aim
+            }
+            if (state.gunFree || state.breaker.Update(a_aim.rightX, a_aim.rightY, a_seconds)) {
+                if (!state.gunFree && state.gunLocked) {
+                    SKSE::log::info("lock-on: the right stick drops the gun lock: free aim");
+                }
+                state.gunFree = true;
+                state.gunLocked = 0;
+                return out;
+            }
+            std::vector<RE::Actor*>       actors;
+            std::vector<Melee::Candidate> candidates;
+            Gather(a_player, a_cj, actors, candidates);
+            std::vector<GunLock::Candidate> all;
+            std::size_t                     current = actors.size();
+            for (std::size_t i = 0; i < actors.size(); i++) {
+                GunLock::Candidate c;
+                c.id = candidates[i].id;
+                c.hostile = candidates[i].hostile;
+                float depth = 0.0f;
+                c.screen.visible = camera->WorldPtToScreenPt3(Middle(actors[i]), c.screen.x, c.screen.y, depth, 1e-5f);
+                c.screen.y = 1.0f - c.screen.y;  // Skyrim's screen points go up
+                c.screen.distance = RunOver::Length(candidates[i].offset);
+                // Line of sight only for those on screen and in range (it's a ray test each).
+                const bool onScreen = c.screen.visible && c.screen.x >= -GunLock::kShiftReach && c.screen.x <= 1.0f + GunLock::kShiftReach && c.screen.y >= 0.0f &&
+                                      c.screen.y <= 1.0f;  // or just past the side edges, for the d-pad's shift
+                bool       unused = false;
+                c.inSight = onScreen && c.screen.distance <= GunLock::kRange && a_player->HasLineOfSight(actors[i], unused);
+                if (c.id == state.gunLocked) {
+                    current = i;
+                }
+                all.push_back(c);
+            }
+            // Out of sight or range a moment: kept (GunLock::Grace); for longer, or dead and gone: the next one.
+            if (current < all.size() &&
+                !state.grace.Keep(all[current].screen.visible && all[current].inSight && all[current].screen.distance <= GunLock::kRange, a_seconds)) {
+                current = all.size();
+            }
+            if (current >= all.size()) {
+                current = GunLock::Pick(all, x, y, aspect);
+                state.grace.Reset();
+            } else if (a_aim.shift) {
+                const auto shifted = GunLock::Shift(all, current, a_aim.shift);
+                if (shifted != current) {
+                    state.grace.Reset();
+                } else {
+                    int shown = 0, seen = 0;
+                    for (const auto& c : all) {
+                        shown += c.screen.visible ? 1 : 0;
+                        seen += c.inSight ? 1 : 0;
+                    }
+                    SKSE::log::info("lock-on: nobody to shift the gun lock to on the {} ({} around, {} in front, {} in sight)", a_aim.shift > 0 ? "right" : "left",
+                        all.size(), shown, seen);
+                    for (std::size_t i = 0; i < all.size(); i++) {
+                        const auto& c = all[i];
+                        if (c.screen.distance <= GunLock::kRange) {
+                            SKSE::log::info("lock-on:   {:08X}{}{}: screen {:.2f},{:.2f}{}, {:.1f} m, {}", c.id, i == current ? " (locked)" : "", c.hostile ? " hostile" : "",
+                                c.screen.x, c.screen.y, c.screen.visible ? "" : " (behind)", c.screen.distance, c.inSight ? "in sight" : "not in sight");
+                        }
+                    }
+                }
+                current = shifted;
+            }
+            const RE::FormID locked = current < all.size() ? all[current].id : 0;
+            if (locked != state.gunLocked && locked) {
+                SKSE::log::info("lock-on: the gun locks on to {} ({:08X}){}, {:.2f} screen heights from the crosshair", actors[current]->GetDisplayFullName(), locked,
+                    all[current].hostile ? ", who fights him" : "", GunLock::Off(all[current].screen, x, y, aspect));
+            }
+            state.gunLocked = locked;
+            if (!locked) {
+                return out;
+            }
+            Mark(actors[current]);
+            if (!all[current].screen.visible) {
+                out.gunLock = true;  // kept through a moment behind the camera: nothing to steer toward
+                return out;
+            }
+            const auto counts = GunLock::Steer(all[current].screen.x, all[current].screen.y, x, y, aspect, a_seconds);
+            out.gunLock = true;
+            out.mouseX = counts.x;
+            out.mouseY = counts.y;
+            return out;
+        }
     }
 
     Target Update(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_cjFeet, const Aim& a_aim, float a_seconds)
     {
         const RE::NiPoint3 cj = a_cjFeet + RE::NiPoint3(0.0f, 0.0f, kCjMiddle);
-        if (a_aim.gun && a_aim.aim) {
+        Target gun;
+        if (a_aim.gun && a_aim.aim && a_aim.padLock) {
+            gun = GunLockOn(a_player, cj, a_aim, a_seconds);
+            state.marked = state.gunLocked;
+        } else if (a_aim.gun && a_aim.aim) {
+            EndGunLock();
             Indicate(a_player, cj);
         } else {
+            EndGunLock();
             state.marked = 0;
+        }
+        if (gun.gunLock) {
+            return gun;  // a gun in hand: no melee lock or swing to look after
         }
 
         const Mode wanted = a_aim.melee && a_aim.aim ? Mode::MeleeLock : a_aim.melee && a_aim.fire ? Mode::Swing : Mode::None;
@@ -185,8 +302,11 @@ namespace AhShitRim::LockOn
         return { target, knifeLock && StealthKillable(a_player, locked, a_cjFeet, a_aim.weapon) };
     }
 
+    RE::FormID DebugGunTarget() { return state.gunLocked; }
+
     void Clear()
     {
+        EndGunLock();
         state.lock.Clear();
         state.mode = Mode::None;
         state.marked = 0;
