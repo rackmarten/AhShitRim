@@ -24,6 +24,7 @@
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
 #include "pose.h"
+#include "player/Riders.h"
 #include "vehicle_hits.h"
 #include "vehicle_kinds.h"
 #include "wanted.h"
@@ -822,15 +823,22 @@ namespace AhShitRim::TestKit
                 return JsonObject{ { "typed", code } };
             });
 
-            SkseTestKit::AddTask("asr.exit", "", "CJ gets out of the vehicle he's in (the enter/exit key pressed); answers once he's on foot",
+            SkseTestKit::AddTask("asr.exit", "[until=<out|start>]",
+                "CJ gets out of the vehicle he's in (the enter/exit key pressed); answers once he's on foot, or with until=start in the "
+                "frame San Andreas's get-out begins (to pause on it)",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     a_call.DefaultTimeout(15.0);
-                    return [](Call& a_call) -> std::optional<Json> {
+                    const bool start = a_call.Text("until", "out") == "start";
+                    return [start](Call& a_call) -> std::optional<Json> {
                         const auto pose = CjPose();
                         if (pose && (pose->flags & Protocol::kPlayerInVehicle) == 0) {
                             PlayerSync::DebugHold(std::nullopt);
                             return JsonObject{ { "onFoot", true }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (start && pose && (pose->flags & Protocol::kPlayerGettingInOut) && a_call.Seconds() > 0.25) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "onFoot", false }, { "gettingOut", true }, { "seconds", Round(a_call.Seconds()) } };
                         }
                         // Held 0.2 s, again every 5 s should he still sit in it: getting out takes about 2 s, and a press
                         // once he's out would put him back in.
@@ -1086,24 +1094,6 @@ namespace AhShitRim::TestKit
                 });
 
 #ifdef AHSHITRIM_TEST_CREW
-            SkseTestKit::AddTask("asr.enter", "",
-                "CJ gets into the vehicle nearest him (the enter/exit key pressed, as asr.exit); answers once he sits in it, with how many "
-                "of the crew ride with him",
-                [](Call& a_call) -> Step {
-                    RequireCj();
-                    a_call.DefaultTimeout(15.0);
-                    return [](Call& a_call) -> std::optional<Json> {
-                        const auto pose = CjPose();
-                        if (pose && (pose->flags & Protocol::kPlayerInVehicle) && a_call.Seconds() > 1.0) {
-                            PlayerSync::DebugHold(std::nullopt);
-                            return JsonObject{ { "inVehicle", true }, { "model", pose->vehicleModel }, { "seconds", Round(a_call.Seconds()) } };
-                        }
-                        const bool press = std::fmod(a_call.Seconds(), 5.0) < 0.2;
-                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonEnterExit }) : std::nullopt);
-                        return std::nullopt;
-                    };
-                });
-
             SkseTestKit::AddCommand("asr.crewkey", "[at] [aim=<bool>]",
                 "G as if pressed on foot: aim (true) says CJ aims, along the way from the player to at (a target spec, asr.homie:<n> or "
                 "asr.free:<n>; without it CJ's heading), his lock-on on nobody, so the crew's own pick by the aim line decides. "
@@ -1460,9 +1450,11 @@ namespace AhShitRim::TestKit
                     };
                 });
 
-            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>]",
+            SkseTestKit::AddTask("asr.spawn", "<model> [in=<bool>] [tries=<n>]",
                 "Spawns a San Andreas vehicle by model id (400 to 611) where San Andreas puts a cheat's vehicle, in front of CJ; in=true puts CJ "
-                "in a new one where he stands (handing him the player if he hasn't it). Answers with its slot and where it is from the player",
+                "in a new one where he stands (handing him the player if he hasn't it). San Andreas spawns nothing without a flat, clear spot "
+                "in front of him: with tries (1) over 1, CJ walks on a second and it's asked for again. Answers with its slot and where it is "
+                "from the player",
                 [](Call& a_call) -> Step {
                     const double number = a_call.Number("model");
                     if (number < 400 || number > 611 || number != std::floor(number)) {
@@ -1485,8 +1477,16 @@ namespace AhShitRim::TestKit
                         throw Error(refusal);
                     }
                     const auto handover = PlayerSync::DebugHandover();
-                    a_call.DefaultTimeout(20.0);
-                    return [model, before, in, handover](Call& a_call) -> std::optional<Json> {
+                    const int  tries = (std::max)(1, static_cast<int>(a_call.Number("tries", 1.0)));
+                    a_call.DefaultTimeout(20.0 + 7.0 * (tries - 1));
+                    struct Retry
+                    {
+                        int    tried = 1;
+                        double askedAt = 0.0;
+                        double walkUntil = -1.0;
+                    };
+                    auto retry = std::make_shared<Retry>();
+                    return [model, before, in, handover, tries, retry](Call& a_call) -> std::optional<Json> {
                         if (PlayerSync::DebugHandover() != handover) {
                             throw Error("the handover changed while waiting (a load door, fast travel, F10): its vehicles are gone");
                         }
@@ -1524,8 +1524,27 @@ namespace AhShitRim::TestKit
                         if (!found) {
                             // San Andreas answers in a few frames; when it finds no flat, clear spot in front of CJ (another
                             // vehicle in the way) it spawns nothing and only its own log says so.
-                            if (!in && a_call.Seconds() > 5.0) {
-                                throw Error("San Andreas spawned nothing in 5 s: no clear spot in front of CJ? (its AhShitRim.log says why)");
+                            if (!in && retry->walkUntil >= 0.0) {
+                                if (a_call.Seconds() < retry->walkUntil) {
+                                    PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveY = 1.0f });
+                                    return std::nullopt;
+                                }
+                                PlayerSync::DebugHold(std::nullopt);
+                                retry->walkUntil = -1.0;
+                                retry->askedAt = a_call.Seconds();
+                                retry->tried++;
+                                if (const auto refusal = PlayerSync::DebugSpawn(model); !refusal.empty()) {
+                                    throw Error(refusal);
+                                }
+                                SKSE::log::info("test kit: asr.spawn: nothing spawned, CJ walked on and asked again ({} of {})", retry->tried, tries);
+                                return std::nullopt;
+                            }
+                            if (!in && a_call.Seconds() - retry->askedAt > 5.0) {
+                                if (retry->tried < tries) {
+                                    retry->walkUntil = a_call.Seconds() + 1.0;  // a second on, then again
+                                    return std::nullopt;
+                                }
+                                throw Error(std::format("San Andreas spawned nothing in 5 s, {} time(s): no clear spot in front of CJ? (its AhShitRim.log says why)", tries));
                             }
                             return std::nullopt;
                         }
@@ -2608,6 +2627,658 @@ namespace AhShitRim::TestKit
                     };
                 });
         }
+
+        // ---- Getting in and out, riding, and the gun on CJ's hand (scenarios/car-exit.json) ----
+
+        constexpr std::uint32_t kBoneRightHand = 24;  // San Andreas's node ids, as CJ's model carries them
+        constexpr std::uint32_t kBonePelvis = 2;
+
+        // A point in vehicle slot a_slot's frame (x right, y forward, z up), turned as it's drawn this frame, its slope and lean
+        // too; by its heading alone when the vehicle hook didn't see it.
+        RE::NiPoint3 InVehicle(std::uint32_t a_slot, const RE::NiPoint3& a_point, const RE::NiPoint3& a_vehicle, float a_heading, bool a_level = false)
+        {
+            if (!a_level && a_slot < g_seen.size() && g_seen[a_slot].on) {
+                const auto local = VehicleHits::ToLocal(g_seen[a_slot].frame, { a_point.x, a_point.y, a_point.z });
+                return { local.x, local.y, local.z };
+            }
+            const auto  d = a_point - a_vehicle;
+            const float s = std::sin(a_heading), c = std::cos(a_heading);
+            return { d.x * c - d.y * s, d.x * s + d.y * c, d.z };
+        }
+
+        // CJ as drawn this frame: a bone's place in the world, false when he wasn't drawn or has no such bone.
+        bool CjBone(std::uint32_t a_bone, RE::NiPoint3& a_out)
+        {
+            Protocol::BodyState pose{};
+            RE::NiPoint3        feet, camera;
+            if (!PlayerSync::DebugDrawn(pose, feet, camera)) {
+                return false;
+            }
+            const int i = ModelView::DebugBoneIndex(pose.model, a_bone);
+            if (i < 0 || static_cast<std::uint32_t>(i) >= pose.boneCount) {
+                return false;
+            }
+            const auto& t = pose.bones[i].translation;
+            a_out = feet + RE::NiPoint3(t[0], t[1], t[2]);
+            return true;
+        }
+
+        // The right hand's gun as drawn against CJ's right hand as drawn: units between the gun's root (where San Andreas
+        // puts it, on the hand's matrix) and the hand's joint. Empty when either isn't drawn.
+        std::optional<float> Grip()
+        {
+            Protocol::BodyState gun{};
+            RE::NiPoint3        gunFeet, hand;
+            if (!Arms::DebugWeapon(0, gun, gunFeet) || gun.boneCount == 0 || !CjBone(kBoneRightHand, hand)) {
+                return std::nullopt;
+            }
+            const auto& t = gun.bones[0].translation;
+            return (gunFeet + RE::NiPoint3(t[0], t[1], t[2])).GetDistance(hand);
+        }
+
+        // The vehicle CJ drives, else the one he drove last (or asr.spawn made): its slot.
+        std::optional<std::uint32_t> g_rideSlot;
+
+        std::optional<std::uint32_t> DrivenSlot()
+        {
+            for (std::uint32_t i = 0; i < Protocol::kVehicleMax; i++) {
+                Protocol::BodyState vehicle{};
+                if (LinkService::Get().ReadVehicle(i, vehicle) && (vehicle.flags & Protocol::kBodyValid) && (vehicle.flags & Protocol::kBodyDriven) &&
+                    vehicle.handover == PlayerSync::DebugHandover()) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // asr.watch: a sample a frame, from the frame hook (after the frame's drawing).
+        struct WatchSample
+        {
+            std::uint64_t frame = 0;
+            double        t = 0.0;  // game seconds since the start
+            bool          in = false, getting = false;
+            std::uint16_t model = 0;
+            std::uint8_t  weapon = 0;
+            bool          inHand = false, gunDrawn = false, aiming = false;
+            bool          switching = false;  // his weapon changed in the last 4 frames: the drawn gun blends from the old one
+            float         grip = -1.0f;
+            float         speed = 0.0f;  // the vehicle's, m/s
+            bool          haveSeat = false;
+            RE::NiPoint3  pelvis;  // CJ's drawn pelvis in the vehicle's frame
+            RE::NiPoint3  level;   // and by its heading alone: a bike rights itself or drops on its stand as he leaves it
+            std::vector<std::pair<RE::FormID, RE::NiPoint3>> riders;  // each follower in the vehicle's frame
+            std::vector<RE::FormID>                          sitting;
+        };
+
+        struct Watch
+        {
+            bool                     on = false;
+            std::uint64_t            frames = 0;
+            double                   t = 0.0;
+            std::vector<WatchSample> samples;
+            std::vector<RE::FormID>  followers;  // everyone who rode, for their tracks after they got out
+            RE::NiPoint3             lastVehicle;
+            bool                     haveLast = false;
+            std::uint8_t             lastWeapon = 0;
+            std::uint64_t            weaponSince = 0;
+        } g_watch;
+
+        void SampleFrame()
+        {
+            // Every frame the world moved, stepped ones too (a paused world's frames have none).
+            const float dt = RE::GetSecondsSinceLastFrame();
+            if (!g_watch.on || dt <= 0.0f) {
+                return;
+            }
+            const auto pose = CjPose();
+            if (!pose) {
+                return;
+            }
+            g_watch.t += dt;
+            WatchSample w;
+            w.frame = g_watch.frames++;
+            w.t = g_watch.t;
+            w.in = (pose->flags & Protocol::kPlayerInVehicle) != 0;
+            w.getting = (pose->flags & Protocol::kPlayerGettingInOut) != 0;
+            w.model = w.in ? pose->vehicleModel : 0;
+            w.weapon = pose->weaponType;
+            if (w.weapon != g_watch.lastWeapon) {
+                g_watch.lastWeapon = w.weapon;
+                g_watch.weaponSince = w.frame;
+            }
+            w.switching = w.frame - g_watch.weaponSince < 4 && w.frame >= 4;
+            w.inHand = (pose->weaponFlags & Protocol::kWeaponInHand) != 0;
+            w.aiming = (pose->weaponFlags & Protocol::kWeaponAiming) != 0;
+            const auto grip = Grip();
+            w.gunDrawn = grip.has_value();
+            w.grip = grip.value_or(-1.0f);
+            const auto before = g_rideSlot;
+            if (const auto driven = DrivenSlot()) {
+                g_rideSlot = driven;
+            } else if (!g_rideSlot) {
+                g_rideSlot = g_spawned;
+            }
+            if (g_rideSlot != before) {
+                g_watch.haveLast = false;  // another vehicle: no speed from one to the other
+            }
+            RE::NiPoint3 at;
+            float        heading = 0.0f;
+            if (g_rideSlot && PlayerSync::DebugVehicle(*g_rideSlot, at, heading)) {
+                if (g_watch.haveLast && dt > 0.0f) {
+                    w.speed = at.GetDistance(g_watch.lastVehicle) / dt * Pose::kMetersPerUnit;
+                }
+                g_watch.lastVehicle = at;
+                g_watch.haveLast = true;
+                RE::NiPoint3 pelvis;
+                if (CjBone(kBonePelvis, pelvis)) {
+                    w.haveSeat = true;
+                    w.pelvis = InVehicle(*g_rideSlot, pelvis, at, heading);
+                    w.level = InVehicle(*g_rideSlot, pelvis, at, heading, true);
+                }
+                for (const auto id : Riders::Riding()) {
+                    if (std::find(g_watch.followers.begin(), g_watch.followers.end(), id) == g_watch.followers.end()) {
+                        g_watch.followers.push_back(id);
+                    }
+                    if (Riders::Sits(id)) {
+                        w.sitting.push_back(id);
+                    }
+                }
+                for (const auto id : g_watch.followers) {
+                    if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id)) {
+                        w.riders.emplace_back(id, InVehicle(*g_rideSlot, actor->GetPosition(), at, heading));
+                    }
+                }
+            }
+            if (g_watch.samples.size() < 36000) {
+                g_watch.samples.push_back(std::move(w));
+            }
+        }
+
+        constexpr std::size_t kSettleFrames = 8;  // a seat's first frames, judged apart
+
+        // What a watch says: the gun (missing: frames San Andreas has a gun in his hand and none is drawn; its grip, the
+        // gun from his hand's joint), CJ in his seat while he rides (his pelvis from where it sits most, frame to frame),
+        // each get-out (CJ's pelvis across the vehicle, frame to frame, back towards the seat) and each rider's.
+        Json Summarize()
+        {
+            const auto& s = g_watch.samples;
+            int         inHand = 0, missing = 0, longestMissing = 0, run = 0, missingStill = 0, onStill = 0;
+            float       gripMax = 0.0f, gripMaxMoving = 0.0f, gripMaxGetting = 0.0f, gripMaxSwitching = 0.0f;
+            double      gripSum = 0.0, fastest = 0.0;
+            int                gripN = 0;
+            // A weapon switch's frames, three either side of San Andreas's change: the drawn gun blends from the old model to
+            // the new one, and the new one can be in his hand a frame before the pose names it.
+            std::vector<bool> switching(s.size(), false);
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (s[i].weapon != s[i - 1].weapon) {
+                    for (std::size_t k = i >= 3 ? i - 3 : 0; k < (std::min)(s.size(), i + 4); k++) {
+                        switching[k] = true;
+                    }
+                }
+            }
+            std::vector<float> grips;
+            for (std::size_t i = 0; i < s.size(); i++) {
+                if (s[i].gunDrawn && !switching[i]) {
+                    grips.push_back(s[i].grip);
+                }
+            }
+            float gripMedian = 0.0f;
+            if (!grips.empty()) {
+                std::nth_element(grips.begin(), grips.begin() + grips.size() / 2, grips.end());
+                gripMedian = grips[grips.size() / 2];
+            }
+            for (std::size_t i = 0; i < s.size(); i++) {
+                const auto& w = s[i];
+                const bool  miss = w.inHand && !w.gunDrawn;
+                inHand += w.inHand ? 1 : 0;
+                if (miss) {
+                    missing++;
+                    longestMissing = (std::max)(longestMissing, ++run);
+                    if (w.in && w.speed < 0.5f && !w.getting) {
+                        missingStill++;
+                    }
+                } else {
+                    run = 0;
+                }
+                if (w.in && w.speed < 0.5f && !w.getting && w.inHand) {
+                    onStill++;
+                }
+                if (w.gunDrawn && switching[i]) {
+                    gripMaxSwitching = (std::max)(gripMaxSwitching, w.grip);
+                } else if (w.gunDrawn) {
+                    gripMax = (std::max)(gripMax, w.grip);
+                    gripSum += w.grip;
+                    gripN++;
+                    if (w.speed >= 5.0f) {
+                        gripMaxMoving = (std::max)(gripMaxMoving, w.grip);
+                    }
+                    if (w.getting) {
+                        gripMaxGetting = (std::max)(gripMaxGetting, w.grip);
+                    }
+                }
+                fastest = (std::max)(fastest, static_cast<double>(w.speed));
+            }
+            // Seated: in, not getting in or out, per vehicle (a stretch a model). His pelvis against where it sits most (the
+            // median) and frame to frame.
+            JsonArray seats;
+            for (std::size_t i = 0; i < s.size();) {
+                if (!(s[i].in && !s[i].getting && s[i].haveSeat)) {
+                    i++;
+                    continue;
+                }
+                const auto  model = s[i].model;
+                std::size_t end = i;
+                std::vector<float> xs, ys, zs;
+                while (end < s.size() && s[end].in && s[end].model == model) {
+                    if (!s[end].getting && s[end].haveSeat) {
+                        xs.push_back(s[end].pelvis.x);
+                        ys.push_back(s[end].pelvis.y);
+                        zs.push_back(s[end].pelvis.z);
+                    }
+                    end++;
+                }
+                auto median = [](std::vector<float> a_v) {
+                    std::nth_element(a_v.begin(), a_v.begin() + a_v.size() / 2, a_v.end());
+                    return a_v[a_v.size() / 2];
+                };
+                const RE::NiPoint3 mid{ median(xs), median(ys), median(zs) };
+                float              dev = 0.0f, step = 0.0f, fast = 0.0f, settle = 0.0f;
+                int                frames = 0;
+                const WatchSample* last = nullptr;
+                for (std::size_t k = i; k < end; k++) {
+                    const auto& w = s[k];
+                    if (w.getting || !w.haveSeat) {
+                        last = nullptr;
+                        continue;
+                    }
+                    // His first frames in it, apart: San Andreas puts him from the door onto the seat, and his body can be
+                    // off it for a few frames then (getInHop, from where he sits most).
+                    if (k < i + kSettleFrames) {
+                        settle = (std::max)(settle, w.pelvis.GetDistance(mid));
+                        last = nullptr;
+                        continue;
+                    }
+                    frames++;
+                    dev = (std::max)(dev, w.pelvis.GetDistance(mid));
+                    fast = (std::max)(fast, w.speed);
+                    if (last) {
+                        step = (std::max)(step, w.pelvis.GetDistance(last->pelvis));
+                    }
+                    last = &w;
+                }
+                seats.emplace_back(JsonObject{ { "model", model }, { "frames", frames }, { "fastest", Round(fast, 0.1) }, { "seat", Point(mid) },
+                    { "maxDeviation", Round(dev, 0.1) }, { "maxStep", Round(step, 0.1) }, { "getInHop", Round(settle, 0.1) } });
+                i = end;
+            }
+            // Get-outs: from the first frame he's in and getting out (after one in and settled) until 1.5 s after he's out.
+            JsonArray exits;
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (!(s[i].in && s[i].getting) || !(s[i - 1].in && !s[i - 1].getting)) {
+                    continue;
+                }
+                std::size_t end = i;
+                double      outAt = -1.0;
+                while (end + 1 < s.size()) {
+                    if (!s[end].in && outAt < 0.0) {
+                        outAt = s[end].t;
+                    }
+                    if (outAt >= 0.0 && s[end].t - outAt > 1.5) {
+                        break;
+                    }
+                    end++;
+                }
+                float              back = 0.0f, step = 0.0f, startAcross = 0.0f;
+                bool               haveStart = false;
+                const WatchSample* prev = nullptr;
+                for (std::size_t k = i; k <= end; k++) {
+                    if (!s[k].haveSeat) {
+                        continue;
+                    }
+                    const float across = std::abs(s[k].level.x);
+                    if (!haveStart) {
+                        startAcross = across;
+                        haveStart = true;
+                    }
+                    if (prev) {
+                        back = (std::max)(back, std::abs(prev->level.x) - across);
+                        step = (std::max)(step, s[k].level.GetDistance(prev->level));
+                    }
+                    prev = &s[k];
+                }
+                JsonObject exit{ { "at", Round(s[i].t) }, { "model", s[i - 1].model }, { "frames", end - i + 1 }, { "out", outAt >= 0.0 },
+                    { "startAcross", Round(startAcross, 0.1) }, { "endAcross", prev ? Json(Round(std::abs(prev->level.x), 0.1)) : Json() },
+                    { "endAhead", prev ? Json(Round(prev->level.y, 0.1)) : Json() }, { "maxBack", Round(back, 0.1) }, { "maxStep", Round(step, 0.1) } };
+                // Each rider who sat as it began: frames still seated after, his biggest step and where he ended, across.
+                JsonArray riders;
+                for (const auto id : g_watch.followers) {
+                    if (std::find(s[i - 1].sitting.begin(), s[i - 1].sitting.end(), id) == s[i - 1].sitting.end()) {
+                        continue;
+                    }
+                    int                 seated = 0;
+                    float               endAcross = 0.0f, maxAcross = 0.0f, riderStep = 0.0f;
+                    const RE::NiPoint3* prevAt = nullptr;
+                    for (std::size_t k = i; k <= end; k++) {
+                        if (std::find(s[k].sitting.begin(), s[k].sitting.end(), id) != s[k].sitting.end()) {
+                            seated++;
+                        }
+                        for (const auto& [rid, at] : s[k].riders) {
+                            if (rid == id) {
+                                endAcross = std::abs(at.x);
+                                maxAcross = (std::max)(maxAcross, endAcross);
+                                if (prevAt) {
+                                    riderStep = (std::max)(riderStep, at.GetDistance(*prevAt));
+                                }
+                                prevAt = &at;
+                            }
+                        }
+                    }
+                    riders.emplace_back(JsonObject{ { "id", std::format("{:08X}", id) }, { "seatedFrames", seated }, { "endAcross", Round(endAcross, 0.1) }, { "maxAcross", Round(maxAcross, 0.1) },
+                        { "maxStep", Round(riderStep, 0.1) } });
+                }
+                exit.Set("riders", std::move(riders));
+                exits.emplace_back(std::move(exit));
+                i = end;
+            }
+            return JsonObject{ { "frames", s.size() }, { "seconds", Round(g_watch.t) }, { "fastest", Round(fastest, 0.1) },
+                { "gun", JsonObject{ { "inHand", inHand }, { "missing", missing }, { "longestMissing", longestMissing }, { "missingStill", missingStill },
+                             { "onStillVehicle", onStill }, { "gripMax", Round(gripMax, 0.1) }, { "gripMedian", Round(gripMedian, 0.1) },
+                             { "gripSpread", Round(gripMax - gripMedian, 0.1) }, { "gripMean", gripN ? Json(Round(gripSum / gripN, 0.1)) : Json() },
+                             { "gripMaxMoving", Round(gripMaxMoving, 0.1) }, { "gripMaxGetting", Round(gripMaxGetting, 0.1) },
+                             { "gripMaxSwitching", Round(gripMaxSwitching, 0.1) } } },
+                { "seats", std::move(seats) },
+                { "exits", std::move(exits) } };
+        }
+
+        void AddCarExitChecks()
+        {
+            SkseTestKit::AddScenario("asr.watch", "<what>",
+                "Watches every frame (after it's drawn) from asr.watch start to asr.watch stop: CJ in or out and getting in or out, his gun (San Andreas's in "
+                "his hand; the drawn one's grip, units from his drawn right hand's joint), his pelvis in his vehicle's frame, his riders. "
+                "stop answers with a row a frame and a summary: gun.missing (frames a gun in his hand wasn't drawn), gun.gripMax, "
+                "seats (each vehicle he sat in: his pelvis from where it sits most, maxDeviation, and frame to frame, maxStep), exits (each get-out: maxBack towards the seat, maxStep, "
+                "endAcross; each rider's seatedFrames and endAcross)",
+                [](Call& a_call) -> Step {
+                    const auto what = a_call.Text("what");
+                    if (what == "start") {
+                        RequireCj();
+                        g_watch = {};
+                        g_rideSlot.reset();
+                        g_watch.on = true;
+                        PlayerSync::SetDebugFrameHook(&SampleFrame);
+                        return [](Call&) -> std::optional<Json> { return JsonObject{ { "watching", true } }; };
+                    }
+                    if (what != "stop") {
+                        throw Error("asr.watch start or stop");
+                    }
+                    if (!g_watch.on) {
+                        throw Error("asr.watch start first");
+                    }
+                    g_watch.on = false;
+                    PlayerSync::SetDebugFrameHook({});
+                    return [](Call& a_call) -> std::optional<Json> {
+                        for (const auto& w : g_watch.samples) {
+                            JsonObject row{ { "frame", w.frame }, { "t", Round(w.t, 0.001) }, { "in", w.in }, { "getting", w.getting }, { "model", w.model },
+                                { "weapon", w.weapon }, { "switching", w.switching }, { "inHand", w.inHand }, { "gunDrawn", w.gunDrawn }, { "aiming", w.aiming },
+                                { "grip", w.gunDrawn ? Json(Round(w.grip, 0.01)) : Json() }, { "speed", Round(w.speed, 0.01) } };
+                            // Flat and on every row: the CSV takes its columns from the first.
+                            row.Set("pelvisX", w.haveSeat ? Json(Round(w.pelvis.x, 0.01)) : Json());
+                            row.Set("pelvisY", w.haveSeat ? Json(Round(w.pelvis.y, 0.01)) : Json());
+                            row.Set("pelvisZ", w.haveSeat ? Json(Round(w.pelvis.z, 0.01)) : Json());
+                            const bool rider = !w.riders.empty();
+                            row.Set("riderX", rider ? Json(Round(w.riders[0].second.x, 0.01)) : Json());
+                            row.Set("riderY", rider ? Json(Round(w.riders[0].second.y, 0.01)) : Json());
+                            row.Set("riderZ", rider ? Json(Round(w.riders[0].second.z, 0.01)) : Json());
+                            row.Set("riderSits", rider && std::find(w.sitting.begin(), w.sitting.end(), w.riders[0].first) != w.sitting.end());
+                            a_call.Row(std::move(row));
+                        }
+                        return Summarize();
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.pose", "", "CJ now: in a vehicle, getting in or out, its model, his weapon, in his hand, the drawn gun's grip (units from his hand)",
+                [](Call&) -> Json {
+                    RequireCj();
+                    const auto pose = CjPose();
+                    if (!pose) {
+                        throw Error("San Andreas hasn't answered this handover yet");
+                    }
+                    const auto grip = Grip();
+                    return JsonObject{ { "in", (pose->flags & Protocol::kPlayerInVehicle) != 0 }, { "getting", (pose->flags & Protocol::kPlayerGettingInOut) != 0 },
+                        { "model", pose->vehicleModel }, { "weapon", pose->weaponType }, { "inHand", (pose->weaponFlags & Protocol::kWeaponInHand) != 0 },
+                        { "gunDrawn", grip.has_value() }, { "grip", grip ? Json(Round(*grip, 0.01)) : Json() } };
+                });
+
+            SkseTestKit::AddTask("asr.hold", "<weapon>", "CJ takes a weapon he carries (asr.give first) into his hands; answers once San Andreas has it there",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double number = a_call.Number("weapon");
+                    const auto   weapon = static_cast<std::uint8_t>(number);
+                    if (number < 1 || number > 46 || !Arms::DebugHoldWeapon(weapon)) {
+                        throw Error(std::format("CJ doesn't carry weapon {} (asr.give first)", number));
+                    }
+                    a_call.DefaultTimeout(10.0);
+                    return [weapon](Call&) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose || pose->weaponType != weapon || !(pose->weaponFlags & Protocol::kWeaponInHand)) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "weapon", weapon } };
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.enter", "[until=<in|start>]",
+                "CJ gets into the vehicle San Andreas picks near him (the enter/exit key); answers once he sits in it, or with until=start "
+                "in the frame his get-in begins (to pause on it)",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    a_call.DefaultTimeout(20.0);
+                    const bool start = a_call.Text("until", "in") == "start";
+                    auto       began = std::make_shared<bool>(false);
+                    return [start, began](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!pose) {
+                            return std::nullopt;
+                        }
+                        const bool in = (pose->flags & Protocol::kPlayerInVehicle) != 0;
+                        const bool getting = (pose->flags & Protocol::kPlayerGettingInOut) != 0;
+                        *began = *began || getting;
+                        if (start && getting) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "gettingIn", true }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (in && !getting) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "in", true }, { "model", pose->vehicleModel }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        // Pressed 0.2 s, again every 5 s until his get-in begins (a press while he gets in would stop it).
+                        const bool press = !*began && std::fmod(a_call.Seconds(), 5.0) < 0.2;
+                        PlayerSync::DebugHold(press ? std::optional(PlayerSync::DebugInput{ .buttons = Protocol::kButtonEnterExit }) : std::nullopt);
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.cruise", "[seconds] [points=<x,y; x,y...>] [circle=<units>] [speed=<m/s>] [stop=<bool>]",
+                "CJ drives for seconds (5), or through waypoints (points, as asr.walk takes them) until he's within 400 units of the last, "
+                "else round a circle of radius circle (2500 units, to his right) from where he starts; the accelerator held while he's "
+                "under speed (15 m/s), the stick steering him on. Then he brakes to a stop (stop=true, the default: the brake, then the "
+                "handbrake once slow, so nothing reverses); answers with the fastest speed (m/s), the way driven (m) and the farthest from "
+                "the circle's middle",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const double seconds = a_call.Number("seconds", 5.0);
+                    const float  radius = static_cast<float>(a_call.Number("circle", 2500.0));
+                    const double cap = a_call.Number("speed", 15.0);
+                    const bool   stop = a_call.Flag("stop", true);
+                    const auto   points = a_call.Has("points") ? ParseWaypoints(a_call.Text("points")) : std::vector<Waypoint>{};
+                    a_call.DefaultTimeout(seconds + 30.0);
+                    struct Drive
+                    {
+                        std::optional<std::uint32_t> slot;
+                        RE::NiPoint3                 last, centre;
+                        bool                         have = false, haveCentre = false;
+                        double                       fastest = 0.0, path = 0.0, still = 0.0, stopping = 0.0, missing = 0.0, farthest = 0.0;
+                        std::size_t                  next = 0;
+                        bool                         arrived = false;
+                    };
+                    auto drive = std::make_shared<Drive>();
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        if (SkseTestKit::Paused()) {
+                            return std::nullopt;
+                        }
+                        const float dt = RE::GetSecondsSinceLastFrame();
+                        const auto  pose = CjPose();
+                        if (const auto slot = DrivenSlot()) {
+                            drive->slot = slot;
+                        }
+                        RE::NiPoint3 at;
+                        float        heading = 0.0f;
+                        const bool   in = pose && (pose->flags & Protocol::kPlayerInVehicle);
+                        if (!in || !drive->slot || !PlayerSync::DebugVehicle(*drive->slot, at, heading)) {
+                            // A read torn by San Andreas's writing (a frame) isn't him getting out; half a second is.
+                            drive->missing += dt;
+                            if (drive->missing > 0.5) {
+                                PlayerSync::DebugHold(std::nullopt);
+                                throw Error(std::format("CJ isn't driving (asr.enter first, or he came off after {:.1f} s)", a_call.Seconds()));
+                            }
+                            return std::nullopt;
+                        }
+                        drive->missing = 0.0;
+                        double speed = 0.0;
+                        if (drive->have && dt > 0.0f) {
+                            const double moved = at.GetDistance(drive->last);
+                            drive->path += moved;
+                            speed = moved / dt * Pose::kMetersPerUnit;
+                            drive->fastest = (std::max)(drive->fastest, speed);
+                        }
+                        drive->last = at;
+                        drive->have = true;
+                        if (!drive->haveCentre) {
+                            drive->centre = at + RE::NiPoint3(std::cos(heading) * radius, -std::sin(heading) * radius, 0.0f);
+                            drive->haveCentre = true;
+                        }
+                        const float fromCentre = std::hypot(at.x - drive->centre.x, at.y - drive->centre.y);
+                        drive->farthest = (std::max)(drive->farthest, static_cast<double>(fromCentre));
+                        const double t = a_call.Seconds();
+                        if (!points.empty() && !drive->arrived) {
+                            while (drive->next < points.size() &&
+                                   std::hypot(points[drive->next].x - at.x, points[drive->next].y - at.y) < (drive->next + 1 == points.size() ? 400.0f : 600.0f)) {
+                                drive->next++;
+                            }
+                            drive->arrived = drive->next == points.size();
+                        }
+                        const bool driving = points.empty() ? t < seconds : !drive->arrived && t < seconds;
+                        if (driving) {
+                            float want = 0.0f;
+                            if (!points.empty()) {
+                                const auto& p = points[drive->next];
+                                want = std::atan2(p.x - at.x, p.y - at.y);
+                            } else {
+                                // Clockwise round the middle: the tangent, turned in towards it as he drifts out (and out as he cuts in).
+                                const float toCentre = std::atan2(drive->centre.x - at.x, drive->centre.y - at.y);
+                                const float drift = std::clamp((fromCentre - radius) / radius, -0.5f, 0.5f);
+                                want = toCentre - static_cast<float>(std::numbers::pi / 2.0) + drift * 1.2f;
+                            }
+                            const float error = std::remainder(want - heading, static_cast<float>(2.0 * std::numbers::pi));
+                            const float turn = std::clamp(error * 1.2f, -1.0f, 1.0f);
+                            PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = turn, .buttons = speed < cap ? Protocol::kButtonAccelerate : 0u });
+                            return std::nullopt;
+                        }
+                        drive->stopping += dt;
+                        drive->still = speed < 0.3 ? drive->still + dt : 0.0;
+                        if (!stop || drive->still > 0.5 || drive->stopping > 8.0) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "seconds", Round(t) }, { "fastest", Round(drive->fastest, 0.1) },
+                                { "path", Round(drive->path * Pose::kMetersPerUnit, 0.1) }, { "farthest", Round(drive->farthest, 1.0) },
+                                { "stopped", drive->still > 0.5 }, { "arrived", drive->arrived }, { "at", Point(at) } };
+                        }
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .buttons = speed > 2.0 ? Protocol::kButtonBrake : Protocol::kButtonHandbrake });
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.ahead", "[distance]",
+                "CJ runs straight on (the stick forward, from San Andreas's camera) until he's distance (1000) units from where he started; "
+                "fails when he gets no farther for 5 s",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (!player) {
+                        throw Error("there's no player in the world yet");
+                    }
+                    const float distance = static_cast<float>(a_call.Number("distance", 1000.0));
+                    const auto  from = player->GetPosition();
+                    a_call.DefaultTimeout(distance / 100.0 + 20.0);
+                    auto best = std::make_shared<std::pair<float, double>>(0.0f, 0.0);
+                    return [=](Call& a_call) -> std::optional<Json> {
+                        const auto  pose = CjPose();
+                        auto*       p = RE::PlayerCharacter::GetSingleton();
+                        if (!pose || !p || SkseTestKit::Paused()) {
+                            best->second = a_call.Seconds();
+                            return std::nullopt;
+                        }
+                        if (pose->flags & Protocol::kPlayerInVehicle) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error("CJ is in a vehicle (asr.exit first)");
+                        }
+                        const float d = std::hypot(p->GetPosition().x - from.x, p->GetPosition().y - from.y);
+                        if (d >= distance) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "moved", Round(d, 0.1) }, { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        if (d > best->first + 10.0f) {
+                            *best = { d, a_call.Seconds() };
+                        } else if (a_call.Seconds() - best->second > 5.0) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            throw Error(std::format("CJ got no farther than {:.0f} units for 5 s", d));
+                        }
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveY = 1.0f });
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddTask("asr.follower", "[base] [right=<units>]",
+                "Places an actor (an NPC base form, or a new one of an actor's: Lydia, A2C94, by default) right (150) units to the player's right as a teammate, who "
+                "boards with CJ; answers with its reference (for record and the probes) once it's loaded",
+                [](Call& a_call) -> Step {
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    if (!player || !player->GetParentCell()) {
+                        throw Error("there's no player in the world yet");
+                    }
+                    const auto base = a_call.Has("base") ? a_call.Text("base") : std::string("A2C94");
+                    RE::FormID id = 0;
+                    const auto [end, error] = std::from_chars(base.data(), base.data() + base.size(), id, 16);
+                    auto*      any = error == std::errc{} ? RE::TESForm::LookupByID(id) : nullptr;
+                    auto*      form = any ? any->As<RE::TESNPC>() : nullptr;
+                    if (auto* ref = any ? any->As<RE::Actor>() : nullptr; !form && ref) {
+                        form = ref->GetActorBase();  // a reference (Lydia's own, A2C94): a new one of its base
+                    }
+                    if (!form) {
+                        throw Error(std::format("{} is neither an NPC base form nor an actor", base));
+                    }
+                    const auto placed = player->PlaceObjectAtMe(form, false);
+                    auto*      actor = placed ? placed->As<RE::Actor>() : nullptr;
+                    if (!actor) {
+                        throw Error("couldn't place it");
+                    }
+                    const float h = player->GetAngleZ();
+                    const float right = static_cast<float>(a_call.Number("right", 150.0));
+                    actor->SetPosition(player->GetPosition() + RE::NiPoint3(std::cos(h) * right, -std::sin(h) * right, 0.0f), true);
+                    RunConsole(std::format("{:08X}.setplayerteammate 1", actor->GetFormID()));
+                    const auto handle = actor->CreateRefHandle();
+                    a_call.DefaultTimeout(15.0);
+                    return [handle](Call&) -> std::optional<Json> {
+                        auto  ref = handle.get();
+                        auto* a = ref ? ref->As<RE::Actor>() : nullptr;
+                        if (!a) {
+                            throw Error("it's gone");
+                        }
+                        if (!a->Is3DLoaded() || !a->IsPlayerTeammate()) {
+                            return std::nullopt;
+                        }
+                        return JsonObject{ { "ref", std::format("0x{:08X}", a->GetFormID()) }, { "name", a->GetName() } };
+                    };
+                });
+        }
     }
 
     void Load()
@@ -2621,6 +3292,7 @@ namespace AhShitRim::TestKit
             AddStealthKills();
             AddRespawnChecks();
             AddKeyChecks();
+            AddCarExitChecks();
         }
     }
 

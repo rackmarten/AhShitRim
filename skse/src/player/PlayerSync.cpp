@@ -154,6 +154,7 @@ namespace AhShitRim::PlayerSync
             std::optional<DebugInput> debugInput;    // the test kit's held input (DebugHold)
             std::optional<std::chrono::steady_clock::time_point> crouchedAt;  // CJ last seen crouching (SinceCrouched)
             std::optional<std::pair<RE::NiPoint3, float>> debugCj;  // CJ's feet in Skyrim's world and his heading, from the last pose (DebugCj)
+            std::function<void()>     debugFrame;    // the test kit's (SetDebugFrameHook)
             std::chrono::steady_clock::time_point debugInputUntil;  // and when it lets go unless held again
             DebugVehicleHook          debugVehicle;  // and its look at the vehicles drawn
         } state;
@@ -557,7 +558,10 @@ namespace AhShitRim::PlayerSync
             }
             Protocol::BodyState pose{};
             if (state.body.Count() > 0) {
-                state.bodyTime = state.body.TimeAt(now);
+                // Never past his newest frame: Sample holds him there, and a vehicle that already has the next frame would be drawn
+                // a frame or two ahead of him. San Andreas writes at 30 fps, Skyrim reads at 60, and about once a second a read
+                // lands on the write and his frame comes a frame late: he dropped 0.3 m back in his seat at 18 m/s.
+                state.bodyTime = (std::min)(state.body.TimeAt(now), static_cast<double>(state.body.Frame(state.body.Count() - 1).timeMs));
                 state.haveBodyTime = true;
             }
             // Through a scope (sniper rifle, rocket launcher, camera) San Andreas's camera sits in CJ's head: he isn't drawn.
@@ -1236,6 +1240,9 @@ namespace AhShitRim::PlayerSync
             Particles::Update(a_delta);
             if (valid) {
                 Arms::Draw(state.anchor, state.handover, pose, NowMs(), a_delta, lookingThrough, state.haveBodyTime ? &state.body : nullptr, state.bodyTime);
+            }
+            if (state.debugFrame) {
+                state.debugFrame();
             }
             Shots::Update(a_player, state.anchor, state.handover);
             const RE::NiPoint3 cjFeet = state.anchor + (valid ? RE::NiPoint3(pose.offset[0], pose.offset[1], pose.offset[2]) : RE::NiPoint3());
@@ -2085,6 +2092,11 @@ namespace AhShitRim::PlayerSync
     void SetDebugVehicleHook(DebugVehicleHook a_hook)
     {
         state.debugVehicle = std::move(a_hook);
+    }
+
+    void SetDebugFrameHook(std::function<void()> a_hook)
+    {
+        state.debugFrame = std::move(a_hook);
     }
 
     void DebugType(const char* a_code)

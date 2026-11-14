@@ -177,7 +177,7 @@ never need it). To use it:
    | Command | What it does | Example |
    |---|---|---|
    | `asr.cj [on]` | hands the player to San Andreas (or back, `on=false`) as F10 does; answers once done | `asr.cj` |
-   | `asr.spawn <model> [in=<bool>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one); answers with its slot and offset from the player | `asr.spawn 562` |
+   | `asr.spawn <model> [in=<bool>] [tries=<n>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one; `tries`: with no clear spot there, CJ walks on a second and it's asked for again); answers with its slot and offset from the player | `asr.spawn 562` |
    | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
    | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
    | `asr.camera` | San Andreas's camera: its mode (`firstPerson`), how far it is from CJ's feet on the ground and how high, and in a vehicle where it is in the vehicle's frame from its middle (`forward`, `right`, `up`; `looksAhead` 1 straight ahead), the `scope` San Andreas's HUD puts up (`rocket` for the armed aircraft's sight), and `ahead`: how far the rendered camera sees along that way before land, a tree or a building (3000 when nothing within 3000 units) | `asr.camera` |
@@ -208,8 +208,12 @@ never need it). To use it:
    | `asr.key <keys> [frames=] [close=]` | presses keys through Skyrim's own input as the keyboard sends them (letters, digits, `/`, `dik:<code>`); answers whether the wait menu opened and what the help box says; `close=true` (the default) closes the wait menu again | `asr.key /` |
    | `asr.crewkey [at] [aim=]` | G as if pressed on foot: `aim` (true) says CJ aims along the way from the player to `at` (a target, `asr.homie:0`, `asr.free:0`), and the crew's own pick by the aim line decides; answers with how many follow and stand about, before and after | `asr.crewkey at=asr.free:0` |
    | `asr.crewstats [reset=]` | the crew's counters since the last reset: Skyrim subtitles of theirs taken off (`hushedLines`, each a line Skyrim started), voices stopped, follow package puts, gear taken off, frames a homie had a Skyrim weapon drawn or in hand (`drawnFrames`), and everyone a follower had as his target (`targeted`) | `asr.crewstats reset=true` |
-   | `asr.enter` | CJ gets into the vehicle nearest him (the enter/exit key, as `asr.exit`); answers once he sits in it | `asr.enter` |
    | `asr.hurt <ref> [damage=]` | CJ's pistol shot on an actor (`Shots::Hurt`, the player the aggressor): an animal runs from him | `asr.hurt name:Elk` |
+   | `asr.enter [until=]`, `asr.exit [until=]` | CJ gets into the vehicle San Andreas picks near him, or out of his; `until=start` answers in the frame the get-in or get-out begins, to pause on it | `asr.enter until=start` |
+   | `asr.cruise [seconds] [points=] [circle=] [speed=] [stop=]`, `asr.ahead [distance]` | CJ drives round a circle (radius `circle` units, to his right) from where he starts, then brakes to a stop; or runs straight on (out of the way of a vehicle he got off) | `asr.drive 120 circle=2500` |
+   | `asr.hold <weapon>`, `asr.pose` | CJ takes a weapon he carries into his hands; CJ now: in a vehicle, getting in or out, his weapon, and the drawn gun's grip (units from his drawn right hand's joint) | `wait until="in == true" for=asr.pose` |
+   | `asr.follower [base] [right=]` | an actor (Lydia by default) placed beside the player as a teammate, who rides with CJ | `asr.follower` |
+   | `asr.watch <start\|stop>` | every frame from start to stop, after it's drawn: the gun against CJ's hand (and a gun in his hand that isn't drawn), his pelvis in his vehicle's frame, his riders; stop answers with a row a frame and a summary of the get-outs and his seat in each vehicle | `asr.watch stop expect="gun.gripSpread < 10"` |
 
    Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
    light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|

@@ -103,4 +103,8 @@ namespace AhShitRim::PlayerSync
     // change, for what's drawn this frame only) and its position in Skyrim's world. An empty function takes it out.
     using DebugVehicleHook = std::function<void(std::uint32_t a_slot, Protocol::BodyState& a_pose, const RE::NiPoint3& a_feet)>;
     void SetDebugVehicleHook(DebugVehicleHook a_hook);
+
+    // The test kit (debug): called once a frame San Andreas has the player, after CJ, his vehicles and his weapons are
+    // drawn (so DebugDrawn, DebugVehicle and Arms::DebugWeapon say what this frame shows). An empty function takes it out.
+    void SetDebugFrameHook(std::function<void()> a_hook);
 }
