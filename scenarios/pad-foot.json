@@ -86,8 +86,9 @@
     // front of him, talks.
     { "label": "Bjorlam up from his seat (moveto takes him out of furniture, where asr.place's SetPosition leaves him)", "cmd": "console", "ref": "00013698", "command": "moveto player" },
     { "label": "his getting up done", "cmd": "wait", "seconds": 3 },
+    { "label": "Bjorlam stays where he's put (he walks back to his routine otherwise)", "cmd": "console", "ref": "00013698", "command": "setdontmove 1" },
     { "label": "Bjorlam right in front of CJ (moveto leaves him beside, out of CJ's aim)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
-    { "cmd": "wait", "seconds": 1.5 },
+    { "cmd": "wait", "seconds": 1 },
     { "label": "the help box naming LB (\"LB: Talk Bjorlam\", read from the shot)", "cmd": "screenshot", "name": "lb-help", "hud": true },
     { "label": "LB held", "cmd": "pad", "buttons": "lb" },
     { "label": "Skyrim activates him for LB", "cmd": "wait", "log": "00013698 activated by the player [(]LB", "timeout": 3 },
@@ -96,6 +97,7 @@
     { "label": "the dialogue", "cmd": "screenshot", "name": "dialogue", "hud": true },
     { "label": "B leaves it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
     { "label": "the dialogue closed", "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+    { "label": "Bjorlam free to move again", "cmd": "console", "ref": "00013698", "command": "setdontmove 0" },
     { "label": "Bjorlam 35 m behind CJ, out of later checks' way (the gun lock's)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 2500, "angle": 180 },
 
     // Skyrim's menus on the pad while CJ has the player: B the tween menu, Start the journal; B closes the tween menu, Start the journal.
