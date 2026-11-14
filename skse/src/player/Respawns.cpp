@@ -354,8 +354,13 @@ namespace AhShitRim::Respawns
         // A death the sink saw: noted to come back, or why not.
         void Note(const Seen& a_seen, bool a_cjHasPlayer, RE::PlayerCharacter* a_player)
         {
-            if (!a_cjHasPlayer || !a_seen.byPlayer) {
+            if (!a_seen.byPlayer) {
                 return;  // Skyrim's death, not worth a line
+            }
+            if (!a_cjHasPlayer) {
+                // The player's kill while Skyrim had it: said, so a kill that was meant to be CJ's shows why it stays dead.
+                SKSE::log::info("respawns: Skyrim's player killed {:08X}, not CJ: stays dead", a_seen.id);
+                return;
             }
             auto* actor = RE::TESForm::LookupByID<RE::Actor>(a_seen.id);
             if (!actor) {
