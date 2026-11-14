@@ -84,6 +84,8 @@
 
     // LB activates what CJ faces, through Skyrim's own activation: Bjorlam, the stables' carriage driver, brought in
     // front of him, talks.
+    { "label": "Bjorlam up from his seat and over to CJ (moveto takes him out of furniture; asr.place only sets his position)", "cmd": "console", "ref": "00013698", "command": "moveto player" },
+    { "cmd": "wait", "seconds": 1 },
     { "label": "Bjorlam in front of CJ", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
     { "cmd": "wait", "seconds": 1.5 },
     { "label": "the help box names LB", "cmd": "log", "lines": 1, "match": "activation: CJ (aims at|faces) 00013698 [(]LB: Talk Bjorlam[)]", "expect": "lines.length == 1" },
