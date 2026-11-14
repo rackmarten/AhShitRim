@@ -30,3 +30,16 @@ TEST_CASE("ini text: Windows line endings stay, and setting it twice changes not
     CHECK(once == "[SanAndreas]\r\nPath=x\r\n\r\n[Input]\r\nKeyLayout=Classic\r\n; c\r\nLookReset=1\r\n");
     CHECK(IniText::WithValue(once, "Input", "LookReset", "1", "c") == once);
 }
+
+TEST_CASE("ini text: SkyrimPrefs.ini's look sliders set and read back, the rest as it was")
+{
+    const std::string prefs = "[Controls]\r\nbGamepadEnable=1\r\nfMouseHeadingSensitivity=0.0100\r\nfGamepadHeadingSensitivity=0.6667\r\n\r\n[Display]\r\niSize W=1920\r\n";
+    auto text = IniText::WithValue(prefs, "Controls", "fMouseHeadingSensitivity", "0.0300");
+    text = IniText::WithValue(text, "Controls", "fGamepadHeadingSensitivity", "1.0001");
+    CHECK(text == "[Controls]\r\nbGamepadEnable=1\r\nfMouseHeadingSensitivity=0.0300\r\nfGamepadHeadingSensitivity=1.0001\r\n\r\n[Display]\r\niSize W=1920\r\n");
+    CHECK(IniText::ValueIn(text, "Controls", "fMouseHeadingSensitivity") == "0.0300");
+    CHECK(IniText::ValueIn(text, "Controls", "fGamepadHeadingSensitivity") == "1.0001");
+    CHECK(IniText::ValueIn(text, "Display", "iSize W") == "1920");
+    CHECK(IniText::ValueIn(text, "Display", "fMouseHeadingSensitivity").empty());  // another section's
+    CHECK(IniText::ValueIn("", "Controls", "x").empty());
+}

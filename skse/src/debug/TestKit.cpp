@@ -2,6 +2,7 @@
 #include "debug/TestKit.h"
 
 #include "Ini.h"
+#include "ini_text.h"
 #include "body/ModelView.h"
 #include "body/MuzzleFlash.h"
 #include "debug/HitTest.h"
@@ -1229,20 +1230,33 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.look", "[mouse=<value>] [pad=<value>] [reset=<bool>] [mark=<bool>] [keep=<name>] [vs=<name>]",
                 "Skyrim's look sensitivity sliders (mouse, pad: their live values; their ends) and the scales CJ's look counts get from them, "
                 "with [Input] LookReset. mouse= and pad= set a slider's live value first (as its menu does); reset=true moves both to their "
-                "middle again as a first start does ([Input] LookReset forgotten first). mark=true marks CJ's camera heading; without it, "
+                "middle again as a first start does ([Input] LookReset forgotten first), its SkyrimPrefs.ini write going to a copy in the "
+                "temp folder instead, read back as prefsCopy (written, path, mouse, pad). mark=true marks CJ's camera heading; without it, "
                 "turned is how far it turned since (degrees), keep=<name> keeps that and vs=<name> adds turned over the kept one's",
                 [](Call& a_call) -> Json {
                     if (a_call.Has("mouse") || a_call.Has("pad")) {
                         PlayerSync::DebugSetLook(static_cast<float>(a_call.Number("mouse", -1.0)), static_cast<float>(a_call.Number("pad", -1.0)));
                     }
+                    std::optional<Json> copy;
                     if (a_call.Flag("reset", false)) {
-                        PlayerSync::DebugResetLook();
+                        const auto path = std::filesystem::temp_directory_path() / "AhShitRim-look-prefs.ini";
+                        const bool written = PlayerSync::DebugResetLook(path);
+                        std::string text;
+                        if (std::ifstream in(path, std::ios::binary); in) {
+                            text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                        }
+                        copy = JsonObject{ { "written", written }, { "path", path.string() },
+                            { "mouse", IniText::ValueIn(text, "Controls", "fMouseHeadingSensitivity") },
+                            { "pad", IniText::ValueIn(text, "Controls", "fGamepadHeadingSensitivity") } };
                     }
                     const auto look = PlayerSync::DebugLook();
                     JsonObject out{ { "mouse", Round(look.mouse, 0.0001) }, { "pad", Round(look.pad, 0.0001) }, { "mouseMin", Round(look.mouseMin, 0.0001) },
                         { "mouseMax", Round(look.mouseMax, 0.0001) }, { "padMin", Round(look.padMin, 0.0001) }, { "padMax", Round(look.padMax, 0.0001) },
                         { "mouseScale", Round(look.mouseScale, 0.001) }, { "padScale", Round(look.padScale, 0.001) },
                         { "lookReset", Ini::Value("Input", "LookReset") } };
+                    if (copy) {
+                        out["prefsCopy"] = std::move(*copy);
+                    }
                     const auto pose = CjPose();
                     if (a_call.Flag("mark", false)) {
                         if (!pose) {

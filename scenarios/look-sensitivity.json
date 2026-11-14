@@ -11,8 +11,8 @@
 // four times stays under half a turn) and 20 % for the
 // stick (half right for 0.4 s, so a frame's timing more or less shows), set from runs on the test desktop (values in the pull
 // request). The move to the middle: from Skyrim's own defaults (0.0125, 0.6667) to 0.0300 and 1.0000, recorded as
-// LookReset=1 and logged (in memory: the replay doesn't write SkyrimPrefs.ini, which in a session is the player's own file
-// once Skyrim has loaded; the first start's own move writes it).
+// LookReset=1 and logged, and its SkyrimPrefs.ini write (to a copy: in a session the file on disk is the player's own once
+// Skyrim has loaded) holding 0.0300 and 1.0001 with the rest of the file as it was.
 {
   "name": "look-sensitivity",
   "steps": [
@@ -67,7 +67,8 @@
     { "label": "Skyrim's defaults, near the bottoms", "cmd": "asr.look", "mouse": 0.0125, "pad": 0.6667,
       "expect": ["mouseScale < 0.35", "padScale < 0.5"] },
     { "label": "the move to the middle", "cmd": "asr.look", "reset": true,
-      "expect": ["mouse ~ 0.03 +- 0.0001", "pad ~ 1 +- 0.001", "mouseScale ~ 1 +- 0.001", "padScale ~ 1 +- 0.001", "lookReset == 1"] },
+      "expect": ["mouse ~ 0.03 +- 0.0001", "pad ~ 1 +- 0.001", "mouseScale ~ 1 +- 0.001", "padScale ~ 1 +- 0.001", "lookReset == 1",
+                 "prefsCopy.written == true", "prefsCopy.mouse matches ^0.0300$", "prefsCopy.pad matches ^1.0001$"] },
     { "label": "logged for both", "cmd": "log", "lines": 5, "match": "look sensitivity moved once to its slider's middle", "expect": "lines.length >= 2" },
     { "label": "and recorded", "cmd": "log", "lines": 1, "match": "recorded \\[Input\\] LookReset=1", "expect": "lines.length == 1" },
     { "label": "Skyrim's console reads the middle", "cmd": "console", "command": "getini \"fGamepadHeadingSensitivity:Controls\"", "expect": "output.0 contains 1.0" }

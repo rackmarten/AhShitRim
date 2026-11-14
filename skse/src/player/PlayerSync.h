@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -63,8 +64,9 @@ namespace AhShitRim::PlayerSync
 
     // The test kit (debug): Skyrim's look sensitivity sliders (their live values and their ends) and the scales CJ's look
     // counts get from them (look_sensitivity.h); setting a slider's live value (below 0 leaves it), as its menu does; and
-    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first), in memory only:
-    // SkyrimPrefs.ini isn't written (in a test session the file on disk is the player's own once Skyrim has loaded).
+    // the one-time move to the middle again, as at a first start ([Input] LookReset forgotten first), in memory: its write
+    // goes to a_copy (SkyrimPrefs.ini with the sliders set), not to SkyrimPrefs.ini, which in a test session is the
+    // player's own file once Skyrim has loaded. False when the copy couldn't be written.
     struct DebugLookState
     {
         float  mouse = 0.0f;
@@ -78,7 +80,7 @@ namespace AhShitRim::PlayerSync
     };
     DebugLookState DebugLook();
     void           DebugSetLook(float a_mouse, float a_pad);
-    void           DebugResetLook();
+    bool           DebugResetLook(const std::filesystem::path& a_copy);
     // The hit test's riders scenario (debug): a key (a DirectInput scan code) held as if pressed.
     void DebugKey(std::uint32_t a_dik, bool a_down);
     // The hit test's drive scenario (debug): CJ's pose as DrawCj drew it this frame (smoothed), his feet and San
