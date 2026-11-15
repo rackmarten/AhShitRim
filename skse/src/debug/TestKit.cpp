@@ -589,7 +589,9 @@ namespace AhShitRim::TestKit
             SkseTestKit::AddCommand("asr.lampfit", "<lamp> [slot]",
                 "Whether a vehicle's corona sits on its lamp as drawn: the middle of the lamp's posed mesh (frontRight, frontLeft, "
                 "rearRight, rearLeft) against its corona, in the world (units) and on screen (pixels, from the camera of the last frame), "
-                "and the mesh in the vehicle's own upright frame (x across: a bike leaning in a turn has its lamps off its middle line)",
+                "and the mesh in the vehicle's own upright frame (x across: a bike leaning in a turn has its lamps off its middle line). "
+                "A model with no mesh for the lamp (a Sanchez) gives the lamp's point instead, and how far it is from the nearest vertex "
+                "of the vehicle as drawn (nearest: on the bike, not hanging beside it)",
                 [](Call& a_call) -> Json {
                     const auto name = a_call.Text("lamp");
                     const std::pair<const char*, std::uint8_t> lamps[] = { { "frontRight", Protocol::kLightFrontRight }, { "frontLeft", Protocol::kLightFrontLeft },
@@ -614,13 +616,34 @@ namespace AhShitRim::TestKit
                     }
                     const auto&  seen = g_seen[slot];
                     RE::NiPoint3 mesh, corona;
-                    if (!ModelView::DebugLampCentre(seen.model, bit, mesh)) {
-                        throw Error(std::format("the vehicle in slot {} has no mesh for that lamp", slot));
-                    }
                     if (!Headlights::DebugCoronaAt(slot, bit, corona)) {
                         throw Error("its corona doesn't show (the lamp out, or seen from behind its end)");
                     }
-                    JsonObject out{ { "mesh", Point(mesh) }, { "corona", Point(corona) }, { "distance", Round((corona - mesh).Length(), 0.1) } };
+                    JsonObject out;
+                    if (!ModelView::DebugLampCentre(seen.model, bit, mesh)) {
+                        // No lamp mesh: the lamp's point (its dummy, the left one mirrored) against the vehicle as drawn.
+                        const bool  front = bit == Protocol::kLightFrontRight || bit == Protocol::kLightFrontLeft;
+                        const bool  left = bit == Protocol::kLightFrontLeft || bit == Protocol::kLightRearLeft;
+                        const auto& dummy = front ? seen.front : seen.rear;
+                        const auto  at = VehicleHits::ToWorld(seen.frame, { left ? -dummy.x : dummy.x, dummy.y, dummy.z });
+                        mesh = RE::NiPoint3(at.x, at.y, at.z);
+                        std::vector<RE::NiPoint3> posed;
+                        auto*                     node = ModelView::Node(seen.model);
+                        if (!node || !ModelView::DebugPosed(seen.model, posed) || posed.empty()) {
+                            throw Error(std::format("the vehicle in slot {} isn't drawn", slot));
+                        }
+                        float nearest = (std::numeric_limits<float>::max)();
+                        for (const auto& v : posed) {
+                            nearest = (std::min)(nearest, (node->world.translate + v - mesh).Length());
+                        }
+                        out.Set("nearest", Round(nearest, 0.1));
+                        out.Set("lampMesh", false);
+                    } else {
+                        out.Set("lampMesh", true);
+                    }
+                    out.Set("mesh", Point(mesh));
+                    out.Set("corona", Point(corona));
+                    out.Set("distance", Round((corona - mesh).Length(), 0.1));
                     const auto local = VehicleHits::ToLocal(seen.frame, { mesh.x, mesh.y, mesh.z });
                     out.Set("meshInVehicle", Point(local));
                     // On screen: a corona sits on the line from the camera to its lamp, so there it should cover the lamp.

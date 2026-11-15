@@ -14,7 +14,7 @@
 // November 2026 measured, where the PNGs showed white headlight glass with a halo, red coronas and a red patch on the road
 // behind, and the road ahead lit: tail lenses 122 darker with the lamps off (red 176), their halos 22, the road behind
 // each lamp 19 and 21 (red 47 and 51); braking, the halos 4.5 brighter and the road behind 19 and 25 (red 45 and 60); the
-// headlight glass 229 luma lit, 192 darker off, its halo 34; the road ahead 31 and 34. The ground beside the car changes
+// headlight glass 229 luma lit (197 in another run; 150 is the limit, unlit it's under 15), 192 darker off, its halo 34; the road ahead 31 and 34. The ground beside the car changes
 // by 2 or 3 either way (the eye adaptation following the lamps; 6 in another run, so its limit is 8).
 {
   "name": "vehicle-lights",
@@ -87,7 +87,7 @@
     { "cmd": "screenshot", "name": "front-on" },
     { "label": "the headlight glass glows white", "cmd": "pixels", "shot": "front-on",
       "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 12 }, { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 12 } ],
-      "expect": ["regions.0.luma > 200", "regions.1.luma > 200"] },
+      "expect": ["regions.0.luma > 150", "regions.1.luma > 150"] },
     { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
     "wait frames=5",
     { "cmd": "screenshot", "name": "front-off" },

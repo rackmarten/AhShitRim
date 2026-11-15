@@ -1,9 +1,9 @@
 // A bike's lamps lean with it (v36): the operator saw a Sanchez lean in a turn while its corona and red glow hung upright
 // beside it. San Andreas draws a bike leaning (its lean matrix) while its own matrix stays upright, and now publishes the
 // lamps where the leaning bike has them. CJ on a Sanchez on Riverwood's road at 23:00: upright, then held in a right-hand
-// turn (gas and the stick right), each corona checked against its lamp as drawn (asr.lampfit: the middle of the lamp's
-// posed mesh against the corona, in the world and in pixels on screen), the lean shown by the tail lamp's mesh standing
-// off the bike's upright middle line.
+// turn (gas and the stick right), each lamp checked against the bike as drawn (asr.lampfit: the Sanchez has no lamp
+// meshes, so the lamp's point against the nearest vertex of the posed, leaning bike; with the lamps upright they hung in the
+// air beside it), its corona on that point on screen, the lean shown by the lamp standing off the bike's upright middle line.
 // scripts/skytest.ps1 run scenarios/vehicle-lights-bike.json (scenarios/README.md). Needs the headlights (v36).
 {
   "name": "vehicle-lights-bike",
@@ -25,18 +25,28 @@
 
     { "label": "upright, from behind", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 400, "pitch": 10 },
     "wait frames=10",
-    { "label": "upright: the tail corona on its lamp", "cmd": "asr.lampfit", "lamp": "rearRight", "expect": ["distance < 15", "pixels < 12"] },
+    { "label": "upright: the tail corona on its lamp", "cmd": "asr.lampfit", "lamp": "rearRight", "expect": ["nearest < 8", "pixels < 12"] },
     { "cmd": "screenshot", "name": "bike-upright-tail" },
 
-    { "label": "CJ rides into a right-hand turn", "cmd": "asr.pedals", "gas": true, "steer": 1 },
-    { "cmd": "wait", "seconds": 1.2 },
-    { "label": "leaning: the tail lamp off the upright middle line, its corona still on it", "cmd": "asr.lampfit", "lamp": "rearRight",
-      "expect": ["meshInVehicle.x > 10", "distance < 15", "pixels < 12"] },
+    { "label": "CJ rides off straight (the turn needs speed to lean)", "cmd": "asr.pedals", "gas": true },
+    { "cmd": "wait", "seconds": 0.6 },
+    { "label": "and into a right-hand turn", "cmd": "asr.pedals", "gas": true, "steer": 1 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "leaning: the tail lamp off the upright middle line, on the bike, its corona on it", "cmd": "asr.lampfit", "lamp": "rearRight",
+      "expect": ["meshInVehicle.x > 10", "nearest < 8", "pixels < 12"] },
     { "cmd": "screenshot", "name": "bike-lean-tail" },
-    { "label": "the headlight: from the front, still turning", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 160, "distance": 400, "pitch": 10 },
-    "wait frames=8",
-    { "label": "leaning: the headlight's corona on its lamp", "cmd": "asr.lampfit", "lamp": "frontRight",
-      "expect": ["meshInVehicle.x > 10", "distance < 15", "pixels < 12"] },
+    { "label": "foot off the pedals", "cmd": "asr.pedals" },
+    { "cmd": "wait", "seconds": 2 },
+
+    { "label": "a fresh Sanchez for the headlight", "cmd": "asr.spawn", "model": 468, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "the camera ahead of it, following", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 160, "distance": 400, "pitch": 10 },
+    { "label": "CJ rides off straight", "cmd": "asr.pedals", "gas": true },
+    { "cmd": "wait", "seconds": 0.6 },
+    { "label": "and into a right-hand turn", "cmd": "asr.pedals", "gas": true, "steer": 1 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "leaning: the headlight on the bike, its corona on it", "cmd": "asr.lampfit", "lamp": "frontRight",
+      "expect": ["meshInVehicle.x > 10", "nearest < 8", "pixels < 12"] },
     { "cmd": "screenshot", "name": "bike-lean-front" },
     { "label": "foot off the pedals", "cmd": "asr.pedals" },
     { "cmd": "camera", "mode": "player" },
