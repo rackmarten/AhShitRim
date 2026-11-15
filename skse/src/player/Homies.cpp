@@ -107,6 +107,9 @@ namespace AhShitRim::Homies
             float           offsetIn = 0.0f;
             float           gearIn = 0.0f, cullIn = 0.0f;
             Crew::Burst     burst;
+            float           aimIn = 0.0f;   // seconds left on his aim (Crew::kAimEvery)
+            Crew::AimOff    aimOff;         // where it is, off the target's chest
+            RE::FormID      aimedAt = 0;    // the target it was taken for
             Crew::Straggler straggler;
             RE::ActorHandle target;
             bool            aiming = false, firing = false;
@@ -133,6 +136,8 @@ namespace AhShitRim::Homies
             int                      spotHomies = Crew::kSpotHomies;
             float                    health = 150.0f;
             float                    damageFactor = Crew::kDamageFactor;
+            Crew::FireStyle          fire;  // [Crew] Reaction*, Burst*, Pause*, HitChance*
+            unsigned                 crewShots = 0, crewHits = 0;  // the test kit: their bullets and those that hit someone
             int                      forcedThanes = -1;
             std::uint16_t            thanes = 0;
             bool                     thanesLogged = false;
@@ -419,7 +424,7 @@ namespace AhShitRim::Homies
             h.model = a_model;
             h.weapon = a_weapon;
             h.follower = a_follower;
-            h.burst = Crew::Burst(Roll());
+            h.burst = Crew::Burst(Roll(), state.fire);
             if (a_follower) {
                 actor->GetActorRuntimeData().boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
             } else {
@@ -1094,6 +1099,21 @@ namespace AhShitRim::Homies
         state.spotHomies = std::clamp(static_cast<int>(number("Crew", "SpotHomies", static_cast<float>(Crew::kSpotHomies))), 0, 15);
         state.health = (std::max)(10.0f, number("Crew", "Health", 150.0f));
         state.damageFactor = (std::max)(0.0f, number("Crew", "DamageFactor", Crew::kDamageFactor));
+        const Crew::FireStyle fire;
+        const auto            seconds = [&](const char* a_key, float a_default) { return std::clamp(number("Crew", a_key, a_default), 0.0f, 30.0f); };
+        const auto            share = [&](const char* a_key, float a_default) { return std::clamp(number("Crew", a_key, a_default), 0.0f, 1.0f); };
+        state.fire.reactMin = seconds("ReactionMin", fire.reactMin);
+        state.fire.reactMax = (std::max)(state.fire.reactMin, seconds("ReactionMax", fire.reactMax));
+        state.fire.burstMin = (std::max)(0.05f, seconds("BurstMin", fire.burstMin));
+        state.fire.burstMax = (std::max)(state.fire.burstMin, seconds("BurstMax", fire.burstMax));
+        state.fire.pauseMin = (std::max)(0.05f, seconds("PauseMin", fire.pauseMin));
+        state.fire.pauseMax = (std::max)(state.fire.pauseMin, seconds("PauseMax", fire.pauseMax));
+        state.fire.hitNear = share("HitChanceNear", fire.hitNear);
+        state.fire.hitFar = share("HitChanceFar", fire.hitFar);
+        SKSE::log::info("homies: they react in {:.1f} to {:.1f} s, fire {:.1f} to {:.1f} s bursts with {:.1f} to {:.1f} s between, {:.0f}% of aims on the target "
+                        "up close and {:.0f}% from {:.0f} m",
+            state.fire.reactMin, state.fire.reactMax, state.fire.burstMin, state.fire.burstMax, state.fire.pauseMin, state.fire.pauseMax, state.fire.hitNear * 100.0f,
+            state.fire.hitFar * 100.0f, Crew::kHitFarMetres);
         state.forcedThanes = static_cast<int>(number("Debug", "CrewThanes", -1.0f));
         state.follow = nullptr;
         if (number("Crew", "FollowPackage", 1.0f) != 0.0f) {
@@ -1228,7 +1248,22 @@ namespace AhShitRim::Homies
             h.firing = h.burst.Update(a_delta, may);
             h.aiming = may;
             if (may) {
-                h.aim = ChestOf(targetActor);
+                // His aim, taken afresh every Crew::kAimEvery: on the target's chest (Crew::HitChance, less with range) or
+                // past him to some side, so a share of his bullets miss.
+                const auto chest = ChestOf(targetActor);
+                if ((h.aimIn -= a_delta) <= 0.0f || h.aimedAt != targetActor->GetFormID()) {
+                    h.aimIn = Crew::kAimEvery;
+                    h.aimedAt = targetActor->GetFormID();
+                    const float metres = chest.GetDistance(actor->GetPosition()) / Crew::kMeter;
+                    h.aimOff = Crew::AimOffset(state.fire, metres, h.burst.Roll(), h.burst.Roll(), h.burst.Roll());
+                }
+                RE::NiPoint3 to = chest - actor->GetPosition();
+                to.z = 0.0f;
+                const float  flat = to.Length();
+                const auto   across = flat > 1.0f ? RE::NiPoint3(to.y / flat, -to.x / flat, 0.0f) : RE::NiPoint3(1.0f, 0.0f, 0.0f);
+                h.aim = chest + across * (h.aimOff.side * Crew::kMeter) + RE::NiPoint3(0.0f, 0.0f, h.aimOff.up * Crew::kMeter);
+            } else {
+                h.aimedAt = 0;
             }
             const int slot = distance <= kDrawWithin && actor->Is3DLoaded() ? state.slots.Take(h.id) : -1;
             if (slot >= 0) {
@@ -1375,6 +1410,14 @@ namespace AhShitRim::Homies
     }
 
     float DamageFactor() { return state.damageFactor; }
+
+    int DebugSlotOf(RE::FormID a_id) { return state.slots.Find(a_id); }
+
+    void CountShot(bool a_hit)
+    {
+        state.crewShots++;
+        state.crewHits += a_hit ? 1u : 0u;
+    }
 
     void DebugThanes(int a_count)
     {
@@ -1577,9 +1620,11 @@ namespace AhShitRim::Homies
 
     DebugStats DebugStatsOf(bool a_reset)
     {
-        DebugStats out{ state.hushedLines, state.hushedSounds, state.followPuts, state.gearStripped, state.drawnFrames, state.fistsFrames, state.unwaited, state.targeted };
+        DebugStats out{ state.hushedLines, state.hushedSounds, state.followPuts, state.gearStripped, state.drawnFrames, state.fistsFrames, state.unwaited,
+            state.crewShots, state.crewHits, state.targeted };
         if (a_reset) {
             state.hushedLines = state.hushedSounds = state.followPuts = state.gearStripped = state.drawnFrames = state.fistsFrames = state.unwaited = 0;
+            state.crewShots = state.crewHits = 0;
             state.targeted.clear();
         }
         return out;

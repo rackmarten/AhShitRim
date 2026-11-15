@@ -190,7 +190,8 @@ namespace AhShitRim::Shots
             // v39: the crew. CJ's own hits on a homie have no aggressor and no crime, so he never turns on CJ; a homie's
             // shot is his own (he is the aggressor, CJ gets no crime or skill for it) and does [Crew] DamageFactor of CJ's.
             const auto  rule = Crew::RuleFor(Homies::IsHomie(actor), state.shooter != nullptr);
-            const float factor = state.shooter ? Homies::DamageFactor() : Balance::DealtFactor(a_player, a_shot.weaponType);
+            // A homie's is [Crew] DamageFactor of what CJ's would do at the game's difficulty (CJ's own goes with it).
+            const float factor = (state.shooter ? Homies::DamageFactor() : 1.0f) * Balance::DealtFactor(a_player, a_shot.weaponType);
             const float damage = a_skyrimDamage > 0.0f ? a_skyrimDamage : Damage::ToSkyrim(a_saDamage, a_shot.weaponType, a_victim.part, level, cls) * factor;
             const float before = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const bool  melee = a_shot.kind == Protocol::kShotMelee;
@@ -409,12 +410,13 @@ namespace AhShitRim::Shots
             return false;
         }
 
-        void Bullet(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
+        // Whether it hit someone.
+        bool Bullet(RE::PlayerCharacter* a_player, const Protocol::ShotEvent& a_shot, const RE::NiPoint3& a_anchor)
         {
             const RE::NiPoint3 origin = a_anchor + RE::NiPoint3(a_shot.origin[0], a_shot.origin[1], a_shot.origin[2]);
             RE::NiPoint3       dir(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
             if (!(dir.Unitize() >= 1e-4f) || !(a_shot.range > 0.0f) || !std::isfinite(origin.x + origin.y + origin.z)) {
-                return;
+                return false;
             }
             if ((a_shot.flags & Protocol::kShotVehicleGun) || state.shooter) {
                 Particles::GunFlash(origin, dir);  // v26: the Hunter's guns flash as in San Andreas; v39: a homie's gun
@@ -428,6 +430,7 @@ namespace AhShitRim::Shots
             if (hit && !state.shooter) {
                 state.hits.Add(a_shot.weaponType);  // a shotgun's blast is one hit, as in San Andreas; a homie's hits aren't CJ's skill
             }
+            return hit;
         }
 
         // ---- Blows ----
@@ -671,7 +674,7 @@ namespace AhShitRim::Shots
                 // v39: a homie's bullet, from his gun, his to answer for
                 state.shooter = Homies::ActorOf(Crew::SlotOf(shot.shooter));
                 if (state.shooter && !state.shooter->IsDead()) {
-                    Bullet(a_player, shot, a_anchor);
+                    Homies::CountShot(Bullet(a_player, shot, a_anchor));
                 }
                 state.shooter = nullptr;
             } else {

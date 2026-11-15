@@ -50,8 +50,11 @@ namespace AhShitRim::Homies
     bool        IsHomie(const RE::TESObjectREFR* a_ref);
     RE::Actor*  ActorOf(std::uint32_t a_slot);
 
-    // How much of the damage CJ's shot would do a homie's does ([Crew] DamageFactor).
+    // How much of the damage CJ's shot would do a homie's does ([Crew] DamageFactor), on top of the difficulty's.
     float DamageFactor();
+
+    // A homie's bullet was worked out (Shots): a_hit, it hit someone. Counted for the test kit (asr.crewstats).
+    void CountShot(bool a_hit);
 
     // The co-save record (ASCR).
     void Save(SKSE::SerializationInterface* a_intfc);
@@ -93,10 +96,12 @@ namespace AhShitRim::Homies
         unsigned                drawnFrames = 0;   // frames a homie had a Skyrim weapon in a hand
         unsigned                fistsFrames = 0;   // frames one had his empty hands raised for a Skyrim fight
         unsigned                unwaited = 0;      // followers told to stop waiting
+        unsigned                shots = 0, hits = 0;  // their bullets, and those that hit someone
         std::vector<RE::FormID> targeted;  // everyone a follower has had as his target
     };
     DebugStats DebugStatsOf(bool a_reset);
     void       DebugDismissAll();  // every follower sent off, none to come back
+    int        DebugSlotOf(RE::FormID a_id);  // a homie's crew slot (San Andreas's puppet of him), -1 for none
     void       DebugFresh();       // the spots fill in view for 3 s, as after a handover (a test can't wait for the camera to turn)
     struct DebugFoeInfo
     {
