@@ -94,6 +94,17 @@ namespace AhShitRim::PlayerSync
     bool DebugDrawn(Protocol::BodyState& a_pose, RE::NiPoint3& a_feet, RE::NiPoint3& a_camera);
     // The hit test's respawns scenario (debug): / pressed, Skyrim's wait menu as the key opens it.
     void DebugWait();
+    // The test kit: the last / press, as the hidden player's ground was then (Skyrim refuses to wait "in the air").
+    struct WaitPress
+    {
+        bool        pressed = false;
+        bool        standing = false;      // CJ stood (state.standing): the controller was made to stand first
+        const char* controller = "";       // the hidden player's character controller before that
+        bool        midairBefore = false;  // Actor::IsInMidair before and after
+        bool        midairAfter = false;
+    };
+    WaitPress DebugLastWait();
+    bool      DebugStanding();  // CJ stands (standing.h): the hidden player is made to stand with him
     // The test kit: CJ's feet in Skyrim's world (where his last pose puts him) and his heading. False when San Andreas hasn't the player.
     bool DebugCj(RE::NiPoint3& a_feet, float& a_heading);
 

@@ -2975,7 +2975,7 @@ namespace AhShitRim::TestKit
             RE::free(event);
         }
 
-        // "T", "WANRLTW", "/", "dik:0x35": the scan codes, a US keyboard's places for letters and digits.
+        // "T", "WANRLTW", "/", " " (Space), "dik:0x35": the scan codes, a US keyboard's places for letters and digits.
         std::vector<std::uint32_t> ParseKeys(const std::string& a_keys)
         {
             std::vector<std::uint32_t> out;
@@ -2987,6 +2987,10 @@ namespace AhShitRim::TestKit
                 const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(raw)));
                 if (c == '/') {
                     out.push_back(Input::kDikWait);
+                    continue;
+                }
+                if (c == ' ') {
+                    out.push_back(Input::kDikSpace);  // jump (the modern layout)
                     continue;
                 }
                 std::uint32_t found = 0;
@@ -3008,8 +3012,12 @@ namespace AhShitRim::TestKit
 
         void AddKeyChecks()
         {
+            SkseTestKit::AddCommand("asr.standing", "", "Whether CJ stands (San Andreas's ground under him, not rising or dropping faster than a walk): "
+                "the hidden player is made to stand with him for fast travel and the wait menu",
+                [](Call&) -> Json { return JsonObject{ { "standing", PlayerSync::DebugStanding() }, { "cj", PlayerSync::DebugOwned() } }; });
+
             SkseTestKit::AddTask("asr.key", "<keys> [frames=<n>] [close=<bool>]",
-                "Presses keys through Skyrim's own input, as the keyboard sends them (letters, digits, /, or dik:<code>), a press and a release "
+                "Presses keys through Skyrim's own input, as the keyboard sends them (letters, digits, /, a space for Space, or dik:<code>), a press and a release "
                 "every two frames. Answers frames (20) later: whether Skyrim's wait menu opened meanwhile and what San Andreas's help box says "
                 "then; close=true (the default) closes the wait menu again",
                 [](Call& a_call) -> Step {
@@ -3045,8 +3053,11 @@ namespace AhShitRim::TestKit
                                 queue->AddMessage(RE::SleepWaitMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
                             }
                         }
+                        const auto press = PlayerSync::DebugLastWait();
                         return JsonObject{ { "keys", text }, { "pressed", keys.size() }, { "waitMenu", progress->opened }, { "open", open && !close }, { "help", help },
-                            { "cj", PlayerSync::DebugOwned() } };
+                            { "cj", PlayerSync::DebugOwned() },
+                            { "wait", JsonObject{ { "pressed", press.pressed }, { "standing", press.standing }, { "controller", press.controller },
+                                          { "midairBefore", press.midairBefore }, { "midairAfter", press.midairAfter } } } };
                     };
                 });
         }

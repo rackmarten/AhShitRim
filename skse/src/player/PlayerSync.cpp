@@ -115,6 +115,7 @@ namespace AhShitRim::PlayerSync
             Body::Follow       gearFollow;  // drawn at CJ's moment (bodyTime), as the vehicles are
             VehicleKinds::DevPicker devPicker;  // v19: what ' spawns, ; steps through it
             bool           devKeys = true;      // [Debug] VehicleKeys
+            WaitPress      lastWait;            // the last / press, for the test kit
             bool           playerHidden = false;  // we culled the player's own 3D for CJ's
             RE::NiAVObject* culledRoot[2] = {};   // third- and first-person roots this culled
             std::vector<RE::NiPointer<RE::BSGeometry>> culledShapes;  // and their shapes
@@ -1560,7 +1561,28 @@ namespace AhShitRim::PlayerSync
             if (!events) {
                 return;
             }
-            SKSE::log::info("player sync: / pressed: Skyrim's wait menu, as T without CJ");
+            // Skyrim refuses to wait "in the air", asking the hidden player's character controller, which rarely finds
+            // the ground under CJ's feet (standing.h) and is put back in the air by the physics between Place's frames.
+            // So right before Skyrim asks, the controller is made to say what CJ does: while he stands it stands, as
+            // Place stands it for fast travel; while he jumps, falls or rises (not standing) it's in the air, which it
+            // may not be (it sits where Place put it), and Skyrim refuses with its own message. Swimming is left to
+            // Skyrim's own rule.
+            auto*     player = RE::PlayerCharacter::GetSingleton();
+            auto*     controller = player ? player->GetCharController() : nullptr;
+            WaitPress press;
+            press.pressed = true;
+            press.standing = state.standing;
+            press.controller = controller ? StateName(controller->context.currentState) : "none";
+            press.midairBefore = player && player->IsInMidair();
+            if (player && state.standing) {
+                Stand(player);
+            } else if (controller && controller->context.currentState != RE::hkpCharacterStateType::kSwimming) {
+                controller->context.currentState = RE::hkpCharacterStateType::kInAir;
+            }
+            press.midairAfter = player && player->IsInMidair();
+            state.lastWait = press;
+            SKSE::log::info("player sync: / pressed: Skyrim's wait menu, as T without CJ (CJ {}, the player's controller {}, mid-air {} -> {})",
+                press.standing ? "standing" : "not standing", press.controller, press.midairBefore, press.midairAfter);
             OpenMenu(events->wait, Input::kDikWait, RE::INPUT_DEVICE::kKeyboard);
         }
 
@@ -2161,6 +2183,10 @@ namespace AhShitRim::PlayerSync
         return state.drawnThisFrame;
     }
     void DebugWait() { WaitKey(); }
+
+    WaitPress DebugLastWait() { return state.lastWait; }
+
+    bool DebugStanding() { return state.standing; }
 
     void DebugHold(const std::optional<DebugInput>& a_input, std::chrono::milliseconds a_for)
     {
