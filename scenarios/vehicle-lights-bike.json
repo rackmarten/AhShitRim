@@ -1,0 +1,45 @@
+// A bike's lamps lean with it (v36): the operator saw a Sanchez lean in a turn while its corona and red glow hung upright
+// beside it. San Andreas draws a bike leaning (its lean matrix) while its own matrix stays upright, and now publishes the
+// lamps where the leaning bike has them. CJ on a Sanchez on Riverwood's road at 23:00: upright, then held in a right-hand
+// turn (gas and the stick right), each corona checked against its lamp as drawn (asr.lampfit: the middle of the lamp's
+// posed mesh against the corona, in the world and in pixels on screen), the lean shown by the tail lamp's mesh standing
+// off the bike's upright middle line.
+// scripts/skytest.ps1 run scenarios/vehicle-lights-bike.json (scenarios/README.md). Needs the headlights (v36).
+{
+  "name": "vehicle-lights-bike",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "the lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "night (23:00), the clock nearly still, the sky clear", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "console", "command": "set timescale to 1" },
+    { "cmd": "console", "command": "fw 81a" },
+    "wait frames=45",
+    { "label": "CJ on a Sanchez, its engine running", "cmd": "asr.spawn", "model": 468, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
+    { "label": "a bike's one headlight and one tail light burn", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 2", "lights.0.on == true", "lights.1.on == true"] },
+
+    { "label": "upright, from behind", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 400, "pitch": 10 },
+    "wait frames=10",
+    { "label": "upright: the tail corona on its lamp", "cmd": "asr.lampfit", "lamp": "rearRight", "expect": ["distance < 15", "pixels < 12"] },
+    { "cmd": "screenshot", "name": "bike-upright-tail" },
+
+    { "label": "CJ rides into a right-hand turn", "cmd": "asr.pedals", "gas": true, "steer": 1 },
+    { "cmd": "wait", "seconds": 1.2 },
+    { "label": "leaning: the tail lamp off the upright middle line, its corona still on it", "cmd": "asr.lampfit", "lamp": "rearRight",
+      "expect": ["meshInVehicle.x > 10", "distance < 15", "pixels < 12"] },
+    { "cmd": "screenshot", "name": "bike-lean-tail" },
+    { "label": "the headlight: from the front, still turning", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 160, "distance": 400, "pitch": 10 },
+    "wait frames=8",
+    { "label": "leaning: the headlight's corona on its lamp", "cmd": "asr.lampfit", "lamp": "frontRight",
+      "expect": ["meshInVehicle.x > 10", "distance < 15", "pixels < 12"] },
+    { "cmd": "screenshot", "name": "bike-lean-front" },
+    { "label": "foot off the pedals", "cmd": "asr.pedals" },
+    { "cmd": "camera", "mode": "player" },
+    { "label": "the clock running again", "cmd": "console", "command": "set timescale to 20" }
+  ]
+}

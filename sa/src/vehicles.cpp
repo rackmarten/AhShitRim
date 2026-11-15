@@ -650,8 +650,26 @@ namespace AhShitRim::Vehicles
             }
             const CVector& front = info->m_pVehicleStruct->m_avDummyPos[0];
             const CVector& rear = info->m_pVehicleStruct->m_avDummyPos[1];
-            Pack(front, a_out.lights.front);
-            Pack(rear, a_out.lights.rear);
+            if (a_vehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                // The lamps where the leaning bike has them (its lean matrix, worked out in Pose), in its upright frame.
+                const auto rows = [](const CMatrix& a_m) {
+                    return VehicleLights::Rows{ Vec(a_m.right), Vec(a_m.up), Vec(a_m.at), Vec(a_m.pos) };
+                };
+                const auto upright = rows(a_vehicle->GetMatrix());
+                const auto lean = rows(static_cast<CBike*>(a_vehicle)->m_mLeanMatrix);
+                const auto leaned = [&](const CVector& a_dummy) {
+                    if (IsZero(a_dummy)) {
+                        return a_dummy;  // none: stays none
+                    }
+                    const auto v = VehicleLights::Leaned(upright, lean, Vec(a_dummy));
+                    return CVector(v.x, v.y, v.z);
+                };
+                Pack(leaned(front), a_out.lights.front);
+                Pack(leaned(rear), a_out.lights.rear);
+            } else {
+                Pack(front, a_out.lights.front);
+                Pack(rear, a_out.lights.rear);
+            }
             VehicleLights::Lamps lamps;
             lamps.engineOn = a_vehicle->bEngineOn;
             lamps.wrecked = Wrecked(a_vehicle);

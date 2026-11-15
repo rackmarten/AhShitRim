@@ -160,6 +160,7 @@ namespace AhShitRim::TestKit
             bool               on = false;
             VehicleHits::Frame frame;
             std::uint32_t      flags = 0;
+            std::uint32_t      model = 0;      // its ModelView model
             bool               lamps = false;  // the slot carries lamps (kHasLamps)
             std::uint8_t       lit = 0;        // the lamps burning as San Andreas sent them (asr.lamps off draws none of them)
             std::uint8_t       lampState = 0;
@@ -179,6 +180,7 @@ namespace AhShitRim::TestKit
             seen.on = true;
             seen.frame = VehicleHits::FrameOf(a_pose.vehicleFrame, { a_feet.x, a_feet.y, a_feet.z });
             seen.flags = a_pose.flags;
+            seen.model = a_pose.model;
             if constexpr (kHasLamps<T>) {
                 seen.lamps = true;
                 seen.lit = a_pose.lights.lit;
@@ -582,6 +584,55 @@ namespace AhShitRim::TestKit
                         }
                         return JsonObject{ { "pools", std::move(out) }, { "burned", burned }, { "seconds", Round(a_call.Seconds()) } };
                     };
+                });
+
+            SkseTestKit::AddCommand("asr.lampfit", "<lamp> [slot]",
+                "Whether a vehicle's corona sits on its lamp as drawn: the middle of the lamp's posed mesh (frontRight, frontLeft, "
+                "rearRight, rearLeft) against its corona, in the world (units) and on screen (pixels, from the camera of the last frame), "
+                "and the mesh in the vehicle's own upright frame (x across: a bike leaning in a turn has its lamps off its middle line)",
+                [](Call& a_call) -> Json {
+                    const auto name = a_call.Text("lamp");
+                    const std::pair<const char*, std::uint8_t> lamps[] = { { "frontRight", Protocol::kLightFrontRight }, { "frontLeft", Protocol::kLightFrontLeft },
+                        { "rearRight", Protocol::kLightRearRight }, { "rearLeft", Protocol::kLightRearLeft } };
+                    std::uint8_t bit = 0;
+                    for (const auto& [n, b] : lamps) {
+                        bit = name == n ? b : bit;
+                    }
+                    if (!bit) {
+                        throw Error("the lamp is frontRight, frontLeft, rearRight or rearLeft");
+                    }
+                    std::uint32_t slot = 0;
+                    if (a_call.Has("slot")) {
+                        slot = static_cast<std::uint32_t>(a_call.Number("slot"));
+                    } else if (g_spawned) {
+                        slot = *g_spawned;
+                    } else {
+                        throw Error("asr.spawn hasn't made a vehicle yet: name a slot");
+                    }
+                    if (slot >= g_seen.size() || !g_seen[slot].on) {
+                        throw Error(std::format("vehicle slot {} isn't drawn", slot));
+                    }
+                    const auto&  seen = g_seen[slot];
+                    RE::NiPoint3 mesh, corona;
+                    if (!ModelView::DebugLampCentre(seen.model, bit, mesh)) {
+                        throw Error(std::format("the vehicle in slot {} has no mesh for that lamp", slot));
+                    }
+                    if (!Headlights::DebugCoronaAt(slot, bit, corona)) {
+                        throw Error("its corona doesn't show (the lamp out, or seen from behind its end)");
+                    }
+                    JsonObject out{ { "mesh", Point(mesh) }, { "corona", Point(corona) }, { "distance", Round((corona - mesh).Length(), 0.1) } };
+                    const auto local = VehicleHits::ToLocal(seen.frame, { mesh.x, mesh.y, mesh.z });
+                    out.Set("meshInVehicle", Point(local));
+                    // On screen: a corona sits on the line from the camera to its lamp, so there it should cover the lamp.
+                    auto* camera = RE::Main::WorldRootCamera();
+                    float width = 0.0f, height = 0.0f;
+                    float mx = 0.0f, my = 0.0f, mz = 0.0f, cx = 0.0f, cy = 0.0f, cz = 0.0f;
+                    if (camera && Overlay::ScreenSize(width, height) && camera->WorldPtToScreenPt3(mesh, mx, my, mz, 1e-5f) &&
+                        camera->WorldPtToScreenPt3(corona, cx, cy, cz, 1e-5f)) {
+                        out.Set("pixels", Round(std::hypot((cx - mx) * width, (cy - my) * height), 0.1));
+                        out.Set("meshOnScreen", JsonObject{ { "x", Round(mx * width, 0.1) }, { "y", Round((1.0f - my) * height, 0.1) } });
+                    }
+                    return out;
                 });
 
             SkseTestKit::AddCommand("asr.lamptune", "[key] [value]",
