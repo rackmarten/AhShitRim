@@ -235,3 +235,29 @@ TEST_CASE("vehicle lights: the lights-on texture lifted toward full, its hue kep
     CHECK(pixels[9] < 30);        // and still red
     CHECK(pixels[12] == 255);
 }
+
+TEST_CASE("vehicle lights: a bike's lamps lean with it")
+{
+    Rows upright;
+    upright.pos = { 10.0f, 20.0f, 1.0f };
+    // Not leaning: the dummy stays where it is.
+    Vec3 same = Leaned(upright, upright, { 0.0f, -0.9f, 0.6f });
+    CHECK(same.x == doctest::Approx(0.0f));
+    CHECK(same.y == doctest::Approx(-0.9f));
+    CHECK(same.z == doctest::Approx(0.6f));
+
+    // Leaning 30 degrees to its right about its forward axis (CBike's lean matrix, at its own position): a lamp 0.6 m up
+    // swings 0.3 m to the right and drops to 0.52 m; how far back it is doesn't change.
+    const float a = 30.0f * 3.14159265f / 180.0f;
+    Rows lean = upright;
+    lean.right = { std::cos(a), 0.0f, -std::sin(a) };
+    lean.up = { std::sin(a), 0.0f, std::cos(a) };
+    const Vec3 tail = Leaned(upright, lean, { 0.0f, -0.9f, 0.6f });
+    CHECK(tail.x == doctest::Approx(0.3f).epsilon(0.001));
+    CHECK(tail.y == doctest::Approx(-0.9f));
+    CHECK(tail.z == doctest::Approx(0.6f * std::cos(a)).epsilon(0.001));
+
+    // The lean matrix also drops the bike a little (CalculateLeanMatrix moves its position): the lamps go with it.
+    lean.pos.z -= 0.05f;
+    CHECK(Leaned(upright, lean, { 0.0f, -0.9f, 0.6f }).z == doctest::Approx(0.6f * std::cos(a) - 0.05f).epsilon(0.001));
+}

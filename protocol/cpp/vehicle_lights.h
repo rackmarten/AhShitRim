@@ -145,6 +145,29 @@ namespace AhShitRim::VehicleLights
 
     constexpr bool MeshLit(std::uint32_t a_flags, std::uint8_t a_lit) { return (LampOfMesh(a_flags) & a_lit) != 0; }
 
+    // A matrix's rows as San Andreas keeps them: X right, Y forward, Z up, and where it is (metres).
+    struct Rows
+    {
+        Vec3 right{ 1.0f, 0.0f, 0.0f };
+        Vec3 forward{ 0.0f, 1.0f, 0.0f };
+        Vec3 up{ 0.0f, 0.0f, 1.0f };
+        Vec3 pos;
+    };
+
+    // A bike leans as it's drawn (CBike::m_mLeanMatrix, which San Andreas draws its lamps' light from too:
+    // DoHeadLightBeam), while its own matrix, the frame Skyrim places the vehicle's lights in, stays upright: a_dummy
+    // (in the bike's frame) where the leaning bike has it, in the upright frame. Leaned the other way in a turn, the
+    // lamps hung upright beside the bike.
+    inline Vec3 Leaned(const Rows& a_upright, const Rows& a_lean, const Vec3& a_dummy)
+    {
+        const auto along = [](const Vec3& a_v, float a_s) { return Vec3{ a_v.x * a_s, a_v.y * a_s, a_v.z * a_s }; };
+        const auto plus = [](const Vec3& a, const Vec3& b) { return Vec3{ a.x + b.x, a.y + b.y, a.z + b.z }; };
+        const auto dot = [](const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+        const Vec3 world = plus(plus(plus(a_lean.pos, along(a_lean.right, a_dummy.x)), along(a_lean.forward, a_dummy.y)), along(a_lean.up, a_dummy.z));
+        const Vec3 d{ world.x - a_upright.pos.x, world.y - a_upright.pos.y, world.z - a_upright.pos.z };
+        return { dot(d, a_upright.right), dot(d, a_upright.forward), dot(d, a_upright.up) };
+    }
+
     // A dummy in Skyrim units, as BodyLights carries it (whole units: 1.4 cm, up to 468 m out).
     inline std::int16_t Pack(float a_units)
     {

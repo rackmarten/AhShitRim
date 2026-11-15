@@ -34,4 +34,8 @@ namespace AhShitRim::Headlights
     // distances) until the game closes, false for a key it doesn't know. DebugTuning lists them all, in the ini's units.
     bool DebugTune(std::string_view a_key, float a_value);
     std::vector<std::pair<std::string, float>> DebugTuning();
+
+    // The test kit (debug): where vehicle slot a_slot's corona for lamp a_lamp (a kLight bit) is, false while it doesn't
+    // show; and the ModelView model its lamps are drawn in comes from the slot's pose.
+    bool DebugCoronaAt(std::uint32_t a_slot, std::uint8_t a_lamp, RE::NiPoint3& a_out);
 }

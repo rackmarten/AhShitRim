@@ -273,6 +273,16 @@ namespace AhShitRim::Headlights
         return false;
     }
 
+    bool DebugCoronaAt(std::uint32_t a_slot, std::uint8_t a_lamp, RE::NiPoint3& a_out)
+    {
+        for (std::uint32_t i = 0; i < CoronaModel::kLamps; i++) {
+            if (VehicleLights::kLampBits[i] == a_lamp) {
+                return a_slot < Protocol::kVehicleMax && ModelView::DebugBoneAt(kCoronaModel + a_slot * 2, i, a_out);
+            }
+        }
+        return false;
+    }
+
     std::vector<std::pair<std::string, float>> DebugTuning()
     {
         Tuning();

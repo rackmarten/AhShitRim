@@ -49,6 +49,11 @@ namespace AhShitRim::ModelView
     // The test kit (debug): where bone a_boneId (San Andreas's node id: 24 CJ's right hand, 2 his pelvis) sits in model
     // a_model's poses (BodyState.bones' index), -1 when the model isn't built or has no such bone.
     int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId);
+    // The test kit (debug): in the world, as model a_model's last Show posed it, the middle of its lamp meshes for lamp
+    // a_lamp (a kLight bit; a vehicle's), and where its bone a_bone is (false while hidden). False while it isn't shown
+    // or has no such lamp or bone.
+    bool DebugLampCentre(std::uint32_t a_model, std::uint8_t a_lamp, RE::NiPoint3& a_out);
+    bool DebugBoneAt(std::uint32_t a_model, std::uint32_t a_bone, RE::NiPoint3& a_out);
 
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();

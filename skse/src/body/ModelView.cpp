@@ -735,6 +735,48 @@ namespace AhShitRim::ModelView
         return true;
     }
 
+    bool DebugLampCentre(std::uint32_t a_model, std::uint8_t a_lamp, RE::NiPoint3& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || built->posed.size() != built->model.boneIds.size()) {
+            return false;
+        }
+        std::vector<Body::Matrix34> bones(built->posed.size());
+        for (std::size_t i = 0; i < bones.size(); i++) {
+            bones[i] = Body::Hidden(built->posedHidden, static_cast<std::uint32_t>(i)) ? Body::Collapsed(built->posed[i]) : Body::ToMatrix(built->posed[i]);
+        }
+        RE::NiPoint3  sum;
+        std::uint32_t count = 0;
+        for (const auto& shape : built->shapes) {
+            if (shape.lamp != a_lamp) {
+                continue;
+            }
+            const auto& mesh = built->model.meshes[shape.mesh];
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                Body::Vec3 position, normal;
+                Body::Skin(bones.data(), static_cast<std::uint32_t>(bones.size()), mesh.Vertex(i), position, normal);
+                sum += RE::NiPoint3(position.x, position.y, position.z);
+                count++;
+            }
+        }
+        if (count == 0) {
+            return false;
+        }
+        a_out = built->node->world.translate + sum / static_cast<float>(count);
+        return true;
+    }
+
+    bool DebugBoneAt(std::uint32_t a_model, std::uint32_t a_bone, RE::NiPoint3& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || a_bone >= built->posed.size() || Body::Hidden(built->posedHidden, a_bone)) {
+            return false;
+        }
+        const auto& t = built->posed[a_bone].translation;
+        a_out = built->node->world.translate + RE::NiPoint3(t[0], t[1], t[2]);
+        return true;
+    }
+
     void EndFrame()
     {
         for (auto& [id, built] : state.models) {
