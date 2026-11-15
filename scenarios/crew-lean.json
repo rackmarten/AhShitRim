@@ -1,7 +1,8 @@
 // A homie on a Sanchez's pillion leans with the bike as CJ does (v39): San Andreas carries its riders in their
 // vehicle's matrix, and the homie sat bolt upright while CJ leaned. CJ rides straight to speed up, then turns each way;
 // in each turn the bike leans over 5 degrees and the homie's spine (from his root bone to his highest, across the bike)
-// leans with it within 6 degrees (asr.lean), with a shot from behind. The stables' Sanchez is blown up first and CJ
+// leans with it within 6 degrees (asr.lean), with a shot from behind. Short, slow drives keep it on open ground: a
+// longer left turn ran the bike into the stables' porch, which tipped it against the step (no lean to compare). The stables' Sanchez is blown up first and CJ
 // stays 18 m south of its wreck (crew-checks.json says why). scripts/skytest.ps1 run scenarios/crew-lean.json.
 {
   "name": "crew-lean",
@@ -32,11 +33,11 @@
     { "label": "a homie gets on behind him", "cmd": "wait", "seconds": 6 },
     { "label": "one rides the pillion", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "riding == 1" },
     { "label": "upright, standing", "cmd": "asr.lean", "expect": "diff < 6" },
-    { "label": "up to speed, straight", "cmd": "asr.drive", "seconds": 2.5, "steer": 0 },
-    { "label": "a turn to the right", "cmd": "asr.drive", "seconds": 1.2, "steer": 0.9 },
+    { "label": "up to speed, straight", "cmd": "asr.drive", "seconds": 1.5, "steer": 0, "throttle": 0.7 },
+    { "label": "a turn to the right", "cmd": "asr.drive", "seconds": 1.0, "steer": 0.9, "throttle": 0.7 },
     { "label": "both lean into it", "cmd": "asr.lean", "expect": ["vehicleAbs > 5", "diff < 6"] },
     { "label": "from behind, in the turn", "cmd": "screenshot", "name": "lean-right", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=6", "settle": 1 },
-    { "label": "a turn to the left", "cmd": "asr.drive", "seconds": 1.6, "steer": -0.9 },
+    { "label": "a turn to the left", "cmd": "asr.drive", "seconds": 1.4, "steer": -0.9, "throttle": 0.7 },
     { "label": "both lean the other way", "cmd": "asr.lean", "expect": ["vehicleAbs > 5", "diff < 6"] },
     { "label": "from behind, the other turn", "cmd": "screenshot", "name": "lean-left", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=6", "settle": 1 },
     { "label": "stop", "cmd": "asr.drive", "seconds": 2, "steer": 0, "throttle": 0 },
