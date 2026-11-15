@@ -509,6 +509,15 @@ namespace AhShitRim::CrewPuppets
             ped->SetHeading(heading);
             ped->m_fHeadingCurrent = heading;
             ped->m_fHeadingGoal = heading;
+            // Seated in CJ's vehicle, he's turned as it is (San Andreas carries its riders in their vehicle's matrix): on a
+            // bike in a turn he leans with it as CJ does, in a car on a slope he tips with it. Upright, he sat bolt upright
+            // on the pillion while CJ leaned.
+            if (sits && a_cj && a_cj->bInVehicle && a_cj->m_pVehicle && a_cj->m_pVehicle->m_matrix && ped->m_matrix) {
+                const CMatrix& frame = *a_cj->m_pVehicle->m_matrix;
+                ped->m_matrix->right = frame.right;
+                ped->m_matrix->up = frame.up;
+                ped->m_matrix->at = frame.at;
+            }
             ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
             ped->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
             ped->m_fHealth = 100.0f;

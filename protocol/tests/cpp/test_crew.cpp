@@ -135,27 +135,67 @@ TEST_CASE("crew: G acts on the homie CJ aims at: his lock-on or crosshair, else 
     CHECK(Crew::AimPick(cj, Pose::kPi, far) == 4);                                     // his crosshair on him: wherever
 }
 
-TEST_CASE("crew: a homie fires in bursts of 1 to 2 s with 1 to 2 s between")
+TEST_CASE("crew: a homie takes 0.8 to 1.5 s to react, then fires in bursts with longer pauses between")
 {
-    Crew::Burst burst(7);
-    CHECK_FALSE(burst.Update(0.1f, false));
-    float firing = 0.0f, quiet = 0.0f, run = 0.0f, longest = 0.0f;
+    const Crew::FireStyle style;
+    for (std::uint32_t seed = 1; seed < 40; seed++) {
+        Crew::Burst burst(seed, style);
+        CHECK_FALSE(burst.Update(0.1f, false));
+        float first = -1.0f;
+        for (int i = 0; i < 100 && first < 0.0f; i++) {
+            if (burst.Update(0.02f, true)) {
+                first = (i + 1) * 0.02f;
+            }
+        }
+        CHECK(first >= style.reactMin - 0.03f);
+        CHECK(first <= style.reactMax + 0.03f);
+    }
+    Crew::Burst burst(7, style);
+    float firing = 0.0f, quiet = 0.0f, run = 0.0f, longestBurst = 0.0f;
     bool  was = false;
-    for (int i = 0; i < 400; i++) {  // 20 s
+    for (int i = 0; i < 2000; i++) {  // 100 s
         const bool now = burst.Update(0.05f, true);
         (now ? firing : quiet) += 0.05f;
         run = now == was ? run + 0.05f : 0.05f;
-        longest = (std::max)(longest, run);
+        if (now) {
+            longestBurst = (std::max)(longestBurst, run);
+        }
         was = now;
     }
-    CHECK(firing > 6.0f);
-    CHECK(quiet > 6.0f);
-    CHECK(longest <= 2.1f);
+    CHECK(firing / (firing + quiet) > 0.25f);  // about a third of the time (1.15 s on, 2.25 s off)
+    CHECK(firing / (firing + quiet) < 0.45f);
+    CHECK(longestBurst <= style.burstMax + 0.06f);
     CHECK_FALSE(burst.Update(0.05f, false));  // no target: stops at once
+    CHECK_FALSE(burst.Update(0.05f, true));   // and a new one is looked at first
     CHECK(Crew::MayShoot(30.0f, Crew::kPistol, true));
     CHECK_FALSE(Crew::MayShoot(40.0f, Crew::kPistol, true));
     CHECK(Crew::MayShoot(60.0f, Crew::kAk47, true));
     CHECK_FALSE(Crew::MayShoot(10.0f, Crew::kAk47, false));
+}
+
+TEST_CASE("crew: a homie's aims miss more with range")
+{
+    const Crew::FireStyle style;
+    CHECK(Crew::HitChance(style, 2.0f) == doctest::Approx(style.hitNear));
+    CHECK(Crew::HitChance(style, 60.0f) == doctest::Approx(style.hitFar));
+    CHECK(Crew::HitChance(style, 22.5f) == doctest::Approx((style.hitNear + style.hitFar) / 2.0f));
+    // Over many aims the share on the target is the chance, and a miss is clear of the body (over 0.5 m off).
+    Crew::Burst rolls(11, style);
+    for (const float metres : { 5.0f, 20.0f, 40.0f }) {
+        int on = 0;
+        for (int i = 0; i < 4000; i++) {
+            const auto aim = Crew::AimOffset(style, metres, rolls.Roll(), rolls.Roll(), rolls.Roll());
+            const float off = std::hypot(aim.side, aim.up);
+            if (aim.on) {
+                on++;
+                CHECK(off <= 0.15f);
+            } else {
+                CHECK(off >= 0.69f);
+                CHECK(aim.up >= -0.51f * off);  // at most 30 degrees under a side, never down through the body
+            }
+        }
+        CHECK(on / 4000.0f == doctest::Approx(Crew::HitChance(style, metres)).epsilon(0.08));
+    }
 }
 
 TEST_CASE("crew: CJ's hits on a homie have no aggressor and no crime; a homie's kills aren't CJ's")

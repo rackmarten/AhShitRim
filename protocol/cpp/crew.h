@@ -329,36 +329,88 @@ namespace AhShitRim::Crew
 
     // A homie in a fight opens fire at his target within his gun's range, in a line of sight, in bursts of 1 to 2 s with
     // 1 to 2 s between, as San Andreas's gang peds fire.
+    // How the followers shoot, GTA-homie level: they help, CJ does most of the killing ([Crew] in AhShitRim.ini). Two
+    // homies firing at once from the first frame, every bullet on the chest, cleared Fort Greymoor in moments.
+    struct FireStyle
+    {
+        float reactMin = 0.8f, reactMax = 1.5f;  // s from a new target to the first shot
+        float burstMin = 0.8f, burstMax = 1.5f;  // s a burst lasts
+        float pauseMin = 1.5f, pauseMax = 3.0f;  // s between bursts
+        float hitNear = 0.6f;                    // the share of his aims on the target up close (kHitNearMetres)
+        float hitFar = 0.25f;                    // and from kHitFarMetres on
+    };
+    inline constexpr float kHitNearMetres = 5.0f;
+    inline constexpr float kHitFarMetres = 40.0f;
+    inline constexpr float kAimEvery = 0.3f;  // s he keeps an aim (on the target or off it) before taking another
+
+    // The chance an aim of his is on a target a_metres off: hitNear up close, falling to hitFar.
+    inline float HitChance(const FireStyle& a_style, float a_metres)
+    {
+        const float t = (a_metres - kHitNearMetres) / (kHitFarMetres - kHitNearMetres);
+        const float k = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+        return a_style.hitNear + (a_style.hitFar - a_style.hitNear) * k;
+    }
+
+    // Where he aims, metres off the target's chest, across (side) and up, from three rolls in [0, 1): on it (within
+    // 10 cm) with HitChance, else 0.7 to 1.4 m off to a side or over the head (never down: that would hit his legs).
+    struct AimOff
+    {
+        float side = 0.0f, up = 0.0f;
+        bool  on = true;
+    };
+    inline AimOff AimOffset(const FireStyle& a_style, float a_metres, float a_roll, float a_angle, float a_reach)
+    {
+        if (a_roll < HitChance(a_style, a_metres)) {
+            return { (a_angle - 0.5f) * 0.2f, (a_reach - 0.5f) * 0.2f, true };
+        }
+        const float angle = (a_angle * 240.0f - 30.0f) * Pose::kPi / 180.0f;  // from 30 degrees under his right to 30 under his left
+        const float reach = 0.7f + 0.7f * a_reach;
+        return { std::cos(angle) * reach, std::sin(angle) * reach, false };
+    }
+
     class Burst
     {
     public:
-        explicit Burst(std::uint32_t a_seed = 1) : _seed(a_seed ? a_seed : 1) {}
+        explicit Burst(std::uint32_t a_seed = 1, const FireStyle& a_style = {}) : _seed(a_seed ? a_seed : 1), _style(a_style) {}
 
-        // a_seconds since the last call; a_may: he has a target he may shoot. Whether he fires now.
+        // a_seconds since the last call; a_may: he has a target he may shoot. Whether he fires now. A new target is
+        // looked at for a reaction time first (reactMin to reactMax), then bursts and pauses take turns.
         bool Update(float a_seconds, bool a_may)
         {
             if (!a_may) {
                 _firing = false;
+                _engaged = false;
                 _left = 0.0f;
                 return false;
+            }
+            if (!_engaged) {
+                _engaged = true;
+                _firing = false;
+                _left = Between(_style.reactMin, _style.reactMax);
             }
             _left -= a_seconds;
             if (_left <= 0.0f) {
                 _firing = !_firing;
-                _left = 1.0f + Next();  // 1 to 2 s, either way
+                _left = _firing ? Between(_style.burstMin, _style.burstMax) : Between(_style.pauseMin, _style.pauseMax);
             }
             return _firing;
         }
+
+        // A roll in [0, 1), for his aims.
+        float Roll() { return Next(); }
 
     private:
         float Next()
         {
             _seed = _seed * 1664525u + 1013904223u;
-            return static_cast<float>((_seed >> 8) & 0xFFFF) / 65535.0f;
+            return static_cast<float>((_seed >> 8) & 0xFFFF) / 65536.0f;
         }
+        float Between(float a_min, float a_max) { return a_min + (a_max - a_min) * Next(); }
 
         std::uint32_t _seed;
+        FireStyle     _style;
         bool          _firing = false;
+        bool          _engaged = false;
         float         _left = 0.0f;
     };
 
@@ -392,7 +444,7 @@ namespace AhShitRim::Crew
 
     // How much of a CJ's-shot's Skyrim damage a homie's shot does ([Crew] DamageFactor): San Andreas's gang peds are
     // poor shots.
-    inline constexpr float kDamageFactor = 0.5f;
+    inline constexpr float kDamageFactor = 0.35f;  // of CJ's damage with the same gun, at the game's difficulty
 
     // ---- CJ's hits on them ----
     //

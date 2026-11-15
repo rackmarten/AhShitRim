@@ -12,6 +12,7 @@
 #include "player/Arms.h"
 #include "player/Missions.h"
 #include "player/PlayerSync.h"
+#include "player/Riders.h"
 #include "player/Shots.h"
 #include "pose.h"
 #include "vehicle_hits.h"
@@ -841,18 +842,95 @@ namespace AhShitRim::TestKit
                     return JsonObject{ { "metres", Round(put, 0.1) } };
                 });
 
+            SkseTestKit::AddTask("asr.drive", "[seconds] [steer=<-1..1>] [throttle=<0..1>]",
+                "CJ drives the vehicle he's in for seconds (3): the stick held at throttle (1) forward and steer (0) to the side (positive "
+                "right), as a pad's left stick; answers when the time is up, the stick let go",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto pose = CjPose();
+                    if (!pose || !(pose->flags & Protocol::kPlayerInVehicle)) {
+                        throw Error("CJ isn't in a vehicle");
+                    }
+                    const double seconds = a_call.Number("seconds", 3.0);
+                    const float  steer = static_cast<float>(std::clamp(a_call.Number("steer", 0.0), -1.0, 1.0));
+                    const float  throttle = static_cast<float>(std::clamp(a_call.Number("throttle", 1.0), 0.0, 1.0));
+                    a_call.DefaultTimeout(seconds + 10.0);
+                    return [seconds, steer, throttle](Call& a_call) -> std::optional<Json> {
+                        if (a_call.Seconds() >= seconds) {
+                            PlayerSync::DebugHold(std::nullopt);
+                            return JsonObject{ { "seconds", Round(a_call.Seconds()) } };
+                        }
+                        PlayerSync::DebugHold(PlayerSync::DebugInput{ .moveX = steer, .moveY = throttle });
+                        return std::nullopt;
+                    };
+                });
+
+            SkseTestKit::AddCommand("asr.lean", "",
+                "How a homie riding with CJ leans against how CJ's vehicle leans, degrees to the side (positive right): the vehicle's by its "
+                "up axis, the homie's by his spine (from his root bone to his highest one, as San Andreas posed him), both across the "
+                "vehicle. diff: the one off the other",
+                [](Call&) -> Json {
+                    RequireCj();
+                    std::optional<Protocol::BodyState> vehicle;
+                    for (std::uint32_t i = 0; i < Protocol::kVehicleMax && !vehicle; i++) {
+                        Protocol::BodyState v{};
+                        if (LinkService::Get().ReadVehicle(i, v) && (v.flags & Protocol::kBodyValid) && (v.flags & Protocol::kBodyDriven) &&
+                            v.handover == PlayerSync::DebugHandover()) {
+                            vehicle = v;
+                        }
+                    }
+                    if (!vehicle) {
+                        throw Error("CJ drives no vehicle");
+                    }
+                    const auto  riding = Riders::Riding();
+                    const int   slot = riding.empty() ? -1 : Homies::DebugSlotOf(riding.front());
+                    Protocol::CrewBody body{};
+                    if (slot < 0 || !LinkService::Get().ReadCrew(static_cast<std::uint32_t>(slot), body) || !(body.body.flags & Protocol::kBodyValid) ||
+                        body.body.boneCount < 2) {
+                        throw Error("no homie rides with CJ (or San Andreas sends none of his bones)");
+                    }
+                    const float* q = vehicle->vehicleFrame.rotation;  // x, y, z, w: X right, Y forward, Z up
+                    const auto   axis = [&](float a_x, float a_y, float a_z) {
+                        const float x = q[0], y = q[1], z = q[2], w = q[3];
+                        const float tx = 2.0f * (y * a_z - z * a_y), ty = 2.0f * (z * a_x - x * a_z), tz = 2.0f * (x * a_y - y * a_x);
+                        return RE::NiPoint3(a_x + w * tx + (y * tz - z * ty), a_y + w * ty + (z * tx - x * tz), a_z + w * tz + (x * ty - y * tx));
+                    };
+                    const auto right = axis(1.0f, 0.0f, 0.0f);
+                    const auto up = axis(0.0f, 0.0f, 1.0f);
+                    RE::NiPoint3 across(right.x, right.y, 0.0f);
+                    across.Unitize();
+                    const auto lean = [&](const RE::NiPoint3& a_v) { return std::atan2(a_v.Dot(across), a_v.z) * 180.0f / std::numbers::pi_v<float>; };
+                    const auto& bones = body.body.bones;
+                    std::uint32_t top = 0;
+                    for (std::uint32_t b = 1; b < (std::min)(body.body.boneCount, Protocol::kBodyBoneMax); b++) {
+                        if (bones[b].translation[2] > bones[top].translation[2]) {
+                            top = b;
+                        }
+                    }
+                    const RE::NiPoint3 spine(bones[top].translation[0] - bones[0].translation[0], bones[top].translation[1] - bones[0].translation[1],
+                        bones[top].translation[2] - bones[0].translation[2]);
+                    const float vehicleLean = lean(up), homieLean = lean(spine);
+                    return JsonObject{ { "vehicle", Round(vehicleLean, 0.1) }, { "vehicleAbs", Round(std::abs(vehicleLean), 0.1) }, { "homie", Round(homieLean, 0.1) },
+                        { "diff", Round(std::abs(homieLean - vehicleLean), 0.1) },
+                        { "ref", SkseTestKit::FormId(riding.front()) }, { "slot", slot } };
+                });
+
             SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",
                 "The crew's counters since the last reset: Skyrim subtitles of theirs taken off and voice handles stopped (Hush), puts "
                 "of the follow package, gear taken off, and everyone a follower has had as his target (targeted, refs)",
                 [](Call& a_call) -> Json {
                     const auto stats = Homies::DebugStatsOf(a_call.Flag("reset", false));
                     JsonArray  targeted;
+                    int        dead = 0;
                     for (const auto id : stats.targeted) {
                         targeted.emplace_back(SkseTestKit::FormId(id));
+                        auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+                        dead += actor && actor->IsDead() ? 1 : 0;
                     }
                     return JsonObject{ { "hushedLines", stats.hushedLines }, { "hushedSounds", stats.hushedSounds }, { "followPuts", stats.followPuts },
                         { "gearStripped", stats.gearStripped }, { "drawnFrames", stats.drawnFrames }, { "fistsFrames", stats.fistsFrames },
-                        { "unwaited", stats.unwaited }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
+                        { "unwaited", stats.unwaited }, { "shots", stats.shots }, { "hits", stats.hits },
+                        { "hitShare", stats.shots ? Round(static_cast<double>(stats.hits) / stats.shots, 0.01) : 0.0 }, { "targetedDead", dead }, { "targeted", std::move(targeted) }, { "following", Homies::DebugCount(true) },
                         { "about", Homies::DebugCount(false) } };
                 });
 
