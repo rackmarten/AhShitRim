@@ -1,9 +1,11 @@
-// A homie on a Sanchez's pillion leans with the bike as CJ does (v39): San Andreas carries its riders in their
-// vehicle's matrix, and the homie sat bolt upright while CJ leaned. CJ rides straight to speed up, then turns each way;
-// in each turn the bike leans over 5 degrees and the homie's spine (from his root bone to his highest, across the bike)
-// leans with it within 6 degrees (asr.lean), with a shot from behind. Short, slow drives keep it on open ground: a
-// longer left turn ran the bike into the stables' porch, which tipped it against the step (no lean to compare). The stables' Sanchez is blown up first and CJ
-// stays 18 m south of its wreck (crew-checks.json says why). scripts/skytest.ps1 run scenarios/crew-lean.json.
+// A homie on a Sanchez's pillion leans as CJ does (v39). San Andreas leans its rider into a turn with his own
+// animation, well past the bike's roll (the bike rolls about 7 degrees at a low speed), so a homie turned only with the
+// bike still sat bolt upright beside CJ in play. He rolls about the bike's forward axis by CJ's own upper-body lean.
+// CJ rides as a player does, full throttle and full steer, a turn each way; every frame of each turn the homie's lean
+// is compared with CJ's (both by the spine, from the root bone to the highest, across the bike, asr.drive): CJ leans
+// over 10 degrees at some point, and the homie is within 5 degrees of him on average and 12 at most. Shots from behind.
+// The stables' Sanchez is blown up first and CJ stays 18 m south of its wreck (crew-checks.json says why).
+// scripts/skytest.ps1 run scenarios/crew-lean.json (scenarios/README.md). The crew stays CJ's after it.
 {
   "name": "crew-lean",
   "steps": [
@@ -32,13 +34,13 @@
     { "label": "CJ gets on", "cmd": "asr.enter", "expect": "model == 468" },
     { "label": "a homie gets on behind him", "cmd": "wait", "seconds": 6 },
     { "label": "one rides the pillion", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "riding == 1" },
-    { "label": "upright, standing", "cmd": "asr.lean", "expect": "diff < 6" },
-    { "label": "up to speed, straight", "cmd": "asr.drive", "seconds": 1.5, "steer": 0, "throttle": 0.7 },
-    { "label": "a turn to the right", "cmd": "asr.drive", "seconds": 1.0, "steer": 0.9, "throttle": 0.7 },
-    { "label": "both lean into it", "cmd": "asr.lean", "expect": ["vehicleAbs > 5", "diff < 6"] },
+    { "label": "standing: the homie sits as CJ does", "cmd": "asr.lean", "expect": "diff < 6" },
+    { "label": "up to speed, straight", "cmd": "asr.drive", "seconds": 2.5, "steer": 0 },
+    { "label": "a turn to the right, full lock: the homie leans with CJ every frame", "cmd": "asr.drive", "seconds": 1.8, "steer": 1,
+      "expect": ["leanFrames > 30", "cjLeanMax > 10", "diffMean < 5", "diffMax < 12"] },
     { "label": "from behind, in the turn", "cmd": "screenshot", "name": "lean-right", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=6", "settle": 1 },
-    { "label": "a turn to the left", "cmd": "asr.drive", "seconds": 1.4, "steer": -0.9, "throttle": 0.7 },
-    { "label": "both lean the other way", "cmd": "asr.lean", "expect": ["vehicleAbs > 5", "diff < 6"] },
+    { "label": "a turn to the left, full lock", "cmd": "asr.drive", "seconds": 1.8, "steer": -1,
+      "expect": ["leanFrames > 30", "cjLeanMax > 10", "diffMean < 5", "diffMax < 12"] },
     { "label": "from behind, the other turn", "cmd": "screenshot", "name": "lean-left", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=6", "settle": 1 },
     { "label": "stop", "cmd": "asr.drive", "seconds": 2, "steer": 0, "throttle": 0 },
     { "label": "CJ gets off", "cmd": "asr.exit" },

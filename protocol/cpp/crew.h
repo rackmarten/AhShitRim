@@ -419,22 +419,23 @@ namespace AhShitRim::Crew
         return a_lineOfSight && a_distanceMeters <= RangeOf(a_weapon);
     }
 
-    // Whom the followers shoot: one hostile to CJ, or one fighting CJ or the crew who stands and fights. Not one
-    // fleeing (Skyrim's deer and elk run from CJ in a fight of their own, CJ their target). An animal only by what it
-    // does: one fighting CJ or the crew and standing its ground (a wolf or a bear on them). Its hostility and its
-    // Aggression say nothing (the test kit read a wolf's Aggression as 0, and an elk grazing by them as hostile), so an
-    // elk, deer, horse or goat is never shot, left alone or shot at by CJ. Nobody else either.
+    // Whom the followers shoot: only one already fighting CJ, the crew or the player (its combat target one of them)
+    // and standing its ground. That's a bandit or a wolf that comes for them, or anyone CJ attacked first (it fights
+    // back), never a passive or neutral one: Skyrim reads a Thalmor patrol walking by as hostile to the player, and
+    // the operator's homies opened fire on one from the bike before CJ did. Not one fleeing either (Skyrim's deer
+    // and elk run from CJ in a fight of their own). Homies holds an animal back until it has kept it up for
+    // kAnimalFightsFor, as an elk CJ shot turns to him a moment before it runs. a_hostile and a_aggressive say
+    // nothing more (the kit read an elk grazing by them as hostile, a wolf's Aggression as 0).
     // An animal that fights them has to keep at it this long before they shoot it: an elk CJ shot turns to him for a
     // moment before it runs, a wolf keeps coming.
     inline constexpr float kAnimalFightsFor = 1.0f;  // s
 
     inline constexpr bool IsFoe(bool a_hostile, bool a_fightsUs, bool a_fleeing, bool a_animal, bool a_aggressive)
     {
-        if (a_animal) {
-            static_cast<void>(a_aggressive);
-            return a_fightsUs && !a_fleeing;
-        }
-        return a_hostile || (a_fightsUs && !a_fleeing);
+        static_cast<void>(a_hostile);
+        static_cast<void>(a_animal);
+        static_cast<void>(a_aggressive);
+        return a_fightsUs && !a_fleeing;
     }
 
     // ShotEvent.shooter: 0 CJ, slot + 1 a homie.

@@ -315,22 +315,25 @@ TEST_CASE("crew: a puppet's anim update needs one animation that outlives it")
     CHECK(Crew::LeavesANode(withRun, 2, kStep));
 }
 
-TEST_CASE("crew: the followers shoot whoever is hostile or fights them, never a fleeing or peaceful animal")
+TEST_CASE("crew: the followers shoot only those fighting CJ, the crew or the player, never the passive or the fleeing")
 {
     // IsFoe(hostile, fightsUs, fleeing, animal, aggressive)
-    CHECK(Crew::IsFoe(true, false, false, false, true));    // a bandit
-    CHECK(Crew::IsFoe(true, true, true, false, true));      // one running off is still hostile
-    CHECK(Crew::IsFoe(false, true, false, false, false));   // a guard CJ hit, fighting back
-    CHECK_FALSE(Crew::IsFoe(false, true, true, false, false));  // a townsman running from the shooting
-    CHECK_FALSE(Crew::IsFoe(false, false, false, false, false));  // anybody else
-    CHECK(Crew::IsFoe(true, true, false, true, true));      // a wolf on CJ
-    CHECK(Crew::IsFoe(false, true, false, true, true));     // a bear CJ woke
-    CHECK_FALSE(Crew::IsFoe(false, true, true, true, false));   // an elk running from CJ, CJ its combat target
-    CHECK(Crew::IsFoe(false, true, false, true, false));        // or turned to him for a moment: Homies holds an animal
-                                                                // back until it has fought for Crew::kAnimalFightsFor
-    CHECK(Crew::IsFoe(true, true, false, true, false));         // a wolf on CJ whose Aggression reads 0 (as the kit saw)
-    CHECK_FALSE(Crew::IsFoe(true, false, false, true, false));  // an elk grazing by the crew that reads hostile (as the kit saw)
-    CHECK_FALSE(Crew::IsFoe(true, false, false, true, true));   // a wolf not on them yet
+    CHECK(Crew::IsFoe(true, true, false, false, true));          // a bandit on CJ
+    CHECK_FALSE(Crew::IsFoe(true, false, false, false, true));   // a bandit who hasn't seen them yet
+    CHECK_FALSE(Crew::IsFoe(true, false, false, false, false));  // a Thalmor patrol walking by: Skyrim reads them hostile,
+                                                                 // the operator's homies opened fire on one
+    CHECK(Crew::IsFoe(false, true, false, false, false));        // a guard CJ hit, fighting back: CJ attacked first
+    CHECK_FALSE(Crew::IsFoe(true, true, true, false, true));     // one running off
+    CHECK_FALSE(Crew::IsFoe(false, true, true, false, false));   // a townsman running from the shooting
+    CHECK_FALSE(Crew::IsFoe(false, false, false, false, false)); // anybody else
+    CHECK(Crew::IsFoe(true, true, false, true, true));           // a wolf on CJ
+    CHECK(Crew::IsFoe(false, true, false, true, true));          // a bear CJ woke
+    CHECK(Crew::IsFoe(true, true, false, true, false));          // a wolf on CJ whose Aggression reads 0 (as the kit saw)
+    CHECK_FALSE(Crew::IsFoe(false, true, true, true, false));    // an elk running from CJ, CJ its combat target
+    CHECK(Crew::IsFoe(false, true, false, true, false));         // or turned to him for a moment: Homies holds an animal
+                                                                 // back until it has fought for Crew::kAnimalFightsFor
+    CHECK_FALSE(Crew::IsFoe(true, false, false, true, false));   // an elk grazing by the crew that reads hostile (as the kit saw)
+    CHECK_FALSE(Crew::IsFoe(true, false, false, true, true));    // a wolf not on them yet
 }
 
 TEST_CASE("crew: a puppet's walk and run play at the rate that keeps his feet on the ground")

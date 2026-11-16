@@ -13,6 +13,8 @@
 
 #include <plugin.h>
 
+#include <algorithm>
+
 #include <CAnimBlendAssociation.h>
 #include <CAnimBlendHierarchy.h>
 #include <CAnimManager.h>
@@ -49,6 +51,7 @@ namespace AhShitRim::CrewPuppets
         constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
         constexpr int kBoneRightHand = 24;
         constexpr int kBonePelvis = 2;        // BONE_PELVIS
+        constexpr int kBoneNeck = 5;          // BONE_NECK
         constexpr unsigned short kAnimLooped = 0x2;
         constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
 
@@ -517,6 +520,22 @@ namespace AhShitRim::CrewPuppets
                 ped->m_matrix->right = frame.right;
                 ped->m_matrix->up = frame.up;
                 ped->m_matrix->at = frame.at;
+                // On a bike he leans as CJ does, not only as far as the bike rolls: San Andreas leans its rider into a
+                // turn with his own animation, well past the bike (the kit saw the bike roll 7 degrees in a turn, and
+                // the operator a pillion homie bolt upright beside CJ's lean). His matrix rolls about the bike's forward
+                // axis by CJ's upper body's lean across the bike (pelvis to neck), at most 45 degrees.
+                RwMatrix pelvis, neck;
+                if (a_cj->m_pVehicle->m_nVehicleClass == VEHICLE_BIKE && CjBody::BoneWorld(a_cj, kBonePelvis, pelvis) && CjBody::BoneWorld(a_cj, kBoneNeck, neck)) {
+                    const CVector spine(neck.pos.x - pelvis.pos.x, neck.pos.y - pelvis.pos.y, neck.pos.z - pelvis.pos.z);
+                    const auto    dot = [](const CVector& a_a, const CVector& a_b) { return a_a.x * a_b.x + a_a.y * a_b.y + a_a.z * a_b.z; };
+                    const float   across = dot(spine, frame.right), up = dot(spine, frame.at);
+                    const float   lean = std::clamp(std::atan2(across, up), -0.785f, 0.785f);
+                    if (std::isfinite(lean) && up > 0.0f) {
+                        const float c = std::cos(lean), s = std::sin(lean);
+                        ped->m_matrix->right = frame.right * c - frame.at * s;
+                        ped->m_matrix->at = frame.at * c + frame.right * s;
+                    }
+                }
             }
             ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
             ped->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
