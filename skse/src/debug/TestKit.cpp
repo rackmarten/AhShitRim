@@ -202,6 +202,18 @@ namespace AhShitRim::TestKit
         };
         std::array<Seen, Protocol::kVehicleMax> g_seen;
         bool                                    g_lampsOff = false;  // asr.lamps off: drawn and lit as if every lamp were out
+        // asr.keyhold's key while its hold runs: marked held for PlayerSync (DebugKey), whose stuck key check would let go of
+        // it every frame (the keyboard itself doesn't hold it). A hold cut short is let go by the next asr.keyhold, asr.key
+        // or asr.cj.
+        std::optional<std::uint32_t> g_keyHeld;
+
+        void LetGoOfHeldKey()
+        {
+            if (g_keyHeld) {
+                PlayerSync::DebugKey(*g_keyHeld, false);
+                g_keyHeld.reset();
+            }
+        }
         std::optional<bool>                     g_braking;            // asr.lamps brake / nobrake: drawn and lit as if braking, or not
 
         template <class T>
@@ -2121,6 +2133,7 @@ namespace AhShitRim::TestKit
                 "Hands the player to San Andreas (on=true, the default) or back to Skyrim, as F10 does; answers once it's done",
                 [](Call& a_call) -> Step {
                     const bool want = a_call.Flag("on", true);
+                    LetGoOfHeldKey();
                     g_lampsOff = false;  // a run that stopped between asr.lamps off and on leaves nothing behind a new handover
                     g_braking.reset();
                     PlayerSync::DebugHold(std::nullopt);  // nor held pedals
@@ -3234,7 +3247,8 @@ namespace AhShitRim::TestKit
 
         // A key event as the keyboard sends it, through Skyrim's input device manager: Skyrim's handlers (the menu open
         // one with its user event, Wait for T) and AhShitRim's input sink see it as they see a real key.
-        void SendKey(std::uint32_t a_dik, bool a_down)
+        // a_held: the seconds a repeat (a_down) or a release reports the key held, as Skyrim's keyboard sends them; a press is 0.
+        void SendKey(std::uint32_t a_dik, bool a_down, float a_held = -1.0f)
         {
             auto* devices = RE::BSInputDeviceManager::GetSingleton();
             auto* map = RE::ControlMap::GetSingleton();
@@ -3247,7 +3261,8 @@ namespace AhShitRim::TestKit
                 context = map->GetRuntimeData().contextPriorityStack.back();
             }
             const RE::BSFixedString user(map ? map->GetUserEventName(a_dik, RE::INPUT_DEVICE::kKeyboard, context) : std::string_view{});
-            auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, user, a_dik, a_down ? 1.0f : 0.0f, a_down ? 0.0f : 0.1f);
+            const float held = a_held >= 0.0f ? a_held : a_down ? 0.0f : 0.1f;
+            auto* event = RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, user, a_dik, a_down ? 1.0f : 0.0f, held);
             if (!event) {
                 throw Error("no button event");
             }
@@ -3297,11 +3312,92 @@ namespace AhShitRim::TestKit
                 "the hidden player is made to stand with him for fast travel and the wait menu",
                 [](Call&) -> Json { return JsonObject{ { "standing", PlayerSync::DebugStanding() }, { "cj", PlayerSync::DebugOwned() } }; });
 
+            SkseTestKit::AddCommand("asr.jetpack", "",
+                "The jetpack on CJ (San Andreas's gear slot): whether he has it on, his feet's height over the handover spot (units), whether "
+                "San Andreas has him standing, and each jet's way down (degrees below level, 90 straight down, 0 level, as its flames go)",
+                [](Call&) -> Json {
+                    RequireCj();
+                    const auto pose = CjPose();
+                    if (!pose) {
+                        throw Error("San Andreas hasn't answered this handover yet");
+                    }
+                    Protocol::BodyState gear{};
+                    const bool on = LinkService::Get().ReadGear(gear) && gear.handover == PlayerSync::DebugHandover() && (gear.flags & Protocol::kBodyJetpack) != 0;
+                    JsonArray jets;
+                    double    lowest = 90.0;
+                    for (const auto& along : gear.fx.along) {
+                        if (!on || (along[0] == 0.0f && along[1] == 0.0f && along[2] == 0.0f)) {
+                            continue;
+                        }
+                        const double down = std::asin(std::clamp(-static_cast<double>(along[2]), -1.0, 1.0)) * 180.0 / 3.14159265358979;
+                        lowest = (std::min)(lowest, down);
+                        jets.emplace_back(Round(down, 0.1));
+                    }
+                    const bool any = !jets.empty();
+                    return JsonObject{ { "on", on }, { "height", Round(pose->offset[2], 0.1) }, { "grounded", (pose->flags & Protocol::kPlayerGrounded) != 0 },
+                        { "jets", std::move(jets) }, { "jetsDown", any ? Json(Round(lowest, 0.1)) : Json() }, { "level", on ? gear.fx.level : 0 } };
+                });
+
+            SkseTestKit::AddTask("asr.keyhold", "<key> [seconds=<s>]",
+                "Holds one key down through Skyrim's own input for seconds (2), as the keyboard sends it (a press, a repeat every frame, the "
+                "release), then lets go: asr.key's keys, shift (Left Shift) or dik:<code>. Answers once it's let go, with CJ's feet's height "
+                "over the handover spot (units) as it went down, at its highest and at the release, and whether he stood as it went down. A hold "
+                "cut short is let go by the next asr.keyhold, asr.key or asr.cj",
+                [](Call& a_call) -> Step {
+                    RequireCj();
+                    const auto          text = a_call.Text("key");
+                    const auto          keys = text == "shift" ? std::vector<std::uint32_t>{ Input::kDikLeftShift } : ParseKeys(text);
+                    const double        seconds = a_call.Number("seconds", 2.0);
+                    if (keys.size() != 1 || seconds <= 0.0) {
+                        throw Error("one key, held a positive number of seconds");
+                    }
+                    a_call.DefaultTimeout(seconds + 10.0);
+                    LetGoOfHeldKey();
+                    struct Hold
+                    {
+                        bool   down = false;
+                        double from = 0.0;
+                        float  start = 0.0f, top = 0.0f, last = 0.0f;
+                        bool   grounded = false;
+                    };
+                    auto hold = std::make_shared<Hold>();
+                    return [dik = keys[0], seconds, hold, text](Call& a_call) -> std::optional<Json> {
+                        const auto pose = CjPose();
+                        if (!hold->down) {
+                            if (!pose) {
+                                return std::nullopt;  // his height from the first frame San Andreas has posed him
+                            }
+                            SendKey(dik, true, 0.0f);
+                            PlayerSync::DebugKey(dik, true);
+                            g_keyHeld = dik;
+                            hold->down = true;
+                            hold->from = a_call.Seconds();
+                            hold->start = hold->top = hold->last = pose->offset[2];
+                            hold->grounded = (pose->flags & Protocol::kPlayerGrounded) != 0;
+                            return std::nullopt;
+                        }
+                        if (pose) {
+                            hold->last = pose->offset[2];
+                            hold->top = (std::max)(hold->top, hold->last);
+                        }
+                        const double held = a_call.Seconds() - hold->from;
+                        if (held < seconds) {
+                            SendKey(dik, true, static_cast<float>(held));
+                            return std::nullopt;
+                        }
+                        SendKey(dik, false, static_cast<float>(held));
+                        LetGoOfHeldKey();
+                        return JsonObject{ { "key", text }, { "held", Round(held, 0.01) }, { "startHeight", Round(hold->start, 0.1) }, { "topHeight", Round(hold->top, 0.1) },
+                            { "endHeight", Round(hold->last, 0.1) }, { "rise", Round(hold->top - hold->start, 0.1) }, { "groundedAtStart", hold->grounded } };
+                    };
+                });
+
             SkseTestKit::AddTask("asr.key", "<keys> [frames=<n>] [close=<bool>]",
                 "Presses keys through Skyrim's own input, as the keyboard sends them (letters, digits, /, a space for Space, or dik:<code>), a press and a release "
                 "every two frames. Answers frames (20) later: whether Skyrim's wait menu opened meanwhile and what San Andreas's help box says "
                 "then; close=true (the default) closes the wait menu again",
                 [](Call& a_call) -> Step {
+                    LetGoOfHeldKey();
                     const auto keys = ParseKeys(a_call.Text("keys"));
                     const int  frames = static_cast<int>(a_call.Number("frames", 20.0));
                     const bool close = a_call.Flag("close", true);
