@@ -218,18 +218,22 @@ namespace AhShitRim::VehicleLights
 
     struct Tuning
     {
-        // Set from the test kit's night shots in Riverwood (scenarios/vehicle-lights*.json): Skyrim's moonlit road is
-        // already bright and blue, so a pool the player clearly sees takes several times a torch's light, warm white.
+        // Set from the test kit's night shots on Riverwood's road and on the snow up to High Hrothgar and in Winterhold
+        // (scenarios/vehicle-lights*.json): a pool the player sees on the dark road, warm white, that doesn't burn snow
+        // white. Snow takes about 6 times the light the road does, and shines: at 10 times a torch 42% of the lit snow
+        // clipped to white; at 2.5 from 3 m up none, while Riverwood's road ahead is still 9 to 15 brighter (luma) than
+        // unlit. The height spreads the light: from 3 m up it falls more evenly from 5 m to 20 m out, and the snow in
+        // front of the car, where CJ would stand, no longer clips (at 3 from 2 m up 4% of it did).
         float beamAhead = 6.0f * Pose::kUnitsPerMeter;   // at least this far ahead of the headlights
-        float beamRaise = 0.8f * Pose::kUnitsPerMeter;   // above them, so the pool spreads over the road
+        float beamRaise = 3.0f * Pose::kUnitsPerMeter;   // above them, so the pool spreads over the road
         float beamRadius = 10.0f * Pose::kUnitsPerMeter;
-        float beamIntensity = 10.0f;                      // the point light's fade: Skyrim's torch is about 1
+        float beamIntensity = 2.5f;                       // the point light's fade: Skyrim's torch is about 1
         float tailDrop = 0.45f * Pose::kUnitsPerMeter;   // below the tail lights, toward the road behind
         float tailBack = 1.2f * Pose::kUnitsPerMeter;    // and behind them
         float tailRadius = 2.2f * Pose::kUnitsPerMeter;
-        float tailIntensity = 5.0f;
+        float tailIntensity = 3.0f;                       // a red glow behind the car, not a floodlight
         float brakeRadius = 3.0f * Pose::kUnitsPerMeter;
-        float brakeIntensity = 10.0f;
+        float brakeIntensity = 6.0f;
         float lampGlow = 6.0f;   // a burning lamp's mesh and its corona: their emissive strength (Skyrim's shader)
         float brakeGlow = 2.0f;  // a tail lamp's, times this while braking
     };

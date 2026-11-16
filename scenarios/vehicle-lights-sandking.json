@@ -5,12 +5,15 @@
 // braking makes them brighter, the headlight glass glows white and the headlights light the road ahead.
 // scripts/skytest.ps1 run scenarios/vehicle-lights-sandking.json (scenarios/README.md). Needs the headlights (v36).
 //
-// The limits (luma, 0 to 255) mean "clearly visible" in the shots at 1280x720, each about half of what the run of 13
-// November 2026 measured: tail lenses 93 darker with the lamps off (red 154), their halos 29 and 31, the road behind the
-// left lamp 16 and the right 11 (red 40 and 28); braking, the halos 10 and 12 brighter and the road behind the left lamp
-// 15 (red 38) but the right one 2.6 (red 8.6): its patch falls on the grass and bushes beside the road there, which
-// show little; the headlight glass 250 luma lit, 213 darker off, its halo 36; the road ahead 37 and 41. The Sandking's
-// lamps are about a metre up: the road behind them is 75 units down.
+// The limits (luma, 0 to 255) at 1280x720 are two-sided, as vehicle-lights.json's. Floors, "clearly visible" on this
+// dark road, about half to two thirds of the least the runs of 16 November 2026 measured at the defaults: tail lenses
+// 91 darker with the lamps off (red 152; 136 in another run), their halos 27 and 24, the road behind the left lamp 8.4
+// and the right 5.6 (red 22 and 16: its patch falls on the grass and bushes beside the road there, which show little);
+// braking, the halos 9 brighter and the road behind 15 and 11 (red 39 and 28); the headlight glass 249 luma lit, 212
+// darker off, its halo 36; the road ahead 9.6 and 17. Ceilings: the road behind each tail lamp no more than 14 brighter
+// (a glow, not a floodlight: the old 5 times a torch gave the left 16; the right one's patch on the grass, 11, is too
+// faint to tell), braking no more than 36 (24 and 16 at the defaults), nothing on the lit road ahead burned white. The Sandking's lamps are about a metre up: the road
+// behind them is 75 units down.
 {
   "name": "vehicle-lights-sandking",
   "steps": [
@@ -46,7 +49,8 @@
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,550,-80", "worldRadius": 100 } ],
       "expect": ["regions.0.delta < -45", "regions.1.delta < -45", "regions.0.color.r < -70", "regions.1.color.r < -70",
                  "regions.2.delta < -14", "regions.3.delta < -14",
-                 "regions.4.delta < -5", "regions.5.delta < -5", "regions.4.color.r < -14", "regions.5.color.r < -14",
+                 "regions.4.delta < -4", "regions.5.delta < -3", "regions.4.color.r < -12", "regions.5.color.r < -8",
+                 "regions.4.delta > -14", "regions.5.delta > -14",
                  "regions.6.delta > -8", "regions.6.delta < 8"] },
 
     { "label": "not braking", "cmd": "asr.lamps", "state": "nobrake" },
@@ -61,11 +65,19 @@
                    { "name": "haloRight", "at": "asr.lamp:rearRight", "worldRadius": 45 },
                    { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-75", "worldRadius": 40 },
                    { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-75", "worldRadius": 40 } ],
-      "expect": ["regions.0.delta > 4", "regions.1.delta > 4", "regions.2.delta > 7", "regions.2.color.r > 15", "regions.3.color.r > 4"] },
+      "expect": ["regions.0.delta > 4", "regions.1.delta > 4", "regions.2.delta > 7", "regions.2.color.r > 15", "regions.3.color.r > 8"] },
+    { "label": "and braking is still a glow, not a floodlight", "cmd": "compare", "a": "sk-brake-on", "b": "sk-tail-off",
+      "regions": [ { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-75", "worldRadius": 40 },
+                   { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-75", "worldRadius": 40 } ],
+      "expect": ["regions.0.delta > -36", "regions.1.delta > -36"] },
 
     { "label": "the road ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 1000, "pitch": 35 },
     "wait frames=20",
     { "cmd": "screenshot", "name": "sk-road-on" },
+    { "label": "nothing on the lit road burned white", "cmd": "pixels", "shot": "sk-road-on", "bright": 250,
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
+                   { "name": "mid", "at": "asr.vehicle:", "offset": "700,0,-80", "worldRadius": 150 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01"] },
     { "label": "the headlights: from the front, the trees in between cut away", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 180, "distance": 600, "pitch": 10, "near": 350 },
     "wait frames=20",
     { "cmd": "screenshot", "name": "sk-front-on" },
@@ -84,7 +96,7 @@
       "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
                    { "name": "mid", "at": "asr.vehicle:", "offset": "700,0,-80", "worldRadius": 150 },
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,550,-80", "worldRadius": 100 } ],
-      "expect": ["regions.0.delta < -15", "regions.1.delta < -15", "regions.2.delta > -4"] },
+      "expect": ["regions.0.delta < -6", "regions.1.delta < -9", "regions.2.delta > -4"] },
     { "label": "the front lamps glow, with a halo", "cmd": "compare", "a": "sk-front-on", "b": "sk-front-off",
       "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 15 },
                    { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 15 },

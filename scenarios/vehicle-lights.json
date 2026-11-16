@@ -10,12 +10,17 @@
 // scripts/skytest.ps1 run scenarios/vehicle-lights.json (scenarios/README.md); vehicle-lights-sandking.json does the
 // Sandking. Needs the headlights (protocol v36; until they are on main, scenarios/README.md says how to run it).
 //
-// The limits (luma, 0 to 255) mean "clearly visible" in the shots at 1280x720, each about half of what the run of 13
-// November 2026 measured, where the PNGs showed white headlight glass with a halo, red coronas and a red patch on the road
-// behind, and the road ahead lit: tail lenses 122 darker with the lamps off (red 176), their halos 22, the road behind
-// each lamp 19 and 21 (red 47 and 51); braking, the halos 4.5 brighter and the road behind 19 and 25 (red 45 and 60); the
-// headlight glass 229 luma lit (197 in another run; 150 is the limit, unlit it's under 15), 192 darker off, its halo 34; the road ahead 31 and 34. The ground beside the car changes
-// by 2 or 3 either way (the eye adaptation following the lamps; 6 in another run, so its limit is 8).
+// The limits (luma, 0 to 255) at 1280x720 are two-sided. Floors: "clearly visible" on this dark road at night, about
+// half to two thirds of what the runs of 16 November 2026 measured at the defaults, where the PNGs showed white headlight
+// glass with a halo, red coronas, a red patch on the road behind each lamp and a warm pool on the road ahead: tail lenses
+// 123 darker with the lamps off (red 176), their halos 21 and 22, the road behind each lamp 11 and 10 (red 29 and 27);
+// braking, the halos 4.4 brighter and the road behind 17 and 14 (red 42 and 36); the headlight glass 229 luma lit (150 is
+// the limit, unlit it's under 15), 192 darker off, its halo 34; the road ahead 8 and 15 (a change of 6 on a road at
+// about 35 is a patch anyone sees). Ceilings: the tail lights a glow, not a floodlight (the road behind each lamp no more
+// than 16 brighter: at the old 5 times a torch it was 19 and 21), braking too (no more than 36 brighter than unlit: 28
+// and 24 at the defaults, about 45 at the old 10 times a torch, which lit the road behind 1.6 times as much as 6 does),
+// and nothing on the lit road burned white. Snow, which takes about 6 times the light, is vehicle-lights-snow.json's. The ground beside the car changes by 2 or 3 either way
+// (the eye adaptation following the lamps; 6 in another run, so its limit is 8).
 {
   "name": "vehicle-lights",
   "steps": [
@@ -58,7 +63,8 @@
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
       "expect": ["regions.0.delta < -60", "regions.1.delta < -60", "regions.0.color.r < -80", "regions.1.color.r < -80",
                  "regions.2.delta < -10", "regions.3.delta < -10",
-                 "regions.4.delta < -9", "regions.5.delta < -9", "regions.4.color.r < -20", "regions.5.color.r < -20",
+                 "regions.4.delta < -6", "regions.5.delta < -6", "regions.4.color.r < -15", "regions.5.color.r < -15",
+                 "regions.4.delta > -16", "regions.5.delta > -16",
                  "regions.6.delta > -8", "regions.6.delta < 8"] },
 
     { "label": "not braking", "cmd": "asr.lamps", "state": "nobrake" },
@@ -78,10 +84,18 @@
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
       "expect": ["regions.0.delta > 2", "regions.1.delta > 2", "regions.2.delta > 9", "regions.3.delta > 9",
                  "regions.2.color.r > 20", "regions.3.color.r > 20", "regions.4.delta < 8", "regions.4.delta > -8"] },
+    { "label": "and braking is still a glow, not a floodlight", "cmd": "compare", "a": "brake-on", "b": "tail-off",
+      "regions": [ { "name": "roadBehindLeft", "at": "asr.lamp:rearLeft", "offset": "-120,0,-65", "worldRadius": 40 },
+                   { "name": "roadBehindRight", "at": "asr.lamp:rearRight", "offset": "-120,0,-65", "worldRadius": 40 } ],
+      "expect": ["regions.0.delta > -36", "regions.1.delta > -36"] },
 
     { "label": "the road ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 900, "pitch": 35 },
     "wait frames=20",
     { "cmd": "screenshot", "name": "road-on" },
+    { "label": "nothing on the lit road burned white", "cmd": "pixels", "shot": "road-on", "bright": 250,
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "350,0,-58", "worldRadius": 100 },
+                   { "name": "mid", "at": "asr.vehicle:", "offset": "650,0,-58", "worldRadius": 150 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01"] },
     { "label": "the headlights: from the front", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 180, "distance": 500, "pitch": 10, "near": 250 },
     "wait frames=20",
     { "cmd": "screenshot", "name": "front-on" },
@@ -100,7 +114,7 @@
       "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "350,0,-58", "worldRadius": 100 },
                    { "name": "mid", "at": "asr.vehicle:", "offset": "650,0,-58", "worldRadius": 150 },
                    { "name": "groundBeside", "at": "asr.vehicle:", "offset": "0,500,-58", "worldRadius": 100 } ],
-      "expect": ["regions.0.delta < -15", "regions.1.delta < -15", "regions.2.delta > -4"] },
+      "expect": ["regions.0.delta < -6", "regions.1.delta < -8", "regions.2.delta > -4"] },
     { "label": "the front lamps glow, with a halo", "cmd": "compare", "a": "front-on", "b": "front-off",
       "regions": [ { "name": "lampLeft", "at": "asr.lamp:frontLeft", "worldRadius": 15 },
                    { "name": "lampRight", "at": "asr.lamp:frontRight", "worldRadius": 15 },

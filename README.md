@@ -190,8 +190,8 @@ Every vehicle also comes by its San Andreas name (SANCHEZ, HYDRA, MAVERICK), and
 | `[Input]` | `KeyLayout` | `Modern` (default) or `Classic`, the keys above |
 | `[Missions]` | `MiscPassed` | `1` (default): a small quest done (a favour, a delivery) shows MISSION PASSED! with San Andreas's jingle, as its odd jobs do. `0`: Skyrim's own notifications for those |
 | `[Hud]` | `Compass` | `1` keeps Skyrim's compass up beside the radar; `0` (default) hides it |
-| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `10`, Skyrim's torch is about 1), how far round (`10` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`0.8` m) |
-| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`5`, `2.2` m), while braking (`10`, `3` m), and how far below and behind the lamps it sits (`TailDrop` `0.45` m, `TailBack` `1.2` m) |
+| `[Headlights]` | `Intensity`, `Radius`, `Ahead`, `Raise` | How bright the headlights light the road (default `2.5`, Skyrim's torch is about 1; snow takes about 6 times the light the road does: at `10` it burned 42% of the lit snow white, at `2.5` none), how far round (`10` m), at least how far ahead of the lamps (`6` m; a larger radius moves it further out, so the car itself stays unlit) and above them (`3` m; higher spreads the light more evenly) |
+| `[Headlights]` | `TailIntensity`, `TailRadius`, `BrakeIntensity`, `BrakeRadius`, `TailDrop` | The tail lights' red glow on the ground behind (`3`, `2.2` m), while braking (`6`, `3` m), and how far below and behind the lamps it sits (`TailDrop` `0.45` m, `TailBack` `1.2` m) |
 | `[Headlights]` | `LampGlow`, `BrakeGlow` | How brightly a burning lamp and its corona glow (`6`; `0` leaves the lamps unlit), and a tail lamp's times this while braking (`2`) |
 
 ## Combat balance
