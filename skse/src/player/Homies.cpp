@@ -110,6 +110,7 @@ namespace AhShitRim::Homies
             float           aimIn = 0.0f;   // seconds left on his aim (Crew::kAimEvery)
             Crew::AimOff    aimOff;         // where it is, off the target's chest
             RE::FormID      aimedAt = 0;    // the target it was taken for
+            bool            rode = false;   // he rode with CJ last frame
             Crew::Straggler straggler;
             RE::ActorHandle target;
             bool            aiming = false, firing = false;
@@ -1221,9 +1222,15 @@ namespace AhShitRim::Homies
                 } else if (h.straggler.Update(distance, a_delta)) {
                     Regroup(a_player, h, actor, viewHeading);
                 }
-                if ((h.offsetIn -= a_delta) <= 0.0f && !Riders::Rides(h.id)) {
+                const bool rides = Riders::Rides(h.id);
+                if (h.rode && !rides) {
+                    // Out of CJ's vehicle: Riders held him in his seat and then beside his door, so his package starts over
+                    // from there (left running from before, it kept one standing while CJ walked 16 m off; the kit saw it).
+                    TellPlace(a_player, h, true);
+                } else if ((h.offsetIn -= a_delta) <= 0.0f && !rides) {
                     TellPlace(a_player, h);  // not while he rides with CJ: Riders seats him
                 }
+                h.rode = rides;
             }
             if (actor->Is3DLoaded()) {
                 Cull(h, actor, a_delta);
