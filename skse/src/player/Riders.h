@@ -5,6 +5,7 @@
 namespace AhShitRim::Protocol
 {
     struct BodyState;
+    struct BodyBone;
 }
 
 // The player's followers riding with CJ (protocol v28; the rules in protocol/cpp/passengers.h). When CJ gets into
@@ -30,4 +31,8 @@ namespace AhShitRim::Riders
 
     // Who rides with CJ now (v35: Hitboxes covers them as it covers CJ).
     std::vector<RE::FormID> Riding();
+
+    // The test kit (debug): the seat a_id rides in as CJ's vehicle was drawn when the riders were last held, and where
+    // that vehicle was in Skyrim's world (the seat is relative to it); false when he doesn't ride.
+    bool DebugSeatOf(RE::FormID a_id, Protocol::BodyBone& a_seat, RE::NiPoint3& a_vehicleFeet);
 }

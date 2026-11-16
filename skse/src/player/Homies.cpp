@@ -116,6 +116,8 @@ namespace AhShitRim::Homies
             bool            aiming = false, firing = false;
             RE::NiPoint3    aim;
             Body::Interpolator body, gun;
+            Protocol::BodyState drawn{};    // his body as last drawn, at drawnAt (his actor's place then); the test kit reads it
+            RE::NiPoint3        drawnAt;
         };
 
         struct Remembered
@@ -1041,6 +1043,8 @@ namespace AhShitRim::Homies
             const auto         feet = a_actor->GetPosition();
             Protocol::BodyState pose{};
             if (a_homie.body.Sample(now, pose) && ModelView::Has(pose.model)) {
+                a_homie.drawn = pose;
+                a_homie.drawnAt = feet;
                 const auto copy = CopyId(static_cast<std::uint32_t>(a_slot), pose.model, false);
                 if (ModelView::AddCopy(pose.model, copy)) {
                     pose.model = copy;
@@ -1421,6 +1425,18 @@ namespace AhShitRim::Homies
     float DamageFactor() { return state.damageFactor; }
 
     int DebugSlotOf(RE::FormID a_id) { return state.slots.Find(a_id); }
+
+    bool DebugDrawnOf(RE::FormID a_id, Protocol::BodyState& a_pose, RE::NiPoint3& a_feet)
+    {
+        for (const auto& h : state.homies) {
+            if (h.id == a_id && (h.drawn.flags & Protocol::kBodyValid)) {
+                a_pose = h.drawn;
+                a_feet = h.drawnAt;
+                return true;
+            }
+        }
+        return false;
+    }
 
     void CountShot(bool a_hit)
     {

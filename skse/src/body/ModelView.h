@@ -38,6 +38,10 @@ namespace AhShitRim::ModelView
     // (unscaled). False while it isn't shown.
     bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out);
 
+    // The test kit (debug): which of model a_model's bones (a pose's index) is San Andreas's bone a_boneId; -1 when it
+    // has none or isn't built.
+    int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId);
+
     // Once a frame after the Shows: hides every model not shown this frame.
     void EndFrame();
     void HideAll();

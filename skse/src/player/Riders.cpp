@@ -167,4 +167,15 @@ namespace AhShitRim::Riders
         }
         return out;
     }
+
+    bool DebugSeatOf(RE::FormID a_id, Protocol::BodyBone& a_seat, RE::NiPoint3& a_vehicleFeet)
+    {
+        const auto found = std::find_if(state.riders.begin(), state.riders.end(), [&](const Rider& a_rider) { return a_rider.id == a_id; });
+        if (found == state.riders.end() || found->seat < 0 || found->seat >= static_cast<int>(Protocol::kSeatMax)) {
+            return false;
+        }
+        a_seat = state.seats[found->seat];
+        a_vehicleFeet = state.feet;
+        return true;
+    }
 }
