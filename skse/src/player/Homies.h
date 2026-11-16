@@ -102,6 +102,15 @@ namespace AhShitRim::Homies
         std::vector<RE::FormID> targeted;  // everyone a follower has had as his target
     };
     DebugStats DebugStatsOf(bool a_reset);
+    struct DebugLeftovers
+    {
+        std::vector<RE::FormID> strays;         // enabled actors made from the homies' soldier and not tracked, any faction
+        int                     frozen = 0;     // of those, with their AI off
+        int                     leftovers = 0;  // of those, homies nobody tracks (in the player's faction or a homie's name)
+        unsigned                taken = 0;      // homies nobody tracked taken out so far
+    };
+    DebugLeftovers DebugLeftoversOf(RE::PlayerCharacter* a_player, float a_metres);
+    RE::Actor*     DebugMakeLeftover(RE::PlayerCharacter* a_player);  // a homie made and forgotten 3 m ahead, as a save could leave one
     void       DebugDismissAll();  // every follower sent off, none to come back
     int        DebugSlotOf(RE::FormID a_id);  // a homie's crew slot (San Andreas's puppet of him), -1 for none
     // A homie's body as Skyrim last drew it (its own model's id, not the drawn copy's) and where (his actor's feet then).

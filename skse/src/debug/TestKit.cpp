@@ -1489,6 +1489,29 @@ namespace AhShitRim::TestKit
                         { "about", Homies::DebugCount(false) } };
                 });
 
+            SkseTestKit::AddCommand("asr.crewleft", "[metres=<m>] [make=<bool>]",
+                "Actors made from the homies' soldier within metres (default 150) of the player that the crew doesn't track (strays, refs; "
+                "frozen: their AI off; leftovers: in the player's faction or named a homie), and how many such homies were taken out so far "
+                "(taken). make=true first makes a homie 3 m ahead and forgets him, as a save could leave one",
+                [](Call& a_call) -> Json {
+                    auto*       player = RE::PlayerCharacter::GetSingleton();
+                    std::string made;
+                    if (a_call.Flag("make", false)) {
+                        auto* actor = Homies::DebugMakeLeftover(player);
+                        if (!actor) {
+                            throw Error("no homie could be made");
+                        }
+                        made = SkseTestKit::FormId(actor->GetFormID());
+                    }
+                    const auto left = Homies::DebugLeftoversOf(player, static_cast<float>(a_call.Number("metres", 150.0)));
+                    JsonArray  strays;
+                    for (const auto id : left.strays) {
+                        strays.emplace_back(SkseTestKit::FormId(id));
+                    }
+                    return JsonObject{ { "strays", static_cast<int>(left.strays.size()) }, { "frozen", left.frozen }, { "leftovers", left.leftovers },
+                        { "taken", left.taken }, { "made", made }, { "about", Homies::DebugCount(false) }, { "refs", std::move(strays) } };
+                });
+
             SkseTestKit::AddCommand("asr.foe", "<ref>",
                 "Why the crew shoots an actor or not (Crew::IsFoe's inputs, its combat target, and each follower's distance, sight and range)",
                 [](Call& a_call) -> Json {

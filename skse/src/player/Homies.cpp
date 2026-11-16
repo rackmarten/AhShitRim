@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <mutex>
+#include <numbers>
 #include <vector>
 
 namespace AhShitRim::Homies
@@ -152,6 +154,7 @@ namespace AhShitRim::Homies
             bool                     remakePending = false;
             std::vector<RE::FormID>  purge;        // a loaded save's homies, taken out once it has settled
             bool                     lookForLeftovers = false;
+            unsigned                 leftoversTaken = 0;  // homies a save kept that nobody tracked (Leftover), taken out so far
             float                    settle = 0.0f;
             std::vector<RE::ObjectRefHandle> leaving;  // to be disabled, a few a frame
             std::vector<RE::ObjectRefHandle> markers;  // ground probes, deleted the next frame
@@ -1004,6 +1007,79 @@ namespace AhShitRim::Homies
             return a_actor->GetPosition() + RE::NiPoint3(0.0f, 0.0f, height * 0.65f);
         }
 
+        // A homie nobody tracks: an actor made at runtime from the homies' soldier (kBase), in the player's faction or with a
+        // homie's name, as Make leaves him, and not one of state.homies. The crew hears that the player moved (OnReanchor)
+        // only once he's in the new place, when the old cells are already gone: the homies left behind there (at Whiterun's
+        // inside gate, after CJ went out through it) were never disabled, and the next time their cell loaded they stood
+        // there as frozen Imperial soldiers (their AI off, their 3D no longer hidden) among the crew made again, kept in
+        // every save from then on. The co-save's list of them didn't help either: it's looked up once a loaded game
+        // settles, when their cell isn't loaded. So he's looked for wherever he turns up: in the cells loaded when a loaded
+        // game settles, and as each runtime-made actor's cell attaches (AttachSink).
+        bool Leftover(RE::Actor* a_actor)
+        {
+            if (!a_actor || a_actor->IsPlayerRef() || a_actor->GetFormID() < 0xFF000000 || a_actor->IsDisabled() || a_actor->IsDeleted()) {
+                return false;
+            }
+            auto*       base = a_actor->GetActorBase();
+            const auto* leveled = a_actor->extraList.GetByType<RE::ExtraLeveledCreature>();
+            const bool  made = (base && base->GetFormID() == kBase) || (leveled && leveled->originalBase && leveled->originalBase->GetFormID() == kBase);
+            if (!made || IsHomie(a_actor)) {
+                return false;
+            }
+            auto*       faction = RE::TESForm::LookupByID<RE::TESFaction>(kPlayerFaction);
+            const char* name = a_actor->GetDisplayFullName();
+            return (faction && a_actor->IsInFaction(faction)) || (name && Crew::kHomieName == name);
+        }
+
+        void TakeLeftover(RE::Actor* a_actor, const char* a_when)
+        {
+            const auto  at = a_actor->GetPosition();
+            const auto* cell = a_actor->GetParentCell();
+            const char* cellName = cell ? cell->GetFormEditorID() : nullptr;
+            SKSE::log::info("homies: {:08X} '{}' is a homie nobody tracks ({}, AI {}, {}, at ({:.0f},{:.0f},{:.0f}) in {}): taken out", a_actor->GetFormID(),
+                a_actor->GetDisplayFullName(), a_when, a_actor->IsAIEnabled() ? "on" : "off", a_actor->IsDead() ? "dead" : "alive", at.x, at.y, at.z,
+                cellName && *cellName ? std::string(cellName) : std::format("{:08X}", cell ? cell->GetFormID() : 0));
+            a_actor->Disable();  // never deleted: an actor deleted as his cell came in crashed Skyrim's movement update
+            state.leftoversTaken++;
+        }
+
+        // Every homie nobody tracks in the loaded cells (the cells a load brings in send no attach events here).
+        void TakeLeftoversLoaded(RE::PlayerCharacter* a_player)
+        {
+            auto* tes = RE::TES::GetSingleton();
+            if (!a_player || !tes) {
+                return;
+            }
+            std::vector<RE::Actor*> found;
+            tes->ForEachReferenceInRange(a_player, 30000.0f, [&](RE::TESObjectREFR* a_ref) {
+                if (auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr; actor && Leftover(actor)) {
+                    found.push_back(actor);
+                }
+                return RE::BSContainer::ForEachResult::kContinue;
+            });
+            for (auto* actor : found) {
+                TakeLeftover(actor, "in a loaded game");
+            }
+        }
+
+        // Runtime-made references whose cell attached, looked at on the main thread (Sweep): the event may come off it.
+        std::mutex              g_attachedLock;
+        std::vector<RE::FormID> g_attached;
+
+        struct AttachSink : RE::BSTEventSink<RE::TESCellAttachDetachEvent>
+        {
+            RE::BSEventNotifyControl ProcessEvent(const RE::TESCellAttachDetachEvent* a_event, RE::BSTEventSource<RE::TESCellAttachDetachEvent>*) override
+            {
+                if (a_event && a_event->attached && a_event->reference && a_event->reference->GetFormID() >= 0xFF000000 && a_event->reference->As<RE::Actor>()) {
+                    std::scoped_lock guard(g_attachedLock);
+                    if (g_attached.size() < 4096) {
+                        g_attached.push_back(a_event->reference->GetFormID());
+                    }
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+
         // His Skyrim 3D hidden, shape by shape (the skeleton stays for his AI), again every kCullEvery: a drawn weapon, a
         // quiver or an outfit put back adds shapes to it after the first pass.
         void Cull(Homie& a_homie, RE::Actor* a_actor, float a_delta)
@@ -1088,6 +1164,10 @@ namespace AhShitRim::Homies
 
     void OnDataLoaded()
     {
+        static AttachSink attachSink;
+        if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
+            events->AddEventSink<RE::TESCellAttachDetachEvent>(&attachSink);
+        }
         const auto number = [](const char* a_section, const char* a_key, float a_default) {
             const auto text = Ini::Value(a_section, a_key);
             if (text.empty()) {
@@ -1367,6 +1447,24 @@ namespace AhShitRim::Homies
                 }
                 SKSE::log::info("homies: the loaded game has settled: {} homie(s) the save kept taken out, {} follower(s) to come back", taken, state.remake.size());
                 state.purge.clear();
+                TakeLeftoversLoaded(player);
+            }
+        }
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* ui = RE::UI::GetSingleton();
+        auto* here = player ? player->GetParentCell() : nullptr;
+        if (!state.lookForLeftovers && player && player->Is3DLoaded() && here && here->IsAttached() && !(ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME))) {
+            // Once a loaded game has settled (the crew made since then is tracked): any untracked homie whose cell attached
+            // (the homies left behind when the player went: Leave can't disable them once their cell is gone).
+            std::vector<RE::FormID> attached;
+            {
+                std::scoped_lock guard(g_attachedLock);
+                attached.swap(g_attached);
+            }
+            for (const auto id : attached) {
+                if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(id); actor && Leftover(actor)) {
+                    TakeLeftover(actor, "his cell loaded");
+                }
             }
         }
     }
@@ -1646,6 +1744,48 @@ namespace AhShitRim::Homies
         return out;
     }
 
+    DebugLeftovers DebugLeftoversOf(RE::PlayerCharacter* a_player, float a_metres)
+    {
+        DebugLeftovers out;
+        out.taken = state.leftoversTaken;
+        auto* tes = RE::TES::GetSingleton();
+        if (!a_player || !tes) {
+            return out;
+        }
+        tes->ForEachReferenceInRange(a_player, a_metres * Crew::kMeter, [&](RE::TESObjectREFR* a_ref) {
+            auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
+            if (!actor || actor->IsDisabled() || actor->IsDeleted()) {
+                return RE::BSContainer::ForEachResult::kContinue;
+            }
+            auto*       base = actor->GetActorBase();
+            const auto* leveled = actor->extraList.GetByType<RE::ExtraLeveledCreature>();
+            const bool  made = (base && base->GetFormID() == kBase) || (leveled && leveled->originalBase && leveled->originalBase->GetFormID() == kBase);
+            if (made && !IsHomie(actor)) {
+                out.strays.push_back(actor->GetFormID());
+                out.frozen += actor->IsAIEnabled() ? 0 : 1;
+                out.leftovers += Leftover(actor) ? 1 : 0;
+            }
+            return RE::BSContainer::ForEachResult::kContinue;
+        });
+        return out;
+    }
+
+    RE::Actor* DebugMakeLeftover(RE::PlayerCharacter* a_player)
+    {
+        if (!a_player) {
+            return nullptr;
+        }
+        const float heading = a_player->GetAngleZ();
+        const auto  at = a_player->GetPosition() + RE::NiPoint3(std::sin(heading), std::cos(heading), 0.0f) * (3.0f * Crew::kMeter);
+        auto*       homie = Make(a_player, at, heading + std::numbers::pi_v<float>, Crew::kModels[0], 0, false);
+        if (!homie) {
+            return nullptr;
+        }
+        auto* actor = Get(*homie);
+        state.homies.pop_back();  // forgotten, as a save could leave him: made, his AI off, and not tracked
+        return actor;
+    }
+
     DebugStats DebugStatsOf(bool a_reset)
     {
         DebugStats out{ state.hushedLines, state.hushedSounds, state.followPuts, state.gearStripped, state.drawnFrames, state.fistsFrames, state.unwaited,
@@ -1762,6 +1902,10 @@ namespace AhShitRim::Homies
 
     void Revert()
     {
+        {
+            std::scoped_lock guard(g_attachedLock);
+            g_attached.clear();  // the old game's: the loaded game's own come after this
+        }
         state.homies.clear();
         state.spots.clear();
         state.slots.Clear();
