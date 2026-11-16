@@ -1,0 +1,37 @@
+// Homies a save kept with no record of them (v39): they stood at Whiterun's inside gate as frozen Imperial soldiers, their
+// AI off and their 3D no longer hidden, every time the cell loaded, among the crew made there. Homies nobody tracks are
+// taken out as their cell attaches. Run it from a save that has some (a playtest save looking at the inside gate, copied to
+// Skyrim's Saves folder as CrewLeftovers): just after the load none is left within 150 m, nor any frozen soldier, and the
+// crew stands at the gate. A homie made and forgotten there (asr.crewleft make=true, as such a save could leave one) is
+// gone once CJ has left Whiterun and come back, and none of the gate's crew is left behind either.
+// scripts/skytest.ps1 session -Start save:CrewLeftovers, then scripts/skytest.ps1 run scenarios/crew-leftovers.json
+// (scenarios/README.md).
+{
+  "name": "crew-leftovers",
+  "steps": [
+    { "label": "the loaded game settles", "cmd": "wait", "seconds": 6 },
+    { "label": "inside Whiterun", "cmd": "state", "ref": "player", "expect": ["dead == false"] },
+    { "label": "the save's untracked homies taken out, none left near the gate", "cmd": "asr.crewleft", "expect": ["taken >= 1", "strays == 0", "frozen == 0"] },
+    { "label": "the gate's crew comes", "cmd": "wait", "seconds": 4 },
+    { "label": "no stray among them", "cmd": "asr.crewleft", "expect": ["strays == 0", "about > 0"] },
+    { "label": "the gate after the load", "cmd": "screenshot", "name": "gate-loaded", "camera": "orbit player yaw=0 distance=420 pitch=12", "settle": 1 },
+    { "label": "a homie made and forgotten 3 m ahead", "cmd": "asr.crewleft", "make": true, "expect": ["strays >= 1", "leftovers >= 1"] },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "he still stands there (his cell hasn't loaded again)", "cmd": "asr.crewleft", "expect": ["strays >= 1", "frozen >= 1"] },
+    { "label": "out of Whiterun, to the stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "outside", "cmd": "state", "ref": "player", "expect": ["dead == false"] },
+    { "label": "no stray outside", "cmd": "asr.crewleft", "expect": ["strays == 0"] },
+    { "label": "back into Whiterun", "cmd": "console", "command": "cow WhiterunWorld 4 -2" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "to the inside gate", "cmd": "console", "command": "player.setpos x 21013" },
+    { "cmd": "console", "command": "player.setpos y -7281" },
+    { "cmd": "console", "command": "player.setpos z -3600" },
+    { "cmd": "console", "command": "player.setangle z 252" },
+    { "label": "the gate's crew comes again", "cmd": "wait", "seconds": 6 },
+    { "label": "by the gate", "cmd": "state", "ref": "player", "expect": ["position.x ~ 21013 +- 300", "position.y ~ -7281 +- 300"] },
+    { "label": "the forgotten homie gone, no stray or frozen soldier left", "cmd": "asr.crewleft", "expect": ["taken >= 2", "strays == 0", "frozen == 0", "about > 0"] },
+    { "label": "CJ walks a few metres toward the gate (he keeps his own heading)", "cmd": "asr.walk", "points": "20500,-7380", "gait": "walk" },
+    { "label": "the gate after coming back", "cmd": "screenshot", "name": "gate-again", "camera": "orbit player yaw=0 distance=420 pitch=12", "settle": 1 }
+  ]
+}
