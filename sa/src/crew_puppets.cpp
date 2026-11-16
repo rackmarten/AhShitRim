@@ -89,6 +89,8 @@ namespace AhShitRim::CrewPuppets
             std::array<Puppet, Protocol::kCrewMax> puppets{};
             std::map<std::uint16_t, ModelEntry>    bodies;   // by ped model
             std::map<std::uint8_t, ModelEntry>     weapons;  // by weapon type
+            float                                  pillionLean = 0.0f, pillionBike = 0.0f;  // radians: CJ's upper body across a bike, the bike's own roll
+            unsigned                               pillionFrames = 0, pillionMissed = 0;
             unsigned                               handover = 0;
             bool                                   loggedFirst = false;
             std::uint32_t                          inputFrame = 0;   // Skyrim's frame the gaits and facings last moved on
@@ -535,6 +537,11 @@ namespace AhShitRim::CrewPuppets
                         ped->m_matrix->right = frame.right * c - frame.at * s;
                         ped->m_matrix->at = frame.at * c + frame.right * s;
                     }
+                    state.pillionLean = lean;
+                    state.pillionBike = std::asin(std::clamp(frame.right.z, -1.0f, 1.0f));
+                    state.pillionFrames++;
+                } else if (a_cj->m_pVehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                    state.pillionMissed++;  // CJ's bones weren't there
                 }
             }
             ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
@@ -679,6 +686,10 @@ namespace AhShitRim::CrewPuppets
                     Log(std::format("crew: moving followers faced {:.0f} degrees off their way on average, {:.0f} at most ({} frames)",
                         state.facedSum / state.facedSamples * 180.0f / Pose::kPi, state.facedMax * 180.0f / Pose::kPi, state.facedSamples));
                 }
+                if (state.pillionFrames || state.pillionMissed) {
+                    Log(std::format("crew: a pillion homie leaned with CJ in {} frames ({} without CJ's bones), last CJ {:.0f} degrees across the bike, the bike {:.0f}",
+                        state.pillionFrames, state.pillionMissed, state.pillionLean * 180.0f / Pose::kPi, -state.pillionBike * 180.0f / Pose::kPi));
+                }
                 if (state.paced) {
                     Log(std::format("crew: moving followers went {:.1f} m on the ground and their steps covered {:.1f} m ({} frames, {} gait changes)",
                         state.groundSum, state.stepSum, state.paced, state.gaitChanges));
@@ -689,6 +700,7 @@ namespace AhShitRim::CrewPuppets
             state.facedSamples = 0;
             state.facedSum = state.facedMax = 0.0f;
             state.paced = state.gaitChanges = 0;
+            state.pillionFrames = state.pillionMissed = 0;
             state.groundSum = state.stepSum = 0.0f;
         }
     }

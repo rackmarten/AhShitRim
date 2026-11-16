@@ -466,6 +466,8 @@ namespace AhShitRim::TestKit
             a_details.Set("rides", probe.rides);
             a_details.Set("target", probe.target ? SkseTestKit::FormId(probe.target) : std::string());
             a_details.Set("waiting", probe.waiting);
+            a_details.Set("sitState", probe.sitState);
+            a_details.Set("graphSitting", probe.graphSitting);
             a_details.Set("greetingTimer", probe.greetingTimer);
             a_details.Set("detectGreetTimer", probe.detectGreetTimer);
             a_details.Set("checkToTalkTimer", probe.checkToTalkTimer);
@@ -1302,7 +1304,7 @@ namespace AhShitRim::TestKit
                     return JsonObject{ { "metres", Round(put, 0.1) } };
                 });
 
-            SkseTestKit::AddTask("asr.drive", "[seconds] [steer=<-1..1>] [throttle=<0..1>]",
+            SkseTestKit::AddTask("asr.ride", "[seconds] [steer=<-1..1>] [throttle=<0..1>]",
                 "CJ drives the vehicle he's in for seconds (3): the stick held at throttle (1) forward and steer (0) to the side (positive "
                 "right), as a pad's left stick or the keys. With a homie riding along, every frame's lean (asr.lean) is sampled: the "
                 "most each of CJ, the homie and the vehicle leaned, and how far the homie was off CJ, at most and on average",
@@ -1333,7 +1335,7 @@ namespace AhShitRim::TestKit
                 });
 
             SkseTestKit::AddCommand("asr.lean", "",
-                "How a homie riding with CJ leans against CJ and CJ's vehicle, degrees to the side (positive right): the vehicle's by "
+                "How a homie riding with CJ leans against CJ and CJ's vehicle (asr.ride samples it every frame), degrees to the side (positive right): the vehicle's by "
                 "its up axis, CJ's and the homie's by the spine (from the root bone to the highest one, as San Andreas posed them), all "
                 "across the vehicle. diff: the homie off CJ; diffVehicle: off the vehicle",
                 [](Call&) -> Json {

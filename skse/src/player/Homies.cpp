@@ -1225,7 +1225,9 @@ namespace AhShitRim::Homies
                 const bool rides = Riders::Rides(h.id);
                 if (h.rode && !rides) {
                     // Out of CJ's vehicle: Riders held him in his seat and then beside his door, so his package starts over
-                    // from there (left running from before, it kept one standing while CJ walked 16 m off; the kit saw it).
+                    // from there (left running from before, it kept one standing while CJ walked 16 m off; the kit saw it),
+                    // and his graph is told to stand once more, should Riders' stand event have come while it couldn't take it.
+                    actor->NotifyAnimationGraph("IdleForceDefaultState");
                     TellPlace(a_player, h, true);
                 } else if ((h.offsetIn -= a_delta) <= 0.0f && !rides) {
                     TellPlace(a_player, h);  // not while he rides with CJ: Riders seats him
@@ -1606,6 +1608,9 @@ namespace AhShitRim::Homies
         out.canTalk = a_actor->CanTalkToPlayer();
         out.rides = Riders::Rides(a_actor->GetFormID());
         out.waiting = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kWaitingForPlayer);
+        out.sitState = static_cast<int>(a_actor->AsActorState()->GetSitSleepState());
+        bool graphSitting = false;
+        out.graphSitting = a_actor->GetGraphVariableBool("bIsSitting", graphSitting) && graphSitting;
         if (auto* process = a_actor->GetActorRuntimeData().currentProcess; process && process->high) {
             auto* high = process->high;
             out.greetingTimer = high->greetingTimer;
