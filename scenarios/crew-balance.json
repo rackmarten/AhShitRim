@@ -1,5 +1,6 @@
 // How deadly the Grove Street crew is (v39, [Crew] in AhShitRim.ini): two homies against a fixed group of four level 1
-// bandits (EncBandit01Melee1HKhajiitM, placed 15 m in front of the player) by the Whiterun stables, CJ not fighting
+// bandits (EncBandit01Melee1HKhajiitM, placed 4 m in front of the player, so they attack at once: the crew only shoots
+// those already fighting, and from 15 m three of four never noticed the hidden player) by the Whiterun stables, CJ not fighting
 // (BAGUVIX keeps him up, he never fires). The operator found two homies wiping out Fort Greymoor almost instantly; the
 // crew should help, not do CJ's killing for him. Limits: the four take the crew over 15 s and under 120 s to clear
 // (they react 0.8 to 1.5 s to a new foe, fire 0.8 to 1.5 s bursts with 1.5 to 3 s between, at a third of CJ's damage),
@@ -32,7 +33,7 @@
     { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
     { "label": "CJ can't die (BAGUVIX): he only watches", "cmd": "asr.cheat", "code": "BAGUVIX" },
     { "label": "counters from zero", "cmd": "asr.crewstats", "reset": true },
-    { "label": "four bandits 15 m in front", "cmd": "console", "command": "player.placeatme C3CA0 4 1050 0" },
+    { "label": "four bandits 4 m in front: they come for the crew at once", "cmd": "console", "command": "player.placeatme C3CA0 4 300 0" },
     { "label": "the crew clears them", "cmd": "wait", "until": "targetedDead >= 4", "for": "asr.crewstats", "timeout": 150 },
     { "label": "it took them tens of seconds, and many of their bullets missed", "cmd": "asr.crewstats",
       "expect": ["targetedDead >= 4", "hitShare > 0.15", "hitShare < 0.8", "shots > 10"] },
