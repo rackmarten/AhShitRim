@@ -84,6 +84,8 @@ namespace AhShitRim::Homies
         bool                     weaponDrawn = false, followPackage = false, canTalk = true, rides = false, follower = false;
         RE::FormID               target = 0;  // his crew target
         float                    waiting = 0.0f;  // his WaitingForPlayer actor value
+        int                      sitState = 0;    // Skyrim's SIT_SLEEP_STATE, 0 normal
+        bool                     graphSitting = false;  // his animation graph's bIsSitting
         float                    greetingTimer = 0.0f, detectGreetTimer = 0.0f, checkToTalkTimer = 0.0f, voiceTimer = 0.0f;  // HighProcessData's
         bool                     greeting = false, greetingPlayer = false;  // a greeting under way (greetTopic), to the player
     };
