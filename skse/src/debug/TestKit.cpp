@@ -383,6 +383,7 @@ namespace AhShitRim::TestKit
             float        vehicle = 0.0f, cj = 0.0f, homie = 0.0f, pelvis = 0.0f, pelvisDiff = 0.0f;
             RE::NiPoint3 seatOff;
             RE::FormID   ref = 0;
+            bool         follower = false;  // a Skyrim follower (no homie's upper body to set against CJ's: homie stays 0)
         };
 
         constexpr std::uint32_t kPelvisBone = 2, kTorsoBone = 4;  // San Andreas's BONE_PELVIS, BONE_UPPERTORSO
@@ -404,25 +405,24 @@ namespace AhShitRim::TestKit
                     vehicle = v;
                 }
             }
-            // As drawn this frame: the vehicle's seat as Riders held him on it, his body as Homies drew it at his actor
-            // (both sampled a moment back, as everything San Andreas sends is; the raw newest ones are a frame apart, 25
-            // cm at speed), and CJ's newest.
+            // As drawn this frame: the vehicle's seat as Riders held him on it, a homie's body as Homies drew it at his
+            // actor (both sampled a moment back, as everything San Andreas sends is; the raw newest ones are a frame apart,
+            // 25 cm at speed), a Skyrim follower's skeleton as it will render, and CJ's newest.
             const auto          riding = Riders::Riding();
             Protocol::BodyBone  seat{};
-            RE::NiPoint3        vehicleFeet, homieFeet;
-            Protocol::BodyState body{}, cj{};
-            if (!vehicle || riding.empty() || !Riders::DebugSeatOf(riding.front(), seat, vehicleFeet) || !Homies::DebugDrawnOf(riding.front(), body, homieFeet) ||
-                !LinkService::Get().ReadBody(cj) || !(cj.flags & Protocol::kBodyValid)) {
+            RE::NiPoint3        vehicleFeet;
+            Protocol::BodyState cj{};
+            if (!vehicle || riding.empty() || !Riders::DebugSeatOf(riding.front(), seat, vehicleFeet) || !LinkService::Get().ReadBody(cj) ||
+                !(cj.flags & Protocol::kBodyValid)) {
                 return std::nullopt;
             }
             const auto bone = [](const Protocol::BodyState& a_body, std::uint32_t a_id) -> const Protocol::BodyBone* {
                 const int i = ModelView::DebugBoneIndex(a_body.model, a_id);
                 return i >= 0 && static_cast<std::uint32_t>(i) < (std::min)(a_body.boneCount, Protocol::kBodyBoneMax) ? &a_body.bones[i] : nullptr;
             };
-            const auto* pelvis = bone(body, kPelvisBone);
-            const auto* torso = bone(body, kTorsoBone);
+            const auto* cjPelvis = bone(cj, kPelvisBone);
             const auto* cjTorso = bone(cj, kTorsoBone);
-            if (!pelvis || !torso || !cjTorso) {
+            if (!cjPelvis || !cjTorso) {
                 return std::nullopt;
             }
             const auto   right = Turned(seat.rotation, { 1.0f, 0.0f, 0.0f });  // X right, Y forward, Z up
@@ -432,15 +432,15 @@ namespace AhShitRim::TestKit
             across.Unitize();
             constexpr float kDegrees = 180.0f / std::numbers::pi_v<float>;
             const auto lean = [&](const RE::NiPoint3& a_up) { return std::atan2(a_up.Dot(across), a_up.z) * kDegrees; };
-            // A body's up in its bones' model space: the axis its pelvis turns nearest the seat's up (San Andreas's peds
-            // aren't all modelled the same way round: a homie's came out 90 degrees off CJ's), so a bone's up is that axis
-            // as it turns it.
-            const auto modelUp = [&](const Protocol::BodyBone& a_pelvis) {
+            // A body's up: whichever of its pelvis's axes (either way) is nearest the seat's up. San Andreas's peds aren't
+            // all modelled the same way round (a homie's came out 90 degrees off CJ's), nor are Skyrim's bones (its pelvis
+            // node's axes aren't the model's), so a bone's up is that axis as it turns it.
+            const auto modelUp = [&](const auto& a_turn) {
                 RE::NiPoint3 best(0.0f, 0.0f, 1.0f);
                 float        bestDot = -2.0f;
                 for (const RE::NiPoint3 axis : { RE::NiPoint3(1.0f, 0.0f, 0.0f), RE::NiPoint3(-1.0f, 0.0f, 0.0f), RE::NiPoint3(0.0f, 1.0f, 0.0f),
                          RE::NiPoint3(0.0f, -1.0f, 0.0f), RE::NiPoint3(0.0f, 0.0f, 1.0f), RE::NiPoint3(0.0f, 0.0f, -1.0f) }) {
-                    const float dot = Turned(a_pelvis.rotation, axis).Dot(up);
+                    const float dot = a_turn(axis).Dot(up);
                     if (dot > bestDot) {
                         bestDot = dot;
                         best = axis;
@@ -448,20 +448,46 @@ namespace AhShitRim::TestKit
                 }
                 return best;
             };
-            const auto* cjPelvis = bone(cj, kPelvisBone);
-            if (!cjPelvis) {
-                return std::nullopt;
-            }
-            const auto homieUp = modelUp(*pelvis), cjUp = modelUp(*cjPelvis);
-            const auto pelvisUp = Turned(pelvis->rotation, homieUp);
+            const auto byBone = [](const Protocol::BodyBone& a_bone) { return [&a_bone](const RE::NiPoint3& a_v) { return Turned(a_bone.rotation, a_v); }; };
+            const auto cjUp = modelUp(byBone(*cjPelvis));
             Lean out;
             out.vehicle = lean(up);
             out.cj = lean(Turned(cjTorso->rotation, cjUp));
-            out.homie = lean(Turned(torso->rotation, homieUp));
+            RE::NiPoint3 pelvisUp, pelvisAt;
+            Protocol::BodyState body{};
+            RE::NiPoint3        homieFeet;
+            if (Homies::DebugSlotOf(riding.front()) >= 0) {
+                if (!Homies::DebugDrawnOf(riding.front(), body, homieFeet)) {
+                    return std::nullopt;  // a homie with no body drawn this frame
+                }
+                const auto* pelvis = bone(body, kPelvisBone);
+                const auto* torso = bone(body, kTorsoBone);
+                if (!pelvis || !torso) {
+                    return std::nullopt;
+                }
+                const auto homieUp = modelUp(byBone(*pelvis));
+                pelvisUp = Turned(pelvis->rotation, homieUp);
+                out.homie = lean(Turned(torso->rotation, homieUp));
+                // Drawn: his bones from his actor's place.
+                pelvisAt = homieFeet + RE::NiPoint3(pelvis->translation[0], pelvis->translation[1], pelvis->translation[2]);
+            } else {
+                // A Skyrim follower (Lydia): her own skeleton, as Riders turned it for this frame's render; her pelvis node
+                // is the joint itself.
+                auto* actor = RE::TESForm::LookupByID<RE::Actor>(riding.front());
+                auto* root = actor ? actor->Get3D() : nullptr;
+                auto* pelvis = root ? root->GetObjectByName("NPC Pelvis [Pelv]") : nullptr;
+                if (!pelvis) {
+                    return std::nullopt;
+                }
+                const auto& m = pelvis->world.rotate;
+                const auto  byNode = [&m](const RE::NiPoint3& a_v) { return m * a_v; };
+                pelvisUp = m * modelUp(byNode);
+                pelvisAt = pelvis->world.translate;
+                out.follower = true;
+            }
             out.pelvis = lean(pelvisUp);
             out.pelvisDiff = std::atan2(pelvisUp.Dot(right), pelvisUp.Dot(up)) * kDegrees;
-            // Drawn: his bones from his actor's place, the seat from the vehicle's feet.
-            const RE::NiPoint3 pelvisAt = homieFeet + RE::NiPoint3(pelvis->translation[0], pelvis->translation[1], pelvis->translation[2]);
+            // The seat from the vehicle's feet, where Riders held the vehicle.
             const RE::NiPoint3 seatAt = vehicleFeet + RE::NiPoint3(seat.translation[0], seat.translation[1], seat.translation[2]);
             const RE::NiPoint3 fromSeat = pelvisAt - seatAt;
             out.seatOff = RE::NiPoint3(fromSeat.Dot(right), fromSeat.Dot(forward), fromSeat.Dot(up)) * Pose::kMetersPerUnit;
@@ -477,6 +503,7 @@ namespace AhShitRim::TestKit
             int          frames = 0;
             float        vehicleMax = 0.0f, cjMax = 0.0f, homieMax = 0.0f, pelvisMax = 0.0f, diffMax = 0.0f, diffSum = 0.0f;
             float        pelvisDiffMax = 0.0f, pelvisDiffSum = 0.0f, seatDistMax = 0.0f;
+            int          diffFrames = 0;  // a homie's (a Skyrim follower's upper body isn't set against CJ's)
             RE::NiPoint3 seatLow, seatHigh;
 
             void Add(const Lean& a_lean)
@@ -486,11 +513,14 @@ namespace AhShitRim::TestKit
                 }
                 vehicleMax = (std::max)(vehicleMax, std::abs(a_lean.vehicle));
                 cjMax = (std::max)(cjMax, std::abs(a_lean.cj));
-                homieMax = (std::max)(homieMax, std::abs(a_lean.homie));
                 pelvisMax = (std::max)(pelvisMax, std::abs(a_lean.pelvis));
-                const float diff = std::abs(a_lean.homie - a_lean.cj);
-                diffMax = (std::max)(diffMax, diff);
-                diffSum += diff;
+                if (!a_lean.follower) {
+                    homieMax = (std::max)(homieMax, std::abs(a_lean.homie));
+                    const float diff = std::abs(a_lean.homie - a_lean.cj);
+                    diffMax = (std::max)(diffMax, diff);
+                    diffSum += diff;
+                    diffFrames++;
+                }
                 pelvisDiffMax = (std::max)(pelvisDiffMax, std::abs(a_lean.pelvisDiff));
                 pelvisDiffSum += std::abs(a_lean.pelvisDiff);
                 seatDistMax = (std::max)(seatDistMax, a_lean.seatOff.Length());
@@ -505,7 +535,7 @@ namespace AhShitRim::TestKit
                 a_out.Set("homieLeanMax", Round(homieMax, 0.1));
                 a_out.Set("pelvisLeanMax", Round(pelvisMax, 0.1));
                 a_out.Set("diffMax", Round(diffMax, 0.1));
-                a_out.Set("diffMean", Round(frames ? diffSum / frames : 0.0f, 0.1));
+                a_out.Set("diffMean", Round(diffFrames ? diffSum / diffFrames : 0.0f, 0.1));
                 a_out.Set("pelvisDiffMax", Round(pelvisDiffMax, 0.1));
                 a_out.Set("pelvisDiffMean", Round(frames ? pelvisDiffSum / frames : 0.0f, 0.1));
                 a_out.Set("seatSpread", Round(frames ? (seatHigh - seatLow).Length() : 0.0f, 0.01));
@@ -1374,7 +1404,8 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddTask("asr.ride", "[seconds] [steer=<-1..1>] [throttle=<0..1>] [hold=<bool>]",
                 "CJ drives the vehicle he's in for seconds (3): the stick held at throttle (1) forward and steer (0) to the side (positive "
-                "right), as a pad's left stick or the keys. With a homie riding along, every frame's lean (asr.lean) is sampled: the "
+                "right), as a pad's left stick or the keys. With a homie or a Skyrim follower riding along, every frame's lean (asr.lean) "
+                "is sampled (a follower's upper body isn't set against CJ's: homieLeanMax and diff stay 0): the "
                 "most each of CJ, the homie, his pelvis and the vehicle leaned, how far the homie's upper body was off CJ's (diff) and "
                 "his pelvis off the vehicle's roll (pelvisDiff), at most and on average, "
                 "how far his pelvis moved on the seat and the furthest it was from it (seatSpread, seatDistMax, metres). hold: the stick stays held after (a screenshot in the turn) till the next asr.ride",
@@ -1421,10 +1452,10 @@ namespace AhShitRim::TestKit
                     }
                     return JsonObject{ { "vehicle", Round(lean->vehicle, 0.1) }, { "vehicleAbs", Round(std::abs(lean->vehicle), 0.1) },
                         { "cj", Round(lean->cj, 0.1) }, { "cjAbs", Round(std::abs(lean->cj), 0.1) }, { "homie", Round(lean->homie, 0.1) },
-                        { "diff", Round(std::abs(lean->homie - lean->cj), 0.1) }, { "pelvis", Round(lean->pelvis, 0.1) },
+                        { "diff", lean->follower ? Json() : Json(Round(std::abs(lean->homie - lean->cj), 0.1)) }, { "pelvis", Round(lean->pelvis, 0.1) },
                         { "pelvisDiff", Round(std::abs(lean->pelvisDiff), 0.1) }, { "seatRight", Round(lean->seatOff.x, 0.01) },
                         { "seatForward", Round(lean->seatOff.y, 0.01) }, { "seatUp", Round(lean->seatOff.z, 0.01) },
-                        { "seatDist", Round(lean->seatOff.Length(), 0.01) }, { "ref", SkseTestKit::FormId(lean->ref) } };
+                        { "seatDist", Round(lean->seatOff.Length(), 0.01) }, { "follower", lean->follower }, { "ref", SkseTestKit::FormId(lean->ref) } };
                 });
 
             SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",

@@ -13,10 +13,13 @@ namespace AhShitRim::Protocol
 // Andreas sends in the vehicle's slot: each plays a sitting idle ([Passengers] SitEvent in AhShitRim.ini) and is
 // put on its seat every frame, turned as the vehicle, smoothed with it. When he gets out they stand up
 // ([Passengers] StandEvent) and step out beside their doors with him, down to the ground (Passengers::ExitPath),
-// instead of sitting through his get-out and then appearing outside. No drive-bys: they only ride.
+// instead of sitting through his get-out and then appearing outside. No drive-bys: they only ride. Seated, each is
+// turned with his seat's frame (a bike's lean matrix as San Andreas draws it), so on a leaning bike's pillion he rolls
+// with it, his hips on the seat; stepping out, he's upright again.
 // Main thread only.
 namespace AhShitRim::Riders
 {
+    void Install();       // the hook that turns each passenger with his seat after Skyrim updates him
     void OnDataLoaded();  // reads [Passengers] from the ini
 
     // Every frame San Andreas has the player, after the vehicles are drawn: a_vehicle is the one CJ is in as
