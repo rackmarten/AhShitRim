@@ -104,6 +104,8 @@ namespace AhShitRim::Homies
     DebugStats DebugStatsOf(bool a_reset);
     void       DebugDismissAll();  // every follower sent off, none to come back
     int        DebugSlotOf(RE::FormID a_id);  // a homie's crew slot (San Andreas's puppet of him), -1 for none
+    // A homie's body as Skyrim last drew it (its own model's id, not the drawn copy's) and where (his actor's feet then).
+    bool       DebugDrawnOf(RE::FormID a_id, Protocol::BodyState& a_pose, RE::NiPoint3& a_feet);
     void       DebugFresh();       // the spots fill in view for 3 s, as after a handover (a test can't wait for the camera to turn)
     struct DebugFoeInfo
     {

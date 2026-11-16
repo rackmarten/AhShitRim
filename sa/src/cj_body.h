@@ -61,6 +61,10 @@ namespace AhShitRim::CjBody
     // bones are posed for the frame.
     void AimRightArm(RpClump* a_clump, const CVector& a_forward, const CVector& a_target);
 
+    // That clump's bone a_boneId and everything under it turned about the bone's joint so a_from points along a_to
+    // (world space), after its bones are posed for the frame: a pillion homie's spine leaning as CJ's does.
+    void TurnBone(RpClump* a_clump, int a_boneId, const CVector& a_from, const CVector& a_to);
+
     // A RenderWare matrix as the rows Body::ToBone takes.
     Body::RwRows Rows(const RwMatrixTag& a_m);
 }

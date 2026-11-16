@@ -589,6 +589,19 @@ namespace AhShitRim::CjBody
 
     Body::RwRows Rows(const RwMatrixTag& a_m) { return ToFrame(a_m); }
 
+    void TurnBone(RpClump* a_clump, int a_boneId, const CVector& a_from, const CVector& a_to)
+    {
+        RpHAnimHierarchy* hierarchy = a_clump ? GetAnimHierarchyFromSkinClump(a_clump) : nullptr;
+        RwMatrix*         matrices = hierarchy ? RpHAnimHierarchyGetMatrixArray(hierarchy) : nullptr;
+        if (!matrices || (hierarchy->flags & rpHANIMHIERARCHYLOCALSPACEMATRICES) != 0) {
+            return;
+        }
+        const int index = IndexOf(hierarchy, a_boneId);
+        if (index >= 0) {
+            Turn(hierarchy, ParentsOf(hierarchy), matrices, index, Pos(matrices[index]), a_from, a_to);
+        }
+    }
+
     void AimRightArm(RpClump* a_clump, const CVector& a_forward, const CVector& a_target)
     {
         RpHAnimHierarchy* hierarchy = a_clump ? GetAnimHierarchyFromSkinClump(a_clump) : nullptr;

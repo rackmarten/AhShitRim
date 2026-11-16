@@ -18,6 +18,7 @@
 #include <CAnimBlendAssociation.h>
 #include <CAnimBlendHierarchy.h>
 #include <CAnimManager.h>
+#include <CBike.h>
 #include <CModelInfo.h>
 #include <CPedIntelligence.h>
 #include <CPlayerPed.h>
@@ -36,6 +37,7 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <optional>
 #include <random>
 
 namespace AhShitRim::CrewPuppets
@@ -51,9 +53,13 @@ namespace AhShitRim::CrewPuppets
         constexpr int kShotFront = 15;        // ANIM_DEFAULT_KO_SHOT_FRONT_0
         constexpr int kBoneRightHand = 24;
         constexpr int kBonePelvis = 2;        // BONE_PELVIS
+        constexpr int kBoneSpine = 3;         // BONE_SPINE1, the spine over the pelvis
         constexpr int kBoneNeck = 5;          // BONE_NECK
+        constexpr float kMaxLean = 0.785f;    // radians: the most a pillion homie's upper body leans over the bike
         constexpr unsigned short kAnimLooped = 0x2;
         constexpr float kStepSeconds = 0.02f;  // San Andreas steps in 1/50 s
+
+        float Dot(const CVector& a_a, const CVector& a_b) { return a_a.x * a_b.x + a_a.y * a_b.y + a_a.z * a_b.z; }
 
         struct Puppet
         {
@@ -502,45 +508,50 @@ namespace AhShitRim::CrewPuppets
             // behind his seat (beside a bike). His actor's feet are kSeatDrop under the seat, where the hips go.
             const bool  sits = !dead && motion == Scene::Motion::Seated;
             const float lift = ped->GetDistanceFromCentreOfMassToBaseOfModel();
-            CVector     at = feet + CVector(0.0f, 0.0f, lift);
+            // Seated in CJ's vehicle, he's turned as it's drawn (San Andreas carries its riders in their vehicle's matrix; a
+            // bike's in its lean matrix, as its own barely rolls and PreRender leans its parts): on a bike in a turn his whole
+            // body, seat and hips, rolls with it as CJ's does, in a car on a slope he tips with it. Turned only by the bike's
+            // own matrix and CJ's upper body, his hips stayed near upright off the side of the leaning seat.
+            const bool     rides = sits && a_cj && a_cj->bInVehicle && a_cj->m_pVehicle && a_cj->m_pVehicle->m_matrix && ped->m_matrix;
+            const bool     bike = rides && a_cj->m_pVehicle->m_nVehicleClass == VEHICLE_BIKE;
+            const CMatrix* frame = !rides ? nullptr : bike ? &static_cast<CBike*>(a_cj->m_pVehicle)->m_mLeanMatrix : static_cast<const CMatrix*>(a_cj->m_pVehicle->m_matrix);
+            if (frame && !(std::isfinite(frame->at.z) && frame->at.Magnitude() > 0.5f && frame->right.Magnitude() > 0.5f && frame->up.Magnitude() > 0.5f)) {
+                frame = nullptr;
+            }
+            // His seat, where his pelvis goes: kSeatDrop over his actor's feet along the seat's up, as Skyrim dropped them
+            // (Passengers::SeatedFeet); straight up, it was off the side of a leaning bike's seat.
+            const CVector seatUp = frame ? frame->at : CVector(0.0f, 0.0f, 1.0f);
+            const CVector seatAt = feet + seatUp * (Passengers::kSeatDrop * Pose::kMetersPerUnit);
+            CVector       at = feet + CVector(0.0f, 0.0f, lift);
             if (!sits) {
                 puppet.seat.Reset();
             } else if (puppet.seat.Have()) {
-                const float surface = Passengers::kSeatDrop * Pose::kMetersPerUnit - Scene::SeatMatch::kPelvisOverSeat;
-                const auto  place = puppet.seat.Place(Vec(feet + CVector(0.0f, 0.0f, surface)), lift);
+                const auto place = puppet.seat.Place(Vec(seatAt - CVector(0.0f, 0.0f, Scene::SeatMatch::kPelvisOverSeat)), lift);
                 at = CVector(place.x, place.y, place.z);
             }
             ped->SetPosn(at);
             ped->SetHeading(heading);
             ped->m_fHeadingCurrent = heading;
             ped->m_fHeadingGoal = heading;
-            // Seated in CJ's vehicle, he's turned as it is (San Andreas carries its riders in their vehicle's matrix): on a
-            // bike in a turn he leans with it as CJ does, in a car on a slope he tips with it. Upright, he sat bolt upright
-            // on the pillion while CJ leaned.
-            if (sits && a_cj && a_cj->bInVehicle && a_cj->m_pVehicle && a_cj->m_pVehicle->m_matrix && ped->m_matrix) {
-                const CMatrix& frame = *a_cj->m_pVehicle->m_matrix;
-                ped->m_matrix->right = frame.right;
-                ped->m_matrix->up = frame.up;
-                ped->m_matrix->at = frame.at;
-                // On a bike he leans as CJ does, not only as far as the bike rolls: San Andreas leans its rider into a
-                // turn with his own animation, well past the bike (the kit saw the bike roll 7 degrees in a turn, and
-                // the operator a pillion homie bolt upright beside CJ's lean). His matrix rolls about the bike's forward
-                // axis by CJ's upper body's lean across the bike (pelvis to neck), at most 45 degrees.
+            // On a bike CJ also leans into a turn with his own animation, on top of the bike's roll: his upper body's lean
+            // across the bike (pelvis to neck), which the homie's spine takes once he's posed.
+            std::optional<float> cjLean;
+            if (frame) {
+                ped->m_matrix->right = frame->right;
+                ped->m_matrix->up = frame->up;
+                ped->m_matrix->at = frame->at;
                 RwMatrix pelvis, neck;
-                if (a_cj->m_pVehicle->m_nVehicleClass == VEHICLE_BIKE && CjBody::BoneWorld(a_cj, kBonePelvis, pelvis) && CjBody::BoneWorld(a_cj, kBoneNeck, neck)) {
+                if (bike && CjBody::BoneWorld(a_cj, kBonePelvis, pelvis) && CjBody::BoneWorld(a_cj, kBoneNeck, neck)) {
                     const CVector spine(neck.pos.x - pelvis.pos.x, neck.pos.y - pelvis.pos.y, neck.pos.z - pelvis.pos.z);
-                    const auto    dot = [](const CVector& a_a, const CVector& a_b) { return a_a.x * a_b.x + a_a.y * a_b.y + a_a.z * a_b.z; };
-                    const float   across = dot(spine, frame.right), up = dot(spine, frame.at);
-                    const float   lean = std::clamp(std::atan2(across, up), -0.785f, 0.785f);
+                    const float   across = Dot(spine, frame->right), up = Dot(spine, frame->at);
+                    const float   lean = std::atan2(across, up);
                     if (std::isfinite(lean) && up > 0.0f) {
-                        const float c = std::cos(lean), s = std::sin(lean);
-                        ped->m_matrix->right = frame.right * c - frame.at * s;
-                        ped->m_matrix->at = frame.at * c + frame.right * s;
+                        cjLean = std::clamp(lean, -kMaxLean, kMaxLean);
                     }
-                    state.pillionLean = lean;
-                    state.pillionBike = std::asin(std::clamp(frame.right.z, -1.0f, 1.0f));
+                    state.pillionLean = cjLean.value_or(0.0f);
+                    state.pillionBike = std::asin(std::clamp(frame->right.z, -1.0f, 1.0f));
                     state.pillionFrames++;
-                } else if (a_cj->m_pVehicle->m_nVehicleClass == VEHICLE_BIKE) {
+                } else if (bike) {
                     state.pillionMissed++;  // CJ's bones weren't there
                 }
             }
@@ -583,9 +594,39 @@ namespace AhShitRim::CrewPuppets
             ped->UpdateRwMatrix();
             ped->UpdateRwFrame();
             ped->UpdateRpHAnim();
+            auto* asPlayer = static_cast<CPlayerPed*>(ped);
+            if (frame) {
+                // In CJ's vehicle his pelvis goes exactly on the seat, whatever turning him with it did to where the
+                // smoothed offset put it (a leaning bike swung his hips off its side), and he's posed again there.
+                RwMatrix pelvis;
+                if (CjBody::BoneWorld(asPlayer, kBonePelvis, pelvis)) {
+                    const CVector off = seatAt - CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z);
+                    if (off.Magnitude() < Scene::SeatMatch::kMaxOffset && off.Magnitude() > 0.002f) {
+                        ped->SetPosn(ped->GetPosition() + off);
+                        ped->UpdateRwMatrix();
+                        ped->UpdateRwFrame();
+                        ped->UpdateRpHAnim();
+                    }
+                }
+                // CJ's lean into the turn on top of the bike's roll: his upper body (the spine and all over it) turned
+                // about the bike's forward axis till it leans across the bike as far as CJ's, his hips left on the seat.
+                RwMatrix neck;
+                for (int pass = 0; cjLean && pass < 2; pass++) {
+                    if (!CjBody::BoneWorld(asPlayer, kBonePelvis, pelvis) || !CjBody::BoneWorld(asPlayer, kBoneNeck, neck)) {
+                        break;
+                    }
+                    const CVector spine(neck.pos.x - pelvis.pos.x, neck.pos.y - pelvis.pos.y, neck.pos.z - pelvis.pos.z);
+                    const float   own = std::atan2(Dot(spine, frame->right), Dot(spine, frame->at));
+                    const float   turn = std::clamp(*cjLean - own, -kMaxLean, kMaxLean);
+                    if (!std::isfinite(turn) || std::fabs(turn) < 0.005f) {
+                        break;
+                    }
+                    CjBody::TurnBone(ped->m_pRwClump, kBoneSpine, frame->at, frame->at * std::cos(turn) + frame->right * std::sin(turn));
+                }
+            }
             if (sits) {
                 RwMatrix   pelvis;
-                const bool posed = CjBody::BoneWorld(static_cast<CPlayerPed*>(ped), kBonePelvis, pelvis);
+                const bool posed = CjBody::BoneWorld(asPlayer, kBonePelvis, pelvis);
                 const auto from = ped->GetPosition();
                 puppet.seat.Update(posed, pelvis.pos.x - from.x, pelvis.pos.y - from.y, pelvis.pos.z - from.z, seconds);
                 // Once, sat down: how far his pelvis is from the seat (the ridecrew hit test reads it).
@@ -594,8 +635,7 @@ namespace AhShitRim::CrewPuppets
                 puppet.stood = 0.0f;
                 if (!puppet.satLogged && posed && anim && anim->m_fBlendAmount >= 0.99f) {
                     puppet.satLogged = true;
-                    const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - feet -
-                                        CVector(0.0f, 0.0f, Passengers::kSeatDrop * Pose::kMetersPerUnit);
+                    const CVector off = CVector(pelvis.pos.x, pelvis.pos.y, pelvis.pos.z) - seatAt;
                     Log(std::format("crew: homie {:08X} sits with his pelvis ({:.2f}, {:.2f}, {:.2f}) m from his seat{}", member.id, off.x, off.y, off.z,
                         std::hypot(off.x, off.y, off.z) <= 0.1f ? ": on it" : ": OFF HIS SEAT"));
                 }

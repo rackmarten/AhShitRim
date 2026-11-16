@@ -26,6 +26,7 @@
 #include "player/Shots.h"
 #include "player/StealthKills.h"
 #include "player/Respawns.h"
+#include "passengers.h"
 #include "pose.h"
 #include "player/Riders.h"
 #include "vehicle_hits.h"
@@ -368,12 +369,30 @@ namespace AhShitRim::TestKit
         std::array<RE::FormID, 8> g_homies{};  // asr.homie:<n>'s follower, pinned the first time it's found (asr.crew lets go)
 
 #ifdef AHSHITRIM_TEST_CREW
-        // The leans of CJ's vehicle, CJ and the homie riding with him (asr.lean, asr.drive), degrees across the vehicle.
+        // The leans of CJ's vehicle, CJ and the homie riding with him (asr.lean, asr.ride), degrees across the vehicle
+        // (positive right), and where the homie's pelvis sits on his seat. The bones San Andreas sends are skinning
+        // transforms (its bind pose to the world), not joints, so a bone's turn is read from its rotation (how far it has
+        // turned from the bind pose, which stands upright), and its translation is where the model's origin, near the
+        // pelvis, goes with it. The vehicle by its seat's frame (a bike's lean matrix, as it's drawn, not its own barely
+        // rolling one); CJ's and the homie's upper bodies by the upper torso bone's up; the homie's pelvis by its bone's
+        // up, against the seat's (pelvisDiff); and in the world as Skyrim draws them (the homie at his actor, the seat
+        // on CJ's vehicle where Riders held him), his pelvis bone's place in the seat's own frame, metres (seatOff: right,
+        // forward, up), which stays put while he sits on it however the bike leans.
         struct Lean
         {
-            float      vehicle = 0.0f, cj = 0.0f, homie = 0.0f;
-            RE::FormID ref = 0;
+            float        vehicle = 0.0f, cj = 0.0f, homie = 0.0f, pelvis = 0.0f, pelvisDiff = 0.0f;
+            RE::NiPoint3 seatOff;
+            RE::FormID   ref = 0;
         };
+
+        constexpr std::uint32_t kPelvisBone = 2, kTorsoBone = 4;  // San Andreas's BONE_PELVIS, BONE_UPPERTORSO
+
+        RE::NiPoint3 Turned(const float* a_q, const RE::NiPoint3& a_v)  // a_v turned by quaternion x, y, z, w
+        {
+            const float x = a_q[0], y = a_q[1], z = a_q[2], w = a_q[3];
+            const float tx = 2.0f * (y * a_v.z - z * a_v.y), ty = 2.0f * (z * a_v.x - x * a_v.z), tz = 2.0f * (x * a_v.y - y * a_v.x);
+            return RE::NiPoint3(a_v.x + w * tx + (y * tz - z * ty), a_v.y + w * ty + (z * tx - x * tz), a_v.z + w * tz + (x * ty - y * tx));
+        }
 
         std::optional<Lean> LeanNow()
         {
@@ -385,54 +404,98 @@ namespace AhShitRim::TestKit
                     vehicle = v;
                 }
             }
-            const auto riding = Riders::Riding();
-            const int  slot = riding.empty() ? -1 : Homies::DebugSlotOf(riding.front());
-            Protocol::CrewBody  crew{};
-            Protocol::BodyState cj{};
-            if (!vehicle || slot < 0 || !LinkService::Get().ReadCrew(static_cast<std::uint32_t>(slot), crew) || !(crew.body.flags & Protocol::kBodyValid) ||
-                crew.body.boneCount < 2 || !LinkService::Get().ReadBody(cj) || !(cj.flags & Protocol::kBodyValid) || cj.boneCount < 2) {
+            // As drawn this frame: the vehicle's seat as Riders held him on it, his body as Homies drew it at his actor
+            // (both sampled a moment back, as everything San Andreas sends is; the raw newest ones are a frame apart, 25
+            // cm at speed), and CJ's newest.
+            const auto          riding = Riders::Riding();
+            Protocol::BodyBone  seat{};
+            RE::NiPoint3        vehicleFeet, homieFeet;
+            Protocol::BodyState body{}, cj{};
+            if (!vehicle || riding.empty() || !Riders::DebugSeatOf(riding.front(), seat, vehicleFeet) || !Homies::DebugDrawnOf(riding.front(), body, homieFeet) ||
+                !LinkService::Get().ReadBody(cj) || !(cj.flags & Protocol::kBodyValid)) {
                 return std::nullopt;
             }
-            const float* q = vehicle->vehicleFrame.rotation;  // x, y, z, w: X right, Y forward, Z up
-            const auto   axis = [&](float a_x, float a_y, float a_z) {
-                const float x = q[0], y = q[1], z = q[2], w = q[3];
-                const float tx = 2.0f * (y * a_z - z * a_y), ty = 2.0f * (z * a_x - x * a_z), tz = 2.0f * (x * a_y - y * a_x);
-                return RE::NiPoint3(a_x + w * tx + (y * tz - z * ty), a_y + w * ty + (z * tx - x * tz), a_z + w * tz + (x * ty - y * tx));
+            const auto bone = [](const Protocol::BodyState& a_body, std::uint32_t a_id) -> const Protocol::BodyBone* {
+                const int i = ModelView::DebugBoneIndex(a_body.model, a_id);
+                return i >= 0 && static_cast<std::uint32_t>(i) < (std::min)(a_body.boneCount, Protocol::kBodyBoneMax) ? &a_body.bones[i] : nullptr;
             };
-            const auto right = axis(1.0f, 0.0f, 0.0f);
-            const auto up = axis(0.0f, 0.0f, 1.0f);
+            const auto* pelvis = bone(body, kPelvisBone);
+            const auto* torso = bone(body, kTorsoBone);
+            const auto* cjTorso = bone(cj, kTorsoBone);
+            if (!pelvis || !torso || !cjTorso) {
+                return std::nullopt;
+            }
+            const auto   right = Turned(seat.rotation, { 1.0f, 0.0f, 0.0f });  // X right, Y forward, Z up
+            const auto   forward = Turned(seat.rotation, { 0.0f, 1.0f, 0.0f });
+            const auto   up = Turned(seat.rotation, { 0.0f, 0.0f, 1.0f });
             RE::NiPoint3 across(right.x, right.y, 0.0f);
             across.Unitize();
-            const auto lean = [&](const RE::NiPoint3& a_v) { return std::atan2(a_v.Dot(across), a_v.z) * 180.0f / std::numbers::pi_v<float>; };
-            const auto spine = [&](const Protocol::BodyState& a_body) {
-                std::uint32_t top = 0;
-                for (std::uint32_t b = 1; b < (std::min)(a_body.boneCount, Protocol::kBodyBoneMax); b++) {
-                    if (a_body.bones[b].translation[2] > a_body.bones[top].translation[2]) {
-                        top = b;
+            constexpr float kDegrees = 180.0f / std::numbers::pi_v<float>;
+            const auto lean = [&](const RE::NiPoint3& a_up) { return std::atan2(a_up.Dot(across), a_up.z) * kDegrees; };
+            // A body's up in its bones' model space: the axis its pelvis turns nearest the seat's up (San Andreas's peds
+            // aren't all modelled the same way round: a homie's came out 90 degrees off CJ's), so a bone's up is that axis
+            // as it turns it.
+            const auto modelUp = [&](const Protocol::BodyBone& a_pelvis) {
+                RE::NiPoint3 best(0.0f, 0.0f, 1.0f);
+                float        bestDot = -2.0f;
+                for (const RE::NiPoint3 axis : { RE::NiPoint3(1.0f, 0.0f, 0.0f), RE::NiPoint3(-1.0f, 0.0f, 0.0f), RE::NiPoint3(0.0f, 1.0f, 0.0f),
+                         RE::NiPoint3(0.0f, -1.0f, 0.0f), RE::NiPoint3(0.0f, 0.0f, 1.0f), RE::NiPoint3(0.0f, 0.0f, -1.0f) }) {
+                    const float dot = Turned(a_pelvis.rotation, axis).Dot(up);
+                    if (dot > bestDot) {
+                        bestDot = dot;
+                        best = axis;
                     }
                 }
-                const auto& r = a_body.bones[0].translation;
-                const auto& t = a_body.bones[top].translation;
-                return RE::NiPoint3(t[0] - r[0], t[1] - r[1], t[2] - r[2]);
+                return best;
             };
-            return Lean{ lean(up), lean(spine(cj)), lean(spine(crew.body)), riding.front() };
+            const auto* cjPelvis = bone(cj, kPelvisBone);
+            if (!cjPelvis) {
+                return std::nullopt;
+            }
+            const auto homieUp = modelUp(*pelvis), cjUp = modelUp(*cjPelvis);
+            const auto pelvisUp = Turned(pelvis->rotation, homieUp);
+            Lean out;
+            out.vehicle = lean(up);
+            out.cj = lean(Turned(cjTorso->rotation, cjUp));
+            out.homie = lean(Turned(torso->rotation, homieUp));
+            out.pelvis = lean(pelvisUp);
+            out.pelvisDiff = std::atan2(pelvisUp.Dot(right), pelvisUp.Dot(up)) * kDegrees;
+            // Drawn: his bones from his actor's place, the seat from the vehicle's feet.
+            const RE::NiPoint3 pelvisAt = homieFeet + RE::NiPoint3(pelvis->translation[0], pelvis->translation[1], pelvis->translation[2]);
+            const RE::NiPoint3 seatAt = vehicleFeet + RE::NiPoint3(seat.translation[0], seat.translation[1], seat.translation[2]);
+            const RE::NiPoint3 fromSeat = pelvisAt - seatAt;
+            out.seatOff = RE::NiPoint3(fromSeat.Dot(right), fromSeat.Dot(forward), fromSeat.Dot(up)) * Pose::kMetersPerUnit;
+            out.ref = riding.front();
+            return out;
         }
 
-        // Every frame's leans over a drive: the most each leaned, and the homie off CJ at most and on average.
+        // Every frame's leans over a drive: the most each leaned, the homie's upper body off CJ's and his pelvis off the
+        // vehicle's roll at most and on average, and how far his pelvis moved on his seat (seatSpread: the span of its
+        // place in the seat's frame, metres).
         struct LeanStats
         {
-            int   frames = 0;
-            float vehicleMax = 0.0f, cjMax = 0.0f, homieMax = 0.0f, diffMax = 0.0f, diffSum = 0.0f;
+            int          frames = 0;
+            float        vehicleMax = 0.0f, cjMax = 0.0f, homieMax = 0.0f, pelvisMax = 0.0f, diffMax = 0.0f, diffSum = 0.0f;
+            float        pelvisDiffMax = 0.0f, pelvisDiffSum = 0.0f, seatDistMax = 0.0f;
+            RE::NiPoint3 seatLow, seatHigh;
 
             void Add(const Lean& a_lean)
             {
-                frames++;
+                if (frames++ == 0) {
+                    seatLow = seatHigh = a_lean.seatOff;
+                }
                 vehicleMax = (std::max)(vehicleMax, std::abs(a_lean.vehicle));
                 cjMax = (std::max)(cjMax, std::abs(a_lean.cj));
                 homieMax = (std::max)(homieMax, std::abs(a_lean.homie));
+                pelvisMax = (std::max)(pelvisMax, std::abs(a_lean.pelvis));
                 const float diff = std::abs(a_lean.homie - a_lean.cj);
                 diffMax = (std::max)(diffMax, diff);
                 diffSum += diff;
+                pelvisDiffMax = (std::max)(pelvisDiffMax, std::abs(a_lean.pelvisDiff));
+                pelvisDiffSum += std::abs(a_lean.pelvisDiff);
+                seatDistMax = (std::max)(seatDistMax, a_lean.seatOff.Length());
+                seatLow = RE::NiPoint3((std::min)(seatLow.x, a_lean.seatOff.x), (std::min)(seatLow.y, a_lean.seatOff.y), (std::min)(seatLow.z, a_lean.seatOff.z));
+                seatHigh = RE::NiPoint3((std::max)(seatHigh.x, a_lean.seatOff.x), (std::max)(seatHigh.y, a_lean.seatOff.y), (std::max)(seatHigh.z, a_lean.seatOff.z));
             }
             void Into(JsonObject& a_out) const
             {
@@ -440,8 +503,13 @@ namespace AhShitRim::TestKit
                 a_out.Set("vehicleLeanMax", Round(vehicleMax, 0.1));
                 a_out.Set("cjLeanMax", Round(cjMax, 0.1));
                 a_out.Set("homieLeanMax", Round(homieMax, 0.1));
+                a_out.Set("pelvisLeanMax", Round(pelvisMax, 0.1));
                 a_out.Set("diffMax", Round(diffMax, 0.1));
                 a_out.Set("diffMean", Round(frames ? diffSum / frames : 0.0f, 0.1));
+                a_out.Set("pelvisDiffMax", Round(pelvisDiffMax, 0.1));
+                a_out.Set("pelvisDiffMean", Round(frames ? pelvisDiffSum / frames : 0.0f, 0.1));
+                a_out.Set("seatSpread", Round(frames ? (seatHigh - seatLow).Length() : 0.0f, 0.01));
+                a_out.Set("seatDistMax", Round(seatDistMax, 0.01));
             }
         };
 
@@ -1304,10 +1372,12 @@ namespace AhShitRim::TestKit
                     return JsonObject{ { "metres", Round(put, 0.1) } };
                 });
 
-            SkseTestKit::AddTask("asr.ride", "[seconds] [steer=<-1..1>] [throttle=<0..1>]",
+            SkseTestKit::AddTask("asr.ride", "[seconds] [steer=<-1..1>] [throttle=<0..1>] [hold=<bool>]",
                 "CJ drives the vehicle he's in for seconds (3): the stick held at throttle (1) forward and steer (0) to the side (positive "
                 "right), as a pad's left stick or the keys. With a homie riding along, every frame's lean (asr.lean) is sampled: the "
-                "most each of CJ, the homie and the vehicle leaned, and how far the homie was off CJ, at most and on average",
+                "most each of CJ, the homie, his pelvis and the vehicle leaned, how far the homie's upper body was off CJ's (diff) and "
+                "his pelvis off the vehicle's roll (pelvisDiff), at most and on average, "
+                "how far his pelvis moved on the seat and the furthest it was from it (seatSpread, seatDistMax, metres). hold: the stick stays held after (a screenshot in the turn) till the next asr.ride",
                 [](Call& a_call) -> Step {
                     RequireCj();
                     const auto pose = CjPose();
@@ -1317,14 +1387,17 @@ namespace AhShitRim::TestKit
                     const double seconds = a_call.Number("seconds", 3.0);
                     const float  steer = static_cast<float>(std::clamp(a_call.Number("steer", 0.0), -1.0, 1.0));
                     const float  throttle = static_cast<float>(std::clamp(a_call.Number("throttle", 1.0), 0.0, 1.0));
+                    const bool   hold = a_call.Flag("hold", false);
                     a_call.DefaultTimeout(seconds + 10.0);
                     auto stats = std::make_shared<LeanStats>();
-                    return [seconds, steer, throttle, stats](Call& a_call) -> std::optional<Json> {
+                    return [seconds, steer, throttle, hold, stats](Call& a_call) -> std::optional<Json> {
                         if (const auto lean = LeanNow()) {
                             stats->Add(*lean);
                         }
                         if (a_call.Seconds() >= seconds) {
-                            PlayerSync::DebugHold(std::nullopt);
+                            if (!hold) {
+                                PlayerSync::DebugHold(std::nullopt);
+                            }
                             JsonObject out{ { "seconds", Round(a_call.Seconds()) } };
                             stats->Into(out);
                             return out;
@@ -1335,9 +1408,11 @@ namespace AhShitRim::TestKit
                 });
 
             SkseTestKit::AddCommand("asr.lean", "",
-                "How a homie riding with CJ leans against CJ and CJ's vehicle (asr.ride samples it every frame), degrees to the side (positive right): the vehicle's by "
-                "its up axis, CJ's and the homie's by the spine (from the root bone to the highest one, as San Andreas posed them), all "
-                "across the vehicle. diff: the homie off CJ; diffVehicle: off the vehicle",
+                "How a homie riding with CJ leans against CJ and CJ's vehicle (asr.ride samples it every frame), degrees to the side "
+                "(positive right): the vehicle by its seat's up (a bike's lean matrix, as it's drawn), CJ's and the homie's upper "
+                "bodies by the upper torso bone, the homie's pelvis by its bone's up (pelvisDiff: off the seat's), all across the "
+                "vehicle; diff: the homie's upper body off CJ's; where his pelvis bone sits in the seat's frame (seatRight, "
+                "seatForward, seatUp, seatDist), metres",
                 [](Call&) -> Json {
                     RequireCj();
                     const auto lean = LeanNow();
@@ -1346,8 +1421,10 @@ namespace AhShitRim::TestKit
                     }
                     return JsonObject{ { "vehicle", Round(lean->vehicle, 0.1) }, { "vehicleAbs", Round(std::abs(lean->vehicle), 0.1) },
                         { "cj", Round(lean->cj, 0.1) }, { "cjAbs", Round(std::abs(lean->cj), 0.1) }, { "homie", Round(lean->homie, 0.1) },
-                        { "diff", Round(std::abs(lean->homie - lean->cj), 0.1) }, { "diffVehicle", Round(std::abs(lean->homie - lean->vehicle), 0.1) },
-                        { "ref", SkseTestKit::FormId(lean->ref) } };
+                        { "diff", Round(std::abs(lean->homie - lean->cj), 0.1) }, { "pelvis", Round(lean->pelvis, 0.1) },
+                        { "pelvisDiff", Round(std::abs(lean->pelvisDiff), 0.1) }, { "seatRight", Round(lean->seatOff.x, 0.01) },
+                        { "seatForward", Round(lean->seatOff.y, 0.01) }, { "seatUp", Round(lean->seatOff.z, 0.01) },
+                        { "seatDist", Round(lean->seatOff.Length(), 0.01) }, { "ref", SkseTestKit::FormId(lean->ref) } };
                 });
 
             SkseTestKit::AddCommand("asr.crewstats", "[reset=<bool>]",

@@ -40,4 +40,7 @@ namespace AhShitRim::Riders
     // The hit test's riders scenario (debug): where the vehicle CJ was last in was drawn (its feet) and how it was
     // turned; false before he was in one.
     bool DebugVehicle(RE::NiPoint3& a_feet, Protocol::BodyBone& a_frame);
+    // The test kit (debug): the seat a_id rides in as CJ's vehicle was drawn when the riders were last held, and where
+    // that vehicle was in Skyrim's world (the seat is relative to it); false when he doesn't ride.
+    bool DebugSeatOf(RE::FormID a_id, Protocol::BodyBone& a_seat, RE::NiPoint3& a_vehicleFeet);
 }
