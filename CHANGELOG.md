@@ -56,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- The jetpack takes off from the ground: holding sprint (Shift) lifts CJ straight up from where he stands. San Andreas's camera keeps the ground under it until it has moved 20 m, and that ground was looked for right after a handover, before Skyrim's ground was in: the first time after San Andreas started it found nothing (500 m below CJ), later ones kept whatever an earlier spot had. The jetpack's thrust fades out from 100 m above that ground, so it gave none until CJ had gone 20 m (or jumped off something high enough). The camera now looks again whenever the ground changes. `scenarios/jetpack-takeoff.json` checks it.
 - The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).
 - A follower on a bike's pillion rolls with the bike. Lydia sat bolt upright beside a leaning bike, in the air off its seat; now she sits on the seat and leans into a turn with it.
 - Homies sit in CJ's vehicle and stand up again. A passenger homie sat a head too high (through a car's roof) and behind his seat (in the air beside a bike), and once he got out he kept sitting, in mid-air, as he followed CJ and fought. His pelvis now sits on the seat, and his seat pose fades out as he stands up, however the ride ends.
