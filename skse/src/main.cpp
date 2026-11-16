@@ -12,6 +12,7 @@
 #include "hud/SaHud.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
+#include "player/Riders.h"
 #include "player/SaveState.h"
 
 namespace
@@ -47,6 +48,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
     AhShitRim::TestKit::Load();
     AhShitRim::LinkService::Start();
     AhShitRim::PlayerSync::Install();
+    AhShitRim::Riders::Install();
     AhShitRim::SaveState::Install();
 
     SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {

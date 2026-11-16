@@ -12,6 +12,8 @@ namespace AhShitRim::Riders
             RE::ActorHandle handle;
             RE::FormID      id = 0;
             int             seat = 0;
+            RE::NiMatrix3   turn;           // his seat's frame in the world as last held: columns right, forward, up
+            bool            turned = false;
         };
 
         struct State
@@ -75,7 +77,58 @@ namespace AhShitRim::Riders
             }
         }
 
-        // Every passenger stands up: beside its door when a_out (CJ got out), else where it is.
+        // A seat's frame in the world: its rotation's axes as the columns of a matrix (X right, Y forward, Z up, as a
+        // Skyrim model's are).
+        RE::NiMatrix3 FrameOf(const Protocol::BodyBone& a_seat)
+        {
+            const auto    q = Passengers::QuatOf(a_seat);
+            const Passengers::Vec3 axes[3] = { Passengers::Rotate(q, { 1.0f, 0.0f, 0.0f }), Passengers::Rotate(q, { 0.0f, 1.0f, 0.0f }),
+                Passengers::Rotate(q, { 0.0f, 0.0f, 1.0f }) };
+            RE::NiMatrix3 out;
+            for (int c = 0; c < 3; c++) {
+                out.entry[0][c] = axes[c].x;
+                out.entry[1][c] = axes[c].y;
+                out.entry[2][c] = axes[c].z;
+            }
+            return out;
+        }
+
+        // A passenger turned as his seat is, every frame after Skyrim updated him: Skyrim stands an actor upright at his
+        // heading, so on a leaning bike he sat bolt upright beside the seat (his feet are under it along the seat's own
+        // down, Passengers::SeatedFeet, but his hips straight up from them). His 3D root turns to the seat's frame about
+        // his feet, which puts his hips back on the seat and rolls all of him with the bike, as San Andreas carries its
+        // riders in a bike's lean matrix.
+        void Turn(RE::Actor* a_actor, const Rider& a_rider)
+        {
+            auto* root = a_actor->Get3D();
+            if (!root || !a_rider.turned) {
+                return;
+            }
+            root->local.rotate = root->parent ? root->parent->world.rotate.Transpose() * a_rider.turn : a_rider.turn;
+            RE::NiUpdateData update{};
+            root->Update(update);
+        }
+
+        struct UpdateHook
+        {
+            static void thunk(RE::Character* a_actor, float a_delta)
+            {
+                original(a_actor, a_delta);
+                if (state.riders.empty() || !a_actor) {
+                    return;
+                }
+                const auto id = a_actor->GetFormID();
+                for (const auto& rider : state.riders) {
+                    if (rider.id == id) {
+                        Turn(a_actor, rider);
+                        break;
+                    }
+                }
+            }
+            static inline REL::Relocation<decltype(thunk)> original;
+        };
+
+        // Every passenger stands up: beside its door when a_out (CJ got out), else where it is, upright again.
         void GetOut(bool a_out)
         {
             for (const auto& rider : state.riders) {
@@ -89,11 +142,18 @@ namespace AhShitRim::Riders
                     const auto exit = Passengers::ExitAt(state.seats[rider.seat]);
                     Hold(actor, state.feet + RE::NiPoint3(exit.x, exit.y, exit.z), actor->GetAngleZ());
                 }
+                actor->Update3DPosition(true);  // his 3D upright at his heading, not on the seat's lean
                 actor->NotifyAnimationGraph(state.standEvent);
                 SKSE::log::info("riders: {} ({:08X}) gets out{}", actor->GetName(), actor->GetFormID(), a_out ? "" : " where it is");
             }
             state.riders.clear();
         }
+    }
+
+    void Install()
+    {
+        REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_Character[0] };
+        UpdateHook::original = vtable.write_vfunc(0xAD, UpdateHook::thunk);
     }
 
     void OnDataLoaded()
@@ -127,14 +187,18 @@ namespace AhShitRim::Riders
             Board(a_player, *a_vehicle);
         }
         const auto seats = (std::min)(a_vehicle->seatCount, Protocol::kSeatMax);
-        std::erase_if(state.riders, [&](const Rider& a_rider) {
+        std::erase_if(state.riders, [&](Rider& a_rider) {
             auto* actor = ActorOf(a_rider);
             if (!actor || actor->IsDead() || !actor->Is3DLoaded() || static_cast<std::uint32_t>(a_rider.seat) >= seats) {
-                // Its seat went (the vehicle blew up): out beside it, as when CJ gets out.
+                // Its seat went (the vehicle blew up): out beside it, as when CJ gets out. Dead or alive, its 3D stands
+                // upright again, off the seat's lean.
                 if (actor && !actor->IsDead() && actor->Is3DLoaded()) {
                     const auto exit = Passengers::ExitAt(state.seats[a_rider.seat]);
                     Hold(actor, state.feet + RE::NiPoint3(exit.x, exit.y, exit.z), actor->GetAngleZ());
                     actor->NotifyAnimationGraph(state.standEvent);
+                }
+                if (actor && actor->Is3DLoaded()) {
+                    actor->Update3DPosition(true);
                 }
                 SKSE::log::info("riders: {:08X} doesn't ride any more", a_rider.id);
                 return true;
@@ -142,6 +206,9 @@ namespace AhShitRim::Riders
             const auto& seat = a_vehicle->seats[a_rider.seat];
             const auto  feet = Passengers::SeatedFeet(seat, state.drop);
             Hold(actor, a_feet + RE::NiPoint3(feet.x, feet.y, feet.z), Passengers::HeadingOf(seat));
+            a_rider.turn = FrameOf(seat);
+            a_rider.turned = true;
+            Turn(actor, a_rider);  // now too: the kit and the render see him turned even on a frame Skyrim doesn't update him
             return false;
         });
         std::copy_n(a_vehicle->seats, seats, state.seats);
