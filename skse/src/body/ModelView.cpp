@@ -3,7 +3,9 @@
 #include <DirectXPackedVector.h>
 
 #include <map>
+#include <tuple>
 
+#include "albedo.h"
 #include "body.h"
 #include "skin_model.h"
 #include "vehicle_lights.h"
@@ -61,6 +63,7 @@ namespace AhShitRim::ModelView
             std::vector<Protocol::BodyBone>  posed;           // the bones its buffers hold: a parked vehicle isn't skinned again
             std::uint64_t                    posedHidden = 0;  // and the parts they hid (v19)
             int                              lampLogs = 0;     // its lamps' switching logged this many times
+            bool                             sentBySanAndreas = false;  // San Andreas's own model (Build), not one made here
         };
 
         struct State
@@ -81,6 +84,7 @@ namespace AhShitRim::ModelView
             std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
             VehicleLights::Tuning                        lampTuning;
+            Albedo::Curve                                albedo;
         } state;
 
         Built* Find(std::uint32_t a_id)
@@ -418,7 +422,8 @@ namespace AhShitRim::ModelView
             return true;
         }
 
-        void Build(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob)
+        // a_sentBySanAndreas: a model San Andreas sent (or a copy of one), drawn from its own textures; not one made here.
+        void Build(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob, bool a_sentBySanAndreas)
         {
             const auto start = std::chrono::steady_clock::now();
             if (!LoadTemplate()) {
@@ -427,21 +432,34 @@ namespace AhShitRim::ModelView
             auto built = std::make_unique<Built>();
             built->id = a_id;
             built->blob = a_blob;
+            built->sentBySanAndreas = a_sentBySanAndreas;
             auto model = SkinModel::Parse(built->blob.data(), built->blob.size());
             if (!model) {
                 SKSE::log::warn("model view: model {:08X} is malformed ({} bytes)", a_id, a_blob.size());
                 return;
             }
             built->model = std::move(*model);
+            // San Andreas's own vehicle's colours brought into the range Skyrim's lighting expects (Albedo::ToSkyrim: its
+            // whites were lit signs at night), all but its lamps' (they glow by their texture). Not CJ's or the weapons', nor
+            // the models made here that only borrow a vehicle's bounds (coronas, particles, smoke).
+            // The textures themselves are rolled once; a lamp's gets a copy as San Andreas has it (tint, below).
+            const bool roll = a_sentBySanAndreas && built->model.kind == Protocol::kSkinModelVehicle;
             std::vector<RE::NiSourceTexture*> textures;
             for (std::size_t i = 0; i < built->model.textures.size(); i++) {
                 const auto& t = built->model.textures[i];
-                textures.push_back(MakeTexture(t.width, t.height, t.rgba, std::format("AhShitRim\\{:08X}\\{}", a_id, i)));
+                const auto  name = std::format("AhShitRim\\{:08X}\\{}", a_id, i);
+                if (roll) {
+                    std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                    Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
+                    textures.push_back(MakeTexture(t.width, t.height, pixels.data(), name));
+                } else {
+                    textures.push_back(MakeTexture(t.width, t.height, t.rgba, name));
+                }
             }
             // San Andreas multiplies a material's texture by its colour (a vehicle's paint is a grey
             // texture in the vehicle's colour); Skyrim's shader has no such tint, so each texture and
-            // colour pair gets a tinted copy.
-            std::map<std::pair<std::int32_t, std::uint32_t>, RE::NiSourceTexture*> tinted;
+            // colour pair gets a tinted copy (rolled or not as the mesh is).
+            std::map<std::tuple<std::int32_t, std::uint32_t, bool>, RE::NiSourceTexture*> tinted;
             // A burning lamp's texture: San Andreas's lights-on texture brightened (VehicleLights::Glowing), made once.
             std::map<std::int32_t, RE::NiSourceTexture*> glowing;
             const auto glow = [&](std::int32_t a_texture) -> RE::NiSourceTexture* {
@@ -454,21 +472,44 @@ namespace AhShitRim::ModelView
                 }
                 return out;
             };
-            const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4]) -> RE::NiSourceTexture* {
+            const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4], bool a_roll) -> RE::NiSourceTexture* {
                 const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
-                if (rgb == 0xFFFFFF || !textures[a_texture]) {
+                if ((rgb == 0xFFFFFF && a_roll == roll) || !textures[a_texture]) {
                     return textures[a_texture];
                 }
-                auto& out = tinted[{ a_texture, rgb }];
+                auto& out = tinted[{ a_texture, rgb, a_roll }];
                 if (!out) {
                     const auto&               t = built->model.textures[a_texture];
                     std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
-                    for (std::size_t p = 0; p < pixels.size(); p += 4) {
-                        for (int c = 0; c < 3; c++) {
-                            pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
+                    if (rgb != 0xFFFFFF) {
+                        for (std::size_t p = 0; p < pixels.size(); p += 4) {
+                            for (int c = 0; c < 3; c++) {
+                                pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
+                            }
                         }
                     }
-                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}", a_id, a_texture, rgb));
+                    if (a_roll) {
+                        Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
+                    }
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}{}", a_id, a_texture, rgb, a_roll ? "r" : ""));
+                }
+                return out;
+            };
+            // A mesh with no texture in its colour, one pixel each colour (a rolled one's white too: Skyrim's own white
+            // texture is full white).
+            std::map<std::uint32_t, RE::NiSourceTexture*> colours;
+            const auto colour = [&](const std::uint8_t (&a_color)[4], bool a_roll) -> RE::NiSourceTexture* {
+                const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
+                if (rgb == 0xFFFFFF && !a_roll) {
+                    return nullptr;
+                }
+                auto& out = colours[rgb | (a_roll ? 0x1000000u : 0u)];
+                if (!out) {
+                    std::uint8_t pixel[4] = { a_color[0], a_color[1], a_color[2], 255 };
+                    if (a_roll) {
+                        Albedo::ToSkyrim(pixel, 1, state.albedo);
+                    }
+                    out = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{:06X}{}", a_id, rgb, a_roll ? "r" : ""));
                 }
                 return out;
             };
@@ -477,13 +518,8 @@ namespace AhShitRim::ModelView
             std::uint32_t vertices = 0, triangles = 0, twins = 0, oneSided = 0;
             for (std::uint32_t m = 0; m < built->model.meshes.size(); m++) {
                 const auto& mesh = built->model.meshes[m];
-                RE::NiSourceTexture* diffuse = nullptr;
-                if (mesh.texture >= 0) {
-                    diffuse = tint(mesh.texture, mesh.color);
-                } else if (mesh.color[0] != 255 || mesh.color[1] != 255 || mesh.color[2] != 255) {
-                    const std::uint8_t pixel[4] = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
-                    diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
-                }
+                const bool  rollMesh = roll && VehicleLights::LampOfMesh(mesh.flags) == 0;
+                RE::NiSourceTexture* diffuse = mesh.texture >= 0 ? tint(mesh.texture, mesh.color, rollMesh) : colour(mesh.color, rollMesh);
                 const auto meshTwins = SkinModel::Twins(mesh);
                 const bool single = SkinModel::OneSided(mesh);
                 Shape      shape;
@@ -564,7 +600,7 @@ namespace AhShitRim::ModelView
             SKSE::log::info("model view: model {:08X} received again, already built", state.assembler.Id());
             return;
         }
-        Build(state.assembler.Id(), state.assembler.Blob());
+        Build(state.assembler.Id(), state.assembler.Blob(), true);
     }
 
     bool AddModel(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob)
@@ -572,7 +608,7 @@ namespace AhShitRim::ModelView
         if (state.models.contains(a_id)) {
             return false;
         }
-        Build(a_id, a_blob);
+        Build(a_id, a_blob, false);
         return Find(a_id) != nullptr;
     }
 
@@ -586,7 +622,7 @@ namespace AhShitRim::ModelView
             return false;
         }
         const auto blob = of->blob;
-        Build(a_id, blob);
+        Build(a_id, blob, of->sentBySanAndreas);
         return Find(a_id) != nullptr;
     }
 

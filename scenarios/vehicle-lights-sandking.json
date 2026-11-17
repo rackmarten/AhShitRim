@@ -2,7 +2,14 @@
 // not glow and only its left tail lamp cast light (tail and brake). CJ in a Sandking on Riverwood's road at 23:00; its
 // four lamps burn; pairs of shots taken unpaused a few frames apart, lamps as San Andreas has them against asr.lamps off
 // (or braking against not braking), compared region by region: each tail lamp glows and lights the road behind it red,
-// braking makes them brighter, the headlight glass glows white and the headlights light the road ahead.
+// braking makes them brighter, the headlight glass glows white and the headlights light the road ahead. Then the
+// Sandking's blank white panels with its lamps off, which the operator saw as white rectangles on its back at night:
+// San Andreas's pure white drawn as it was measured 134 luma on the panel on the back and 128 on the plate (the moonlit
+// road beside them 49, the same both ways) and 204 on the window panel facing the moon, 89% of it at 200 or more (the
+// rocks beside it 57); brought into Skyrim's range (protocol/cpp/albedo.h, 17 November 2026) 80, 76 and 128, none of
+// it at 200. Ceilings between the two, floors so they still read as a light surface. By day the sunlit window panel
+// still white (254.7 before, 253.6 after) and the panel on the back, in the shade, still light (158 before, 96 after;
+// the sunlit road 147). The lamps' own textures aren't rolled, so the lamp numbers below hold either way.
 // scripts/skytest.ps1 run scenarios/vehicle-lights-sandking.json (scenarios/README.md). Needs the headlights (v36).
 //
 // The limits (luma, 0 to 255) at 1280x720 are two-sided, as vehicle-lights.json's. Floors, "clearly visible" on this
@@ -103,6 +110,29 @@
                    { "name": "haloLeft", "at": "asr.lamp:frontLeft", "worldRadius": 50 },
                    { "name": "haloRight", "at": "asr.lamp:frontRight", "worldRadius": 50 } ],
       "expect": ["regions.0.delta < -100", "regions.1.delta < -100", "regions.2.delta < -15", "regions.3.delta < -15"] },
+
+    { "label": "lamps off at night, the blank panel and the plate on the back a light surface in the moonlight, not white signs", "cmd": "pixels", "shot": "sk-tail-off",
+      "regions": "box:545,398,630,430;box:620,456,650,470;box:100,580,400,700",
+      "expect": ["regions.0.luma < 105", "regions.0.luma > 50", "regions.1.luma < 105", "regions.1.luma > 45", "regions.2.luma < 70"] },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    { "label": "the side, its window panel facing the moon", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 90, "distance": 800, "pitch": 15 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-side-off" },
+    { "label": "the window panel lit by the moon is not white", "cmd": "pixels", "shot": "sk-side-off", "regions": "box:672,306,728,334;box:150,560,300,650",
+      "expect": ["regions.0.luma < 165", "regions.0.luma > 90", "regions.0.bright < 0.05", "regions.1.luma < 80"] },
+    { "label": "day (13:00)", "cmd": "asr.night", "hour": 13 },
+    "wait frames=60",
+    { "cmd": "screenshot", "name": "sk-side-day" },
+    { "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 700, "pitch": 15 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "sk-tail-day" },
+    { "label": "in the sun the window panel is still white, and the panel on the back, in the shade, still light", "cmd": "pixels", "shot": "sk-side-day",
+      "regions": "box:672,306,728,334", "expect": ["regions.0.luma > 235"] },
+    { "cmd": "pixels", "shot": "sk-tail-day", "regions": "box:545,398,630,430;box:100,580,400,700", "expect": ["regions.0.luma > 75", "regions.1.luma > 110"] },
+    { "label": "night again (23:00), the lamps as San Andreas has them", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "asr.lamps", "state": "on" },
+    { "cmd": "camera", "mode": "player" },
+    { "cmd": "wait", "seconds": 2 },
 
     { "label": "CJ backs up along the road (the Sandking pulls hard enough to hit the rocks ahead within a second)", "cmd": "asr.pedals", "brake": true },
     { "cmd": "wait", "seconds": 1 },
