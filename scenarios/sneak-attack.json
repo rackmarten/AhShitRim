@@ -1,0 +1,31 @@
+// The knife's sneak attack (v36), from a fresh session: in Riverwood by day with the knife, a standing blow on a
+// Whiterun guard's back (no sneak attack), then a crouched one on another, unseen: Skyrim's sneak attack, three times the
+// damage for as well a landed blow (vsLast ~ 3 within 0.3), though San Andreas stands CJ up as he swings
+// (Damage::CrouchedBlow). scripts/skytest.ps1 run scenarios/sneak-attack.json (scenarios/README.md). Measured on the
+// test desktop (13 November 2026): 14.08 standing, 42.25 crouched.
+{
+  "name": "sneak-attack",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "day", "cmd": "scene", "presets": "day clear" },
+    { "label": "the knife", "cmd": "asr.give", "weapon": 4, "ammo": 1, "expect": "weapon == 4" },
+
+    { "label": "a guard 0.9 m ahead, his back to CJ", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a standing knife blow: no sneak attack", "cmd": "asr.swing", "crouch": false, "expect": ["sneak == 1", "drop > 0"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "console", "command": "player.stopcombatalarm" },
+    { "label": "another guard 0.9 m ahead", "cmd": "asr.victim", "meters": 0.9 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "a crouched knife blow, unseen: Skyrim's sneak attack, three times the damage", "cmd": "asr.swing", "crouch": true,
+      "expect": ["sneak == 3", "detection <= 0", "vsLast ~ 3 +- 0.3"] },
+    { "label": "the stars gone", "cmd": "asr.cheat", "code": "ASNAEB" },
+    { "cmd": "console", "command": "player.stopcombatalarm" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

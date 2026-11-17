@@ -2,7 +2,9 @@
 
 #include "hud/SaHud.h"
 #include "player/Arms.h"
+#include "player/PlayerSync.h"
 #include "player/Vitals.h"
+#include "pad.h"
 
 namespace AhShitRim::AmmuNation
 {
@@ -89,7 +91,7 @@ namespace AhShitRim::AmmuNation
     std::string PromptFor(RE::TESObjectREFR* a_ref)
     {
         const auto* keeper = KeeperOf(a_ref);
-        return keeper ? std::format("E: Ammu-Nation ({})", keeper->name) : std::string();
+        return keeper ? std::format("{}: Ammu-Nation ({})", PlayerSync::PadInUse() ? Pad::kActivateName : "E", keeper->name) : std::string();
     }
 
     bool Open(RE::TESObjectREFR* a_ref, Input::KeyLayout a_layout)
@@ -102,7 +104,7 @@ namespace AhShitRim::AmmuNation
         state.keeper = a_ref->As<RE::Actor>()->GetHandle();
         state.who = keeper;
         state.menu.Open();
-        state.help = Shop::HelpText(a_layout);
+        state.help = PlayerSync::PadInUse() ? Shop::PadHelpText() : Shop::HelpText(a_layout);
         SKSE::log::info("ammu-nation: {} in {} opens the shop", keeper->name, keeper->town);
         return true;
     }

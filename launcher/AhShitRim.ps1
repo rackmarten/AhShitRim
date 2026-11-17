@@ -274,9 +274,13 @@ $oldLines = if (Test-Path $ini) { [IO.File]::ReadAllLines($ini, $ansi) } else { 
 $layout = $oldLines | Where-Object { $_ -match '^\s*KeyLayout\s*=' } | Select-Object -First 1
 $misc = $oldLines | Where-Object { $_ -match '^\s*MiscPassed\s*=' } | Select-Object -First 1
 $compass = $oldLines | Where-Object { $_ -match '^\s*Compass\s*=' } | Select-Object -First 1
+# The plugin's own record that it moved Skyrim's look sliders to the middle once: kept, or it would move them again.
+$lookReset = $oldLines | Where-Object { $_ -match '^\s*LookReset\s*=' } | Select-Object -First 1
 $iniLines = [System.Collections.Generic.List[string]]::new()
 $iniLines.AddRange([string[]] @('[SanAndreas]', "Path=$sa", '[Screenshots]', "Dir=$shots"))
-if ($layout) { $iniLines.AddRange([string[]] @('[Input]', $layout.Trim())) }
+if ($layout -or $lookReset) { $iniLines.Add('[Input]') }
+if ($layout) { $iniLines.Add($layout.Trim()) }
+if ($lookReset) { $iniLines.Add($lookReset.Trim()) }
 $iniLines.AddRange([string[]] @('[Missions]', $(if ($misc) { $misc.Trim() } else { 'MiscPassed=1' })))
 if ($compass) { $iniLines.AddRange([string[]] @('[Hud]', $compass.Trim())) }
 $iniLines = $iniLines.ToArray()

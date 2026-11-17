@@ -69,6 +69,10 @@ namespace AhShitRim
         // The proxy slot (v28): Skyrim's actors near CJ's vehicle, for San Andreas to test it against.
         void WriteProxies(const Protocol::ProxyState& a_value);
         bool ReadProxies(Protocol::ProxyState& a_out) const;
+        void WriteCrewInput(const Protocol::CrewInput& a_value);  // v39, Skyrim
+        bool ReadCrewInput(Protocol::CrewInput& a_out) const;
+        void WriteCrew(std::uint32_t a_index, const Protocol::CrewBody& a_value);  // v39, San Andreas: a_index < kCrewMax
+        bool ReadCrew(std::uint32_t a_index, Protocol::CrewBody& a_out) const;
 
         // The rings: Send puts a message in the ring to the other side, and returns false when the
         // link is down, the ring is full or the message can never fit. Receive drains the ring to

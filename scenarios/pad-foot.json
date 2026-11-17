@@ -1,0 +1,149 @@
+// The pad on foot (DESIGN.md, Controller): Back's tap and hold with Skyrim on the player, then CJ moved, turned and
+// armed with the pad's sticks and buttons. Every press is the kit's pad, stick or mouse command, which sends Skyrim's
+// own input events through its input queue, so AhShitRim's input sink and its hooks on Skyrim's handlers see them as
+// a real pad's (Skyrim's gamepad setting is turned on first, as a pad player has it). The effects are read back from
+// San Andreas's pose (asr.pose, asr.mark and asr.since, asr.watch) and Skyrim's open menus; the menus' shots are
+// wait-menu.png, tween-menu.png, journal.png and dialogue.png. On the road below the Whiterun stables, CJ facing south
+// down the open road. scripts/skytest.ps1 run scenarios/pad-foot.json (scenarios/README.md).
+//
+// The limits (set from runs on the test desktop, measured values in the pull request): a light push of the left stick
+// walks (under 9 km/h) and full runs, at least half as fast again; A held sprints, at least 15 % faster than the run;
+// the right stick full right for a second turns the camera at least 30 degrees right; X leaves the ground and rises
+// 0.25 m; L3 crouches and stands; LB talks to Bjorlam in front of CJ (the log says Skyrim activated him for LB); the d-pad changes the weapon; LT aims and RT
+// fires a pistol; B held opens Skyrim's tween menu and Start its journal; Y gets CJ in and out of a car; Back held a second
+// hands the player over both ways.
+{
+  "name": "pad-foot",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "no actors left from an earlier run (asr.place)", "cmd": "asr.place", "clear": true },
+    { "label": "Bjorlam enabled (pad-lock disables him while it runs)", "cmd": "console", "ref": "00013698", "command": "enable" },
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "label": "facing south, down the road", "cmd": "console", "command": "player.setangle z 180" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150", "dead == false"] },
+    { "label": "Skyrim's gamepad on, as a pad player has it", "cmd": "console", "command": "setini \"bGamepadEnable:Controls\" 1" },
+    { "label": "noon, for the shots", "cmd": "scene", "presets": "day clear" },
+
+    // Back with Skyrim on the player: a tap is Skyrim's wait menu (the press held back from Skyrim, replayed through
+    // its own menu open handler), a second's hold the handover.
+    { "label": "Back tapped", "cmd": "pad", "buttons": "back", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "Skyrim's wait menu is open, the player still Skyrim's", "cmd": "asr.pose", "expect": ["menus contains Sleep/Wait Menu", "cj == false"] },
+    { "label": "the wait menu", "cmd": "screenshot", "name": "wait-menu", "hud": true },
+    { "label": "B closes it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "no menu open", "cmd": "asr.pose", "expect": "menus.length == 0" },
+    { "label": "Back held 1.3 s", "cmd": "pad", "buttons": "back", "seconds": 1.3 },
+    { "label": "CJ has the player", "cmd": "wait", "until": ["cj == true", "posed == true", "onFoot == true"], "for": "asr.pose", "timeout": 15 },
+    { "label": "no wait menu on the way", "cmd": "asr.pose", "expect": "menus.length == 0" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+
+    // The left stick: a light push walks, full runs, A held on top sprints. The speeds are measured over 1.2 s once
+    // he's up to speed.
+    { "label": "the left stick pushed lightly", "cmd": "stick", "side": "left", "x": 0, "y": 0.3 },
+    { "cmd": "wait", "seconds": 0.8 },
+    { "label": "CJ walks", "cmd": "asr.watch", "seconds": 1.2, "keep": "walk", "expect": ["moved > 0.5", "speed > 2", "speed < 9"] },
+    { "label": "the left stick full forward", "cmd": "stick", "side": "left", "x": 0, "y": 1 },
+    { "cmd": "wait", "seconds": 0.8 },
+    { "label": "CJ runs, faster than he walked", "cmd": "asr.watch", "seconds": 1.2, "keep": "run", "vs": "walk", "expect": ["moved > 2", "vs.speed > 1.5"] },
+    { "label": "A held", "cmd": "pad", "buttons": "a" },
+    { "cmd": "wait", "seconds": 0.8 },
+    { "label": "CJ sprints, faster than he ran", "cmd": "asr.watch", "seconds": 1.2, "vs": "run", "expect": ["vs.speed > 1.15", "vs.moved > 1.15"] },
+    { "label": "A let go", "cmd": "pad", "buttons": "a", "value": 0 },
+    { "label": "the stick let go", "cmd": "stick", "side": "left", "x": 0, "y": 0 },
+    { "label": "CJ stops", "cmd": "wait", "until": "speed < 1", "for": "asr.pose", "timeout": 5 },
+    { "label": "CJ down the road", "cmd": "screenshot", "name": "on-foot", "camera": "orbit player distance=500 pitch=15" },
+
+    // The right stick looks.
+    { "cmd": "asr.mark" },
+    { "label": "the right stick full right for a second", "cmd": "stick", "side": "right", "x": 1, "y": 0, "seconds": 1 },
+    { "cmd": "wait", "seconds": 0.3 },
+    { "label": "the camera turned right", "cmd": "asr.since", "expect": "turned > 30" },
+    { "cmd": "asr.mark" },
+    { "label": "and back left", "cmd": "stick", "side": "right", "x": -1, "y": 0, "seconds": 1 },
+    { "cmd": "wait", "seconds": 0.3 },
+    { "label": "the camera turned left", "cmd": "asr.since", "expect": "turned < -30" },
+
+    // X jumps, L3 crouches.
+    { "label": "X held", "cmd": "pad", "buttons": "x" },
+    { "label": "CJ jumps", "cmd": "asr.watch", "seconds": 1.2, "expect": ["airborne == true", "rose > 0.25"] },
+    { "cmd": "pad", "buttons": "x", "value": 0 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "L3 tapped", "cmd": "pad", "buttons": "ls", "seconds": 0.15 },
+    { "label": "CJ crouches", "cmd": "wait", "until": "crouching == true", "for": "asr.pose", "timeout": 3 },
+    { "label": "L3 again", "cmd": "pad", "buttons": "ls", "seconds": 0.15 },
+    { "label": "CJ stands", "cmd": "wait", "until": "crouching == false", "for": "asr.pose", "timeout": 3 },
+
+    // LB activates what CJ faces, through Skyrim's own activation: Bjorlam, the stables' carriage driver, brought in
+    // front of him, talks.
+    { "label": "Bjorlam up from his seat (moveto takes him out of furniture, where asr.place's SetPosition leaves him)", "cmd": "console", "ref": "00013698", "command": "moveto player" },
+    { "label": "his getting up done", "cmd": "wait", "seconds": 3 },
+    { "label": "Bjorlam stays where he's put (he walks back to his routine otherwise)", "cmd": "console", "ref": "00013698", "command": "setdontmove 1" },
+    { "label": "Bjorlam right in front of CJ (moveto leaves him beside, out of CJ's aim)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 110, "expect": "placed.length == 1" },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "the help box naming LB (\"LB: Talk Bjorlam\", read from the shot)", "cmd": "screenshot", "name": "lb-help", "hud": true },
+    { "label": "LB tapped (Skyrim's activation of him logs in the press's own frame, before a wait for the line could start)", "cmd": "pad", "buttons": "lb", "seconds": 0.15 },
+    { "label": "Bjorlam talks", "cmd": "wait", "until": "menus contains Dialogue Menu", "for": "asr.pose", "timeout": 5 },
+    { "label": "the dialogue", "cmd": "screenshot", "name": "dialogue", "hud": true },
+    { "label": "B leaves it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    { "label": "the dialogue closed", "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+    { "label": "Bjorlam free to move again", "cmd": "console", "ref": "00013698", "command": "setdontmove 0" },
+    { "label": "Bjorlam 35 m behind CJ, out of later checks' way (the gun lock's)", "cmd": "asr.place", "count": 1, "ref": "00013698", "distance": 2500, "angle": 180 },
+
+    // Skyrim's menus on the pad while CJ has the player: B held the tween menu (a tap is Circle in a cheat sequence),
+    // Start the journal; B closes the tween menu, Start the journal.
+    { "label": "B held 0.5 s", "cmd": "pad", "buttons": "b", "seconds": 0.5 },
+    { "label": "Skyrim's tween menu", "cmd": "wait", "until": "menus contains TweenMenu", "for": "asr.pose", "timeout": 5 },
+    { "label": "the tween menu", "cmd": "screenshot", "name": "tween-menu", "hud": true },
+    { "label": "B closes it", "cmd": "pad", "buttons": "b", "seconds": 0.15 },
+    { "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+    { "label": "Start tapped", "cmd": "pad", "buttons": "start", "seconds": 0.15 },
+    { "label": "Skyrim's journal", "cmd": "wait", "until": "menus contains Journal Menu", "for": "asr.pose", "timeout": 5 },
+    { "label": "the journal", "cmd": "screenshot", "name": "journal", "hud": true },
+    { "label": "Start closes it", "cmd": "pad", "buttons": "start", "seconds": 0.15 },
+    { "cmd": "wait", "until": "menus.length == 0", "for": "asr.pose", "timeout": 5 },
+
+    // Weapons: the d-pad's right switches, LT aims, RT fires. asr.fire puts the pistol in his hands first (the mouse's
+    // way: it fires one shot).
+    { "label": "a pistol", "cmd": "asr.give", "weapon": 22, "ammo": 200 },
+    { "label": "in his hands", "cmd": "asr.fire", "weapon": 22, "shots": 1 },
+    { "cmd": "wait", "seconds": 1 },
+    { "cmd": "asr.mark" },
+    { "label": "the d-pad's right", "cmd": "pad", "buttons": "right", "seconds": 0.15 },
+    { "cmd": "wait", "seconds": 1.2 },
+    { "label": "the weapon changed", "cmd": "asr.since", "expect": ["weaponFrom == 22", "weapon != 22"] },
+    { "label": "the d-pad's left: back to the pistol", "cmd": "pad", "buttons": "left", "seconds": 0.15 },
+    { "label": "the pistol again", "cmd": "wait", "until": "weapon == 22", "for": "asr.pose", "timeout": 3 },
+    { "label": "LT held", "cmd": "pad", "buttons": "lt", "value": 0.9 },
+    { "label": "CJ aims", "cmd": "wait", "until": "aiming == true", "for": "asr.pose", "timeout": 3 },
+    { "label": "aiming the pistol", "cmd": "screenshot", "name": "aim", "camera": "orbit player yaw=200 distance=300 pitch=10" },
+    { "cmd": "asr.mark" },
+    { "label": "RT held 0.6 s", "cmd": "pad", "buttons": "rt", "seconds": 0.6 },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "he fired", "cmd": "asr.since", "expect": "shots > 0" },
+    { "label": "LT let go", "cmd": "pad", "buttons": "lt", "value": 0 },
+    { "cmd": "wait", "until": "aiming == false", "for": "asr.pose", "timeout": 3 },
+
+    // Y gets into a car in front of him and out again.
+    { "label": "an Elegy in front of CJ", "cmd": "asr.spawn", "model": 562, "expect": ["distance < 600", "driven == false"] },
+    { "label": "Y tapped", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "label": "CJ gets in", "cmd": "wait", "until": "inVehicle == true", "for": "asr.pose", "timeout": 10 },
+    { "cmd": "wait", "until": "gettingInOut == false", "for": "asr.pose", "timeout": 5 },
+    { "label": "Y again", "cmd": "pad", "buttons": "y", "seconds": 0.2 },
+    { "label": "CJ gets out", "cmd": "wait", "until": ["onFoot == true", "gettingInOut == false"], "for": "asr.pose", "timeout": 10 },
+
+    // Back held: Skyrim has the player again.
+    { "label": "Back held 1.3 s", "cmd": "pad", "buttons": "back", "seconds": 1.3 },
+    { "label": "Skyrim has the player", "cmd": "wait", "until": "cj == false", "for": "asr.pose", "timeout": 10 },
+    { "label": "nothing left held", "cmd": "input", "expect": "idle == true" },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

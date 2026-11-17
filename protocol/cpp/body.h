@@ -323,12 +323,33 @@ namespace AhShitRim::Body
         }
 
         // The pose to draw at a_nowMs; false before any frame arrived.
-        bool Sample(double a_nowMs, Protocol::BodyState& a_out) const
+        bool Sample(double a_nowMs, Protocol::BodyState& a_out) const { return _count > 0 && SampleAt(TimeAt(a_nowMs), a_out); }
+
+        // The moment on San Andreas's clock (this stream's BodyState.timeMs) that Sample draws at a_nowMs.
+        double TimeAt(double a_nowMs) const { return a_nowMs - _gap - kDelayMs; }
+
+        // San Andreas's stamp of frame a_frame, while it is still here.
+        bool FrameTime(std::uint32_t a_frame, double& a_out) const
+        {
+            for (int i = 0; i < _count; i++) {
+                if (At(i).frame == a_frame) {
+                    a_out = At(i).timeMs;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        int                        Count() const { return _count; }
+        const Protocol::BodyState& Frame(int a_age) const { return At(a_age); }  // 0 = oldest
+
+        // The pose at a_t on San Andreas's clock: between the two frames around it, or the nearest end.
+        bool SampleAt(double a_t, Protocol::BodyState& a_out) const
         {
             if (_count == 0) {
                 return false;
             }
-            const double t = a_nowMs - _gap - kDelayMs;  // on San Andreas's clock
+            const double t = a_t;
             const auto&  oldest = At(0);
             const auto&  newest = At(_count - 1);
             if (_count == 1 || t >= newest.timeMs) {
@@ -370,5 +391,34 @@ namespace AhShitRim::Body
         double                                     _gap = 0.0;
         bool                                       _haveGap = false;
         double                                     _lastPushMs = 0.0;
+    };
+
+    // A stream drawn at the same moment as another (a_leader, CJ's body): a vehicle San Andreas publishes in the same
+    // frames, with the same frame numbers. Each Interpolator works out San Andreas's clock from when its own frames
+    // were read, and two such guesses drift a Skyrim frame apart now and then: CJ, and the camera with him, drawn a
+    // frame behind the car he sits in (0.3 m at 20 m/s), then catching up. So the follower is drawn at the leader's
+    // moment, through a frame both have: the follower's stamp of it minus the leader's (zero once San Andreas stamps
+    // both from one clock, a constant before). With no frame in common yet, it draws as it would on its own.
+    class Follow
+    {
+    public:
+        bool Sample(const Interpolator& a_leader, double a_leaderTime, const Interpolator& a_follower, double a_nowMs, Protocol::BodyState& a_out)
+        {
+            for (int i = a_follower.Count() - 1; i >= 0; i--) {
+                double t = 0.0;
+                if (a_leader.FrameTime(a_follower.Frame(i).frame, t)) {
+                    _offset = static_cast<double>(a_follower.Frame(i).timeMs) - t;
+                    _have = true;
+                    break;
+                }
+            }
+            return _have ? a_follower.SampleAt(a_leaderTime + _offset, a_out) : a_follower.Sample(a_nowMs, a_out);
+        }
+
+        void Reset() { _have = false; }
+
+    private:
+        double _offset = 0.0;
+        bool   _have = false;
     };
 }

@@ -42,9 +42,13 @@ namespace AhShitRim::SaHud
     void MarkHead(const RE::NiPoint3& a_headTop, std::uint32_t a_colour);  // the lock-on's triangle over a head (RGBA, red in the low byte), as long as it's called every frame
     bool AimCrosshair(float& a_x, float& a_y, float& a_aspect);           // where the gun's crosshair was last drawn (fractions of the screen, its width over height); false when it wasn't
     void ShowMissionTitle(std::string a_text);  // bottom right, gold Pricedown, fades out after a few seconds
+    // The zone name bottom right, light blue Gothic, fading in and out as San Andreas's (protocol/cpp/hud_names.h): Skyrim's
+    // location on entering it. The vehicle CJ is in comes up the same way by itself, in green, by San Andreas's name for it.
+    void ShowZoneName(std::string a_name);
     void ShowBigMessage(BigMessage a_message, float a_seconds = 4.0f);  // "wasted" and "busted" under the fade, "mission passed!" over it
     void HideBigMessage();
     void ShowHelp(std::string a_text, float a_seconds = 6.0f);      // the box top left, with San Andreas's beep when it starts showing
+    std::string DebugHelp();  // the test kit: the help box's text while it shows, else empty
     void ShowPrompt(std::string a_text);  // the help box while no help shows, as long as it's called every frame ("E: Open Breezehome")
     void ShowSubtitle(std::string a_text, float a_seconds = 4.0f);  // bottom centre
     void HoldSubtitle(std::string a_text);  // the subtitles, as long as it's called every frame with the line (Skyrim's subtitles, a scene's lines)
@@ -70,6 +74,11 @@ namespace AhShitRim::SaHud
     void ShowMenu(std::string a_title, std::vector<MenuRow> a_rows);
     void ClearText();                             // every text style, the fade and the bars off
 
-    // The dev key (/ while San Andreas has the player): shows the next text style in turn.
-    void NextDemo();
+    // For the test kit (asr.hud): the zone and vehicle names and the help box as drawn last frame.
+    struct DebugText
+    {
+        std::string zone, zonePhase, vehicle, vehiclePhase, help;
+        float       zoneAlpha = 0.0f, vehicleAlpha = 0.0f, helpAlpha = 0.0f;
+    };
+    DebugText DebugTexts();
 }

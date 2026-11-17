@@ -22,6 +22,7 @@ namespace AhShitRim::Arms
             bool               debugKey = true;
             std::size_t        debugStep = 0;
             Body::Interpolator hands[Protocol::kWeaponHandMax];
+            Body::Follow       follow[Protocol::kWeaponHandMax];  // each hand's at CJ's moment
             Cosave::Arms       known;  // CJ's weapons as far as the save is concerned
             bool               pending = false;  // known has to be sent to San Andreas
             bool               settling = false;  // it was sent, San Andreas hasn't shown it yet
@@ -183,7 +184,8 @@ namespace AhShitRim::Arms
         }
     }
 
-    void Draw(const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState& a_pose, double a_nowMs, float a_delta, bool a_hide)
+    void Draw(const RE::NiPoint3& a_anchor, std::uint32_t a_handover, const Protocol::PlayerState& a_pose, double a_nowMs, float a_delta, bool a_hide,
+        const Body::Interpolator* a_body, double a_bodyTime)
     {
         auto& link = LinkService::Get();
         if (!state.haveShots) {
@@ -203,13 +205,15 @@ namespace AhShitRim::Arms
             if (link.ReadWeapon(hand, weapon)) {
                 if ((weapon.flags & Protocol::kBodyValid) == 0 || weapon.handover != a_handover) {
                     state.hands[hand].Reset();
+                    state.follow[hand].Reset();
                 } else if (weapon.boneCount <= Protocol::kBodyBoneMax && Body::Finite(weapon)) {
                     state.hands[hand].Push(weapon, a_nowMs);
                 }
             }
             Protocol::BodyState pose{};
             state.drawn[hand].on = false;
-            if (a_hide || !state.hands[hand].Sample(a_nowMs, pose) || pose.boneCount == 0) {
+            const bool sampled = a_body ? state.follow[hand].Sample(*a_body, a_bodyTime, state.hands[hand], a_nowMs, pose) : state.hands[hand].Sample(a_nowMs, pose);
+            if (a_hide || !sampled || pose.boneCount == 0) {
                 continue;
             }
             const RE::NiPoint3 feet = a_anchor + RE::NiPoint3(pose.feet[0], pose.feet[1], pose.feet[2]);
@@ -225,6 +229,9 @@ namespace AhShitRim::Arms
     {
         for (auto& hand : state.hands) {
             hand.Reset();
+        }
+        for (auto& follow : state.follow) {
+            follow.Reset();
         }
         MuzzleFlash::Reset();
         state.haveShots = false;

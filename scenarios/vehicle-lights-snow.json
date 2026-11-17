@@ -1,0 +1,107 @@
+// The vehicles' lights on snow (v36): at 10 times a torch the operator saw a bike's headlight burn the snow ahead white,
+// a parked car's headlights a white oval across the screen, and its tail lamp throw a red wash behind. Snow takes about
+// 6 times the light Riverwood's road does, and shines. CJ in a ZR-350 on the snowy path up to High Hrothgar at 23:00,
+// the handbrake on: the snow ahead lit, clearly, with next to none of it clipped to white, from behind and above the car
+// and from in front of it where CJ would stand; nothing behind burned white by the tail lights, braking or not; then a
+// Sanchez from behind, as the operator rode one. vehicle-lights.json checks the same lights still show on Riverwood's
+// dark road, and holds the tail and brake lights' ceilings there (on this slope's drifting mist their patch measured
+// anywhere from 0 to 9 between runs, too unsteady to bound).
+// scripts/skytest.ps1 run scenarios/vehicle-lights-snow.json (scenarios/README.md). Needs the headlights (v36).
+//
+// The limits (luma, 0 to 255; `bright` the share of a region at 250 or more) are two-sided. The mist on the path comes
+// and goes, so the same light measured up to a third brighter in one run than another. Ceilings, from what the operator
+// saw: under 1% of the lit snow at 250 or more (at 10 times a torch 42% of the pool was; at 3 times from 2 m up 4% in
+// front of the car; at the defaults none), the pool's mean under 170 (the defaults 124 to 135; 10 times a torch 193)
+// and no more than 100 brighter than unlit (10 times a torch 132; the defaults 50 to 61 behind the car, 94 in front).
+// Floors, the snow still clearly lit: about half of what the runs of 16 November 2026 measured at the defaults. The
+// bike's headlight is the same light as the car's (one per end, at its one lamp): here the slope and the mist moved
+// its patch off the middle ahead (20 brighter there one run, 7 the next, both PNGs showing the snow and rocks lit), so
+// its floor is vehicle-lights-bike.json's, on Riverwood's dark road.
+{
+  "name": "vehicle-lights-snow",
+  "steps": [
+    { "label": "to the snowy path up to High Hrothgar", "cmd": "console", "command": "cow Tamriel 10 -10" },
+    { "cmd": "wait", "seconds": 12 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "the lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "night (23:00), the clock nearly still, the sky clear", "cmd": "asr.night", "hour": 23 },
+    { "cmd": "console", "command": "set timescale to 1" },
+    { "cmd": "console", "command": "fw 81a" },
+    "wait frames=45",
+    { "label": "CJ in a ZR-350, its engine running", "cmd": "asr.spawn", "model": 477, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "label": "the handbrake on, so it stays put on the slope", "cmd": "asr.pedals", "handbrake": true, "seconds": 30 },
+    { "label": "San Andreas lights its lamps", "cmd": "wait", "seconds": 2 },
+    { "label": "all four lamps burn", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.litCount == 4", "lights.0.on == true", "lights.1.on == true"] },
+
+    { "label": "the snow ahead: from behind and above", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 1000, "pitch": 35 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "snow-road-on" },
+    { "label": "the snow ahead lit, none of it burned white", "cmd": "pixels", "shot": "snow-road-on", "bright": 250,
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
+                   { "name": "pool", "at": "asr.vehicle:", "offset": "800,0,-80", "worldRadius": 250 },
+                   { "name": "far", "at": "asr.vehicle:", "offset": "1200,0,-80", "worldRadius": 200 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01", "regions.2.bright < 0.01", "regions.1.luma < 170", "regions.2.luma < 170"] },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "snow-road-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "and clearly lit against the lamps off, not floodlit", "cmd": "compare", "a": "snow-road-on", "b": "snow-road-off",
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
+                   { "name": "pool", "at": "asr.vehicle:", "offset": "800,0,-80", "worldRadius": 250 },
+                   { "name": "far", "at": "asr.vehicle:", "offset": "1200,0,-80", "worldRadius": 200 } ],
+      "expect": ["regions.0.delta < -20", "regions.1.delta < -25", "regions.2.delta < -25", "regions.1.delta > -100", "regions.2.delta > -100"] },
+
+    { "label": "in front of the headlights, where CJ would stand: the trees in between cut away", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 180, "distance": 1500, "pitch": 15, "near": 500 },
+    { "label": "the handbrake still on", "cmd": "asr.pedals", "handbrake": true, "seconds": 30 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "snow-front-on" },
+    { "label": "no white oval across the screen", "cmd": "pixels", "shot": "snow-front-on", "bright": 250,
+      "regions": [ { "name": "near", "at": "asr.vehicle:", "offset": "400,0,-80", "worldRadius": 100 },
+                   { "name": "pool", "at": "asr.vehicle:", "offset": "800,0,-80", "worldRadius": 250 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01", "regions.1.luma < 170"] },
+    { "label": "lamps off", "cmd": "asr.lamps", "state": "off" },
+    "wait frames=5",
+    { "cmd": "screenshot", "name": "snow-front-off" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "and the snow there clearly lit, not floodlit", "cmd": "compare", "a": "snow-front-on", "b": "snow-front-off",
+      "regions": [ { "name": "pool", "at": "asr.vehicle:", "offset": "800,0,-80", "worldRadius": 250 } ],
+      "expect": ["regions.0.delta < -45", "regions.0.delta > -130"] },
+
+    { "label": "the tail lights: from behind", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 700, "pitch": 15 },
+    { "label": "the handbrake still on", "cmd": "asr.pedals", "handbrake": true, "seconds": 30 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "snow-tail-on" },
+    { "label": "nothing behind burned white by the tail lights", "cmd": "pixels", "shot": "snow-tail-on", "bright": 250,
+      "regions": [ { "name": "roadBehind", "at": "asr.lamp:rearRight", "offset": "-120,0,-65", "worldRadius": 40 },
+                   { "name": "wash", "at": "asr.vehicle:", "offset": "-350,0,-80", "worldRadius": 200 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01"] },
+    { "label": "braking", "cmd": "asr.lamps", "state": "brake" },
+    "wait frames=5",
+    { "label": "the tail lights burn, braking", "cmd": "probe", "kind": "lights", "at": "asr.vehicle:", "radius": 1500,
+      "expect": ["at.details.lamps.forcedBraking == true", "lights.1.on == true"] },
+    { "cmd": "screenshot", "name": "snow-brake-on" },
+    { "label": "lamps as San Andreas has them", "cmd": "asr.lamps", "state": "on" },
+    { "label": "nor while braking", "cmd": "pixels", "shot": "snow-brake-on", "bright": 250,
+      "regions": [ { "name": "roadBehind", "at": "asr.lamp:rearRight", "offset": "-120,0,-65", "worldRadius": 40 },
+                   { "name": "wash", "at": "asr.vehicle:", "offset": "-350,0,-80", "worldRadius": 200 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01"] },
+    { "label": "foot off the pedals", "cmd": "asr.pedals" },
+
+    { "label": "CJ on a Sanchez, as the operator rode one", "cmd": "asr.spawn", "model": 468, "in": true, "expect": ["driven == true", "health > 0"] },
+    { "cmd": "asr.pedals", "handbrake": true, "seconds": 30 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "from behind the bike", "cmd": "camera", "mode": "orbit", "at": "asr.vehicle:", "yaw": 0, "distance": 400, "pitch": 15 },
+    "wait frames=20",
+    { "cmd": "screenshot", "name": "snow-bike-on" },
+    { "label": "the snow ahead of the bike and behind it, none burned white", "cmd": "pixels", "shot": "snow-bike-on", "bright": 250,
+      "regions": [ { "name": "ahead", "at": "asr.vehicle:", "offset": "800,0,-60", "worldRadius": 250 },
+                   { "name": "behind", "at": "asr.vehicle:", "offset": "-250,0,-60", "worldRadius": 150 } ],
+      "expect": ["regions.0.bright < 0.01", "regions.1.bright < 0.01"] },
+    { "label": "foot off the pedals", "cmd": "asr.pedals" },
+    { "cmd": "camera", "mode": "player" },
+    { "label": "the clock running again", "cmd": "console", "command": "set timescale to 20" }
+  ]
+}

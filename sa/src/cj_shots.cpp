@@ -2,6 +2,7 @@
 
 #include "aim.h"
 #include "cj_body.h"
+#include "crew_puppets.h"
 #include "explosives.h"
 #include "log.h"
 #include "pose.h"
@@ -128,7 +129,7 @@ namespace AhShitRim::CjShots
             }
         }
 
-        void SendBullet(CPed* a_ped, eWeaponType a_type, const CVector& a_from, const CVector& a_along, std::uint8_t a_flags)
+        void SendBullet(CPed* a_ped, eWeaponType a_type, const CVector& a_from, const CVector& a_along, std::uint8_t a_flags, std::uint8_t a_shooter = 0)
         {
             CVector dir = a_along;
             const float length = dir.Magnitude();
@@ -143,6 +144,7 @@ namespace AhShitRim::CjShots
             shot.kind = Protocol::kShotBullet;
             shot.skill = skill;
             shot.flags = a_flags;
+            shot.shooter = a_shooter;  // v39: a homie's
             shot.damage = info ? static_cast<float>(info->m_nDamage) : 0.0f;
             shot.direction[0] = dir.x;
             shot.direction[1] = dir.y;
@@ -154,6 +156,21 @@ namespace AhShitRim::CjShots
         bool __fastcall FireInstantHitHook(CWeapon* a_weapon, void*, CEntity* a_firedBy, CVector* a_origin, CVector* a_muzzle, CEntity* a_target, CVector* a_targetPos,
             CVector* a_driveBy, bool a_arg6, bool a_arg7)
         {
+            // v39: a homie's shot goes to Skyrim from his muzzle at his aim, a little off it as San Andreas's gang peds shoot,
+            // and isn't tested in San Andreas's world (where CJ stands, and nothing Skyrim's is).
+            if (const int slot = CrewPuppets::SlotOf(a_firedBy); slot >= 0) {
+                if (a_origin) {
+                    auto*         ped = static_cast<CPed*>(a_firedBy);
+                    const CVector to = a_targetPos ? *a_targetPos : *a_origin + ped->GetForward() * 30.0f;
+                    CVector       along = to - *a_origin;
+                    static std::uint32_t seed = 1;
+                    const float   turn = CrewPuppets::SpreadRadians(seed++), lift = CrewPuppets::SpreadRadians(seed++) * 0.5f;
+                    const float   c = std::cos(turn), s = std::sin(turn);
+                    along = CVector(along.x * c - along.y * s, along.x * s + along.y * c, along.z + along.Magnitude() * lift);
+                    SendBullet(ped, a_weapon->m_eWeaponType, *a_origin, along, 0, Crew::ShooterOf(static_cast<std::uint32_t>(slot)));
+                }
+                return true;
+            }
             auto* const outerWeapon = state.firing;
             auto* const outerBy = state.firedBy;
             const bool  outerTargeted = state.targeted;

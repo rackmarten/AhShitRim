@@ -1,6 +1,7 @@
 #include "body/MuzzleFlash.h"
 
 #include "body/ModelView.h"
+#include "body/SceneLights.h"
 #include "flash_model.h"
 
 namespace AhShitRim::MuzzleFlash
@@ -59,8 +60,7 @@ namespace AhShitRim::MuzzleFlash
                 return false;
             }
             auto* scene = Scene();
-            auto* shadowScene = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0];
-            if (!scene || !shadowScene) {
+            if (!scene) {
                 return false;  // not up yet: tried again next shot
             }
             auto* light = RE::NiPointLight::Create();
@@ -78,17 +78,7 @@ namespace AhShitRim::MuzzleFlash
             light->SetLightAttenuation(kLightRadius);
             state.pointLight.reset(light);
             scene->AttachChild(light, true);
-            // Every kind of surface lit, not the convenience overload's defaults (which left the land out).
-            RE::ShadowSceneNode::LIGHT_CREATE_PARAMS params{};
-            params.dynamic = true;
-            params.shadowLight = false;
-            params.portalStrict = false;
-            params.affectLand = true;
-            params.affectWater = true;
-            params.neverFades = true;
-            params.falloff = 1.0f;
-            shadowScene->AddLight(light, params);
-            SKSE::log::info("muzzle flash: a point light of radius {:.0f} added to the scene", kLightRadius);
+            SKSE::log::info("muzzle flash: a point light of radius {:.0f} made", kLightRadius);
             return true;
         }
     }
@@ -134,7 +124,7 @@ namespace AhShitRim::MuzzleFlash
         debug.strength = strength;
         debug.at = a_feet + RE::NiPoint3(a_muzzle[0], a_muzzle[1], a_muzzle[2]);
         debug.model = flash.model;
-        if (EnsureLight()) {
+        if (EnsureLight() && SceneLights::Keep(state.pointLight.get())) {  // added back after a load door dropped it
             state.lit = true;
             auto* light = state.pointLight.get();
             if (auto* scene = Scene(); scene && light->parent != scene) {  // the player's 3D was rebuilt (a load door)

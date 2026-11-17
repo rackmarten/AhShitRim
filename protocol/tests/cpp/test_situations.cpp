@@ -59,15 +59,24 @@ TEST_CASE("the per-trigger tables: CJ's lines, and lines wherever San Andreas ha
 TEST_CASE("a trigger waits 4 s after any line, and never talks over one")
 {
     Chatter chatter(0.0f);
-    CHECK_FALSE(chatter.Speak(Trigger::StealthKill, 3.9f, 0.0f));  // the start counts as a line
-    CHECK(chatter.Speak(Trigger::StealthKill, 4.0f, 0.0f));
-    CHECK_FALSE(chatter.Speak(Trigger::Cash, 7.0f, 0.0f));  // the stealth kill line just now
+    CHECK_FALSE(chatter.Speak(Trigger::Singing, 3.9f, 0.0f));  // the start counts as a line
+    CHECK(chatter.Speak(Trigger::Singing, 4.0f, 0.0f));
+    CHECK_FALSE(chatter.Speak(Trigger::Cash, 7.0f, 0.0f));  // the song just now
     CHECK(chatter.Speak(Trigger::Cash, 8.0f, 0.0f));
     chatter.Heard(10.0f);  // a swear key
     CHECK_FALSE(chatter.Speak(Trigger::ShopBuy, 13.0f, 0.0f));
     CHECK_FALSE(chatter.Speak(Trigger::ShopBuy, 20.0f, 0.0f, true));  // a line of his still plays
     CHECK(chatter.Speak(Trigger::ShopBuy, 20.0f, 0.0f));
     CHECK(chatter.Quiet(25.0f) == doctest::Approx(5.0f));
+}
+
+TEST_CASE("the stealth kill's line cuts in over the stab's own fight line")
+{
+    Chatter chatter(0.0f);
+    CHECK(chatter.Speak(Trigger::Fight, 10.0f, 0.0f));               // the stab lands as a blow
+    CHECK(chatter.Speak(Trigger::StealthKill, 11.2f, 0.0f, true));    // its line still plays: the kill's cuts in
+    CHECK_FALSE(chatter.Speak(Trigger::Cash, 12.0f, 0.0f));          // the others still wait after it
+    CHECK(chatter.Speak(Trigger::StealthKill, 12.0f, 0.0f));          // a second kill right after speaks too
 }
 
 TEST_CASE("each trigger rolls its own chance")

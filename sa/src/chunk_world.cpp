@@ -125,6 +125,16 @@ namespace AhShitRim::ChunkWorld
             return -1;
         }
 
+        // San Andreas keeps the ground under its camera (CCamera::CalculateGroundHeight, a vertical line through the
+        // buildings, asked every frame by its streaming) and only looks again once the camera has moved 20 m. Here the
+        // ground changes under a still camera: a handover puts CJ and the camera on the spot before its chunks are in,
+        // so that look missed it and kept what it had (nothing, 0, the first time after San Andreas started: 500 m below
+        // him) while he stayed within 20 m. The jetpack's thrust fades out from 100 m above that ground, so it gave
+        // none: CJ couldn't take off from the ground. Whenever the chunks change, the next call looks again.
+        constexpr std::uintptr_t kGroundLookedFrom = 0xB70034;  // CalculateGroundHeight's camera position at its last look (a CVector)
+
+        void ForgetCameraGround() { *reinterpret_cast<CVector*>(kGroundLookedFrom) = CVector(1e6f, 1e6f, 1e6f); }
+
         // Out of the world, but the building keeps its collision until the slot gets a new chunk:
         // CJ still refers to the building he last stood on, and San Andreas crashed on the next
         // physics step when its collision was gone (the second handover dropped them all).
@@ -133,6 +143,7 @@ namespace AhShitRim::ChunkWorld
             if (a_slot.inWorld) {
                 CWorld::Remove(a_slot.building);
                 a_slot.inWorld = false;
+                ForgetCameraGround();
             }
         }
 
@@ -225,6 +236,7 @@ namespace AhShitRim::ChunkWorld
             slot.building->SetPosn(CVector(mesh.position.x, mesh.position.y, mesh.position.z));
             CWorld::Add(slot.building);
             slot.inWorld = true;
+            ForgetCameraGround();
             state.land.Set(key, Ground::LandOf(a_chunk));
             state.built++;
             state.replaced += replaced;
@@ -276,6 +288,7 @@ namespace AhShitRim::ChunkWorld
             }
             TheCamera.m_vecGameCamPos -= shift;
             TheCamera.GetPosition() -= shift;
+            ForgetCameraGround();
             Vehicles::Shift(shift);
             state.fall.Shift(a_shift);
             state.guard.Shift(a_shift);

@@ -1,0 +1,45 @@
+// How deadly the Grove Street crew is (v39, [Crew] in AhShitRim.ini): two homies against a fixed group of four level 1
+// bandits (EncBandit01Melee1HKhajiitM, placed 4 m in front of the player, so they attack at once: the crew only shoots
+// those already fighting, and from 15 m three of four never noticed the hidden player) by the Whiterun stables, CJ not fighting
+// (BAGUVIX keeps him up, he never fires). The operator found two homies wiping out Fort Greymoor almost instantly; the
+// crew should help, not do CJ's killing for him. Limits: the four take the crew over 15 s and under 120 s to clear
+// (they react 0.8 to 1.5 s to a new foe, fire 0.8 to 1.5 s bursts with 1.5 to 3 s between, at a third of CJ's damage),
+// and between 15% and 80% of their bullets hit someone (60% of their aims are on the target up close, 25% from 40 m;
+// melee bandits close in as a pack, so it's up close, and a bullet past one may hit the next: the kit measured 68%).
+// scripts/skytest.ps1 run scenarios/crew-balance.json (scenarios/README.md). The crew stays CJ's after it.
+{
+  "name": "crew-balance",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "away from the stables' parked Sanchez (it parks 6 m off)", "cmd": "asr.walk", "points": "17521,-12950", "gait": "run" },
+    { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "Thane of two holds: a crew of three, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "dismiss": true },
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "the Thane titles read, the stables' spots fill (CJ stays 18 m off: the blown-up Sanchez burns there)", "cmd": "wait", "seconds": 15 },
+    { "label": "two homies join", "cmd": "asr.crew", "recruit": 2, "thanes": 2, "expect": ["following == 2", "followers.length == 2"] },
+    { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
+    { "label": "CJ can't die (BAGUVIX): he only watches", "cmd": "asr.cheat", "code": "BAGUVIX" },
+    { "label": "counters from zero", "cmd": "asr.crewstats", "reset": true },
+    { "label": "four bandits 4 m in front: they come for the crew at once", "cmd": "console", "command": "player.placeatme C3CA0 4 300 0" },
+    { "label": "the crew clears them", "cmd": "wait", "until": "targetedDead >= 4", "for": "asr.crewstats", "timeout": 150 },
+    { "label": "it took them tens of seconds, and many of their bullets missed", "cmd": "asr.crewstats",
+      "expect": ["targetedDead >= 4", "hitShare > 0.15", "hitShare < 0.8", "shots > 10"] },
+    { "label": "CJ mortal again", "cmd": "asr.cheat", "code": "BAGUVIX" },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

@@ -1,0 +1,58 @@
+// A homie on a Sanchez's pillion leans with the bike and CJ (v39). San Andreas draws a bike by its lean matrix (its own
+// matrix barely rolls) and seats CJ on it, then leans CJ's upper body further into the turn with his own animation. The
+// homie's whole body, seat and hips, rolls with the lean matrix, his pelvis on the seat, and his spine takes CJ's lean on
+// top; turned by the bike's own matrix, his hips stayed near upright off the outside of the seat in play.
+// CJ rides as a player does (at 0.6 to 0.7 throttle and 0.7 to 0.8 steer: harder, the Sanchez wheelied over or ran CJ
+// into the rocks and the stables' fence by the road), a turn each way, left first; every
+// frame of each turn (asr.ride) the homie's pelvis bone's roll is compared with the bike's seat's, his upper torso's lean
+// with CJ's, and his pelvis bone's place in the seat's own frame is followed, all as Skyrim draws them (him at his actor,
+// the seat on the bike): the bike leans over 10 degrees, the pelvis is within 4 degrees of its roll on average and 12 at
+// most, the upper body within 5 of CJ's on average and 12 at most, and his pelvis moves less than 6 cm on the seat and
+// stays within 15 cm of it (the seat swings down and in as the bike leans: rolled on the spot, he floated beside it; the
+// bones are skinning transforms, so the pelvis bone's place is the model's origin it carries, near the joint). Shots from
+// behind in each turn (the stick held through them).
+// The stables' Sanchez is blown up first and CJ stays 18 m south of its wreck (crew-checks.json says why).
+// scripts/skytest.ps1 run scenarios/crew-lean.json (scenarios/README.md). The crew stays CJ's after it.
+{
+  "name": "crew-lean",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "away from the stables' parked Sanchez (it parks 6 m off)", "cmd": "asr.walk", "points": "17521,-12950", "gait": "run" },
+    { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "Thane of two holds: a crew of three, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "dismiss": true },
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "the Thane titles read, the stables' spots fill (CJ stays 18 m off: the blown-up Sanchez burns there)", "cmd": "wait", "seconds": 15 },
+    { "label": "two homies join", "cmd": "asr.crew", "recruit": 2, "thanes": 2, "expect": ["following == 2", "followers.length == 2"] },
+    { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
+    { "label": "a Sanchez in front of CJ", "cmd": "asr.spawn", "model": 468 },
+    { "label": "CJ gets on", "cmd": "asr.enter", "expect": "model == 468" },
+    { "label": "a homie gets on behind him", "cmd": "wait", "seconds": 6 },
+    { "label": "one rides the pillion", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "expect": "riding == 1" },
+    { "label": "standing: the homie sits as CJ does, on his seat, his pelvis as the bike", "cmd": "asr.lean", "expect": ["diff < 6", "pelvisDiff < 4", "seatDist < 0.15"] },
+    { "label": "up to speed, straight (full throttle pulls a wheelie and flips it)", "cmd": "asr.ride", "seconds": 1.5, "steer": 0, "throttle": 0.6 },
+    { "label": "a turn to the left: the homie rolls with the bike and leans with CJ every frame", "cmd": "asr.ride", "seconds": 1.8, "steer": -0.7, "throttle": 0.7, "hold": true,
+      "expect": ["leanFrames > 30", "vehicleLeanMax > 10", "pelvisDiffMean < 4", "pelvisDiffMax < 12", "seatSpread < 0.06", "seatDistMax < 0.15", "diffMean < 5", "diffMax < 12"] },
+    { "label": "from behind, in the turn", "cmd": "screenshot", "name": "lean-left", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=15", "settle": 1 },
+    { "label": "straight again", "cmd": "asr.ride", "seconds": 1.5, "steer": 0, "throttle": 0.6 },
+    { "label": "the other way: the homie rolls with the bike and leans with CJ every frame", "cmd": "asr.ride", "seconds": 1.8, "steer": 0.8, "throttle": 0.7, "hold": true,
+      "expect": ["leanFrames > 30", "vehicleLeanMax > 10", "pelvisDiffMean < 4", "pelvisDiffMax < 12", "seatSpread < 0.06", "seatDistMax < 0.15", "diffMean < 5", "diffMax < 12"] },
+    { "label": "from behind, the other turn", "cmd": "screenshot", "name": "lean-right", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=15", "settle": 1 },
+    { "label": "stop", "cmd": "asr.ride", "seconds": 2, "steer": 0, "throttle": 0 },
+    { "label": "CJ gets off", "cmd": "asr.exit" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

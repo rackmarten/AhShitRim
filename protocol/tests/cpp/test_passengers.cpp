@@ -125,3 +125,43 @@ TEST_CASE("passengers: the seats are smoothed with the vehicle")
     b.seats[1].translation[0] = std::nanf("");
     CHECK_FALSE(Body::Finite(b));
 }
+
+TEST_CASE("passengers: getting out, they step from the seat to beside the door and down to the ground, without a jump")
+{
+    // Facing north, the front passenger seat 30 units right of the middle, the ground 40 units under it.
+    const auto  seat = SeatAt(0.0f, { 30.0f, 10.0f, 20.0f });
+    const float floor = -40.0f;
+    const auto  start = ExitPath(seat, 0.0f, floor);
+    const auto  seated = SeatedFeet(seat);
+    CHECK(start.x == doctest::Approx(seated.x));
+    CHECK(start.z == doctest::Approx(seated.z));
+    const auto end = ExitPath(seat, kExitSeconds, floor);
+    CHECK(end.x == doctest::Approx(ExitAt(seat).x));
+    CHECK(end.y == doctest::Approx(10.0f));
+    CHECK(end.z == doctest::Approx(floor + kLandLift));  // on the ground, not half a metre over it
+    // Later it stays there; a bad time puts it there too.
+    CHECK(ExitPath(seat, 5.0f, floor).x == doctest::Approx(end.x));
+    CHECK(ExitPath(seat, std::nanf(""), floor).x == doctest::Approx(end.x));
+    // Every 60th of a second it moves a little, always outwards.
+    float last = start.x;
+    float biggest = 0.0f;
+    for (int i = 1; i <= 90; i++) {
+        const auto at = ExitPath(seat, i / 60.0f, floor);
+        CHECK(at.x >= last);
+        biggest = (std::max)(biggest, at.x - last);
+        last = at.x;
+    }
+    CHECK(biggest * Pose::kMetersPerUnit < 0.05f);
+    // No box: ExitAt's height.
+    CHECK(ExitPath(seat, kExitSeconds, std::nanf("")).z == doctest::Approx(ExitAt(seat).z));
+}
+
+TEST_CASE("passengers: the vehicle's floor is its box's bottom, none without a box")
+{
+    Protocol::BodyState car{};
+    car.vehicleFrame.rotation[3] = 1.0f;
+    CHECK(std::isnan(FloorOf(car)));
+    car.boxMin[2] = -45.0f;
+    car.boxMax[2] = 60.0f;
+    CHECK(FloorOf(car) == doctest::Approx(-45.0f));
+}

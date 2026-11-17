@@ -107,7 +107,7 @@ TEST_CASE("an arm keeps to its own side of his body")
     CHECK(behind.y == doctest::Approx(0.0f).epsilon(0.01));
 }
 
-TEST_CASE("an arm reaches along the aim with its hand on the line and the elbow bent down and out")
+TEST_CASE("an arm reaches along the aim straight out, as San Andreas's arm IK leaves it")
 {
     const Vec3 shoulder{ 0.2f, 0.0f, 1.4f };
     const Vec3 line{ 0.0f, 1.0f, 0.0f };
@@ -116,18 +116,33 @@ TEST_CASE("an arm reaches along the aim with its hand on the line and the elbow 
     // The bones keep their lengths.
     CHECK(Distance(shoulder, arm.elbow) == doctest::Approx(upper).epsilon(0.001));
     CHECK(Distance(arm.elbow, arm.hand) == doctest::Approx(fore).epsilon(0.001));
-    // The hand on the aim line, almost the whole arm out.
+    // The hand on the aim line, the whole arm out.
     CHECK(arm.hand.x == doctest::Approx(shoulder.x));
     CHECK(arm.hand.z == doctest::Approx(shoulder.z));
-    CHECK(arm.hand.y == doctest::Approx(kArmReach * (upper + fore)));
-    // A slight bend, not locked straight: the elbow below the line and out to the arm's side.
+    CHECK(arm.hand.y == doctest::Approx(upper + fore).epsilon(0.001));
+    // The elbow as straight as San Andreas's limit lets it go, the little bend left below the line and out to
+    // the arm's side: not dropped down and out, which tipped the forearm up into the gun.
     const float bend = 180.0f - Degrees(Body::Sub(shoulder, arm.elbow), Body::Sub(arm.hand, arm.elbow));
-    CHECK(bend > 15.0f);
-    CHECK(bend < 35.0f);
+    CHECK(bend == doctest::Approx(1.0f).epsilon(0.05));
+    CHECK(Degrees(Body::Sub(arm.elbow, shoulder), line) < 1.0f);
     CHECK(arm.elbow.z < shoulder.z);
     CHECK(arm.elbow.x > shoulder.x);
     // The left arm's elbow goes out to the left.
     CHECK(ReachAlong(shoulder, line, upper, fore, { -1.0f, 0.0f, 0.0f }).elbow.x < shoulder.x);
+}
+
+TEST_CASE("an arm bent further reaches less far, its hand still on the line")
+{
+    const float upper = 0.28f, fore = 0.26f;
+    CHECK(ReachOf(upper, fore, 0.0f) == doctest::Approx(upper + fore));
+    CHECK(ReachOf(upper, fore, Pose::kPi / 2) == doctest::Approx(std::hypot(upper, fore)));
+    CHECK(ReachOf(upper, upper, Pose::kPi) == doctest::Approx(0.0f).epsilon(0.001));
+    const Vec3 shoulder{ 0.0f, 0.0f, 1.4f }, line{ 0.0f, 1.0f, 0.0f };
+    const Arm  bent = ReachAlong(shoulder, line, upper, fore, { 1.0f, 0.0f, 0.0f }, 30.0f * Pose::kPi / 180.0f);
+    CHECK(180.0f - Degrees(Body::Sub(shoulder, bent.elbow), Body::Sub(bent.hand, bent.elbow)) == doctest::Approx(30.0f).epsilon(0.01));
+    CHECK(bent.hand.y == doctest::Approx(ReachOf(upper, fore, 30.0f * Pose::kPi / 180.0f)));
+    CHECK(Distance(shoulder, bent.elbow) == doctest::Approx(upper).epsilon(0.001));
+    CHECK(Distance(bent.elbow, bent.hand) == doctest::Approx(fore).epsilon(0.001));
 }
 
 TEST_CASE("an arm aimed up or down still bends, and its hand stays on the line")
@@ -153,4 +168,85 @@ TEST_CASE("the barrel points from the muzzle at the aim point, not along the han
     CHECK(barrel.z == doctest::Approx(0.0f));
     // Pointing the offset there instead would tip the barrel about 15 degrees down.
     CHECK(Degrees(Body::Sub(muzzle, hand), barrel) == doctest::Approx(15.0f).epsilon(0.02));
+}
+
+TEST_CASE("a gun's roll about its barrel, leaning right positive")
+{
+    const float degree = Pose::kPi / 180.0f;
+    const Vec3  north{ 0.0f, 1.0f, 0.0f };
+    // Upright, then its top leaning 30 degrees to the right (east) and to the left.
+    CHECK(RollOf(north, { 0.0f, 0.0f, 1.0f }) == doctest::Approx(0.0f));
+    CHECK(RollOf(north, { std::sin(30.0f * degree), 0.0f, std::cos(30.0f * degree) }) == doctest::Approx(30.0f * degree));
+    CHECK(RollOf(north, { -std::sin(30.0f * degree), 0.0f, std::cos(30.0f * degree) }) == doctest::Approx(-30.0f * degree));
+    // Aimed up and on its side: the top's part along the barrel doesn't count.
+    const Vec3 raised = Body::Normalize({ 0.0f, 1.0f, 1.0f }, {});
+    CHECK(RollOf(raised, { 1.0f, 0.0f, 0.0f }) == doctest::Approx(90.0f * degree));
+    // Upside down, and a barrel straight up has no roll.
+    CHECK(std::abs(RollOf(north, { 0.0f, 0.0f, -1.0f })) == doctest::Approx(180.0f * degree));
+    CHECK(RollOf({ 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }) == 0.0f);
+}
+
+TEST_CASE("the right gun leans in, alone or as one of a pair")
+{
+    const float degree = Pose::kPi / 180.0f;
+    // A pair: the left gun leans 33 degrees right (in), the right one 33 left, whatever its own pose had.
+    CHECK(RightGunRoll(35.0f * degree, true, 33.0f * degree) == doctest::Approx(-33.0f * degree));
+    CHECK(RightGunRoll(-10.0f * degree, true, 33.0f * degree) == doctest::Approx(-33.0f * degree));
+    // On its own: the right hand's pose leans it 35 degrees right (out), so it leans 35 left (in) as the right
+    // one of a pair; already leaning in, it stays.
+    CHECK(RightGunRoll(35.0f * degree, false, 0.0f) == doctest::Approx(-35.0f * degree));
+    CHECK(RightGunRoll(-20.0f * degree, false, 0.0f) == doctest::Approx(-20.0f * degree));
+    CHECK(RightGunRoll(0.0f, false, 0.0f) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a gun's top rolled to a roll reads back as that roll")
+{
+    const float degree = Pose::kPi / 180.0f;
+    // A top rolled to a roll reads back as that roll, square to the barrel, whichever way the barrel points.
+    for (const Vec3 barrel : { Vec3{ 0.0f, 1.0f, 0.0f }, Body::Normalize({ 0.3f, 1.0f, 0.4f }, {}), Body::Normalize({ -1.0f, 0.2f, -0.5f }, {}) }) {
+        for (const float roll : { -35.0f * degree, 0.0f, 20.0f * degree, 120.0f * degree }) {
+            const Vec3 top = RolledTop(barrel, roll);
+            CHECK(RollOf(barrel, top) == doctest::Approx(roll).epsilon(0.001));
+            CHECK(Body::Dot(top, barrel) == doctest::Approx(0.0f).epsilon(0.001));
+            CHECK(Length(top) == doctest::Approx(1.0f));
+        }
+    }
+    // Upright: straight up.
+    CHECK(RolledTop({ 0.0f, 1.0f, 0.0f }, 0.0f).z == doctest::Approx(1.0f));
+}
+
+TEST_CASE("his head turns to the aim point within San Andreas's head limits")
+{
+    const Vec3  north{ 0.0f, 1.0f, 0.0f };
+    const float degree = Pose::kPi / 180.0f;
+    // Straight ahead and level: no turn.
+    const Look ahead = HeadLook(north, { 0.0f, 20.0f, 0.0f });
+    CHECK(ahead.turn == doctest::Approx(0.0f));
+    CHECK(ahead.nod == doctest::Approx(0.0f));
+    // Aiming 30 degrees up: the head nods all the way up to it, and looks along the aim.
+    const Vec3 up{ 0.0f, std::cos(30.0f * degree), std::sin(30.0f * degree) };
+    const Look nod = HeadLook(north, up);
+    CHECK(nod.nod == doctest::Approx(30.0f * degree));
+    CHECK(Degrees(LookLine(north, nod), up) < 0.1f);
+    // Straight up or down: no further than 45 degrees.
+    CHECK(HeadLook(north, { 0.0f, 0.1f, 5.0f }).nod == doctest::Approx(kHeadNod));
+    CHECK(HeadLook(north, { 0.0f, 0.1f, -5.0f }).nod == doctest::Approx(-kHeadNod));
+    // To his right (east, facing north) and left: turned, to the right positive.
+    CHECK(HeadLook(north, { 1.0f, 1.0f, 0.0f }).turn == doctest::Approx(45.0f * degree));
+    CHECK(HeadLook(north, { -1.0f, 1.0f, 0.0f }).turn == doctest::Approx(-45.0f * degree));
+    // Behind him: no more than 65 degrees round, and turned that far it doesn't nod.
+    const Look behind = HeadLook(north, { 0.5f, -10.0f, 3.0f });
+    CHECK(behind.turn == doctest::Approx(kHeadTurn));
+    CHECK(behind.nod == doctest::Approx(0.0f));
+    // Turned half way to the limit of the nod, half the nod is left.
+    const Look half = HeadLook(north, { std::sin(22.5f * degree), std::cos(22.5f * degree), 5.0f });
+    CHECK(half.turn == doctest::Approx(22.5f * degree));
+    CHECK(half.nod == doctest::Approx(kHeadNod / 2));
+    // The look line is a unit vector along his facing turned right and up.
+    const Vec3 line = LookLine(north, { 90.0f * degree, 0.0f });
+    CHECK(line.x == doctest::Approx(1.0f));
+    CHECK(line.y == doctest::Approx(0.0f).epsilon(0.001));
+    CHECK(Length(LookLine({ 3.0f, 4.0f, 2.0f }, half)) == doctest::Approx(1.0f));
+    // Nothing to look at: no turn.
+    CHECK(HeadLook(north, { 0.0f, 0.0f, 0.0f }).turn == 0.0f);
 }
