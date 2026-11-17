@@ -16,8 +16,11 @@
 //     second. Within 15: when San Andreas's frames come over 50 ms late (on the test desktop, with other sessions
 //     building, about 70 times in the two minutes) the car and CJ hold together for two or three frames, and the frame
 //     they catch up on can have him up to 12 units back. On the bike (within 15 too) only maxStep: he leans with it.
-// Reported, not judged: seats.N.getInHop, how far his body is off the seat in his first 8 frames in it. San Andreas
-// sends a frame or two with it 40 to 60 units off as it puts him from the door onto the seat (13 November 2026).
+//  6. Getting in, his body goes from the door onto the seat and stays there: each get-in's pelvis in the vehicle's frame
+//     never jumps (getIns.N.maxStep) nor leaves its own path (maxOffPath, from the line between where it was 3 frames
+//     before and 3 after), and his first 8 frames in the seat are on it (seats.N.getInHop, from where he sits most); shots
+//     as San Andreas seats him (bike-seated, car-seated). Until 17 November 2026 one frame had him 40 to 70 units past the seat,
+//     away from the door, as San Andreas put him on it (protocol/cpp/get_in.h).
 // scripts/skytest.ps1 run scenarios/car-exit.json (scenarios/README.md). Limits in units (1 unit is 1.43 cm).
 {
   "name": "car-exit",
@@ -53,7 +56,9 @@
     "wait frames=15",
     { "cmd": "screenshot", "name": "bike-on-20", "settle": 1 },
     { "cmd": "screenshot", "name": "bike-on-30-gun", "camera": "orbit asr.weapon: yaw=90 distance=90 pitch=10", "settle": 3 },
+    { "cmd": "camera", "mode": "orbit", "at": "player", "yaw": 90, "distance": 260, "pitch": 10 },
     { "label": "on the bike", "cmd": "wait", "until": ["in == true", "getting == false"], "for": "asr.cjpose", "timeout": 10 },
+    { "cmd": "screenshot", "name": "bike-seated", "settle": 1 },
     { "cmd": "wait", "seconds": 2 },
     { "label": "still on the bike, the gun drawn", "cmd": "asr.cjpose", "expect": ["in == true", "inHand == true", "gunDrawn == true"] },
     { "cmd": "screenshot", "name": "bike-still", "settle": 1 },
@@ -81,8 +86,9 @@
     { "cmd": "screenshot", "name": "car-in-0", "settle": 1 },
     "wait frames=15",
     { "cmd": "screenshot", "name": "car-in-20", "settle": 1 },
-    { "cmd": "camera", "mode": "player" },
     { "label": "in the car", "cmd": "wait", "until": ["in == true", "getting == false"], "for": "asr.cjpose", "timeout": 10 },
+    { "cmd": "screenshot", "name": "car-seated", "settle": 1 },
+    { "cmd": "camera", "mode": "player" },
     { "cmd": "wait", "seconds": 1 },
     { "label": "two minutes' drive, east and west along the main road", "cmd": "asr.cruise", "seconds": 120, "speed": 15,
       "points": "12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082; 12625,-13082; 15073,-13541; 17521,-13770; 19969,-14306; 22417,-14918; 24865,-15683; 22417,-14918; 19969,-14306; 17521,-13770; 15073,-13541; 12625,-13082; 10177,-13082",
@@ -110,7 +116,10 @@
         "exits.length == 2", "exits.0.out == true", "exits.0.maxBack < 5", "exits.0.maxStep < 15",
         "exits.1.out == true", "exits.1.maxBack < 5", "exits.1.maxStep < 15", "exits.1.endAcross > 50",
         "exits.1.riders.length == 1", "exits.1.riders.0.seatedFrames == 0", "exits.1.riders.0.maxAcross > 50", "exits.1.riders.0.maxStep < 15",
-        "seats.length == 2", "seats.0.model == 468", "seats.0.maxStep < 15", "seats.1.model == 495", "seats.1.frames > 6000", "seats.1.maxDeviation < 15", "seats.1.maxStep < 15"
+        "seats.length == 2", "seats.0.model == 468", "seats.0.maxStep < 15", "seats.1.model == 495", "seats.1.frames > 6000", "seats.1.maxDeviation < 15", "seats.1.maxStep < 15",
+        "seats.0.getInHop < 10", "seats.1.getInHop < 10",
+        "getIns.length == 2", "getIns.0.model == 468", "getIns.0.maxStep < 15", "getIns.0.maxOffPath < 15",
+        "getIns.1.model == 495", "getIns.1.maxStep < 15", "getIns.1.maxOffPath < 15"
       ] },
     { "label": "Skyrim's player fine", "cmd": "state", "ref": "player", "expect": ["dead == false"] }
   ]

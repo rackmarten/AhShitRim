@@ -4,6 +4,7 @@
 #include "camera.h"
 #include "cj_gear.h"
 #include "crew_puppets.h"
+#include "get_in.h"
 #include "log.h"
 #include "model_sender.h"
 #include "rw_texture.h"
@@ -60,6 +61,8 @@ namespace AhShitRim::CjBody
             std::bitset<512> aimLogged;  // (weapon type x3 + skill) x2 (+1 aiming): its aim pose already logged
             std::size_t      aimHeld = SIZE_MAX;  // which of those he holds now, and for how many frames
             unsigned         aimFrames = 0;
+            bool             wasInVehicle = false;  // last posed frame (GetIn::Pending)
+            bool             getInLogged = false;
         } state;
 
         constexpr int kBonePelvis = 2;  // BONE_PELVIS
@@ -668,6 +671,23 @@ namespace AhShitRim::CjBody
             return;
         }
 
+        // Just put in a vehicle: his sitting animation was added after this frame's animation update, so his bones still
+        // hold the get-in's last keyframe, offset from the seat now (protocol/cpp/get_in.h). It blends in at once, so one
+        // more update a millisecond long has him sitting, as San Andreas's next frame would.
+        if (const bool in = a_ped->bInVehicle; in != state.wasInVehicle) {
+            std::vector<GetIn::Blend> blends;
+            for (auto* assoc = RpAnimBlendClumpGetFirstAssociation(clump); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
+                blends.push_back({ assoc->m_fBlendAmount, assoc->m_fBlendDelta });
+            }
+            if (GetIn::Pending(state.wasInVehicle, in, blends)) {
+                RpAnimBlendClumpUpdateAnimations(clump, GetIn::kStep, true);
+                if (!state.getInLogged) {
+                    state.getInLogged = true;
+                    Log("body: put in a vehicle, his sitting animation blended in before posing him (logged once)");
+                }
+            }
+            state.wasInVehicle = in;
+        }
         // Nothing drew CJ, so nothing posed his bones from this frame's animation.
         a_ped->bDontUpdateHierarchy = false;
         a_ped->UpdateRwMatrix();  // the clump's frame where CJ is now (also after the origin moved)
