@@ -3574,6 +3574,7 @@ namespace AhShitRim::TestKit
             bool                     haveLast = false;
             std::uint8_t             lastWeapon = 0;
             std::uint64_t            weaponSince = 0;
+            bool                     lastIn = false, lastGetting = false, gettingIn = false;
         } g_watch;
 
         void SampleFrame()
@@ -3605,9 +3606,19 @@ namespace AhShitRim::TestKit
             const auto grip = Grip();
             w.gunDrawn = grip.has_value();
             w.grip = grip.value_or(-1.0f);
+            // Getting in: from a frame on foot, not the end of a get-out (San Andreas's leave-car task outlasts his seat).
+            if (!w.getting || w.in) {
+                g_watch.gettingIn = false;
+            } else if (!g_watch.lastGetting && !g_watch.lastIn) {
+                g_watch.gettingIn = true;
+            }
+            g_watch.lastIn = w.in;
+            g_watch.lastGetting = w.getting;
             const auto before = g_rideSlot;
             if (const auto driven = DrivenSlot()) {
                 g_rideSlot = driven;
+            } else if (g_watch.gettingIn && g_spawned) {
+                g_rideSlot = g_spawned;  // the one asr.spawn put there: his get-in in its frame
             } else if (!g_rideSlot) {
                 g_rideSlot = g_spawned;
             }
@@ -3832,6 +3843,48 @@ namespace AhShitRim::TestKit
                 exits.emplace_back(std::move(exit));
                 i = end;
             }
+            // Get-ins: from the first frame he's getting in (on foot the frame before) until his first kSettleFrames in the seat,
+            // which his drawn body reaches a few frames after San Andreas's flags (it's drawn 50 ms behind). His pelvis in the
+            // vehicle's frame, frame to frame (maxStep), and off its own path: from the line between where it was 3 frames
+            // before and 3 after (maxOffPath; a frame San Andreas drew him away from the door-to-seat path and back is off it
+            // by all of its size, his own swing onto a bike by under 10).
+            JsonArray getIns;
+            for (std::size_t i = 1; i < s.size(); i++) {
+                if (!(s[i].getting && !s[i].in) || s[i - 1].getting || s[i - 1].in) {
+                    continue;
+                }
+                std::size_t seated = i;
+                while (seated < s.size() && !(s[seated].in && !s[seated].getting)) {
+                    seated++;
+                }
+                if (seated == s.size()) {
+                    continue;  // never got in
+                }
+                const std::size_t  end = (std::min)(s.size() - 1, seated + kSettleFrames);
+                float              step = 0.0f, offPath = 0.0f;
+                const WatchSample* prev = nullptr;
+                for (std::size_t k = i; k <= end; k++) {
+                    if (!s[k].haveSeat) {
+                        prev = nullptr;
+                        continue;
+                    }
+                    if (prev) {
+                        step = (std::max)(step, s[k].pelvis.GetDistance(prev->pelvis));
+                    }
+                    prev = &s[k];
+                    constexpr std::size_t kAround = 3;
+                    if (k >= i + kAround && k + kAround <= end && s[k - kAround].haveSeat && s[k + kAround].haveSeat) {
+                        const auto& a = s[k - kAround].pelvis;
+                        const auto  ab = s[k + kAround].pelvis - a;
+                        const float length = ab.SqrLength();
+                        const float along = length > 0.0f ? std::clamp((s[k].pelvis - a).Dot(ab) / length, 0.0f, 1.0f) : 0.0f;
+                        offPath = (std::max)(offPath, s[k].pelvis.GetDistance(a + ab * along));
+                    }
+                }
+                getIns.emplace_back(JsonObject{ { "at", Round(s[i].t) }, { "model", s[seated].model }, { "frames", end - i + 1 },
+                    { "maxStep", Round(step, 0.1) }, { "maxOffPath", Round(offPath, 0.1) } });
+                i = end;
+            }
             return JsonObject{ { "frames", s.size() }, { "seconds", Round(g_watch.t) }, { "fastest", Round(fastest, 0.1) },
                 { "gun", JsonObject{ { "inHand", inHand }, { "missing", missing }, { "longestMissing", longestMissing }, { "missingStill", missingStill },
                              { "onStillVehicle", onStill }, { "gripMax", Round(gripMax, 0.1) }, { "gripMedian", Round(gripMedian, 0.1) },
@@ -3839,6 +3892,7 @@ namespace AhShitRim::TestKit
                              { "gripMaxMoving", Round(gripMaxMoving, 0.1) }, { "gripMaxGetting", Round(gripMaxGetting, 0.1) },
                              { "gripMaxSwitching", Round(gripMaxSwitching, 0.1) } } },
                 { "seats", std::move(seats) },
+                { "getIns", std::move(getIns) },
                 { "exits", std::move(exits) } };
         }
 
@@ -3848,7 +3902,8 @@ namespace AhShitRim::TestKit
                 "Watches every frame (after it's drawn) from asr.gunwatch start to asr.gunwatch stop: CJ in or out and getting in or out, his gun (San Andreas's in "
                 "his hand; the drawn one's grip, units from his drawn right hand's joint), his pelvis in his vehicle's frame, his riders. "
                 "stop answers with a row a frame and a summary: gun.missing (frames a gun in his hand wasn't drawn), gun.gripMax, "
-                "seats (each vehicle he sat in: his pelvis from where it sits most, maxDeviation, and frame to frame, maxStep), exits (each get-out: maxBack towards the seat, maxStep, "
+                "seats (each vehicle he sat in: his pelvis from where it sits most, maxDeviation, and frame to frame, maxStep; getInHop, his first frames in it), "
+                "getIns (each get-in: his pelvis frame to frame, maxStep, and off its own path, maxOffPath), exits (each get-out: maxBack towards the seat, maxStep, "
                 "endAcross; each rider's seatedFrames and endAcross)",
                 [](Call& a_call) -> Step {
                     const auto what = a_call.Text("what");
