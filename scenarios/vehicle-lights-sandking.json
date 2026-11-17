@@ -4,10 +4,12 @@
 // (or braking against not braking), compared region by region: each tail lamp glows and lights the road behind it red,
 // braking makes them brighter, the headlight glass glows white and the headlights light the road ahead. Then the
 // Sandking's blank white panels with its lamps off, which the operator saw as white rectangles on its back at night:
-// San Andreas's pure white drawn as it was measured 134 luma on the back (the moonlit road beside it 49) and 204 on the
-// window panel facing the moon, 89% of it at 200 or more; brought into Skyrim's range (protocol/cpp/albedo.h) about 80
-// and 130. Ceilings between the two, floors so they still read as a light surface; and by day the sunlit panel still
-// white (255 as it was) and the one on the back, in the shade, still light (158 as it was, about 100 now).
+// San Andreas's pure white drawn as it was measured 134 luma on the panel on the back and 128 on the plate (the moonlit
+// road beside them 49, the same both ways) and 204 on the window panel facing the moon, 89% of it at 200 or more (the
+// rocks beside it 57); brought into Skyrim's range (protocol/cpp/albedo.h, 17 November 2026) 80, 76 and 128, none of
+// it at 200. Ceilings between the two, floors so they still read as a light surface. By day the sunlit window panel
+// still white (254.7 before, 253.6 after) and the panel on the back, in the shade, still light (158 before, 96 after;
+// the sunlit road 147). The lamps' own textures aren't rolled, so the lamp numbers below hold either way.
 // scripts/skytest.ps1 run scenarios/vehicle-lights-sandking.json (scenarios/README.md). Needs the headlights (v36).
 //
 // The limits (luma, 0 to 255) at 1280x720 are two-sided, as vehicle-lights.json's. Floors, "clearly visible" on this
