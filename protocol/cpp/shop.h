@@ -220,6 +220,9 @@ namespace AhShitRim::Shop
         return std::string("W/S to browse, E or ") + buy + " to choose, F to go back.";
     }
 
+    // The same on the gamepad (DESIGN.md, Controller): A is the sprint button, Y the enter/exit one, LB activates.
+    inline std::string PadHelpText() { return "Left stick or d-pad to browse, A or LB to choose, Y to go back."; }
+
     // ---- The menu ----
 
     // CJ's actions this frame, as the input builds them (W/S and the arrows, sprint, enter/exit), plus E.

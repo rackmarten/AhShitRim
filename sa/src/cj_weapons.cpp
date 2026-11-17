@@ -97,6 +97,7 @@ namespace AhShitRim::CjWeapons
             RpClump*                          clump = nullptr;
             int                               modelIndex = -1;
             std::vector<RwFrame*>             parts;  // the clump's drawn parts, in bone order
+            std::vector<RwFrame*>             frames;  // every atomic's frame of that instance (FramesOf)
             std::uint32_t                     partCount = 0;
             bool                              shown = false;
             std::uint32_t                     ids[Protocol::kWeaponHandMax] = {};
@@ -259,10 +260,27 @@ namespace AhShitRim::CjWeapons
             state.clump = nullptr;
             state.modelIndex = -1;
             state.parts.clear();
+            state.frames.clear();
             state.partCount = 0;
         }
 
         // ---- The model of the weapon in his hand ----
+
+        // Every atomic's frame in the clump: an instance of the weapon is these, whatever its address. San Andreas takes the
+        // weapon's model out and puts a new one in within a frame (getting on a bike, its drive-by weapon), and the new clump
+        // can come back at the old one's address: frames cached from the old one are freed then, and read as the world's origin.
+        std::vector<RwFrame*> FramesOf(RpClump* a_clump)
+        {
+            std::vector<RwFrame*> frames;
+            RpClumpForAllAtomics(
+                a_clump,
+                [](RpAtomic* a_atomic, void* a_data) -> RpAtomic* {
+                    static_cast<std::vector<RwFrame*>*>(a_data)->push_back(RpAtomicGetFrame(a_atomic));
+                    return a_atomic;
+                },
+                &frames);
+            return frames;
+        }
 
         // The clump's drawn parts, in the order they become bones. The flash is San Andreas's own effect
         // (Skyrim gets a light), and an atomic San Andreas isn't drawing isn't a part.
@@ -424,6 +442,7 @@ namespace AhShitRim::CjWeapons
             state.clump = nullptr;
             state.modelIndex = -1;
             state.parts.clear();
+            state.frames.clear();
             state.partCount = 0;
             state.sentTwin = false;
         }
@@ -513,7 +532,12 @@ namespace AhShitRim::CjWeapons
             // A new instance (a switch, a reload of the clump) gets its parts looked up again, and its model
             // sent if it is a weapon not seen before.
             const bool twin = info->m_nFlags.bTwinPistol != 0;
-            if (clump != state.clump || modelIndex != state.modelIndex || twin != state.sentTwin) {
+            auto       frames = FramesOf(clump);
+            if (clump == state.clump && modelIndex == state.modelIndex && frames != state.frames) {
+                Log(std::format("weapons: weapon {}'s model came back as a new instance at the same address, its parts looked up again", static_cast<unsigned>(type)));
+            }
+            if (clump != state.clump || modelIndex != state.modelIndex || twin != state.sentTwin || frames != state.frames) {
+                state.frames = std::move(frames);
                 const auto atomics = DrawnParts(clump);
                 auto&      cache = state.cache[modelIndex];
                 if (cache.blob.empty() && !cache.failed) {

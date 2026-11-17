@@ -19,6 +19,7 @@ namespace AhShitRim::SkinBuild
         std::int32_t texture = -1;  // index into the model's textures
         std::uint32_t flags = 0;    // Protocol::kSkinMesh*
         std::uint8_t color[4] = { 255, 255, 255, 255 };
+        std::int32_t litTexture = -1;  // a lamp's: the texture it shows while it burns (SkinModel::MeshIn::litTexture)
     };
 
     // Pointers into San Andreas's geometry; normals, uvs and the skin may be null.
@@ -83,6 +84,7 @@ namespace AhShitRim::SkinBuild
             SkinModel::MeshIn mesh;
             mesh.texture = a_materials[m].texture;
             mesh.flags = a_materials[m].flags;
+            mesh.litTexture = a_materials[m].litTexture;
             std::memcpy(mesh.color, a_materials[m].color, sizeof(mesh.color));
             std::vector<std::int32_t> remap(a_geometry.vertexCount, -1);
             auto                      vertex = [&](std::uint32_t i) {

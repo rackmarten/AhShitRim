@@ -4,6 +4,7 @@
 #include "mercy.h"
 #include "revive.h"
 #include "player/CheatCodes.h"
+#include "player/Homies.h"
 #include "player/PlayerSync.h"
 #include "player/Police.h"
 #include "player/Respawns.h"
@@ -27,6 +28,7 @@ namespace AhShitRim::SaveState
             CheatCodes::Save(a_intfc);  // NOMERCY, a record of its own
             Police::Save(a_intfc);      // the wanted level, another
             Respawns::Save(a_intfc);    // the dead waiting to come back, another
+            Homies::Save(a_intfc);      // v39: the crew, another
             Cosave::Record record;
             PlayerSync::Snapshot(record);
             const auto bytes = Cosave::Write(record);
@@ -43,7 +45,8 @@ namespace AhShitRim::SaveState
         {
             std::uint32_t type = 0, version = 0, length = 0;
             while (a_intfc->GetNextRecordInfo(type, version, length)) {
-                if (type != Cosave::kRecordType && type != Mercy::kRecordType && type != Wanted::kRecordType && type != Revive::kRecordType) {
+                if (type != Cosave::kRecordType && type != Mercy::kRecordType && type != Wanted::kRecordType && type != Revive::kRecordType &&
+                    type != Homies::kRecordType) {
                     continue;
                 }
                 std::vector<std::uint8_t> bytes(length);
@@ -57,6 +60,10 @@ namespace AhShitRim::SaveState
                 }
                 if (type == Wanted::kRecordType) {
                     Police::Load(version, bytes.data(), bytes.size());
+                    continue;
+                }
+                if (type == Homies::kRecordType) {
+                    Homies::Load(version, bytes.data(), bytes.size());
                     continue;
                 }
                 if (type == Revive::kRecordType) {
@@ -87,6 +94,7 @@ namespace AhShitRim::SaveState
             CheatCodes::Revert();
             Police::Revert();
             Respawns::Revert();
+            Homies::Revert();
         }
     }
 

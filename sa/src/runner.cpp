@@ -12,6 +12,7 @@
 #include "cj_projectiles.h"
 #include "cj_shots.h"
 #include "cj_weapons.h"
+#include "crew_puppets.h"
 #include "ground.h"
 #include "input.h"
 #include "log.h"
@@ -362,6 +363,7 @@ namespace AhShitRim::Runner
             state.wasted = owned && (a_input.flags & Protocol::kInputWasted) != 0;
             Vitals::SetWasted(a_ped, state.wasted, state.wasted && (a_input.flags & Protocol::kInputWastedCamera) != 0);
             CjBusted::Set(a_ped, owned && (a_input.flags & Protocol::kInputBusted) != 0);  // v22
+            Vehicles::SetSky(a_input.sky, a_input.minuteOfDay);  // v36: the vehicles' lights
             if (a_input.handover != state.handover) {
                 state.handover = a_input.handover;
                 state.carPending = false;
@@ -478,6 +480,7 @@ namespace AhShitRim::Runner
             Vitals::Begin(player, state.owned && !state.paused && !state.wasted && ChunkWorld::Ready() && !Scenes::Following());
             // Hidden, nothing is drawn: Idle simulates and returns before rendering.
             g_idle(Window::Visible() ? a_render : nullptr);
+            CjBody::BeginFrame();  // one stamp for everything published this frame
             Vitals::End(player);
             if (!state.inGame) {
                 return;
@@ -505,11 +508,14 @@ namespace AhShitRim::Runner
             CarHits::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());
             CjMelee::Update(ped, state.spawn, kSpawnLift, state.handover, state.owned && !state.wasted && !Scenes::Following());  // on foot: bumping into them, the lock-on
             Vehicles::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame + 1);
+            Vehicles::UpdateParked(ped, state.spawn, kSpawnLift, state.lastInput.anchor, state.lastInput.world,
+                state.owned && !state.wasted && !Scenes::Following() && ChunkWorld::Ready());
             Audio::Update(state.owned, state.paused);
             PublishPose(ped);
             CjBody::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
             CjGear::Update(ped, state.owned && !state.wasted && !Scenes::Following(), state.spawn, kSpawnLift, state.handover, state.frame);
             CjWeapons::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame);
+            CrewPuppets::Update(ped, state.spawn, kSpawnLift, state.handover, state.frame, state.owned && !state.wasted);  // v39: the Grove Street crew
             CjProjectiles::Update(ped, state.owned);
             CjPickups::Update(ped, state.owned);
             ModelSender::Pump();

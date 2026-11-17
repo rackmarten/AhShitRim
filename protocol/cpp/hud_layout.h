@@ -191,6 +191,12 @@ namespace AhShitRim::HudLayout
     inline constexpr Colour    kLightBlue{ 172, 203, 241, 255 };
     inline constexpr TextStyle kAmmo{ HudFont::Style::Subtitles, 0.3f, 0.7f, true, 1, HudFont::Align::Centre, 520.5f, 63.0f, Edge::End, Edge::Start, false, 0.0f, kLightBlue };
 
+    // CHud::DrawAreaName: the zone name (Skyrim's location) bottom right, light blue Gothic, its last line's
+    // bottom 28 units over the screen's (104 up, then 76 down), wrapping at 180 units from the left.
+    inline constexpr TextStyle kZoneName{ HudFont::Style::Gothic, 1.2f, 1.9f, true, 2, HudFont::Align::Right, 608.0f, 420.0f, Edge::End, Edge::End, true, 428.0f, kLightBlue };
+    // CHud::DrawVehicleName: the vehicle CJ is in, green, its top 104 units over the screen's bottom.
+    inline constexpr TextStyle kVehicleName{ HudFont::Style::Menu, 1.0f, 1.5f, true, 2, HudFont::Align::Right, 608.0f, 344.0f, Edge::End, Edge::End, false, 0.0f, kGreen };
+
     inline constexpr float kHelpPadding = 4.0f;  // the help box round its text, HUD units
     inline constexpr Colour kHelpBox{ 0, 0, 0, 190 };
     inline constexpr float kStarSpacing = 19.0f;  // between wanted stars, HUD units

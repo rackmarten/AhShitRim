@@ -117,7 +117,7 @@ namespace AhShitRim::Police
             RE::NiPoint3             destination;        // where the move should put the player
             float                    settle = 0.0f;  // seconds left before the loaded world is looked at
             int                      loggedStars = 0;
-            int                      shownStars = -1;  // what the HUD was last told (so the HUD demo's stars stay up)
+            int                      shownStars = -1;  // what the HUD was last told
             bool                     shownFlashing = false;
             std::uint8_t             line = 0;        // a line for CJ to say (Wanted::kLine*), taken by PlayerSync
             bool                     spared = false;  // a guard's hit was eased and left the player standing, since Vitals last asked

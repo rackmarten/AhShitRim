@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -110,5 +111,34 @@ namespace AhShitRim::Passengers
         const float side = across > 0.05f * Pose::kUnitsPerMeter ? 1.0f : -1.0f;
         const Vec3  flat = Body::Normalize({ right.x, right.y, 0.0f }, { 1.0f, 0.0f, 0.0f });
         return Body::Add(seat, Body::Add(Body::Scale(flat, side * kStepOut), { 0.0f, 0.0f, kStepUp }));
+    }
+
+    inline constexpr float kExitSeconds = 1.0f;                     // a passenger steps out over this long, about as long as CJ's get-out takes to clear the door
+    inline constexpr float kLandLift = 0.05f * Pose::kUnitsPerMeter;  // and ends this far over the ground, which it settles onto
+
+    // The ground the vehicle stands on relative to its feet (its middle): its collision box's bottom along its up.
+    // NaN when the slot has no box.
+    inline float FloorOf(const Protocol::BodyState& a_vehicle)
+    {
+        if (!(a_vehicle.boxMin[2] < a_vehicle.boxMax[2])) {
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+        return Rotate(QuatOf(a_vehicle.vehicleFrame), { 0.0f, 0.0f, a_vehicle.boxMin[2] }).z;
+    }
+
+    // Where a passenger getting out stands a_seconds after it began, relative to the vehicle's feet: from its seated
+    // feet (SeatedFeet) out past its door to ExitAt's spot, down on a_floor (FloorOf; ExitAt's height when NaN),
+    // eased in and out over kExitSeconds, and there from then on. CJ's own get-out is San Andreas's; this keeps his
+    // passengers from sitting through it and then appearing outside.
+    inline Vec3 ExitPath(const Protocol::BodyBone& a_seat, float a_seconds, float a_floor, float a_drop = kSeatDrop)
+    {
+        const Vec3 from = SeatedFeet(a_seat, a_drop);
+        Vec3       to = ExitAt(a_seat);
+        if (std::isfinite(a_floor)) {
+            to.z = a_floor + kLandLift;
+        }
+        const float t = std::isfinite(a_seconds) ? std::clamp(a_seconds / kExitSeconds, 0.0f, 1.0f) : 1.0f;
+        const float eased = t * t * (3.0f - 2.0f * t);
+        return Body::Add(from, Body::Scale(Body::Sub(to, from), eased));
     }
 }

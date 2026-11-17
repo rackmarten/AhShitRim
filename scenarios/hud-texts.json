@@ -1,0 +1,59 @@
+// San Andreas's zone and vehicle names and Skyrim's HUD messages while CJ has the player (protocol/cpp/hud_messages.h,
+// hud_names.h; docs/DESIGN.md "Zone and vehicle names", "Skyrim's HUD messages"). In Riverwood: CJ takes the player
+// and "Riverwood" comes up bottom right, at full within 1.2 s, fading out about 3 s after it came up and gone a second
+// later, as CHud::DrawAreaName times it. Real notifications from the console (gold and an iron sword added) are hidden,
+// and Skyrim's texts sent through its HUD the way scripts do (asr.notify) go where the table says: what CJ can't do and
+// an unknown text to the help box, bounty and "You feel..." hidden. In a ZR-350 its San Andreas name shows in green.
+// Last CJ sprints out of Riverwood to the west and back until Skyrim names the location he walks into (on a new
+// character "Riverwood discovered" and "Riverwood"): its zone name comes up. Screenshots with the HUD at each moment.
+// scripts/skytest.ps1 run scenarios/hud-texts.json (scenarios/README.md).
+{
+  "name": "hud-texts",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player: no San Andreas names", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "nothing drawn for Skyrim's player", "cmd": "asr.hud", "expect": ["zone == \"\"", "vehicle == \"\"", "location == Riverwood"] },
+
+    { "label": "CJ takes the player in Riverwood", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "its zone name comes up", "cmd": "asr.hud", "expect": ["zone == Riverwood", "zonePhase == fade in"] },
+    { "label": "at full within 1.2 s", "cmd": "wait", "until": "zoneAlpha > 0.95", "for": "asr.hud", "timeout": 1.2 },
+    { "cmd": "screenshot", "name": "zone-takeover", "hud": true },
+    { "label": "fading out about 3 s after it came up", "cmd": "wait", "until": "zonePhase == fade out", "for": "asr.hud", "timeout": 3 },
+    { "label": "still there as it fades", "cmd": "asr.hud", "expect": ["zone == Riverwood", "zoneAlpha > 0.5"] },
+    { "label": "gone a second later", "cmd": "wait", "until": "zonePhase == hidden", "for": "asr.hud", "timeout": 1.3 },
+
+    { "label": "gold added (Skyrim's own notification)", "cmd": "console", "command": "player.additem 0000000f 100" },
+    { "label": "hidden", "cmd": "wait", "until": "lastHidden contains Gold", "for": "asr.hud", "timeout": 3 },
+    { "label": "an iron sword added", "cmd": "console", "command": "player.additem 00012eb7 1" },
+    { "label": "hidden, by the item rule", "cmd": "wait", "until": "lastHidden contains Iron Sword", "for": "asr.hud", "timeout": 3 },
+    { "label": "no help box for them", "cmd": "asr.hud", "expect": ["lastRule == sAddItemtoInventory", "help == \"\""] },
+    { "cmd": "screenshot", "name": "items-added", "hud": true },
+
+    { "label": "no fast travel: help box", "cmd": "asr.notify", "text": "You cannot fast travel when enemies are nearby.",
+      "expect": ["action == help", "rule == sNoFastTravelHostileActorsNear"] },
+    { "cmd": "wait", "seconds": 0.5 },
+    { "label": "drawn in the help box", "cmd": "asr.hud", "expect": ["help contains fast travel", "helpAlpha > 0.9"] },
+    { "cmd": "screenshot", "name": "help-fast-travel", "hud": true },
+    { "label": "a lock that needs a key: help box", "cmd": "asr.notify", "text": "This lock cannot be picked. It requires a key to open.",
+      "expect": ["action == help", "rule == sImpossibleLock"] },
+    { "label": "bounty added: hidden", "cmd": "asr.notify", "text": "40 bounty added to Whiterun", "expect": ["action == hidden", "rule == sAddCrimeGold"] },
+    { "label": "you feel...: hidden", "cmd": "asr.notify", "text": "You feel refreshed.", "expect": "action == hidden" },
+    { "label": "a mod's text: help box", "cmd": "asr.notify", "text": "The Jarl wants to see you.", "expect": ["action == help", "rule == no rule"] },
+
+    { "label": "CJ in a ZR-350", "cmd": "asr.spawn", "model": 477, "in": true, "expect": "driven == true" },
+    { "label": "its name at full within 1.5 s", "cmd": "wait", "until": "vehicleAlpha > 0.95", "for": "asr.hud", "timeout": 1.5 },
+    { "label": "San Andreas's name for it", "cmd": "asr.hud", "expect": "vehicle == ZR-350" },
+    { "cmd": "screenshot", "name": "vehicle-name", "hud": true },
+    { "label": "CJ gets out", "cmd": "asr.exit" },
+    { "label": "the name goes with the vehicle", "cmd": "asr.hud", "expect": ["vehicle == \"\"", "vehiclePhase == hidden"] },
+
+    { "label": "CJ sprints west out of Riverwood", "cmd": "asr.walk", "points": "16100,-47050; 13500,-47200", "gait": "sprint", "stuck": 8 },
+    { "label": "and back until Skyrim names where he is", "cmd": "asr.walk", "points": "16100,-47050; 18500,-46500; 19500,-46000", "gait": "sprint",
+      "stuck": 8, "untilZone": true, "expect": "zone == Riverwood" },
+    { "label": "its zone name at full within 1.2 s", "cmd": "wait", "until": "zoneAlpha > 0.95", "for": "asr.hud", "timeout": 1.2 },
+    { "label": "Riverwood", "cmd": "asr.hud", "expect": ["zone == Riverwood", "location == Riverwood"] },
+    { "cmd": "screenshot", "name": "zone-entering", "hud": true }
+  ]
+}
