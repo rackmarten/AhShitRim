@@ -237,10 +237,25 @@ namespace AhShitRim::PlayerSync
             if (a_to) {
                 path = *a_to;
             }
-            std::ofstream out(path, std::ios::binary | std::ios::trunc);
-            out << text;
-            if (!out.flush()) {
-                SKSE::log::warn("player sync: couldn't write the look sliders to {}", path.string());
+            // Written beside it first, then put in its place: a crash or a full disk midway never leaves the player's
+            // SkyrimPrefs.ini cut short.
+            auto temp = path;
+            temp += ".ahshitrim.tmp";
+            {
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out << text;
+                if (!out.flush()) {
+                    SKSE::log::warn("player sync: couldn't write the look sliders to {}", temp.string());
+                    std::error_code ignored;
+                    std::filesystem::remove(temp, ignored);
+                    return false;
+                }
+            }
+            std::error_code error;
+            std::filesystem::rename(temp, path, error);  // replaces the old file in one step
+            if (error) {
+                SKSE::log::warn("player sync: couldn't put the look sliders in {}: {}", path.string(), error.message());
+                std::filesystem::remove(temp, error);
                 return false;
             }
             SKSE::log::info("player sync: wrote the look sliders to {} (the prefs collection's path: {})", path.string(), prefs->subKey);
