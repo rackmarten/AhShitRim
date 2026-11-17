@@ -4,6 +4,7 @@
 
 #include <map>
 
+#include "albedo.h"
 #include "body.h"
 #include "skin_model.h"
 #include "vehicle_lights.h"
@@ -81,6 +82,7 @@ namespace AhShitRim::ModelView
             std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
             VehicleLights::Tuning                        lampTuning;
+            Albedo::Curve                                albedo;
         } state;
 
         Built* Find(std::uint32_t a_id)
@@ -433,10 +435,20 @@ namespace AhShitRim::ModelView
                 return;
             }
             built->model = std::move(*model);
+            // A vehicle's colours brought into the range Skyrim's lighting expects (Albedo::ToSkyrim: its whites were lit
+            // signs at night). CJ's and the weapons' are left as they are.
+            const bool vehicle = built->model.kind == Protocol::kSkinModelVehicle;
+            const auto forSkyrim = [&](std::vector<std::uint8_t>& a_pixels) {
+                if (vehicle) {
+                    Albedo::ToSkyrim(a_pixels.data(), a_pixels.size() / 4, state.albedo);
+                }
+            };
             std::vector<RE::NiSourceTexture*> textures;
             for (std::size_t i = 0; i < built->model.textures.size(); i++) {
-                const auto& t = built->model.textures[i];
-                textures.push_back(MakeTexture(t.width, t.height, t.rgba, std::format("AhShitRim\\{:08X}\\{}", a_id, i)));
+                const auto&               t = built->model.textures[i];
+                std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                forSkyrim(pixels);
+                textures.push_back(MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}", a_id, i)));
             }
             // San Andreas multiplies a material's texture by its colour (a vehicle's paint is a grey
             // texture in the vehicle's colour); Skyrim's shader has no such tint, so each texture and
@@ -468,6 +480,7 @@ namespace AhShitRim::ModelView
                             pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
                         }
                     }
+                    forSkyrim(pixels);
                     out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}", a_id, a_texture, rgb));
                 }
                 return out;
@@ -480,9 +493,10 @@ namespace AhShitRim::ModelView
                 RE::NiSourceTexture* diffuse = nullptr;
                 if (mesh.texture >= 0) {
                     diffuse = tint(mesh.texture, mesh.color);
-                } else if (mesh.color[0] != 255 || mesh.color[1] != 255 || mesh.color[2] != 255) {
-                    const std::uint8_t pixel[4] = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
-                    diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
+                } else if (vehicle || mesh.color[0] != 255 || mesh.color[1] != 255 || mesh.color[2] != 255) {
+                    std::vector<std::uint8_t> pixel = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
+                    forSkyrim(pixel);
+                    diffuse = MakeTexture(1, 1, pixel.data(), std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
                 }
                 const auto meshTwins = SkinModel::Twins(mesh);
                 const bool single = SkinModel::OneSided(mesh);
