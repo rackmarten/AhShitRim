@@ -56,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- For developers: `scripts/launch-sa.ps1` waits up to 15 s for a San Andreas that's still exiting (closed by the test session just before) instead of refusing at once, so a test session started right after another one's `stop` no longer fails with "San Andreas is already running".
 - The jetpack takes off from the ground: holding sprint (Shift) lifts CJ straight up from where he stands. San Andreas's camera keeps the ground under it until it has moved 20 m, and that ground was looked for right after a handover, before Skyrim's ground was in: the first time after San Andreas started it found nothing (500 m below CJ), later ones kept whatever an earlier spot had. The jetpack's thrust fades out from 100 m above that ground, so it gave none until CJ had gone 20 m (or jumped off something high enough). The camera now looks again whenever the ground changes. `scenarios/jetpack-takeoff.json` checks it.
 - The muzzle flash shows at the gun's muzzle, where San Andreas shows it, instead of beside the gun (one gun or two).
 - No frozen Imperial soldiers stand among the homies at a gate. When CJ went through a load door (out of Whiterun's gate, say), the homies standing about there were left behind instead of taken away, and each time that place loaded again they stood there unanimated, in a soldier's armour, among the homies there. Any such homie is now taken away as his place loads or a game loads, so a save that has them is clean again.
