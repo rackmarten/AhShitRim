@@ -442,15 +442,23 @@ namespace AhShitRim::ModelView
             // San Andreas's own vehicle's colours brought into the range Skyrim's lighting expects (Albedo::ToSkyrim: its
             // whites were lit signs at night), all but its lamps' (they glow by their texture). Not CJ's or the weapons', nor
             // the models made here that only borrow a vehicle's bounds (coronas, particles, smoke).
+            // The textures themselves are rolled once; a lamp's gets a copy as San Andreas has it (tint, below).
             const bool roll = a_sentBySanAndreas && built->model.kind == Protocol::kSkinModelVehicle;
             std::vector<RE::NiSourceTexture*> textures;
             for (std::size_t i = 0; i < built->model.textures.size(); i++) {
                 const auto& t = built->model.textures[i];
-                textures.push_back(MakeTexture(t.width, t.height, t.rgba, std::format("AhShitRim\{:08X}\{}", a_id, i)));
+                const auto  name = std::format("AhShitRim\\{:08X}\\{}", a_id, i);
+                if (roll) {
+                    std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                    Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
+                    textures.push_back(MakeTexture(t.width, t.height, pixels.data(), name));
+                } else {
+                    textures.push_back(MakeTexture(t.width, t.height, t.rgba, name));
+                }
             }
             // San Andreas multiplies a material's texture by its colour (a vehicle's paint is a grey
             // texture in the vehicle's colour); Skyrim's shader has no such tint, so each texture and
-            // colour pair gets a tinted copy (and rolled, a copy rolled into Skyrim's range).
+            // colour pair gets a tinted copy (rolled or not as the mesh is).
             std::map<std::tuple<std::int32_t, std::uint32_t, bool>, RE::NiSourceTexture*> tinted;
             // A burning lamp's texture: San Andreas's lights-on texture brightened (VehicleLights::Glowing), made once.
             std::map<std::int32_t, RE::NiSourceTexture*> glowing;
@@ -460,13 +468,13 @@ namespace AhShitRim::ModelView
                     const auto&               t = built->model.textures[a_texture];
                     std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
                     VehicleLights::Glowing(pixels.data(), static_cast<std::size_t>(t.width) * t.height);
-                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\{:08X}\{}\glowing", a_id, a_texture));
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\glowing", a_id, a_texture));
                 }
                 return out;
             };
             const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4], bool a_roll) -> RE::NiSourceTexture* {
                 const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
-                if ((rgb == 0xFFFFFF && !a_roll) || !textures[a_texture]) {
+                if ((rgb == 0xFFFFFF && a_roll == roll) || !textures[a_texture]) {
                     return textures[a_texture];
                 }
                 auto& out = tinted[{ a_texture, rgb, a_roll }];
@@ -483,7 +491,7 @@ namespace AhShitRim::ModelView
                     if (a_roll) {
                         Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
                     }
-                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\{:08X}\{}\{:06X}{}", a_id, a_texture, rgb, a_roll ? "r" : ""));
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}{}", a_id, a_texture, rgb, a_roll ? "r" : ""));
                 }
                 return out;
             };
@@ -501,7 +509,7 @@ namespace AhShitRim::ModelView
                     if (a_roll) {
                         Albedo::ToSkyrim(pixel, 1, state.albedo);
                     }
-                    out = MakeTexture(1, 1, pixel, std::format("AhShitRim\{:08X}\color{:06X}{}", a_id, rgb, a_roll ? "r" : ""));
+                    out = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{:06X}{}", a_id, rgb, a_roll ? "r" : ""));
                 }
                 return out;
             };
