@@ -92,7 +92,9 @@ namespace AhShitRim::Vitals
             state.unboundAge = 0.0f;
             auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(kUnbound);
             const char* name = quest ? quest->GetName() : nullptr;
-            state.unbound = name && std::string_view(name) == "Unbound" && quest->IsRunning() && !quest->IsCompleted();
+            // Enabled, as the console's GetQuestRunning reads it: CommonLib's IsRunning is true for any quest that isn't
+            // stopping, one never started too (a game begun elsewhere than Helgen, a coc from the main menu).
+            state.unbound = name && std::string_view(name) == "Unbound" && quest->IsEnabled() && !quest->IsCompleted();
             return state.unbound;
         }
 

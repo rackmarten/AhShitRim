@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 namespace AhShitRim::Camera
@@ -153,6 +154,46 @@ namespace AhShitRim::Camera
         Matrix offset;
         OffsetOf(a_skyrim, a_fromHeading, a_fromPitch, offset);
         Apply(offset, a_heading, a_pitch, a_roll, out);
+    }
+
+    // ---- The view from the front of a vehicle ----
+
+    // How far past the vehicle's box its first-person view sits, metres: clear of Skyrim's near plane (15 units).
+    inline constexpr float kBumperMargin = 0.3f;
+
+    // San Andreas's first-person view in a vehicle (CCam::Process_1stPerson) sits at its front seat, at head
+    // height, and San Andreas doesn't draw the player's vehicle while it looks forward (CRenderer::
+    // SetupEntityVisibility); Skyrim draws it, so the view looked out from inside the model. Its source moves the way
+    // it looks, level in the vehicle's frame, out of the vehicle's collision box and a_margin past it: in front of a
+    // car's bonnet, a bike's handlebars or an aircraft's nose, beside a door looking aside, behind looking back. Its
+    // height stays San Andreas's. All in the vehicle's frame (X right, Y forward, Z up); a source outside the box
+    // seen from above stays where it is, and a view looking straight up or down goes out the front.
+    inline void OutOfBox(const float (&a_source)[3], const float (&a_look)[3], const float (&a_min)[3], const float (&a_max)[3], float a_margin,
+        float (&a_out)[3])
+    {
+        for (int i = 0; i < 3; i++) {
+            a_out[i] = a_source[i];
+        }
+        if (a_source[0] < a_min[0] || a_source[0] > a_max[0] || a_source[1] < a_min[1] || a_source[1] > a_max[1]) {
+            return;
+        }
+        float dx = a_look[0], dy = a_look[1];
+        const float length = std::hypot(dx, dy);
+        if (!(length > 1e-3f)) {
+            dx = 0.0f;
+            dy = 1.0f;
+        } else {
+            dx /= length;
+            dy /= length;
+        }
+        // The nearest of the box's sides the way it looks.
+        float t = 1e30f;
+        if (dx > 1e-6f) t = (std::min)(t, (a_max[0] - a_source[0]) / dx);
+        if (dx < -1e-6f) t = (std::min)(t, (a_min[0] - a_source[0]) / dx);
+        if (dy > 1e-6f) t = (std::min)(t, (a_max[1] - a_source[1]) / dy);
+        if (dy < -1e-6f) t = (std::min)(t, (a_min[1] - a_source[1]) / dy);
+        a_out[0] = a_source[0] + dx * (t + a_margin);
+        a_out[1] = a_source[1] + dy * (t + a_margin);
     }
 
 }

@@ -1,6 +1,7 @@
 #include "body/MuzzleFlash.h"
 
 #include "body/ModelView.h"
+#include "body/SceneLights.h"
 #include "flash_model.h"
 
 namespace AhShitRim::MuzzleFlash
@@ -20,6 +21,9 @@ namespace AhShitRim::MuzzleFlash
             float                     left[Protocol::kWeaponHandMax] = {};
             RE::NiPointer<RE::NiPointLight> pointLight;
             std::uint32_t             frame = 0;
+            DebugFlash                debug[Protocol::kWeaponHandMax];  // the test kit's look at each hand's
+            bool                      showing[Protocol::kWeaponHandMax] = {};  // shown this frame (debug.shown once it ends)
+            bool                      held = false;  // DebugHold: the flashes don't count down
         } state;
 
         bool EnsureModel(std::uint32_t a_hand)
@@ -56,8 +60,7 @@ namespace AhShitRim::MuzzleFlash
                 return false;
             }
             auto* scene = Scene();
-            auto* shadowScene = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0];
-            if (!scene || !shadowScene) {
+            if (!scene) {
                 return false;  // not up yet: tried again next shot
             }
             auto* light = RE::NiPointLight::Create();
@@ -75,17 +78,7 @@ namespace AhShitRim::MuzzleFlash
             light->SetLightAttenuation(kLightRadius);
             state.pointLight.reset(light);
             scene->AttachChild(light, true);
-            // Every kind of surface lit, not the convenience overload's defaults (which left the land out).
-            RE::ShadowSceneNode::LIGHT_CREATE_PARAMS params{};
-            params.dynamic = true;
-            params.shadowLight = false;
-            params.portalStrict = false;
-            params.affectLand = true;
-            params.affectWater = true;
-            params.neverFades = true;
-            params.falloff = 1.0f;
-            shadowScene->AddLight(light, params);
-            SKSE::log::info("muzzle flash: a point light of radius {:.0f} added to the scene", kLightRadius);
+            SKSE::log::info("muzzle flash: a point light of radius {:.0f} made", kLightRadius);
             return true;
         }
     }
@@ -100,6 +93,7 @@ namespace AhShitRim::MuzzleFlash
     {
         if (a_hand < Protocol::kWeaponHandMax) {
             state.left[a_hand] = kSeconds;
+            state.debug[a_hand].fired++;
         }
     }
 
@@ -109,7 +103,9 @@ namespace AhShitRim::MuzzleFlash
             return;
         }
         const float strength = (std::min)(1.0f, state.left[a_hand] / kSeconds);
-        state.left[a_hand] -= a_delta;
+        if (!state.held) {
+            state.left[a_hand] -= a_delta;
+        }
 
         Protocol::BodyState flash{};
         flash.frame = ++state.frame;
@@ -122,7 +118,13 @@ namespace AhShitRim::MuzzleFlash
         if (!ModelView::Show(flash, a_feet)) {
             return;
         }
-        if (EnsureLight()) {
+        auto& debug = state.debug[a_hand];
+        state.showing[a_hand] = true;
+        debug.left = state.left[a_hand];
+        debug.strength = strength;
+        debug.at = a_feet + RE::NiPoint3(a_muzzle[0], a_muzzle[1], a_muzzle[2]);
+        debug.model = flash.model;
+        if (EnsureLight() && SceneLights::Keep(state.pointLight.get())) {  // added back after a load door dropped it
             state.lit = true;
             auto* light = state.pointLight.get();
             if (auto* scene = Scene(); scene && light->parent != scene) {  // the player's 3D was rebuilt (a load door)
@@ -141,6 +143,9 @@ namespace AhShitRim::MuzzleFlash
 
     void EndFrame()
     {
+        for (std::uint32_t hand = 0; hand < Protocol::kWeaponHandMax; ++hand) {
+            state.debug[hand].shown = std::exchange(state.showing[hand], false);
+        }
         if (!state.lit && state.pointLight) {
             state.pointLight->GetLightRuntimeData().fade = 0.0f;
         }
@@ -149,9 +154,25 @@ namespace AhShitRim::MuzzleFlash
 
     void Reset()
     {
+        state.held = false;
         for (auto& left : state.left) {
             left = 0.0f;
         }
         EndFrame();
+    }
+
+    void DebugHold(bool a_hold)
+    {
+        state.held = a_hold;
+    }
+
+    DebugFlash Debug(std::uint32_t a_hand)
+    {
+        if (a_hand >= Protocol::kWeaponHandMax) {
+            return {};
+        }
+        auto debug = state.debug[a_hand];
+        debug.light = state.pointLight.get();
+        return debug;
     }
 }

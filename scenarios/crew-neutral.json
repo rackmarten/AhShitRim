@@ -1,0 +1,47 @@
+// The crew never opens fire on the passive (v39): two Thalmor Justiciars of Skyrim's own prisoner escort
+// (WEThalmorElvenArmor) placed 15 m in front of two homies by the Whiterun stables. Skyrim reads them as hostile to the
+// player, and the operator's homies opened fire on such a convoy from the bike before CJ did. For 30 s nobody shoots
+// them; then CJ shoots one, it fights back, and the homies join in. Should the Thalmor attack CJ by themselves, the
+// "still passive" check fails, saying the test's premise didn't hold (the crew then rightly shoots). CJ can't die
+// (BAGUVIX). scripts/skytest.ps1 run scenarios/crew-neutral.json (scenarios/README.md). The crew stays CJ's after it.
+{
+  "name": "crew-neutral",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "away from the stables' parked Sanchez (it parks 6 m off)", "cmd": "asr.walk", "points": "17521,-12950", "gait": "run" },
+    { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "Thane of two holds: a crew of three, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 2, "dismiss": true },
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "the Thane titles read, the stables' spots fill (CJ stays 18 m off: the blown-up Sanchez burns there)", "cmd": "wait", "seconds": 15 },
+    { "label": "two homies join", "cmd": "asr.crew", "recruit": 2, "thanes": 2, "expect": ["following == 2", "followers.length == 2"] },
+    { "label": "they gather round CJ", "cmd": "wait", "seconds": 5 },
+    { "label": "CJ can't die (BAGUVIX)", "cmd": "asr.cheat", "code": "BAGUVIX" },
+    { "label": "counters from zero", "cmd": "asr.crewstats", "reset": true },
+    { "label": "two Thalmor Justiciars 15 m in front", "cmd": "console", "command": "player.placeatme 10516F 2 1050 0" },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "why the crew leaves them be, for the record", "cmd": "asr.foe", "ref": "name:Thalmor Justiciar" },
+    { "label": "30 s with the crew beside them", "cmd": "wait", "seconds": 30 },
+    { "label": "still passive (the test's premise)", "cmd": "asr.foe", "ref": "name:Thalmor Justiciar", "expect": ["fightsUs == false", "dead == false"] },
+    { "label": "nobody shot at them", "cmd": "asr.crewstats", "expect": ["targeted.length == 0", "shots == 0"] },
+    { "label": "CJ shoots one", "cmd": "asr.hurt", "ref": "name:Thalmor Justiciar", "damage": 2 },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "it fights back, and the homies join in", "cmd": "asr.crewstats", "expect": ["targeted.length >= 1", "shots > 0"] },
+    { "label": "CJ mortal again", "cmd": "asr.cheat", "code": "BAGUVIX" },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

@@ -4,3 +4,7 @@
 [submodule "sa/extern/plugin-sdk"]
 	path = sa/extern/plugin-sdk
 	url = https://github.com/DK22Pac/plugin-sdk.git
+[submodule "skse/extern/skse-test-kit"]
+	path = skse/extern/skse-test-kit
+	url = https://github.com/rackmarten/skse-test-kit.git
+	update = none

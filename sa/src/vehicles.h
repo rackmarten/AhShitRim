@@ -21,6 +21,10 @@ class CVehicle;
 // Game thread only.
 namespace AhShitRim::Vehicles
 {
+    // Skyrim's sky and time of day (InputState.sky, minuteOfDay, v36): San Andreas's clock follows Skyrim's, and its
+    // vehicles' lights switch on Skyrim's night, rain and interiors by San Andreas's own rule (protocol/cpp/vehicle_lights.h).
+    void SetSky(std::uint8_t a_sky, std::uint16_t a_minuteOfDay);
+
     // A spawn request: a_model (a San Andreas vehicle model id) in front of CJ. Refused (logged) while
     // CJ is in a vehicle or when nothing in front of him will do. a_airborne (AIR + a plane's name,
     // Protocol::kSpawnAirborne): a plane comes AirSpawn::kHeight above CJ instead, facing where the camera
@@ -71,4 +75,11 @@ namespace AhShitRim::Vehicles
 
     // The vehicle CJ is in, or nullptr.
     CVehicle* Driven(CPlayerPed* a_ped);
+
+    // Parked vehicles (v37, protocol/cpp/parked.h): once a frame after Update. Puts a spot's vehicle out as a mission
+    // vehicle in a free slot once CJ is within Parked::kSpawnRadius of it in its world (a_world, InputState.world) and
+    // the ground there is in, drops one nobody used once he is past Parked::kFarRadius, and tells the spots their
+    // vehicle was taken when CJ gets in, it is wrecked or it is gone. a_anchor: InputState.anchor; a_spawn and a_lift
+    // as for Update. Nothing happens unless a_active (San Andreas has CJ, the ground under him is in).
+    void UpdateParked(CPlayerPed* a_ped, const CVector& a_spawn, float a_lift, const float (&a_anchor)[3], std::uint8_t a_world, bool a_active);
 }

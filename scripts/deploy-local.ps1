@@ -5,11 +5,13 @@
     San Andreas's fonts and HUD sprites, and keeping its [Input] KeyLayout), Sweetroll FM's tracks
     (music/sweetrollfm/*.xwm and music/CREDITS.md, once scripts/encode-music.ps1 made them) into
     Data/Music/AhShitRim/SweetrollFM, the ASI into San Andreas's scripts folder.
-    Run scripts/build.ps1 first. Close both games before deploying.
+    Run scripts/build.ps1 first. Close both games before deploying. -SkseDll deploys another build of the SKSE plugin
+    (scripts/load-test.ps1 -Dll compares builds), with its .pdb when one is beside it.
 #>
 param(
     [ValidateSet('all', 'skse', 'sa')] [string] $Target = 'all',
-    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release'
+    [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release',
+    [string] $SkseDll = ''
 )
 
 . "$PSScriptRoot/common.ps1"
@@ -32,12 +34,20 @@ function Copy-WithPdb($binary, $destDir) {
 if ($Target -in 'all', 'skse') {
     $skyrim = Get-RequiredSetting $config 'SkyrimPath'
     $plugins = Join-Path $skyrim 'Data/SKSE/Plugins'
-    Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
+    if ($SkseDll) {
+        if ((Split-Path -Leaf $SkseDll) -ne 'AhShitRim.dll') { throw "-SkseDll names an AhShitRim.dll, got $SkseDll." }
+        Remove-Item -ErrorAction SilentlyContinue (Join-Path $plugins 'AhShitRim.pdb')  # the build's own, which wouldn't match
+        Copy-WithPdb $SkseDll $plugins
+    } else {
+        Copy-WithPdb (Join-Path $RepoRoot "skse/build/$($Configuration.ToLower())/AhShitRim.dll") $plugins
+    }
     $ini = Join-Path $plugins 'AhShitRim.ini'
-    # The key layout, the misc quests' odd jobs and the compass are the player's choice: what the ini already has stays.
+    # The key layout, the misc quests' odd jobs and the compass are the player's choice, and LookReset the plugin's own
+    # record: what the ini already has stays.
     $layout = 'Modern'
     $miscPassed = '1'
     $compass = '0'
+    $lookReset = $null   # the plugin's own record that it moved Skyrim's look sliders to the middle once
     if (Test-Path $ini) {
         $kept = Select-String -Path $ini -Pattern '^\s*KeyLayout\s*=\s*(\S+)' | Select-Object -First 1
         if ($kept) { $layout = $kept.Matches[0].Groups[1].Value }
@@ -45,12 +55,15 @@ if ($Target -in 'all', 'skse') {
         if ($kept) { $miscPassed = $kept.Matches[0].Groups[1].Value }
         $kept = Select-String -Path $ini -Pattern '^\s*Compass\s*=\s*(\S+)' | Select-Object -First 1
         if ($kept) { $compass = $kept.Matches[0].Groups[1].Value }
+        $kept = Select-String -Path $ini -Pattern '^\s*LookReset\s*=\s*(\S+)' | Select-Object -First 1
+        if ($kept) { $lookReset = $kept.Matches[0].Groups[1].Value }
     }
-    Set-Content -Path $ini -Encoding ascii -Value @(
+    $lookLines = if ($lookReset) { @('; 1: AhShitRim has moved Skyrim''s Look Sensitivity sliders to their middle once (never again)', "LookReset=$lookReset") } else { @() }
+    Set-Content -Path $ini -Encoding ascii -Value (@(
         '[SanAndreas]', "Path=$(Get-RequiredSetting $config 'SaPath')", '',
-        '[Input]', '; Modern (Shift sprints, Space jumps) or Classic (San Andreas''s own PC keys: Space sprints, Shift jumps)', "KeyLayout=$layout", '',
+        '[Input]', '; Modern (Shift sprints, Space jumps) or Classic (San Andreas''s own PC keys: Space sprints, Shift jumps)', "KeyLayout=$layout") + $lookLines + @('',
         '[Missions]', '; 1: a Miscellaneous quest done shows MISSION PASSED! with the jingle, as San Andreas''s odd jobs do; 0: Skyrim''s own', "MiscPassed=$miscPassed", '',
-        '[Hud]', '; 1 keeps Skyrim''s compass up beside San Andreas''s radar while CJ has the player', "Compass=$compass")
+        '[Hud]', '; 1 keeps Skyrim''s compass up beside San Andreas''s radar while CJ has the player', "Compass=$compass"))
     Write-Host "Wrote $ini (KeyLayout=$layout, MiscPassed=$miscPassed, Compass=$compass)"
 
     # Sweetroll FM's tracks, the same layout as the release.

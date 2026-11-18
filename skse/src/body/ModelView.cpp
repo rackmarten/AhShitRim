@@ -3,9 +3,12 @@
 #include <DirectXPackedVector.h>
 
 #include <map>
+#include <tuple>
 
+#include "albedo.h"
 #include "body.h"
 #include "skin_model.h"
+#include "vehicle_lights.h"
 
 namespace AhShitRim::ModelView
 {
@@ -38,6 +41,12 @@ namespace AhShitRim::ModelView
             W32::ID3D11Buffer*            buffer = nullptr;  // dynamic: rewritten every frame
             std::uint32_t                 mesh = 0;          // index into Built::model.meshes
             std::vector<std::uint8_t>     vertices;          // packed, UVs filled in once
+            RE::BSLightingShaderProperty* lampShader = nullptr;  // a vehicle lamp's mesh: its shader, glowing while the lamp burns
+            std::uint8_t                  lamp = 0;          // and that lamp's kLight bit
+            RE::NiSourceTexture*          offTexture = nullptr;  // its texture unlit, and while it burns (San Andreas's lights-on
+            RE::NiSourceTexture*          onTexture = nullptr;   // texture brightened, VehicleLights::Glowing)
+            float                         offAlpha = 1.0f;       // its material's alpha unlit (glass); solid while it burns
+            bool                          lit = false;
         };
 
         // A received model, built once: never destroyed (the game's destructors expect geometry it
@@ -53,6 +62,8 @@ namespace AhShitRim::ModelView
             std::uint64_t                    shownFrame = 0;  // State::frame of the last Show
             std::vector<Protocol::BodyBone>  posed;           // the bones its buffers hold: a parked vehicle isn't skinned again
             std::uint64_t                    posedHidden = 0;  // and the parts they hid (v19)
+            int                              lampLogs = 0;     // its lamps' switching logged this many times
+            bool                             sentBySanAndreas = false;  // San Andreas's own model (Build), not one made here
         };
 
         struct State
@@ -72,6 +83,8 @@ namespace AhShitRim::ModelView
             bool                                         mapFailLogged = false;
             std::uint64_t                                frame = 1;
             std::vector<Body::Matrix34>                  bones;
+            VehicleLights::Tuning                        lampTuning;
+            Albedo::Curve                                albedo;
         } state;
 
         Built* Find(std::uint32_t a_id)
@@ -386,6 +399,21 @@ namespace AhShitRim::ModelView
             bound.center = vehicle ? RE::NiPoint3() : kBodyBoundCenter;
             bound.radius = vehicle ? kVehicleBoundRadius : kBodyBoundRadius;
             auto* shader = MakeShader(a_diffuse, blend, blend ? mesh.color[3] / 255.0f : 1.0f, a_twoSided);
+            // A vehicle lamp's mesh glows by itself while the lamp burns, as San Andreas draws it at full ambient then: its own
+            // emissive, which Skyrim's shader adds to the light on it before the texture, so the lamp keeps its colours.
+            if (const auto lamp = vehicle ? VehicleLights::LampOfMesh(mesh.flags) : std::uint8_t{ 0 }; lamp != 0) {
+                shader->flags.set(RE::BSShaderProperty::EShaderPropertyFlag::kOwnEmit);
+                if (!shader->emissiveColor) {
+                    shader->emissiveColor = static_cast<RE::NiColor*>(RE::malloc(sizeof(RE::NiColor)));  // never freed, as the shapes
+                }
+                if (shader->emissiveColor) {
+                    *shader->emissiveColor = RE::NiColor(1.0f, 1.0f, 1.0f);
+                }
+                shader->emissiveMult = 0.0f;
+                a_out.lampShader = shader;
+                a_out.lamp = lamp;
+                a_out.offAlpha = static_cast<RE::BSLightingShaderMaterialBase*>(shader->material)->materialAlpha;
+            }
             geometry.shaderProperty.reset(shader);
             shader->SetupGeometry(shape.get());
             shader->FinishSetupGeometry(shape.get());
@@ -394,7 +422,8 @@ namespace AhShitRim::ModelView
             return true;
         }
 
-        void Build(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob)
+        // a_sentBySanAndreas: a model San Andreas sent (or a copy of one), drawn from its own textures; not one made here.
+        void Build(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob, bool a_sentBySanAndreas)
         {
             const auto start = std::chrono::steady_clock::now();
             if (!LoadTemplate()) {
@@ -403,36 +432,84 @@ namespace AhShitRim::ModelView
             auto built = std::make_unique<Built>();
             built->id = a_id;
             built->blob = a_blob;
+            built->sentBySanAndreas = a_sentBySanAndreas;
             auto model = SkinModel::Parse(built->blob.data(), built->blob.size());
             if (!model) {
                 SKSE::log::warn("model view: model {:08X} is malformed ({} bytes)", a_id, a_blob.size());
                 return;
             }
             built->model = std::move(*model);
+            // San Andreas's own vehicle's colours brought into the range Skyrim's lighting expects (Albedo::ToSkyrim: its
+            // whites were lit signs at night), all but its lamps' (they glow by their texture). Not CJ's or the weapons', nor
+            // the models made here that only borrow a vehicle's bounds (coronas, particles, smoke).
+            // The textures themselves are rolled once; a lamp's gets a copy as San Andreas has it (tint, below).
+            const bool roll = a_sentBySanAndreas && built->model.kind == Protocol::kSkinModelVehicle;
             std::vector<RE::NiSourceTexture*> textures;
             for (std::size_t i = 0; i < built->model.textures.size(); i++) {
                 const auto& t = built->model.textures[i];
-                textures.push_back(MakeTexture(t.width, t.height, t.rgba, std::format("AhShitRim\\{:08X}\\{}", a_id, i)));
+                const auto  name = std::format("AhShitRim\\{:08X}\\{}", a_id, i);
+                if (roll) {
+                    std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                    Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
+                    textures.push_back(MakeTexture(t.width, t.height, pixels.data(), name));
+                } else {
+                    textures.push_back(MakeTexture(t.width, t.height, t.rgba, name));
+                }
             }
             // San Andreas multiplies a material's texture by its colour (a vehicle's paint is a grey
             // texture in the vehicle's colour); Skyrim's shader has no such tint, so each texture and
-            // colour pair gets a tinted copy.
-            std::map<std::pair<std::int32_t, std::uint32_t>, RE::NiSourceTexture*> tinted;
-            const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4]) -> RE::NiSourceTexture* {
-                const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
-                if (rgb == 0xFFFFFF || !textures[a_texture]) {
-                    return textures[a_texture];
-                }
-                auto& out = tinted[{ a_texture, rgb }];
+            // colour pair gets a tinted copy (rolled or not as the mesh is).
+            std::map<std::tuple<std::int32_t, std::uint32_t, bool>, RE::NiSourceTexture*> tinted;
+            // A burning lamp's texture: San Andreas's lights-on texture brightened (VehicleLights::Glowing), made once.
+            std::map<std::int32_t, RE::NiSourceTexture*> glowing;
+            const auto glow = [&](std::int32_t a_texture) -> RE::NiSourceTexture* {
+                auto& out = glowing[a_texture];
                 if (!out) {
                     const auto&               t = built->model.textures[a_texture];
                     std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
-                    for (std::size_t p = 0; p < pixels.size(); p += 4) {
-                        for (int c = 0; c < 3; c++) {
-                            pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
+                    VehicleLights::Glowing(pixels.data(), static_cast<std::size_t>(t.width) * t.height);
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\glowing", a_id, a_texture));
+                }
+                return out;
+            };
+            const auto tint = [&](std::int32_t a_texture, const std::uint8_t (&a_color)[4], bool a_roll) -> RE::NiSourceTexture* {
+                const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
+                if ((rgb == 0xFFFFFF && a_roll == roll) || !textures[a_texture]) {
+                    return textures[a_texture];
+                }
+                auto& out = tinted[{ a_texture, rgb, a_roll }];
+                if (!out) {
+                    const auto&               t = built->model.textures[a_texture];
+                    std::vector<std::uint8_t> pixels(t.rgba, t.rgba + static_cast<std::size_t>(t.width) * t.height * 4);
+                    if (rgb != 0xFFFFFF) {
+                        for (std::size_t p = 0; p < pixels.size(); p += 4) {
+                            for (int c = 0; c < 3; c++) {
+                                pixels[p + c] = static_cast<std::uint8_t>((pixels[p + c] * a_color[c] + 127) / 255);
+                            }
                         }
                     }
-                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}", a_id, a_texture, rgb));
+                    if (a_roll) {
+                        Albedo::ToSkyrim(pixels.data(), pixels.size() / 4, state.albedo);
+                    }
+                    out = MakeTexture(t.width, t.height, pixels.data(), std::format("AhShitRim\\{:08X}\\{}\\{:06X}{}", a_id, a_texture, rgb, a_roll ? "r" : ""));
+                }
+                return out;
+            };
+            // A mesh with no texture in its colour, one pixel each colour (a rolled one's white too: Skyrim's own white
+            // texture is full white).
+            std::map<std::uint32_t, RE::NiSourceTexture*> colours;
+            const auto colour = [&](const std::uint8_t (&a_color)[4], bool a_roll) -> RE::NiSourceTexture* {
+                const std::uint32_t rgb = a_color[0] | (a_color[1] << 8) | (a_color[2] << 16);
+                if (rgb == 0xFFFFFF && !a_roll) {
+                    return nullptr;
+                }
+                auto& out = colours[rgb | (a_roll ? 0x1000000u : 0u)];
+                if (!out) {
+                    std::uint8_t pixel[4] = { a_color[0], a_color[1], a_color[2], 255 };
+                    if (a_roll) {
+                        Albedo::ToSkyrim(pixel, 1, state.albedo);
+                    }
+                    out = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{:06X}{}", a_id, rgb, a_roll ? "r" : ""));
                 }
                 return out;
             };
@@ -441,18 +518,22 @@ namespace AhShitRim::ModelView
             std::uint32_t vertices = 0, triangles = 0, twins = 0, oneSided = 0;
             for (std::uint32_t m = 0; m < built->model.meshes.size(); m++) {
                 const auto& mesh = built->model.meshes[m];
-                RE::NiSourceTexture* diffuse = nullptr;
-                if (mesh.texture >= 0) {
-                    diffuse = tint(mesh.texture, mesh.color);
-                } else if (mesh.color[0] != 255 || mesh.color[1] != 255 || mesh.color[2] != 255) {
-                    const std::uint8_t pixel[4] = { mesh.color[0], mesh.color[1], mesh.color[2], 255 };
-                    diffuse = MakeTexture(1, 1, pixel, std::format("AhShitRim\\{:08X}\\color{}", a_id, m));
-                }
+                const bool  rollMesh = roll && VehicleLights::LampOfMesh(mesh.flags) == 0;
+                RE::NiSourceTexture* diffuse = mesh.texture >= 0 ? tint(mesh.texture, mesh.color, rollMesh) : colour(mesh.color, rollMesh);
                 const auto meshTwins = SkinModel::Twins(mesh);
                 const bool single = SkinModel::OneSided(mesh);
                 Shape      shape;
                 if (!MakeShape(*built, m, diffuse, !single, shape)) {
                     continue;
+                }
+                if (shape.lampShader && mesh.litTexture >= 0 && mesh.litTexture < static_cast<std::int32_t>(textures.size()) && textures[mesh.litTexture]) {
+                    shape.offTexture = diffuse;
+                    shape.onTexture = glow(mesh.litTexture);
+                }
+                if (shape.lampShader) {
+                    SKSE::log::info("model view: {}'s {} lamp found: mesh {} ({} vertices, alpha {:.2f}){}", built->model.name,
+                        VehicleLights::LampName(shape.lamp), m, mesh.vertexCount, shape.offAlpha,
+                        shape.onTexture ? ", San Andreas's lights-on texture brightened for it" : ", no lights-on texture");
                 }
                 twins += meshTwins;
                 oneSided += single ? 1 : 0;
@@ -460,6 +541,14 @@ namespace AhShitRim::ModelView
                 vertices += mesh.vertexCount;
                 triangles += mesh.indexCount / 3;
                 built->shapes.push_back(std::move(shape));
+            }
+            if (built->model.kind == Protocol::kSkinModelVehicle) {
+                int lamps = 0, litTextures = 0;
+                for (const auto& shape : built->shapes) {
+                    lamps += shape.lampShader ? 1 : 0;
+                    litTextures += shape.onTexture ? 1 : 0;
+                }
+                SKSE::log::info("model view: {} has {} lamp shapes, {} with San Andreas's lights-on texture", built->model.name, lamps, litTextures);
             }
             built->node->SetAppCulled(true);
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -511,7 +600,7 @@ namespace AhShitRim::ModelView
             SKSE::log::info("model view: model {:08X} received again, already built", state.assembler.Id());
             return;
         }
-        Build(state.assembler.Id(), state.assembler.Blob());
+        Build(state.assembler.Id(), state.assembler.Blob(), true);
     }
 
     bool AddModel(std::uint32_t a_id, const std::vector<std::uint8_t>& a_blob)
@@ -519,7 +608,7 @@ namespace AhShitRim::ModelView
         if (state.models.contains(a_id)) {
             return false;
         }
-        Build(a_id, a_blob);
+        Build(a_id, a_blob, false);
         return Find(a_id) != nullptr;
     }
 
@@ -533,13 +622,19 @@ namespace AhShitRim::ModelView
             return false;
         }
         const auto blob = of->blob;
-        Build(a_id, blob);
+        Build(a_id, blob, of->sentBySanAndreas);
         return Find(a_id) != nullptr;
     }
 
     bool Has(std::uint32_t a_model)
     {
         return Find(a_model) != nullptr;
+    }
+
+    RE::NiNode* Node(std::uint32_t a_model)
+    {
+        auto* built = Find(a_model);
+        return built && built->shown ? built->node.get() : nullptr;
     }
 
     bool Show(const Protocol::BodyState& a_pose, const RE::NiPoint3& a_origin, float a_scale)
@@ -590,6 +685,34 @@ namespace AhShitRim::ModelView
             }
         }
 
+        // The lamps burning glow (v36), a tail lamp brighter while braking, on a wreck none.
+        auto lights = a_pose.lights;
+        if ((a_pose.flags & Protocol::kBodyWrecked) != 0) {
+            lights.lit = 0;
+        }
+        for (auto& shape : built->shapes) {
+            if (shape.lampShader) {
+                const float glow = VehicleLights::LampGlowOf(shape.lamp, lights, state.lampTuning);
+                const bool  on = (shape.lamp & lights.lit) != 0;
+                shape.lampShader->emissiveMult = glow;
+                if (on != shape.lit) {
+                    auto* material = static_cast<RE::BSLightingShaderMaterialBase*>(shape.lampShader->material);
+                    const bool swap = shape.onTexture && shape.offTexture;
+                    if (swap) {
+                        material->diffuseTexture = RE::NiPointer<RE::NiSourceTexture>(on ? shape.onTexture : shape.offTexture);
+                    }
+                    material->materialAlpha = on ? 1.0f : shape.offAlpha;
+                    if (built->lampLogs < 16) {
+                        built->lampLogs++;
+                        SKSE::log::info("model view: {}'s {} lamp {}: {}, glow {:.1f}, alpha {:.2f}", built->model.name, VehicleLights::LampName(shape.lamp),
+                            on ? "lit" : "out", swap ? (on ? "brightened lights-on texture swapped in" : "unlit texture back") : "no texture to swap", glow,
+                            material->materialAlpha);
+                    }
+                }
+                shape.lit = on;
+            }
+        }
+
         built->node->local.translate = a_origin;
         built->node->local.rotate = RE::NiMatrix3();
         built->node->local.scale = a_scale;
@@ -604,6 +727,92 @@ namespace AhShitRim::ModelView
         return true;
     }
 
+    void SetLampTuning(const VehicleLights::Tuning& a_tuning)
+    {
+        state.lampTuning = a_tuning;
+    }
+
+    std::string NameOf(std::uint32_t a_model)
+    {
+        const auto found = state.models.find(a_model);
+        return found != state.models.end() ? found->second->model.name : std::string("a model");
+    }
+
+    int DebugBoneIndex(std::uint32_t a_model, std::uint32_t a_boneId)
+    {
+        auto* built = Find(a_model);
+        if (!built) {
+            return -1;
+        }
+        const auto& ids = built->model.boneIds;
+        const auto  found = std::find(ids.begin(), ids.end(), a_boneId);
+        return found == ids.end() ? -1 : static_cast<int>(found - ids.begin());
+    }
+
+    bool DebugPosed(std::uint32_t a_model, std::vector<RE::NiPoint3>& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || built->posed.size() != built->model.boneIds.size()) {
+            return false;
+        }
+        std::vector<Body::Matrix34> bones(built->posed.size());
+        for (std::size_t i = 0; i < bones.size(); i++) {
+            bones[i] = Body::Hidden(built->posedHidden, static_cast<std::uint32_t>(i)) ? Body::Collapsed(built->posed[i]) : Body::ToMatrix(built->posed[i]);
+        }
+        a_out.clear();
+        for (const auto& shape : built->shapes) {
+            const auto& mesh = built->model.meshes[shape.mesh];
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                Body::Vec3 position, normal;
+                Body::Skin(bones.data(), static_cast<std::uint32_t>(bones.size()), mesh.Vertex(i), position, normal);
+                a_out.emplace_back(position.x, position.y, position.z);
+            }
+        }
+        return true;
+    }
+
+    bool DebugLampCentre(std::uint32_t a_model, std::uint8_t a_lamp, RE::NiPoint3& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || built->posed.size() != built->model.boneIds.size()) {
+            return false;
+        }
+        std::vector<Body::Matrix34> bones(built->posed.size());
+        for (std::size_t i = 0; i < bones.size(); i++) {
+            bones[i] = Body::Hidden(built->posedHidden, static_cast<std::uint32_t>(i)) ? Body::Collapsed(built->posed[i]) : Body::ToMatrix(built->posed[i]);
+        }
+        RE::NiPoint3  sum;
+        std::uint32_t count = 0;
+        for (const auto& shape : built->shapes) {
+            if (shape.lamp != a_lamp) {
+                continue;
+            }
+            const auto& mesh = built->model.meshes[shape.mesh];
+            for (std::uint32_t i = 0; i < mesh.vertexCount; i++) {
+                Body::Vec3 position, normal;
+                Body::Skin(bones.data(), static_cast<std::uint32_t>(bones.size()), mesh.Vertex(i), position, normal);
+                sum += RE::NiPoint3(position.x, position.y, position.z);
+                count++;
+            }
+        }
+        if (count == 0) {
+            return false;
+        }
+        a_out = built->node->world.translate + sum / static_cast<float>(count);
+        return true;
+    }
+
+    bool DebugBoneAt(std::uint32_t a_model, std::uint32_t a_bone, RE::NiPoint3& a_out)
+    {
+        auto* built = Find(a_model);
+        if (!built || !built->shown || a_bone >= built->posed.size() || Body::Hidden(built->posedHidden, a_bone)) {
+            return false;
+        }
+        const auto& t = built->posed[a_bone].translation;
+        a_out = built->node->world.translate + RE::NiPoint3(t[0], t[1], t[2]);
+        return true;
+    }
+
     void EndFrame()
     {
         for (auto& [id, built] : state.models) {
@@ -614,6 +823,17 @@ namespace AhShitRim::ModelView
             }
         }
         state.frame++;
+    }
+
+    bool DebugWorld(std::uint32_t a_model, RE::NiPoint3& a_at, RE::NiPoint3& a_parent)
+    {
+        const auto* built = Find(a_model);
+        if (!built || !built->shown || !built->node) {
+            return false;
+        }
+        a_at = built->node->world.translate;
+        a_parent = built->node->parent ? built->node->parent->world.translate : RE::NiPoint3();
+        return true;
     }
 
     void HideAll()

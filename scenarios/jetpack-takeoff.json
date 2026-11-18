@@ -1,0 +1,56 @@
+// The jetpack takes off from the ground: the 0.2 playtest saw CJ standing on the ground with it on, its jet balls pointed
+// forward, not down, and Shift (sprint, its thrust up) not lifting him; jumped off something first it flew. CJ on
+// Riverwood's road, YECGAA typed for the jetpack, then (asr.jetpack) it's on, he stands, and both jets point down (over
+// 60 degrees below level: San Andreas's own pose standing still has them at 82, 90 being straight down); Shift held 2 s through
+// Skyrim's own input (asr.keyhold) lifts him at least 5 m (350 units; about 9 m measured, 0 with the bug), and he's off
+// the ground after it. The bug showed on a fresh session (San Andreas's first ground look after it started); after
+// other scenarios moved CJ about it may not, so run this one first after a `session -Restart` to see it. Shots from his
+// side on the ground and in the air. Landed, W held 1 s walks him on and leaves the jets leaning forward (under 45
+// degrees, San Andreas's own pose after a walk), and Shift lifts him off from there too, the jets back down in the air.
+// He lands and drops the jetpack (F held, San Andreas's enter/exit key) at the end.
+// scripts/skytest.ps1 run scenarios/jetpack-takeoff.json (scenarios/README.md).
+{
+  "name": "jetpack-takeoff",
+  "steps": [
+    { "label": "to Riverwood", "cmd": "console", "command": "coc Riverwood" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "in Riverwood", "cmd": "state", "ref": "player", "expect": ["cell == Riverwood", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+    { "label": "CJ stands", "cmd": "asr.standing", "expect": "standing == true" },
+
+    { "label": "the jetpack cheat", "cmd": "asr.cheat", "code": "YECGAA" },
+    { "label": "the jetpack is on", "cmd": "wait", "until": "on == true", "for": "asr.jetpack", "timeout": 5 },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the ground: standing, both jets down", "cmd": "asr.jetpack",
+      "expect": ["on == true", "grounded == true", "jets.length == 2", "jetsDown > 60"] },
+    { "cmd": "screenshot", "name": "jetpack-ground", "camera": "orbit asr.cj: yaw=90 distance=220 pitch=5 height=100" },
+    { "cmd": "screenshot", "name": "jetpack-ground-back", "camera": "orbit asr.cj: yaw=0 distance=220 pitch=10 height=100" },
+
+    { "label": "Shift held 2 s: he lifts off", "cmd": "asr.keyhold", "key": "shift", "seconds": 2,
+      "expect": ["groundedAtStart == true", "rise > 350"] },
+    { "label": "in the air after it, the jets down", "cmd": "asr.jetpack", "expect": ["on == true", "grounded == false", "jetsDown > 60"] },
+    { "cmd": "screenshot", "name": "jetpack-air", "camera": "orbit asr.cj: yaw=90 distance=300 pitch=5 height=100" },
+    { "cmd": "screenshot", "name": "jetpack-air-back", "camera": "orbit asr.cj: yaw=0 distance=300 pitch=25 height=100" },
+
+    { "label": "he comes down", "cmd": "wait", "until": "grounded == true", "for": "asr.jetpack", "timeout": 40 },
+    { "cmd": "wait", "seconds": 1 },
+
+    // A walk on the ground leaves the jets pitched forward (San Andreas's own: standing, the stick sets their angle and
+    // nothing straightens it until he's in the air), which is what the playtest saw; he must still lift off from there.
+    { "label": "W held 1 s: he walks with it on", "cmd": "asr.keyhold", "key": "W", "seconds": 1 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "after the walk the jets lean forward", "cmd": "asr.jetpack", "expect": ["on == true", "grounded == true", "jetsDown < 45"] },
+    { "cmd": "screenshot", "name": "jetpack-walked", "camera": "orbit asr.cj: yaw=150 distance=220 pitch=10 height=100 near=120" },
+    { "label": "Shift held 2 s after the walk: he lifts off", "cmd": "asr.keyhold", "key": "shift", "seconds": 2,
+      "expect": ["groundedAtStart == true", "rise > 350"] },
+    { "label": "in the air the jets come back down", "cmd": "asr.jetpack", "expect": ["on == true", "grounded == false", "jetsDown > 60"] },
+    { "label": "he comes down again", "cmd": "wait", "until": "grounded == true", "for": "asr.jetpack", "timeout": 40 },
+    { "cmd": "wait", "seconds": 1 },
+    { "label": "and drops the jetpack (F held a moment)", "cmd": "asr.keyhold", "key": "F", "seconds": 0.3 },
+    { "cmd": "wait", "frames": 30 },
+    { "label": "the jetpack is off", "cmd": "asr.jetpack", "expect": "on == false" }
+  ]
+}

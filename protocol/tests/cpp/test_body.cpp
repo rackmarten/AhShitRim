@@ -237,3 +237,43 @@ TEST_CASE("a hidden part collapses onto its joint, and only bones the mask names
     CHECK(position.y == doctest::Approx(0.0f));
     CHECK(position.z == doctest::Approx(-3.0f));
 }
+
+TEST_CASE("a vehicle drawn at CJ's moment (Follow) stays with him where its own clock guess drifts a frame off")
+{
+    // CJ and his car drive at 1 unit a ms, both published every 33 ms with the same frame numbers. The car's stamps
+    // are on a clock of their own, 5000 ms ahead (as before San Andreas stamped both from one clock).
+    Interpolator body, car;
+    Follow       follow;
+    BodyState    cj{}, drawn{}, alone{};
+    for (std::uint32_t i = 0; i < 40; i++) {
+        const std::uint32_t t = 100 + i * 33;
+        // Skyrim reads CJ 3 ms after San Andreas wrote him, the car 20 ms after (each guesses San Andreas's clock from
+        // that); once, the car came just as it was written, and its own guess jumped 20 ms on.
+        body.Push(Frame(i + 1, t, static_cast<float>(t)), t + 1000.0 + 3.0);
+        car.Push(Frame(i + 1, t + 5000, static_cast<float>(t)), t + 1000.0 + (i == 30 ? 0.0 : 20.0));
+        const double now = t + 1000.0 + 25.0;
+        REQUIRE(body.Sample(now, cj));
+        REQUIRE(follow.Sample(body, body.TimeAt(now), car, now, drawn));
+        REQUIRE(car.Sample(now, alone));
+        CHECK(drawn.feet[0] == doctest::Approx(cj.feet[0]));
+        if (i == 25) {
+            CHECK(cj.feet[0] - alone.feet[0] > 15.0f);  // on its own the car, read later, is drawn half a frame behind CJ
+        }
+        if (i == 31) {
+            CHECK(std::fabs(cj.feet[0] - alone.feet[0]) < 5.0f);  // and with him again once its guess jumped on
+        }
+    }
+}
+
+TEST_CASE("a vehicle with no frame in common with CJ yet is drawn on its own clock")
+{
+    Interpolator body, car;
+    Follow       follow;
+    BodyState    out{}, alone{};
+    body.Push(Frame(1, 100, 100.0f), 1103.0);
+    car.Push(Frame(7, 100, 50.0f), 1103.0);
+    REQUIRE(follow.Sample(body, body.TimeAt(1200.0), car, 1200.0, out));
+    REQUIRE(car.Sample(1200.0, alone));
+    CHECK(out.feet[0] == doctest::Approx(alone.feet[0]));
+    CHECK_FALSE(follow.Sample(body, 0.0, Interpolator{}, 1200.0, out));
+}

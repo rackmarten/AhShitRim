@@ -1,0 +1,25 @@
+// A ZR-350 (San Andreas model 477) in front of CJ, by day and at night, from behind, beside and above. Run with
+// scripts/skytest.ps1 shots zr350 (pictures in out/shots/zr350/). The camera targets the vehicle asr.spawn made
+// (asr.vehicle:), facing its way: yaw 0 looks from behind it, 90 from its left side.
+{
+  "name": "ZR-350 by day and at night, from behind, beside and above",
+  "steps": [
+    { "label": "CJ has the player", "cmd": "asr.cj" },
+    { "label": "a ZR-350 in front of CJ", "cmd": "asr.spawn", "model": 477 },
+    { "label": "day, clear", "cmd": "scene", "presets": "day clear" },
+    "wait frames=60",
+    "pause",
+    { "cmd": "screenshot", "name": "day-behind", "camera": "orbit asr.vehicle: distance=450 pitch=20 height=30" },
+    { "cmd": "screenshot", "name": "day-side", "camera": "orbit asr.vehicle: yaw=90 distance=550 pitch=10 height=30" },
+    { "cmd": "screenshot", "name": "day-above", "camera": "top asr.vehicle: distance=900" },
+    "resume",
+    { "label": "night, clear", "cmd": "scene", "presets": "night clear" },
+    "wait frames=60",
+    "pause",
+    { "cmd": "screenshot", "name": "night-behind", "camera": "orbit asr.vehicle: distance=450 pitch=20 height=30" },
+    { "cmd": "screenshot", "name": "night-side", "camera": "orbit asr.vehicle: yaw=90 distance=550 pitch=10 height=30" },
+    { "cmd": "screenshot", "name": "night-above", "camera": "top asr.vehicle: distance=900" },
+    "resume",
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

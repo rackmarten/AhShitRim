@@ -466,6 +466,30 @@ namespace AhShitRim
         return IsUp() && SeqRead(At<ProxySlot>(Base(), kOffsetProxySlot), a_out);
     }
 
+    void Link::WriteCrewInput(const CrewInput& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<CrewInputSlot>(base, kOffsetCrewInput), a_value);
+        }
+    }
+
+    bool Link::ReadCrewInput(CrewInput& a_out) const
+    {
+        return IsUp() && SeqRead(At<CrewInputSlot>(Base(), kOffsetCrewInput), a_out);
+    }
+
+    void Link::WriteCrew(std::uint32_t a_index, const CrewBody& a_value)
+    {
+        if (std::uint8_t* base = Base(); base && a_index < kCrewMax && _attached.load(std::memory_order_acquire)) {
+            SeqWrite(At<CrewSlot>(base, kOffsetCrewSlots + a_index * sizeof(CrewSlot)), a_value);
+        }
+    }
+
+    bool Link::ReadCrew(std::uint32_t a_index, CrewBody& a_out) const
+    {
+        return IsUp() && a_index < kCrewMax && SeqRead(At<CrewSlot>(Base(), kOffsetCrewSlots + a_index * sizeof(CrewSlot)), a_out);
+    }
+
     bool Link::Send(MessageType a_type, const void* a_payload, std::uint32_t a_size)
     {
         if (!IsUp()) {

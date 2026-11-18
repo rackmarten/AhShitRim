@@ -1,0 +1,57 @@
+// A Skyrim follower (Lydia) on a Sanchez's pillion rolls with the bike (Riders, protocol v28 and v39). Skyrim stands an
+// actor upright at its heading, so on a leaning bike she sat bolt upright beside the seat, her feet under it along the
+// seat's down but her hips straight up from them. Riders turns her 3D root to her seat's frame (the bike's lean matrix as
+// San Andreas draws it) after Skyrim updates her each frame, about her feet, which puts her hips back on the seat.
+// CJ rides as in crew-lean.json (at 0.6 to 0.7 throttle and 0.7 to 0.8 steer: harder, the Sanchez wheelied over or ran
+// CJ into the rocks and the stables' fence by the road), a turn each way, left first; every frame of each turn
+// (asr.ride) her pelvis node's roll is compared with the bike's seat's and its place in the seat's own frame is followed,
+// as her skeleton will render: the bike leans over 10 degrees, her pelvis is within 6 degrees of its roll on average and
+// 12 at most, and it moves less than 6 cm on the seat and stays within 20 cm of it (her sitting idle's pelvis isn't the
+// seat dummy's point). CJ's own lean into a turn isn't put on her spine (her bones are Skyrim's animation's). Shots from
+// behind in each turn. No Thane titles, so no homies: she's the only follower, a Lydia placed behind CJ as Skyrim's player.
+// The stables' Sanchez is blown up first and CJ stays 18 m south of its wreck (crew-checks.json says why).
+// scripts/skytest.ps1 run scenarios/riders-lean.json (scenarios/README.md). She's no teammate after it, left at the stables.
+{
+  "name": "riders-lean",
+  "steps": [
+    { "label": "to the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by the stables", "cmd": "state", "ref": "player", "expect": ["cell contains Whiterun", "dead == false"] },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road below the stables (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setpos z -4690" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "on the road", "cmd": "state", "ref": "player", "expect": ["position.x ~ 17521 +- 150", "position.y ~ -11196 +- 150"] },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 2 },
+    { "label": "away from the stables' parked Sanchez (it parks 6 m off)", "cmd": "asr.walk", "points": "17521,-12950", "gait": "run" },
+    { "label": "the parked Sanchez blown up before it burns on its own (a parked vehicles bug)", "cmd": "asr.cheat", "code": "CPKTNWT" },
+    { "cmd": "wait", "seconds": 6 },
+    { "label": "CJ healed", "cmd": "asr.cheat", "code": "HESOYAM" },
+    { "label": "no Thane titles: no homies, any crew an earlier scenario left sent off", "cmd": "asr.crew", "recruit": 0, "thanes": 0, "dismiss": true },
+    { "label": "noon", "cmd": "scene", "presets": "day clear" },
+    { "label": "a Lydia (her base, A2C8E) placed 2 m behind", "cmd": "console", "command": "player.placeatme A2C8E 1 150 1" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "she's the player's teammate (Riders seats teammates)", "cmd": "console", "ref": "name:Lydia", "command": "setplayerteammate 1" },
+    { "label": "a Sanchez in front of CJ", "cmd": "asr.spawn", "model": 468 },
+    { "label": "CJ gets on", "cmd": "asr.enter", "expect": "model == 468" },
+    { "label": "Lydia gets on behind him", "cmd": "wait", "seconds": 3 },
+    { "label": "standing: she sits on the pillion, her pelvis as the bike", "cmd": "asr.lean", "expect": ["follower == true", "pelvisDiff < 6", "seatDist < 0.2"] },
+    { "label": "up to speed, straight (full throttle pulls a wheelie and flips it)", "cmd": "asr.ride", "seconds": 1.5, "steer": 0, "throttle": 0.6 },
+    { "label": "a turn to the left: she rolls with the bike every frame", "cmd": "asr.ride", "seconds": 1.8, "steer": -0.7, "throttle": 0.7, "hold": true,
+      "expect": ["leanFrames > 30", "vehicleLeanMax > 10", "pelvisDiffMean < 6", "pelvisDiffMax < 12", "seatSpread < 0.06", "seatDistMax < 0.2"] },
+    { "label": "from behind, in the turn", "cmd": "screenshot", "name": "follower-left", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=15", "settle": 1 },
+    { "label": "straight again", "cmd": "asr.ride", "seconds": 1.5, "steer": 0, "throttle": 0.6 },
+    { "label": "the other way: she rolls with the bike every frame", "cmd": "asr.ride", "seconds": 1.8, "steer": 0.7, "throttle": 0.7, "hold": true,
+      "expect": ["leanFrames > 30", "vehicleLeanMax > 10", "pelvisDiffMean < 6", "pelvisDiffMax < 12", "seatSpread < 0.06", "seatDistMax < 0.2"] },
+    { "label": "from behind, the other turn", "cmd": "screenshot", "name": "follower-right", "camera": "orbit asr.vehicle:driven yaw=0 distance=420 pitch=15", "settle": 1 },
+    { "label": "stop", "cmd": "asr.ride", "seconds": 2, "steer": 0, "throttle": 0 },
+    { "label": "CJ gets off", "cmd": "asr.exit" },
+    { "label": "she gets off with him", "cmd": "wait", "seconds": 2 },
+    { "label": "she's no teammate again, so no later scenario seats her", "cmd": "console", "ref": "name:Lydia", "command": "setplayerteammate 0" },
+    { "label": "the Thane titles read from the game again", "cmd": "asr.crew", "recruit": 0, "thanes": -1 },
+    { "label": "the scene as it was", "cmd": "scene", "presets": "restore" }
+  ]
+}

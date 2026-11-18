@@ -49,6 +49,9 @@ namespace AhShitRim::Overlay
     // Hooks a_swapChain's Present (an IDXGISwapChain*); false when there is none.
     bool Install(void* a_swapChain);
 
+    // Nothing drawn while hidden (the test kit's screenshots without the HUD); the quads stay as submitted.
+    void SetHidden(bool a_hidden);
+
     // The textures quads draw from, made on the next frame (main thread, once at startup).
     void SetImages(std::vector<Image> a_images);
 

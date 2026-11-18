@@ -85,8 +85,8 @@ scripts/logs.ps1                   # tail of the plugin logs and the SKSE loader
 scripts/launch-sa.ps1              # start San Andreas hidden (minimized), wait until CJ waits for Skyrim's ground
 scripts/launch-sa.ps1 -Visible     # the same in a small visible window, to watch CJ
 scripts/fake-weapons.ps1           # with San Andreas running and Skyrim closed: give the weapon sets, switch through every weapon on the mouse wheel, aim and fire each, and check the weapon is in CJ's hand with its model, the shots are counted, twin pistols come in two hands and a loadout set and cleared comes back as sent
-scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX (and bunny hop it on Left Ctrl), see a boat refused, fly a Hunter (its weapons on the mouse and on Left Alt and Left Ctrl) and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute, then ram a parked car with BSXSGGC on and spawn four planes flying with AIR (AHSHITRIM_ONLY=cheats runs only those)
-scripts/hit-test.ps1               # both games, nobody at the keys: loads the most recent save, CJ in a Sandking at Riverwood, a giant and two guards on him (-Scenario hits) or two stars (bust); prints the logs, closes both, never saves
+scripts/fake-vehicles.ps1          # with San Andreas running and Skyrim closed: ride an NRG-500 and a BMX (and bunny hop it on Left Ctrl), see a boat refused, fly a Hunter (its weapons on the mouse and on Left Alt and Left Ctrl) and a Hydra (hover, forward flight), fire their guns and the Rhino's, fly up on the jetpack and come down on the parachute, then ram a parked car with BSXSGGC on and spawn four planes flying with AIR (AHSHITRIM_ONLY=cheats runs only those; AHSHITRIM_ONLY=handling drives the Rhino and a Sandking over flat ground, humps and boulders and prints how they turn and ride; AHSHITRIM_ONLY=exit gets CJ out of a Sandking, a ZR-350 and a Sanchez and logs his body every frame, which must go out through the door without a jump; AHSHITRIM_ONLY=drive drives a Sandking for 60 s and a Sanchez for 20 s, his body in the vehicle every frame as San Andreas has it and as Skyrim draws them, which must stay in his seat)
+scripts/hit-test.ps1               # on a hidden test session (see Test sessions): CJ in a Sandking at Riverwood, a giant and two guards on him (-Scenario hits) or two stars (bust); checks, CSV results and the logs, never saves
 scripts/restart-games.ps1          # the whole loop: close both games, build, deploy, start San Andreas, then Skyrim (-NoBuild skips the build)
 scripts/package.ps1                # the player release zip, out/release/AhShitRim-<version>.zip (after a Release build)
 scripts/radar-map.ps1              # paint the radar's map of Skyrim from your plugins into Documents\My Games\AhShitRim (-Force to paint it again, -NoMods for the base game only)
@@ -131,14 +131,165 @@ Milestone 1's ground check: from the stables outside Whiterun, walk up the road 
 
 ### Load test
 
-`scripts/load-test.ps1` runs hundreds of loads unattended and counts the crashes: copy any two saves to `StressA` and
-`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it (it closes and starts both games
-itself, so nobody else may be using them). The SKSE plugin's load test (`[Debug] LoadTest` in `AhShitRim.ini`, which the
-script sets) alternates loads between the two saves and runs one scenario per cycle (idle, people scared, a 6-star chase
-loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before each load.
-A crash, a hang or Skyrim gone is recorded with its cycle, the games are started again and the test goes on. Results:
+`scripts/load-test.ps1` runs hundreds of loads unattended on a hidden test session (see Test sessions; it takes the
+games lock, so nobody else may be using the games) and counts the crashes: copy any two saves to `StressA` and
+`StressB` (both files, `.ess` and `.skse`) in Skyrim's `Saves` folder, then run it. It starts a session into `StressA`
+and runs cycle after cycle of the plugin's `asr.load` (`skse/src/debug/LoadTest.cpp`): the other save loaded through
+the console, the game settled, the player handed to San Andreas, then one scenario per cycle (idle, people scared, a
+6-star chase loaded through, ASNAEB, a coc, AEZAKMI, an F10 hand-back), logging every step and who is in a fight before
+each load. A crash (a new crash log), a hang (no frame for `-HangSeconds`, 180) or Skyrim gone is recorded with its
+cycle and the plugin's last step, the session is started again and the test goes on. Results:
 `Documents/My Games/AhShitRim/loadtest-results.csv` (one line per run event) and `loadtest.csv` (every step).
-`-Scenarios chase` runs only some scenarios; `-Dll` tests another build.
+`-Scenarios chase` runs only some scenarios; `-Dll` tests another build (one that links the kit; the games' own files
+come back at the end, as after any session); `-SaveAs <name>` saves the last cycle's game under that name once its load has settled (a
+save cleaned of the police's leftovers); `-Keep` leaves the session up. A start that fails (it loads a save, which can
+crash too) is recorded and tried again, up to five times.
+
+### Test sessions
+
+`scripts/skytest.ps1` starts Skyrim hidden and never focused, straight into a test state, with San Andreas beside it,
+so an agent (or you) can check a change without Skyrim taking over the desktop. It comes from
+[skse-test-kit](https://github.com/rackmarten/skse-test-kit), a submodule at `skse/extern/skse-test-kit` that clones
+never fetch by themselves (`update = none` in `.gitmodules`; the kit is private for now, so CI and the release build
+never need it). To use it:
+
+1. Fetch the kit: `git submodule update --init --checkout skse/extern/skse-test-kit`.
+2. In `local.props`, `GamesLock` names the folder every session on this machine locks the games with (see
+   `local.props.example`). Without it the kit uses its own default under `%LOCALAPPDATA%`, which other test sessions
+   share but scripts that lock the games another way don't.
+3. `scripts/build.ps1`: with the submodule there, the SKSE plugin links the kit (the CMake option
+   `AHSHITRIM_TEST_KIT`, `-NoTestKit` to leave it out). The kit does nothing unless `AhShitRim.ini` has a `[Test]`
+   section, which only `skytest` writes, and takes out again as soon as Skyrim has read it.
+4. `scripts/skytest.ps1 start`: takes the games lock, deploys (`scripts/test-deploy.ps1`: the games' own files kept,
+   then `scripts/deploy-local.ps1`), starts San Andreas hidden
+   (`scripts/launch-sa.ps1`) and Skyrim hidden into `coc:Riverwood` with a new character, hands the player to San
+   Andreas (`[Test] CJ=1`) and returns once CJ has it, about 20 s after the command. `-Start save:<name>` (or
+   `save:latest`, `cow:<worldspace> <x> <y>`, `newgame`, `menu`) starts elsewhere, `-NoPartner` leaves San Andreas
+   out, `-Set CJ=0` keeps the player in Skyrim, `-Lean` renders one frame in 30.
+5. Work with it running: `scripts/skytest.ps1 session` does the start once per build and reuses the session after
+   that, until `skytest.psd1`'s `Build` files (the SKSE plugin and the ASI) change. `scripts/skytest.ps1 status` shows
+   its state, `scripts/skytest.ps1 stop` closes both games and releases the lock.
+6. Drive it with commands, each answered in a frame (about 16 ms): `scripts/skytest.ps1 cmd <command>` prints the
+   answer as one line of JSON, `scripts/skytest.ps1 run scenarios/<file>.json` runs a file of steps and checks and
+   writes `out/<time>-<name>/results.csv`. The kit's own commands (`state`, `node`, `console`, `wait`, `time`,
+   `weather`, `pause`, `step`, ...) are in its `docs/COMMANDS.md`. AhShitRim adds (`skse/src/debug/TestKit.cpp`):
+
+   | Command | What it does | Example |
+   |---|---|---|
+   | `asr.cj [on]` | hands the player to San Andreas (or back, `on=false`) as F10 does; answers once done | `asr.cj` |
+   | `asr.spawn <model> [in=<bool>] [tries=<n>]` | a San Andreas vehicle by model id where a cheat puts it, in front of CJ (`in=true`: CJ in a new one; `tries`: with no clear spot there, CJ walks on a second and it's asked for again); answers with its slot and offset from the player | `asr.spawn 562` |
+   | `asr.give <weapon> [ammo=<n>]` | a weapon by San Andreas's weapon type; answers with CJ's loadout once San Andreas has it | `asr.give 22 ammo=120` |
+   | `asr.night [hour]` | sets the game's hour (default 23) | `asr.night` |
+   | `asr.camera` | San Andreas's camera: its mode (`firstPerson`), how far it is from CJ's feet on the ground and how high, and in a vehicle where it is in the vehicle's frame from its middle (`forward`, `right`, `up`; `looksAhead` 1 straight ahead), the `scope` San Andreas's HUD puts up (`rocket` for the armed aircraft's sight), and `ahead`: how far the rendered camera sees along that way before land, a tree or a building (3000 when nothing within 3000 units) | `asr.camera` |
+   | `asr.view [settle=] [untilFirstPerson=] [presses=]` | presses San Andreas's camera key (V) once and answers `settle` seconds (1.5) later with `asr.camera`'s numbers, `before` (the distance before) and `changed`; `untilFirstPerson=true` presses until the first-person view is up (at most `presses`, 6) | `asr.view untilFirstPerson=true` |
+   | `asr.track [frames]` | a scenario: CJ's position from the handover's anchor and his vehicle, a row a frame | `asr.track 120` |
+   | `asr.drive [steer=] [gas=] [handbrake=] [seconds=] [minSpeed=]` | a scenario: CJ drives with the keys held for `seconds` (3): `steer` -1 (A) to 1 (D), `gas` `forward` (W), `back` (S) or `none`, the handbrake (Space); a row a frame of the driven vehicle (position, heading, pitch, roll, tilt, speed, slip off its heading), answering with the leg (`turned`, `path`, `moved`, `radius` and `radiusM`, `topSpeed`, mean `slip`, `medianSlip`, `maxSlip`, `slipSamples`, `impacts` (stopped short by something), `maxTilt`, `maxRoll`, `maxPitch`, `heightRange`, `maxRise`; `protocol/cpp/ride.h`). It times the samples by real seconds, so a session hitching under load reads slow speeds and rises | `asr.drive steer=1 seconds=4` |
+   | `asr.walk <points> [gait=] [arrive=] [stuck=] [untilZone=]` | walks CJ (San Andreas's stick, from its camera) through waypoints `x,y; x,y` at `walk`, `run` or `sprint`; fails when he gets no closer for `stuck` seconds; `untilZone=true` stops him (and answers with the `zone`) as soon as Skyrim names a location he walks into | `asr.walk "17400,-47000; 17200,-46800" gait=walk` |
+   | `asr.hud` | San Andreas's zone name, vehicle name and help box as drawn last frame (text, alpha, phase) and what became of Skyrim's HUD messages so far (`zones`, `helps`, `hidden`, the last of each, `lastRule`), and the player's Skyrim location (`location`); for `wait until=... for=asr.hud` | `asr.hud` |
+   | `asr.notify <text...>` | shows a Skyrim notification through Skyrim's HUD; answers `action` `hidden`, `help` or `kept`, with the rule | `asr.notify Iron Sword added` |
+   | `asr.vehicles [within=]` | San Andreas's vehicles drawn now, a parked one too: `count`, and each one's slot, model (ModelView's id), position and distance from the player; `within` counts only those that close (units) | `asr.vehicles within=7000` |
+   | `asr.fire [weapon] [hand=] [aim=] [shots=] [settle=] [hold=]` | CJ takes the weapon, aims `settle` seconds (1) and fires; answers in the flash's frame with `asr.muzzle`'s numbers; `hold=true` keeps that flash from running out | `asr.fire weapon=22 hold=true` |
+   | `asr.muzzle [hand] [release=]` | the drawn gun's barrel end (its farthest vertex along the barrel) against the flash: `along` (past the end), `across` (off its line), units, while the flash shows, and `weapon.roll` (degrees the gun's top leans right of up about its barrel; `weapon.turned`: a model whose first part faces back along the barrel, the sawn-off's, read turned round while CJ aims); `release=true` lets a held flash go | `asr.muzzle` |
+   | `asr.lamps <on\|off\|brake\|nobrake>` | every vehicle drawn and lit as if its lamps were out (`off`), or its driver braked (`brake`) or didn't (`nobrake`), for A/B shots; `on` gives San Andreas's back (needs the headlights, v36) | `asr.lamps brake` |
+   | `asr.lamptune [key] [value]` | sets one of `AhShitRim.ini`'s `[Headlights]` values (metres for the distances) until the game closes, for trying values; answers them all | `asr.lamptune Intensity 6` |
+   | `asr.pedals [gas=] [brake=] [handbrake=] [steer=] [seconds=]` | holds CJ's vehicle controls (W, S, Space, the stick sideways) for `seconds` (10, at most 30) or until the next `asr.pedals`; none of them lets go | `asr.pedals brake=true` |
+   | `asr.lampfit <lamp> [slot]` | a vehicle's corona against its lamp as drawn: the middle of the lamp's posed mesh (or, for a model with none, the lamp's point and the nearest vertex of the posed vehicle), in units and in pixels on screen, and where the lamp is in the vehicle's upright frame | `asr.lampfit rearRight` |
+   | `asr.oil [seconds=]` | places three fresh oil pools on Bleak Falls Barrow's first floor (the player there first), lights them by a bullet, a Molotov and a rocket through `ObjectHits`, answers once they burnt out: per pool its lowest health and whether it burned | `asr.oil` |
+   | `asr.exit`, `asr.cheat <code>` | CJ gets out of his vehicle; a cheat typed for him | `asr.cheat CPKTNWT` |
+   | `asr.look [mouse=] [pad=] [reset=] [mark=] [keep=] [vs=]` | Skyrim's look sensitivity sliders (live values, ends) and the scales CJ's look gets from them, `[Input] LookReset`; sets a slider, replays the one-time move to the middle (`reset=true`; its SkyrimPrefs.ini write goes to a copy in the temp folder, read back as `prefsCopy`, never to the player's file), and measures CJ's camera turn since `mark=true` (`vs=` over a kept one's) | `asr.look mouse=0.01` |
+   | `asr.crew [recruit=] [thanes=]` | the Grove Street crew (built in once it's there, v39): plays a Thane of `thanes` holds, has the nearest `recruit` homies join; answers with the followers, each with what he carries and runs (`gear`, `hands`, `weaponDrawn`, `followPackage`, `canTalk`, `rides`, `target`), and how many ride with CJ (`riding`) | `asr.crew recruit=3 thanes=2` |
+   | `asr.victim [meters] [toward=]` | a calm Whiterun guard `meters` (1.05) ahead of CJ, his back to him (the one placed before taken out) | `asr.victim 0.9` |
+   | `asr.seated [radius] [lean=]`, `asr.behind [ref] [meters]` | the nearest person on a chair or a bench (`lean=true`: or leaning on a counter, the same sit state) a stealth kill may take, with room behind (no guards: they lean on walls); Skyrim's player put `meters` behind them, before `asr.cj` | `asr.seated 6000 lean=true` |
+   | `asr.stealth [until] [crouch=] [aim=]` | the knife stealth kill as a player does it (crouch, the right button held `aim` s, the left clicked): answers at the `grab`, the `stab` or once it's `over`, with the victim and CJ against where they stood at the grab | `asr.stealth until=grab crouch=true` |
+   | `asr.swing [ref] [crouch=]` | one knife blow on the victim, crouched or not: the health it took, the sneak attack multiplier, and `vsLast` against the last swing's | `asr.swing crouch=true` |
+   | `asr.kill <ref> [all=<radius>]` | the player kills an actor as CJ's blow would (the player's kill, Skyrim's death event, from SKSE's task queue), `all=` every living one of that name within that many units too; answers once they're dead, with each one's Respawns verdict and keeps them for `asr.killed` | `asr.kill name:Bandit all=3000` |
+   | `asr.judge <ref>` | what a kill by CJ would do to an actor, as Respawns judges it (nobody killed), and what it read: aggression, faction reaction, Skyrim's hostility, a crime faction | `asr.judge 0x00035534` |
+   | `asr.killed [forget=]` | everyone `asr.kill` killed: dead or up, waiting to come back, held in view, how far from their editor spot; with the counts | `asr.killed` |
+   | `asr.later <hours>` | Skyrim's clock that many game hours on (days passed and the hour), as a wait would | `asr.later 1.1` |
+   | `asr.objectives <quest>` | a quest as Respawns reads it: running, its stage, each objective's index, state and the references its target aliases hold | `asr.objectives DB01` |
+   | `asr.key <keys> [frames=] [close=]` | presses keys through Skyrim's own input as the keyboard sends them (letters, digits, `/`, `dik:<code>`); answers whether the wait menu opened and what the help box says; `close=true` (the default) closes the wait menu again | `asr.key /` |
+   | `asr.keyhold <key> [seconds=]` | holds one key through Skyrim's own input for `seconds` (2), a press, a repeat a frame and the release, as the keyboard sends them (`asr.key`'s keys, `shift`, `dik:<code>`); answers CJ's height over the handover spot as it went down, at its highest and at the release (`rise`); a hold cut short is let go by the next `asr.keyhold`, `asr.key` or `asr.cj` | `asr.keyhold shift seconds=2` |
+   | `asr.jetpack` | the jetpack on CJ: on, his height over the handover spot, whether San Andreas has him standing, each jet's way down in degrees below level (`jetsDown` the lowest; 90 straight down) | `asr.jetpack` |
+   | `asr.crewkey [at] [aim=]` | G as if pressed on foot: `aim` (true) says CJ aims along the way from the player to `at` (a target, `asr.homie:0`, `asr.free:0`), and the crew's own pick by the aim line decides; answers with how many follow and stand about, before and after | `asr.crewkey at=asr.free:0` |
+   | `asr.crewleft [metres=] [make=]` | actors made from the homies' soldier within `metres` (150) of the player that the crew doesn't track (`strays`, `refs`; `frozen` with their AI off; `leftovers` in the player's faction or named a homie), and homies nobody tracked taken out so far (`taken`); `make=true` first makes a homie 3 m ahead and forgets him, as a save could leave one | `asr.crewleft make=true` |
+   | `asr.crewstats [reset=]` | the crew's counters since the last reset: Skyrim subtitles of theirs taken off (`hushedLines`, each a line Skyrim started), voices stopped, follow package puts, gear taken off, frames a homie had a Skyrim weapon drawn or in hand (`drawnFrames`), the crew's bullets and those that hit someone (`shots`, `hits`, `hitShare`), and everyone a follower had as his target (`targeted`, `targetedDead`) | `asr.crewstats reset=true` |
+   | `asr.ride [seconds] [steer=] [throttle=] [hold=]` | CJ drives the vehicle he's in for `seconds` (3), the stick at `throttle` (1) and `steer` (-1 to 1, right positive), still held after with `hold=true` (a screenshot in a turn) till the next `asr.ride`; with a homie or a Skyrim follower riding, every frame's lean (`asr.lean`) is sampled (a follower's `homieLeanMax` and `diff*` stay 0; `cjLeanMax`, `homieLeanMax`, `pelvisLeanMax`, `vehicleLeanMax`; `diffMax`, `diffMean`: the homie's upper body off CJ's; `pelvisDiffMax`, `pelvisDiffMean`: his pelvis off the vehicle's roll; `seatSpread`, `seatDistMax`: how far his pelvis moved on the seat and the furthest it was from it, metres) | `asr.ride 2 steer=0.9` |
+   | `asr.lean` | the homie riding with CJ against CJ and CJ's vehicle, degrees to the side: the vehicle by its seat's up (a bike's lean matrix, as drawn), CJ's and the homie's upper bodies by the upper torso bone, `diff` (the homie's off CJ's), his `pelvis` by its bone's up and `pelvisDiff` (off the seat's); where his pelvis bone sits in the seat's frame as Skyrim draws them (him at his actor, the seat on the vehicle), metres (`seatRight`, `seatForward`, `seatUp`, `seatDist`). The bones are skinning transforms (bind pose to world), so turns are read from their rotations, a body's up being the model axis its pelvis turns nearest the seat's up. A Skyrim follower riding (`follower`: true) is read from her own skeleton's pelvis node instead, with no upper body set against CJ's (`diff` null) | `asr.lean` |
+   | `asr.stray [metres]` | puts CJ's first follower `metres` (70) behind the player, as a car ride leaves one, for the regroup | `asr.stray 70` |
+   | `asr.hurt <ref> [damage=]` | CJ's pistol shot on an actor (`Shots::Hurt`, the player the aggressor): an animal runs from him | `asr.hurt name:Elk` |
+   | `asr.enter [until=]`, `asr.exit [until=]` | CJ gets into the vehicle San Andreas picks near him, or out of his; `until=start` answers in the frame the get-in or get-out begins, to pause on it | `asr.enter until=start` |
+   | `asr.cruise [seconds] [points=] [circle=] [speed=] [stop=]`, `asr.ahead [distance]` | CJ drives round a circle (radius `circle` units, to his right) from where he starts, then brakes to a stop; or runs straight on (out of the way of a vehicle he got off) | `asr.drive 120 circle=2500` |
+   | `asr.hold <weapon>`, `asr.cjpose` | CJ takes a weapon he carries into his hands; CJ now: in a vehicle, getting in or out, his weapon, and the drawn gun's grip (units from his drawn right hand's joint) | `wait until="in == true" for=asr.pose` |
+   | `asr.follower [base] [right=]` | an actor (Lydia by default) placed beside the player as a teammate, who rides with CJ | `asr.follower` |
+   | `asr.gunwatch <start\|stop>` | every frame from start to stop, after it's drawn: the gun against CJ's hand (and a gun in his hand that isn't drawn), his pelvis in his vehicle's frame, his riders; stop answers with a row a frame and a summary of the get-ins (`getIns`: frame to frame, off their own path), the get-outs and his seat in each vehicle | `asr.watch stop expect="gun.gripSpread < 10"` |
+   | `asr.pose` | CJ as San Andreas has him: on foot or in a vehicle, getting in or out, grounded, crouching, where, speed (km/h; `ahead` along the way he faces), headings, weapon, aiming, shots, radio station; whether San Andreas has the player, and Skyrim's open menus (with the stacked branches also the gun lock's `gunTarget`, `padCheats` and the driven vehicle's `vehiclePitch`) | `asr.pose` |
+   | `asr.menus [close=]` | Skyrim's open menus a pad opens; `close=true` closes them first (a run that stopped early left one open: a menu pauses San Andreas) | `asr.menus close=true` |
+   | `asr.mark`, `asr.since [keep=] [vs=]` | what changed between two steps: seconds, moved and climbed (m), the camera's turn (degrees), CJ's or his vehicle's turn, Skyrim's camera's turn (`cameraTurned`: a vehicle's look behind), shots, speed, weapon and station then and now; `keep=` a result by name, `vs=` each number over a kept one's | `asr.since vs=walk` |
+   | `asr.watch [seconds] [keep=] [vs=]` | the same over the next seconds, with their peaks: how high he rose, top and lowest speed, the lowest and highest along the way he faces (`aheadLow`, `aheadHigh`), the most the camera turned, whether he left the ground, the menus seen; in a vehicle how far its nose rose and dropped from where it started (`pitchUp`, `pitchDown`) | `asr.watch 1.2 keep=run` |
+   | `asr.place [count] [base=] [ref=] [distance=] [angle=] [spread=] [combat=] [still=] [clear=]` | actors (a Whiterun guard) in front of San Andreas's camera (`angle` degrees right of its middle), facing CJ, set on him with `combat=true`, kept where they're put with `still=true`; `ref=` moves an existing one there instead; `clear=true` takes away the ones placed before | `asr.place 2 distance=700 combat=true` |
+
+   Targets for the cameras, probes and the recorder, besides `asr.vehicle:`: `asr.flash:[hand]` (the muzzle flash, its
+   light inside), `asr.weapon:[hand]` (the drawn gun's muzzle, facing along its barrel), `asr.lamp:<frontRight|frontLeft|
+   rearRight|rearLeft>[@slot]` (a vehicle's lamp dummy in its whole frame, slope included) and `asr.homie:<n>` (CJ's nth
+   follower, with his character controller's numbers and what he carries and runs in its details, since the kit records
+   a target by its place); `asr.free:<n>` (the nth nearest homie standing about); `asr.cj:` (CJ's feet in Skyrim's world)
+   and `asr.victim:` (the stealth kill's victim's feet, with dead, in a kill move and ragdolled in its details).
+
+   `scenarios/test-kit-smoke.json` runs them all with checks. The in-game tests are scenarios too (`scenarios/README.md`
+   lists them, their starts and saves); their commands (`skse/src/debug/`, game logic kept apart from the kit):
+
+   | Command | What it does | Example |
+   |---|---|---|
+   | `asr.hits [bust=<bool>] [seconds=<s>]` | the hit test: with CJ in a vehicle, a giant and two guards set on him, or two stars (`bust=true`) so a guard busts him at the door; a row every 2 s (car and player health, in the car, wasted, busted), then the attackers go | `asr.hits seconds=60` |
+   | `asr.load <save> <scenario> [saveAs=<name>]` | one load-test cycle: the save loaded through the console, settled, handed to San Andreas, then `idle`, `flee`, `chase`, `asnaeb`, `travel`, `aezakmi` or `handback`; a row per step | `asr.load StressB chase` |
+   | `asr.stream <speed> [heading=] [height=] [seconds=]` | flies Skyrim's player (`asr.cj on=false` first) at speed m/s; a row a second: frames, the worst frame, the land loaded under and ahead | `asr.stream 87 heading=45 seconds=38` |
+   | `asr.intro` | CJ's intro line, as if Ralof's had just ended; answers with the cue San Andreas was given | `asr.intro` |
+   | `asr.quest <command...>` | runs a console command and answers once San Andreas's HUD shows the mission title or mission passed, with the quest's name and the cue | `asr.quest setstage MQ103 10` |
+
+   `scripts/skytest.ps1 run scenarios/<file>.json` exits 0 when every check passed, 1 when one failed, 2 when Skyrim
+   crashed, exited or hung on the way (the kit names the crash log). Check in-game behaviour this way, with a scenario
+   file of your own when it's worth keeping, rather than by hand or with `restart-games.ps1`.
+7. Look at it: `scripts/skytest.ps1 cmd screenshot` saves the frame as a PNG (Skyrim stays minimized), and
+   `scripts/skytest.ps1 shot <name> -Camera '<camera>' -Scene '<presets>'` from a shot camera in a scene, both into
+   `out/shots/`; the kit's `docs/COMMANDS.md` ("Screenshots") has the cameras and scenes. San Andreas's vehicles aren't
+   Skyrim references, so AhShitRim gives the cameras a target for them, `asr.vehicle:` (the one `asr.spawn` made
+   last; `asr.vehicle:<slot>` one slot, `asr.vehicle:driven` CJ's), facing the vehicle's way:
+   `-Camera 'orbit asr.vehicle: yaw=90 distance=550'` looks at its left side. Shots hide San Andreas's HUD with
+   Skyrim's unless `-Hud`. Named shot sets are in `shots/`: `scripts/skytest.ps1 shots` lists them,
+   `scripts/skytest.ps1 shots zr350` (a ZR-350 by day and at night, from behind, beside and above) writes
+   `out/shots/zr350/`.
+8. Measure it: the kit's probes (its `docs/COMMANDS.md`, "Probes") take `asr.vehicle:` too, with the 3D ModelView draws
+   the vehicle under: `cmd node asr.vehicle:` lists its shapes, `cmd probe effects asr.vehicle:` its glowing ones,
+   `cmd probe lights asr.vehicle: radius=600` the lights round it, and `offset=<forward>,<right>,<up>` points at a part
+   of it in `project`, `pixels`, `compare` and `ab` (`at=asr.vehicle: offset=-200,0,40` is about the ZR-350's back).
+   `record start player,asr.vehicle:` records it as it moves. The answers carry its `details`: slot, model, wrecked, and with the headlights (v36) its lamps (which burn, the dummies) and its two scene lights with where they sit in its frame.
+
+The session's settings are in `skytest.psd1`, the AhShitRim side in `skse/src/debug/TestKit.cpp`, and how it all works
+in the kit's own `docs/USAGE.md`. Test sessions swap in windowed 1280x720, muted prefs and always put the player's
+`SkyrimPrefs.ini` back byte for byte. `start` refuses while a Skyrim or San Andreas that isn't a test session's runs
+(someone may be playing; `-CloseGames` closes it), and `stop` closes only the session's own.
+
+The games come back as they were. `skytest.psd1`'s `Deploy` is `scripts/test-deploy.ps1 deploy`: before
+`deploy-local.ps1` writes over them it keeps a copy of every file it writes (`AhShitRim.dll`, its `.pdb` and
+`AhShitRim.ini` in `Data/SKSE/Plugins`, Sweetroll FM's tracks in `Data/Music/AhShitRim`, `AhShitRim.asi` and its `.pdb`
+in San Andreas's `scripts`), notes the ones that weren't there, and sets PerkeleRim's SKSE plugin aside (both mods take
+over the player). Its `Undeploy`, `test-deploy.ps1 restore`, puts all of it back once no Skyrim runs: on `stop`, after a
+failed start, and on the next `stop` after a shell that was killed mid-session (a `start` in between keeps the first
+copies). That matters for `AhShitRim.ini`: `deploy-local.ps1` rewrites it and drops keys it doesn't know (one a held
+branch added), and the kit puts back only what the deploy wrote. The copies are in
+`%LOCALAPPDATA%\AhShitRim\test-session` until then; a session restarted for a new build keeps the first ones, and the
+folders the deploy made go again once empty. Should the games' files change while a session is deployed (someone
+installed another AhShitRim before `stop`), the restore refuses and says so: look, then `scripts/test-deploy.ps1
+restore-anyway` (the old ones back all the same) or `forget` (keep what's there). `scripts/test-deploy.ps1 status` lists
+what's kept.
+`restart-games.ps1` and a plain `deploy-local.ps1` still deploy straight into the games, for playing.
+Neither game takes the foreground: San Andreas's window is created hidden and never activated (`sa/src/window.cpp`),
+as Skyrim's is.
+`hit-test.ps1` and `load-test.ps1` run on test sessions and take the games lock; `restart-games.ps1` (the play loop)
+doesn't: don't run it while a test session holds the lock.
+
+A release never carries the kit: CI never fetches the submodule, and `scripts/package.ps1` builds the SKSE plugin
+again with `-NoTestKit` and refuses a DLL that still has the kit's strings in it.
 
 ### Testing on Skyrim Special Edition 1.5.97
 
@@ -148,7 +299,7 @@ The same `AhShitRim.dll` loads on SE 1.5.97 and AE (CommonLibSSE-NG picks each a
 2. In the copy: SKSE64's **Special Edition build** (2.0.20, `skse64_1_5_97.dll`) instead of the AE one, and Address Library's **Special Edition** file (`version-1-5-97-0.bin` in `Data\SKSE\Plugins`).
 3. Point `SkyrimPath` in `local.props` at the copy and run `scripts/restart-games.ps1` (it deploys there). Set `SkyrimPath` back when you're done. Other SKSE plugins in the copy (PerkeleRim's) load too; move them out for a clean test. SE and AE share `Documents\My Games\Skyrim Special Edition`, so saves and logs land in the same place, and AE saves with Creation Club content may not load on SE: use an SE save or a new game.
 4. Run the release launcher against the copy once: it must name `version-1-5-97-0.bin`, not `versionlib-*`, if Address Library is missing.
-5. `scripts/hit-test.ps1 -NewGame` (and `-Scenario bust -NewGame`) runs the hit test on SE without a save: it starts a new game in Riverwood from the main menu instead of loading the most recent save, which is an AE one. Keep Skyrim's window in front: it pauses while it isn't, and the test then times out. A new level 1 character can die from the giant's first blow in the `hits` scenario; `bust` gets through.
+5. The test kit (and so `scripts/hit-test.ps1`) runs on AE only: on SE, check Skyrim's hits on CJ's car and the bust at its door by hand (CJ in a car near Whiterun's guards, two stars).
 
 Then check:
 

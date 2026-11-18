@@ -48,6 +48,7 @@ namespace AhShitRim::Overlay
         std::atomic<std::uint32_t>            screenWidth{ 0 }, screenHeight{ 0 };
         std::atomic<bool>                     screenshotWanted{ false };
         std::atomic<bool>                     screenshotSaved{ false };
+        std::atomic<bool>                     hidden{ false };
         std::string                           screenshotFolder;  // under the lock
 
         // Present only.
@@ -445,7 +446,9 @@ namespace AhShitRim::Overlay
 
         HRESULT STDMETHODCALLTYPE Present(IDXGISwapChain* a_swapChain, UINT a_syncInterval, UINT a_flags)
         {
-            Draw(a_swapChain);
+            if (!hidden) {
+                Draw(a_swapChain);
+            }
             if (screenshotWanted.exchange(false)) {
                 Capture(a_swapChain);
             }
@@ -470,6 +473,11 @@ namespace AhShitRim::Overlay
         vtable[kPresentSlot] = reinterpret_cast<void*>(&Present);
         VirtualProtect(&vtable[kPresentSlot], sizeof(void*), protection, &protection);
         return true;
+    }
+
+    void SetHidden(bool a_hidden)
+    {
+        hidden = a_hidden;
     }
 
     void SetImages(std::vector<Image> a_images)

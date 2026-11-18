@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "../../cpp/cheats.h"
 #include "../../cpp/input.h"
 
 #include <string>
@@ -610,7 +611,7 @@ TEST_CASE("v23: the middle mouse button looks behind in a vehicle, both shoulder
     CHECK(b.Build(4, true, false).buttons == 0);  // a menu has the input
 }
 
-TEST_CASE("v23: V and Home change the camera distance in a vehicle")
+TEST_CASE("v23: V and Home change the camera distance in a vehicle, and on foot")
 {
     CHECK(VehicleActionFromScanCode(kDikV) == Action::CameraView);
     CHECK(VehicleActionFromScanCode(kDikHome) == Action::CameraView);
@@ -620,7 +621,8 @@ TEST_CASE("v23: V and Home change the camera distance in a vehicle")
     const auto in = b.Build(1, true, true);
     CHECK(in.buttons == Protocol::kButtonCameraView);
     CHECK(ToPad(in, true).select == 255);
-    CHECK(ToPad(in, false).select == 0);
+    CHECK(ToPad(in, false).select == 255);  // San Andreas's three chase distances
+    CHECK(ToPad(b.Build(2, true, false), false).select == 0);  // a menu has the input
 }
 
 TEST_CASE("v23: 2 and numpad + are the sub-mission key with numpad 5: the hydraulics' jump, a plane's landing gear")
@@ -688,6 +690,27 @@ TEST_CASE("v23: none of the new keys is one of Skyrim's own")
         CHECK(dik != 0x43);  // F9, quick load
         CHECK(SpawnModelFromScanCode(dik) == 0);
     }
+}
+
+TEST_CASE("/ is Skyrim's wait while CJ has the player, and nothing of San Andreas's or the cheats'")
+{
+    CHECK(kDikWait == 0x35);
+    for (const auto layout : { KeyLayout::Modern, KeyLayout::Classic }) {
+        CHECK(ActionFromScanCode(kDikWait, layout) == Action::None);
+        CHECK_FALSE(IsHandbrakeKey(kDikWait, layout));
+    }
+    CHECK(VehicleActionFromScanCode(kDikWait) == Action::None);
+    CHECK(RadioStepFromScanCode(kDikWait) == 0);
+    CHECK(SpawnModelFromScanCode(kDikWait) == 0);
+    CHECK(Cheats::LetterOf(kDikWait) == 0);  // typing a cheat never waits
+    CHECK_FALSE(OpensSkyrimMenu(kDikWait));  // opened by us, on foot only, not let through to Skyrim's handler
+    for (const auto dik : { kDikF10, kDikF11, kDikEquals, kDikSemicolon, kDikApostrophe, kDikLeftBracket, kDikRightBracket, kDikBackslash, kDikE,
+             kDikX, kDikG, kDikH }) {
+        CHECK(dik != kDikWait);
+    }
+    // T, Skyrim's own wait key, is a letter of the cheat codes while CJ has the player (JUMPJET, PROFESSIONALKILLER).
+    CHECK(Cheats::LetterOf(0x14) == 'T');
+    CHECK(ActionFromScanCode(0x14) == Action::None);
 }
 
 TEST_CASE("v23: W and S together are San Andreas's burnout in a vehicle, and A and D still steer")

@@ -262,6 +262,8 @@ namespace AhShitRim::CheatCodes
         }
     }
 
+    void Finish(const Cheat& a_cheat, const World& a_world) { Apply(a_cheat, a_world); }
+
     void Update()
     {
         const bool up = LinkService::Get().IsUp();
@@ -299,6 +301,14 @@ namespace AhShitRim::CheatCodes
     {
         const auto* cheat = Find(a_cheat);
         return cheat && state.on.On(*cheat);
+    }
+
+    bool Spared(std::uint32_t a_id, std::uint32_t a_base)
+    {
+        const auto& bases = state.mercy.Bases();
+        const auto& actors = state.mercy.Actors();
+        const auto  actor = std::lower_bound(actors.begin(), actors.end(), a_id, [](const Mercy::Actor& a_a, std::uint32_t a_v) { return a_a.id < a_v; });
+        return std::binary_search(bases.begin(), bases.end(), a_base) || (actor != actors.end() && actor->id == a_id && actor->base == a_base);
     }
 
     void OnGameLoad()

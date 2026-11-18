@@ -1,0 +1,45 @@
+// Coming back's exceptions (docs/DESIGN.md): who stays dead. The bandits at Halted Stream Camp (hostile on sight) are
+// killed by the player while CJ has it and are still dead an hour later with the camera looking away from them; Grelod
+// the Kind, a quest's kill target once Innocence Lost (DB01, running from the start) shows its objective on her, stays dead too. Shots of both.
+// scripts/skytest.ps1 run scenarios/respawns-stay-dead.json (scenarios/README.md).
+{
+  "name": "respawns-stay-dead",
+  "steps": [
+    { "label": "nobody from an earlier run", "cmd": "asr.killed", "forget": true },
+    { "label": "to Halted Stream Camp", "cmd": "console", "command": "coc HaltedStreamCampExterior01" },
+    { "cmd": "wait", "seconds": 8 },
+    { "label": "Skyrim's player healthy", "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "CJ takes it there", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "a bandit stays dead", "cmd": "asr.judge", "ref": "name:Bandit", "expect": "verdict == hostile on sight, stays dead" },
+    { "label": "the player kills every bandit about", "cmd": "asr.kill", "ref": "name:Bandit", "all": 6000, "expect": ["count >= 1", "killed.0.verdict == hostile on sight, stays dead"] },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "none of them waits to come back", "cmd": "asr.killed", "expect": ["alive == 0", "waiting == 0"] },
+    { "cmd": "screenshot", "name": "bandit-dead", "camera": "orbit name:Bandit distance=300 pitch=30" },
+    { "label": "an hour and a bit later", "cmd": "asr.later", "hours": 1.1 },
+    { "label": "the camera looks away", "cmd": "camera", "mode": "free", "at": "player", "height": 3000, "pitch": -60 },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "still dead, all of them", "cmd": "asr.killed", "expect": ["alive == 0", "waiting == 0"] },
+    { "label": "the game's camera again", "cmd": "camera", "mode": "player" },
+    { "cmd": "screenshot", "name": "bandit-still-dead", "camera": "orbit name:Bandit distance=300 pitch=30" },
+
+    { "label": "forget the bandits", "cmd": "asr.killed", "forget": true },
+    { "label": "its kill objective shown", "cmd": "console", "command": "setobjectivedisplayed DB01 20 1" },
+    { "label": "Grelod is its target", "cmd": "asr.objectives", "quest": "DB01",
+      "expect": ["running == true", "objectives.1.index == 20", "objectives.1.state == 1", "objectives.1.targets.0.ref == 0x00019DE4"] },
+    { "label": "Grelod to the player", "cmd": "console", "ref": "0x00019DE4", "command": "moveto player" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "a quest's kill target stays dead", "cmd": "asr.judge", "ref": "0x00019DE4", "expect": "verdict == a quest's kill target, stays dead" },
+    { "label": "the player kills her", "cmd": "asr.kill", "ref": "0x00019DE4", "expect": "killed.0.verdict == a quest's kill target, stays dead" },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "she doesn't wait to come back", "cmd": "asr.killed", "expect": ["dead == 1", "waiting == 0"] },
+    { "label": "an hour and a bit later", "cmd": "asr.later", "hours": 1.1 },
+    { "label": "the camera looks away", "cmd": "camera", "mode": "free", "at": "player", "height": 3000, "pitch": -60 },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "still dead", "cmd": "asr.killed", "expect": ["dead == 1", "waiting == 0"] },
+    { "label": "the game's camera again", "cmd": "camera", "mode": "player" },
+    { "label": "she lies dead here, loaded", "cmd": "state", "ref": "0x00019DE4", "expect": ["dead == true", "loaded == true", "cell == HaltedStreamCampExterior01"] },
+    { "cmd": "screenshot", "name": "grelod-still-dead", "camera": "top 0x00019DE4 distance=450 near=380" },
+    { "label": "the objective hidden again", "cmd": "console", "command": "setobjectivedisplayed DB01 20 0" }
+  ]
+}

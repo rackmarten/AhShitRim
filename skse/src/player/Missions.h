@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace RE
 {
@@ -35,6 +36,19 @@ namespace AhShitRim::Missions
 
     void OnGameLoad();  // what was waiting belonged to the game before
 
-    // Debug (MissionTest): CJ answers as if Ralof's line had just ended.
+    // Debug (the test kit's asr.intro, skse/src/debug/TestKit.cpp): CJ answers as if Ralof's line had just ended, also
+    // when he has said it already. Main thread.
     void TestIntro();
+
+    // Debug (the test kit's asr.intro and asr.quest): what San Andreas's HUD was given and which cues started since the
+    // plugin loaded. Main thread.
+    struct Shown
+    {
+        std::uint32_t steps = 0;   // mission titles and passed messages shown
+        std::string   last;        // the last one: "title", "mission passed" or "odd job passed"
+        std::string   name;        // its quest's name
+        std::uint32_t cues = 0;    // cues started (the passed tune, CJ's intro line)
+        std::uint8_t  cue = 0;     // the last one, a Protocol::kCue*
+    };
+    const Shown& DebugShown();
 }
