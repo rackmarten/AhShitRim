@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
+CJ settles in: San Andreas's camera and HUD texts, vehicle lights at night, parked bikes around the holds, the knife's stealth kill, the dead coming back an hour later, the first part of the Grove Street crew, and controller support.
+
 ### Added
 
 - Headlights and tail lights (protocol v36). San Andreas switches its vehicles' lights by its own rule (`CVehicle::GetVehicleLightsStatus`: from 21:00 to 6:00, from 20:xx and until 6:xx by each vehicle's own minute, on wet roads), now on Skyrim's clock and sky: Skyrim sends its time of day, its rain or snow, and whether the player is in an interior (San Andreas's tunnels, lights forced on, the ZR-350's pop-ups up), and San Andreas's clock follows Skyrim's. Each vehicle slot says where the model's headlight and tail light dummies are and which lamps burn (engine on, not wrecked, not smashed), and Skyrim lights the scene there: a warm white point light on the road 5 m ahead of the headlights and a red glow behind the tail lights. Game-free tests for the clock, the sky and the lamp rule.
