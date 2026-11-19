@@ -15,6 +15,7 @@
 #include "input.h"
 #include "cheats.h"
 #include "link/LinkService.h"
+#include "player/Activation.h"
 #include "player/Arms.h"
 #include "player/Headlights.h"
 #include "player/LockOn.h"
@@ -1985,6 +1986,22 @@ namespace AhShitRim::TestKit
                         }
                         return JsonObject{ { "menus", Json(std::move(open)) } };
                     };
+                });
+
+            SkseTestKit::AddCommand("asr.activation", "",
+                "What E would act on now: the target (its form id, whether the crosshair is on it, its prompt) and every candidate round CJ "
+                "(form id, name, kind: person, furniture, item, other)",
+                [](Call&) -> Json {
+                    const auto debug = Activation::Debug();
+                    JsonArray  candidates;
+                    for (const auto& c : debug.candidates) {
+                        candidates.push_back(JsonObject{ { "id", std::format("{:08X}", c.id) }, { "name", c.name }, { "kind", std::string(c.kind) },
+                            { "enter", c.enter }, { "leave", c.leave },
+                            { "box", std::format("{:.0f},{:.0f},{:.0f} half {:.1f},{:.1f},{:.1f}", c.box[0], c.box[1], c.box[2], c.box[3], c.box[4], c.box[5]) } });
+                    }
+                    return JsonObject{ { "target", debug.target ? Json(std::format("{:08X}", debug.target)) : Json(nullptr) }, { "aimed", debug.aimed },
+                        { "prompt", debug.prompt }, { "hit", debug.hit ? Json(std::format("{:08X}", debug.hit)) : Json(nullptr) },
+                        { "hitDistance", debug.hitDistance }, { "hitLayer", debug.hitLayer }, { "candidates", Json(std::move(candidates)) } };
                 });
 
             SkseTestKit::AddCommand("asr.mark", "", "Marks CJ's pose now, for asr.since", [](Call&) -> Json {

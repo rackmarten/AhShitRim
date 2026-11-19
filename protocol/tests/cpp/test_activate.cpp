@@ -186,6 +186,59 @@ TEST_CASE("E acts on the reference the crosshair is on, not on whichever box com
     CHECK_FALSE(Aimed(camera, dir, far, 180.0f, rings, { 1, 244.0f }).has_value());
 }
 
+TEST_CASE("a note lying on a tomb is read, though the ray hits the tomb")
+{
+    // Jurgen Windcaller's tomb (an activator) with a note on its lid: the sight ray passes through the note (clutter)
+    // and hits the lid, 2 units under the note's box.
+    std::vector<Candidate> refs(2);
+    refs[0].box.center = { 0.0f, 100.0f, 50.0f };
+    refs[0].box.half = { 40.0f, 90.0f, 50.0f };  // the tomb, its lid at z 100
+    refs[1].box.center = { 0.0f, 60.0f, 101.0f };
+    refs[1].box.half = { 8.0f, 6.0f, 1.0f };  // the note on it
+    refs[1].kind = Kind::Item;
+    const Vec3  camera{ 0.0f, -100.0f, 190.0f }, chest{ 0.0f, 0.0f, 120.0f };
+    const Vec3  note{ 0.0f, 60.0f, 102.0f };
+    const Vec3  along = Sub(note, camera);
+    const float length = std::sqrt(Dot(along, along));
+    const Vec3  dir = Scale(along, 1.0f / length);
+    CHECK(Aimed(camera, dir, chest, 180.0f, refs, { 0, length + 2.0f }) == std::optional<std::size_t>(1));
+    // Aimed at the lid away from the note: the tomb.
+    const Vec3  lid{ 0.0f, 150.0f, 100.0f };
+    const Vec3  toLid = Sub(lid, camera);
+    const float lidLength = std::sqrt(Dot(toLid, toLid));
+    CHECK(Aimed(camera, Scale(toLid, 1.0f / lidLength), chest, 180.0f, refs, { 0, lidLength }) == std::optional<std::size_t>(0));
+    // The note itself hit (one with collision): the note.
+    CHECK(Aimed(camera, dir, chest, 180.0f, refs, { 1, length }) == std::optional<std::size_t>(1));
+    // From San Andreas's camera far behind, the ray grazes the lid and hits its raised edge 25 units short of the
+    // note: the note is still inside the tomb's box along the ray, so it's what CJ means.
+    CHECK(Aimed(camera, dir, chest, 180.0f, refs, { 0, length - 25.0f }) == std::optional<std::size_t>(1));
+    // An item on the floor past the tomb (out of its box, well beyond the hit on its lid): the tomb.
+    std::vector<Candidate> behind = refs;
+    behind[1].box.center = { 0.0f, 230.0f, 9.0f };
+    const Vec3  farNote{ 0.0f, 230.0f, 10.0f };
+    const Vec3  toFar = Sub(farNote, camera);
+    const float farLength = std::sqrt(Dot(toFar, toFar));
+    const Vec3  farDir = Scale(toFar, 1.0f / farLength);
+    const auto  lidHit = Hit(camera, farDir, behind[0].box);
+    REQUIRE(lidHit.has_value());
+    CHECK(Aimed(camera, farDir, chest, 400.0f, behind, { 0, *lidHit }) == std::optional<std::size_t>(0));
+}
+
+TEST_CASE("an item's box is never smaller than a hand each way")
+{
+    Box note;
+    note.center = { 1.0f, 2.0f, 3.0f };
+    note.half = { 8.0f, 5.0f, 0.0f };  // Jurgen Windcaller's note: paper thin
+    const Box padded = ItemBox(note);
+    CHECK(padded.half.x == doctest::Approx(kItemMinHalf));
+    CHECK(padded.half.y == doctest::Approx(kItemMinHalf));
+    CHECK(padded.half.z == doctest::Approx(kItemMinHalf));
+    CHECK(padded.center.z == doctest::Approx(3.0f));
+    Box sword;
+    sword.half = { 50.0f, 4.0f, 2.0f };
+    CHECK(ItemBox(sword).half.x == doctest::Approx(50.0f));  // a long side stays as long
+}
+
 TEST_CASE("without a reference hit, the crosshair's box in front of the wall and in reach")
 {
     // A person in front of a wall: the sight layer passes through people, so only their box says.

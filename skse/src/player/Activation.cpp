@@ -21,13 +21,15 @@ namespace AhShitRim::Activation
         // References this much further out than the reach are looked at: a door's position is its
         // hinge, a table's its middle.
         constexpr float kSearchSlack = 300.0f;
-        constexpr int   kMaxSightHits = 4;  // the player's own body and the like, passed through
+        constexpr int   kMaxSightHits = 8;  // the player's own body, homies, zones (SeenThrough), passed through
 
         struct State
         {
             RE::ObjectRefHandle target;
             std::string         prompt;
             RE::FormID          logged = 0;  // the last target logged, so a change logs once
+            DebugState          debug;       // the last Update's, for the test kit
+            bool                debugOn = false;  // kept only once the test kit has asked for it (Debug)
         } state;
 
         Vec3 ToVec(const RE::NiPoint3& a_p) { return { a_p.x, a_p.y, a_p.z }; }
@@ -43,6 +45,27 @@ namespace AhShitRim::Activation
                 return value > 0.0f ? value : Activate::kDefaultReach;
             }();
             return reach;
+        }
+
+        // What can be picked up or read.
+        bool IsItem(RE::FormType a_type)
+        {
+            switch (a_type) {
+            case RE::FormType::Weapon:
+            case RE::FormType::Armor:
+            case RE::FormType::Ammo:
+            case RE::FormType::Book:
+            case RE::FormType::Misc:
+            case RE::FormType::Ingredient:
+            case RE::FormType::AlchemyItem:
+            case RE::FormType::Scroll:
+            case RE::FormType::KeyMaster:
+            case RE::FormType::SoulGem:
+            case RE::FormType::Note:
+                return true;
+            default:
+                return false;
+            }
         }
 
         // What Skyrim's activate key acts on: doors, levers and other activators, containers, people,
@@ -147,9 +170,34 @@ namespace AhShitRim::Activation
             return true;
         }
 
-        // The first thing the camera's ray through the crosshair meets, passing through the player's own body:
-        // which candidate it is (if any) and how far along. Statics and activators stop the sight layer;
-        // clutter and people don't, and Activate::Aimed tests their boxes up to the hit.
+        // What the crosshair's ray goes on through when it isn't something E acts on: someone's capsule (a homie
+        // beside CJ, whom E never picks), a body, and the invisible volumes round things (an actor zone, a trigger).
+        // Stopped there, the ray found nothing under the crosshair and E fell back to the nearest box in front of CJ:
+        // in Ustengrav a homie's capsule and the zone round Jurgen Windcaller's tomb hid the note on it.
+        bool SeenThrough(RE::COL_LAYER a_layer)
+        {
+            switch (a_layer) {
+            case RE::COL_LAYER::kCharController:
+            case RE::COL_LAYER::kBiped:
+            case RE::COL_LAYER::kBipedNoCC:
+            case RE::COL_LAYER::kDeadBip:
+            case RE::COL_LAYER::kActorZone:
+            case RE::COL_LAYER::kTrigger:
+            case RE::COL_LAYER::kProjectileZone:
+            case RE::COL_LAYER::kGasTrap:
+            case RE::COL_LAYER::kCloudTrap:
+            case RE::COL_LAYER::kAcousticSpace:
+            case RE::COL_LAYER::kNonCollidable:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        // The first thing the camera's ray through the crosshair meets, passing through the player's own body and
+        // whatever SeenThrough says (unless it's a candidate itself): which candidate it is (if any) and how far
+        // along. Statics and activators stop the sight layer; clutter and people don't, and Activate::Aimed tests
+        // their boxes up to the hit.
         Activate::CrosshairHit CrosshairHitOf(RE::PlayerCharacter* a_player, const std::vector<RE::TESObjectREFR*>& a_refs, const Vec3& a_camera,
             const Vec3& a_dir, float a_length)
         {
@@ -177,9 +225,16 @@ namespace AhShitRim::Activation
                 }
                 const float at = from + (a_length - from) * output.hitFraction;
                 auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
-                if (hit != a_player) {
+                const auto  found = hit ? std::ranges::find(a_refs, hit) : a_refs.end();
+                const auto  layer = output.rootCollidable ? output.rootCollidable->GetCollisionLayer() : RE::COL_LAYER::kUnidentified;
+                if (hit != a_player && (found != a_refs.end() || !SeenThrough(layer))) {
+                    if (state.debugOn) {
+                        state.debug.hit = hit ? hit->GetFormID() : 0;
+                        state.debug.hitDistance = at;
+                        state.debug.hitLayer = static_cast<int>(layer);
+                    }
                     result.distance = at;
-                    if (const auto found = std::ranges::find(a_refs, hit); hit && found != a_refs.end()) {
+                    if (found != a_refs.end()) {
                         result.candidate = static_cast<std::size_t>(found - a_refs.begin());
                     }
                     return result;
@@ -209,6 +264,12 @@ namespace AhShitRim::Activation
             // As far as the camera is from CJ's chest, and his reach beyond.
             const Vec3  back = Activate::Sub(a_chest, camera);
             const float length = std::sqrt(Activate::Dot(back, back)) + a_reach + kSearchSlack;
+            for (std::size_t i = 0; state.debugOn && i < a_candidates.size() && i < state.debug.candidates.size(); ++i) {
+                if (const auto span = Activate::Through(camera, dir, a_candidates[i].box)) {
+                    state.debug.candidates[i].enter = span->enter;
+                    state.debug.candidates[i].leave = span->leave;
+                }
+            }
             return Activate::Aimed(camera, dir, a_chest, a_reach, a_candidates, CrosshairHitOf(a_player, a_refs, camera, dir, length));
         }
 
@@ -240,6 +301,10 @@ namespace AhShitRim::Activation
         const Vec3  origin{ feet.x, feet.y, feet.z + Activate::kRayHeight };
         const Vec3  dir = Activate::Direction(a_pose->viewHeading, a_pose->viewPitch);
 
+        state.debug.candidates.clear();
+        state.debug.hit = 0;
+        state.debug.hitDistance = -1.0f;
+        state.debug.hitLayer = -1;
         std::vector<Activate::Candidate>   candidates;
         std::vector<RE::TESObjectREFR*>    refs;
         tes->ForEachReferenceInRange(a_player, reach + kSearchSlack, [&](RE::TESObjectREFR* a_ref) {
@@ -252,9 +317,18 @@ namespace AhShitRim::Activation
                         kind = Activate::Kind::Person;
                     } else if (base && base->Is(RE::FormType::Furniture)) {
                         kind = Activate::Kind::Furniture;
+                    } else if (base && IsItem(base->GetFormType())) {
+                        kind = Activate::Kind::Item;  // lying on whatever the crosshair's ray hits under it (Activate::Aimed)
                     }
-                    candidates.push_back({ BoxOf(a_ref, root), a_ref->GetFormID(), kind });
+                    const auto bounds = BoxOf(a_ref, root);
+                    candidates.push_back({ kind == Activate::Kind::Item ? Activate::ItemBox(bounds) : bounds, a_ref->GetFormID(), kind });
                     refs.push_back(a_ref);
+                    if (state.debugOn) {
+                        const auto& box = candidates.back().box;
+                        state.debug.candidates.push_back({ a_ref->GetFormID(), a_ref->GetName() ? a_ref->GetName() : "",
+                            kind == Activate::Kind::Person ? "person" : kind == Activate::Kind::Furniture ? "furniture" : kind == Activate::Kind::Item ? "item" : "other", -1.0f, -1.0f,
+                            { box.center.x, box.center.y, box.center.z, box.half.x, box.half.y, box.half.z } });
+                    }
                 }
             }
             return RE::BSContainer::ForEachResult::kContinue;
@@ -293,6 +367,11 @@ namespace AhShitRim::Activation
         }
 
         const auto id = state.target ? state.target.get()->GetFormID() : 0;
+        if (state.debugOn) {
+            state.debug.target = id;
+            state.debug.aimed = aimed;
+            state.debug.prompt = state.prompt;
+        }
         if (id != state.logged) {
             state.logged = id;
             if (id) {
@@ -326,5 +405,11 @@ namespace AhShitRim::Activation
         state.target = {};
         state.prompt.clear();
         state.logged = 0;
+    }
+
+    DebugState Debug()
+    {
+        state.debugOn = true;
+        return state.debug;
     }
 }
