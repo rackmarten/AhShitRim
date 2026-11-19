@@ -222,6 +222,15 @@ TEST_CASE("a note lying on a tomb is read, though the ray hits the tomb")
     const auto  lidHit = Hit(camera, farDir, behind[0].box);
     REQUIRE(lidHit.has_value());
     CHECK(Aimed(camera, farDir, chest, 400.0f, behind, { 0, *lidHit }) == std::optional<std::size_t>(0));
+    // Deep inside what was hit, more than kItemPastHit past the hit (a closed chest's far end): what was hit.
+    CHECK(Aimed(camera, dir, chest, 180.0f, refs, { 0, length - kItemPastHit - kItemMinHalf - 5.0f }) == std::optional<std::size_t>(0));
+    // The same note on someone's lap, or on a workbench: the person, the workbench.
+    std::vector<Candidate> person = refs;
+    person[0].kind = Kind::Person;
+    CHECK(Aimed(camera, dir, chest, 180.0f, person, { 0, length - 25.0f }) == std::optional<std::size_t>(0));
+    std::vector<Candidate> bench = refs;
+    bench[0].kind = Kind::Furniture;
+    CHECK(Aimed(camera, dir, chest, 180.0f, bench, { 0, length - 25.0f }) == std::optional<std::size_t>(0));
 }
 
 TEST_CASE("an item's box is never smaller than a hand each way")

@@ -150,10 +150,14 @@ namespace AhShitRim::Activate
         Item,       // what can be picked up or read: a note, a book, a key, a weapon (clutter: the sight ray passes through it)
     };
 
-    // An item's box is at least this far from its middle each way (units): a note is paper thin and a hand across
-    // (16 x 10 x 0 in Ustengrav), and from San Andreas's camera 2 to 3 m behind CJ the crosshair all but never
-    // landed inside one. Skyrim's own crosshair is as forgiving with small things.
+    // For the crosshair, an item's box is at least this far from its middle each way (units): a note is paper thin
+    // and a hand across (16 x 10 x 0 in Ustengrav), and from San Andreas's camera 2 to 3 m behind CJ the crosshair
+    // all but never landed inside one. Only the crosshair's test pads it (Activate::Aimed); Pick and the line of
+    // sight keep the item's own box.
     inline constexpr float kItemMinHalf = 12.0f;
+    // How far past the reference the crosshair's ray hit an item lying on it may still be entered (units): the
+    // note on Jurgen Windcaller's tomb was 25 past the tomb's raised edge from San Andreas's camera.
+    inline constexpr float kItemPastHit = 40.0f;
 
     inline Box ItemBox(Box a_box)
     {
@@ -206,14 +210,17 @@ namespace AhShitRim::Activate
     // What the crosshair is on, within a_reach of CJ's chest (a_chest): the reference the camera's ray through it
     // hit (a_hit), when that is a candidate and the point hit is in reach; else the candidate whose box that
     // ray enters first, no further than whatever it hit (less kSightTolerance: a box is loose, and the ray
-    // passes through clutter and people, which have only boxes here), where it enters in reach. Nothing when
+    // passes through clutter, which has only a box here), where it enters in reach. Nothing when
     // the crosshair is on nothing activatable in reach: then E falls back to Pick along his facing. Boxes
     // overlap (the three rings of a claw door are one inside the other), so the reference actually hit wins,
-    // unless an item lies on or in what was hit: the sight ray passes through clutter, so it hits the tomb a note
-    // lies on, the table under a key, and the item is what CJ means (Jurgen Windcaller's note in Ustengrav couldn't
-    // be read). Such an item is one whose box the ray enters past the hit by no more than kSightTolerance, or before
-    // it leaves the box of what it hit (from San Andreas's camera 3 m behind CJ the ray grazes the tomb's lid and
-    // hits its raised edge 25 units short of the note).
+    // unless an item lies on what was hit: the sight ray passes through clutter, so it hits the tomb a note lies on,
+    // the chest under a key, and the item is what CJ means (Jurgen Windcaller's note in Ustengrav couldn't be read).
+    // Such an item is one whose box (ItemBox) the ray enters before the hit, or past it by no more than
+    // kSightTolerance, or while still in the box of what it hit but no more than kItemPastHit past the hit (from San
+    // Andreas's camera 3 m behind CJ the ray grazes the tomb's lid and hits its raised edge 25 units short of the
+    // note). Only over an activator, a door or a container (Kind::Other): a person is who CJ means, and a
+    // workbench's or an alchemy lab's clutter shouldn't keep him from using it. A closed display case (an activator)
+    // with things inside can still give one of them through its lid.
     inline std::optional<std::size_t> Aimed(const Vec3& a_camera, const Vec3& a_dir, const Vec3& a_chest, float a_reach,
         const std::vector<Candidate>& a_candidates, const CrosshairHit& a_hit)
     {
@@ -222,17 +229,17 @@ namespace AhShitRim::Activate
             return Dot(at, at) <= a_reach * a_reach;
         };
         if (a_hit.candidate && *a_hit.candidate < a_candidates.size() && std::isfinite(a_hit.distance) && inReach(a_hit.distance)) {
-            if (a_candidates[*a_hit.candidate].kind != Kind::Item) {
+            if (a_candidates[*a_hit.candidate].kind == Kind::Other) {
                 std::optional<std::size_t> item;
                 float                      nearest = a_hit.distance + kSightTolerance;
                 if (const auto under = Through(a_camera, a_dir, a_candidates[*a_hit.candidate].box)) {
-                    nearest = (std::max)(nearest, under->leave);
+                    nearest = (std::max)(nearest, (std::min)(under->leave, a_hit.distance + kItemPastHit));
                 }
                 for (std::size_t i = 0; i < a_candidates.size(); ++i) {
                     if (a_candidates[i].kind != Kind::Item) {
                         continue;
                     }
-                    const auto t = Hit(a_camera, a_dir, a_candidates[i].box);
+                    const auto t = Hit(a_camera, a_dir, ItemBox(a_candidates[i].box));
                     if (t && *t > 0.0f && *t <= nearest && inReach(*t)) {
                         item = i;
                         nearest = *t;
@@ -247,7 +254,7 @@ namespace AhShitRim::Activate
         std::optional<std::size_t> best;
         float                      nearest = a_hit.distance + kSightTolerance;
         for (std::size_t i = 0; i < a_candidates.size(); ++i) {
-            const auto t = Hit(a_camera, a_dir, a_candidates[i].box);
+            const auto t = Hit(a_camera, a_dir, a_candidates[i].kind == Kind::Item ? ItemBox(a_candidates[i].box) : a_candidates[i].box);
             if (t && *t > 0.0f && *t <= nearest && inReach(*t)) {
                 best = i;
                 nearest = *t;

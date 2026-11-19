@@ -21,7 +21,7 @@ namespace AhShitRim::Activation
         // References this much further out than the reach are looked at: a door's position is its
         // hinge, a table's its middle.
         constexpr float kSearchSlack = 300.0f;
-        constexpr int   kMaxSightHits = 8;  // the player's own body, homies, zones (SeenThrough), passed through
+        constexpr int   kMaxSightHits = 12;  // the player's own body, homies, zones (Volume, Body), passed through
 
         struct State
         {
@@ -170,17 +170,11 @@ namespace AhShitRim::Activation
             return true;
         }
 
-        // What the crosshair's ray goes on through when it isn't something E acts on: someone's capsule (a homie
-        // beside CJ, whom E never picks), a body, and the invisible volumes round things (an actor zone, a trigger).
-        // Stopped there, the ray found nothing under the crosshair and E fell back to the nearest box in front of CJ:
-        // in Ustengrav a homie's capsule and the zone round Jurgen Windcaller's tomb hid the note on it.
-        bool SeenThrough(RE::COL_LAYER a_layer)
+        // Invisible volumes round things (an actor zone, a trigger): the crosshair's ray always goes on through them,
+        // also when one is a candidate (a nameless trigger E has no words for).
+        bool Volume(RE::COL_LAYER a_layer)
         {
             switch (a_layer) {
-            case RE::COL_LAYER::kCharController:
-            case RE::COL_LAYER::kBiped:
-            case RE::COL_LAYER::kBipedNoCC:
-            case RE::COL_LAYER::kDeadBip:
             case RE::COL_LAYER::kActorZone:
             case RE::COL_LAYER::kTrigger:
             case RE::COL_LAYER::kProjectileZone:
@@ -194,10 +188,28 @@ namespace AhShitRim::Activation
             }
         }
 
-        // The first thing the camera's ray through the crosshair meets, passing through the player's own body and
-        // whatever SeenThrough says (unless it's a candidate itself): which candidate it is (if any) and how far
-        // along. Statics and activators stop the sight layer; clutter and people don't, and Activate::Aimed tests
-        // their boxes up to the hit.
+        // Someone's capsule or body: the ray goes on through it when it isn't a candidate (a homie beside CJ, whom E
+        // never picks; a body), and stops at someone E can talk to. Stopped at a homie's capsule or the zone round
+        // Jurgen Windcaller's tomb, the ray found nothing under the crosshair and E fell back to the nearest box in
+        // front of CJ, the tomb's, so the note on it couldn't be read.
+        bool Body(RE::COL_LAYER a_layer)
+        {
+            switch (a_layer) {
+            case RE::COL_LAYER::kCharController:
+            case RE::COL_LAYER::kBiped:
+            case RE::COL_LAYER::kBipedNoCC:
+            case RE::COL_LAYER::kDeadBip:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        // The first thing the camera's ray through the crosshair meets, passing through the player's own body, any
+        // Volume and any Body that isn't a candidate: which candidate it is (if any) and how far along. Statics,
+        // activators and the capsules of people E can talk to stop it; clutter doesn't, and Activate::Aimed tests
+        // its boxes up to the hit. Out of passes, the ray counts as stopped where the last one started, never as
+        // open (a crowd of homies between the camera and CJ mustn't let E pick through a wall).
         Activate::CrosshairHit CrosshairHitOf(RE::PlayerCharacter* a_player, const std::vector<RE::TESObjectREFR*>& a_refs, const Vec3& a_camera,
             const Vec3& a_dir, float a_length)
         {
@@ -227,7 +239,7 @@ namespace AhShitRim::Activation
                 auto*       hit = output.rootCollidable ? RE::TESHavokUtilities::FindCollidableRef(*output.rootCollidable) : nullptr;
                 const auto  found = hit ? std::ranges::find(a_refs, hit) : a_refs.end();
                 const auto  layer = output.rootCollidable ? output.rootCollidable->GetCollisionLayer() : RE::COL_LAYER::kUnidentified;
-                if (hit != a_player && (found != a_refs.end() || !SeenThrough(layer))) {
+                if (hit != a_player && !Volume(layer) && (found != a_refs.end() || !Body(layer))) {
                     if (state.debugOn) {
                         state.debug.hit = hit ? hit->GetFormID() : 0;
                         state.debug.hitDistance = at;
@@ -241,6 +253,7 @@ namespace AhShitRim::Activation
                 }
                 from = at + 1.0f;
             }
+            result.distance = from;  // out of passes: blocked here
             return result;
         }
 
@@ -289,6 +302,9 @@ namespace AhShitRim::Activation
     {
         state.target = {};
         state.prompt.clear();
+        if (state.debugOn) {
+            state.debug = {};
+        }
         if (!a_pose || a_menu || (a_pose->flags & Protocol::kPlayerInVehicle) != 0) {
             return;
         }
@@ -301,10 +317,6 @@ namespace AhShitRim::Activation
         const Vec3  origin{ feet.x, feet.y, feet.z + Activate::kRayHeight };
         const Vec3  dir = Activate::Direction(a_pose->viewHeading, a_pose->viewPitch);
 
-        state.debug.candidates.clear();
-        state.debug.hit = 0;
-        state.debug.hitDistance = -1.0f;
-        state.debug.hitLayer = -1;
         std::vector<Activate::Candidate>   candidates;
         std::vector<RE::TESObjectREFR*>    refs;
         tes->ForEachReferenceInRange(a_player, reach + kSearchSlack, [&](RE::TESObjectREFR* a_ref) {
@@ -320,8 +332,7 @@ namespace AhShitRim::Activation
                     } else if (base && IsItem(base->GetFormType())) {
                         kind = Activate::Kind::Item;  // lying on whatever the crosshair's ray hits under it (Activate::Aimed)
                     }
-                    const auto bounds = BoxOf(a_ref, root);
-                    candidates.push_back({ kind == Activate::Kind::Item ? Activate::ItemBox(bounds) : bounds, a_ref->GetFormID(), kind });
+                    candidates.push_back({ BoxOf(a_ref, root), a_ref->GetFormID(), kind });
                     refs.push_back(a_ref);
                     if (state.debugOn) {
                         const auto& box = candidates.back().box;
