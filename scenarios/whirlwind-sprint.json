@@ -1,0 +1,40 @@
+// Whirlwind Sprint carries CJ: the shout's dash moves Skyrim's hidden player, and CJ follows it (Scene::Dash in
+// protocol/cpp/scene.h). CJ on foot on the road below the Whiterun stables, the player taught all three words, the shout
+// let out with Z (Skyrim's own input). scripts/skytest.ps1 run scenarios/whirlwind-sprint.json (scenarios/README.md).
+//
+// The checks: the dash starts ("a shout carries the player") and ends, and CJ ends up well down the road from where he
+// shouted (the full shout throws the player about 20 m in Skyrim's own game).
+{
+  "name": "whirlwind-sprint",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "to the road below the Whiterun stables", "cmd": "console", "command": "cow Tamriel 4 -3" },
+    { "cmd": "wait", "seconds": 8 },
+    { "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "onto the road (cow's spot varies)", "cmd": "console", "command": "player.setpos x 17521" },
+    { "cmd": "console", "command": "player.setpos y -11196" },
+    { "cmd": "console", "command": "player.setangle z 0" },
+    { "label": "Whirlwind Sprint, all three words", "cmd": "console", "command": "player.teachword 2F7BC" },
+    { "cmd": "console", "command": "player.teachword 2F7BD" },
+    { "cmd": "console", "command": "player.teachword 2F7BB" },
+    { "cmd": "console", "command": "player.unlockword 2F7BC" },
+    { "cmd": "console", "command": "player.unlockword 2F7BD" },
+    { "cmd": "console", "command": "player.unlockword 2F7BB" },
+    { "cmd": "console", "command": "player.addshout 2F7BA" },
+    { "label": "equipped as the power", "cmd": "asr.equipshout", "form": "2F7BA", "expect": "equipped == true" },
+    { "cmd": "console", "command": "player.setvoicerecoverytime 0" },
+    { "label": "CJ takes it", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 3 },
+    { "label": "where CJ shouts from", "cmd": "state", "ref": "player" },
+
+    { "cmd": "asr.mark" },
+    { "label": "Z held 1.5 s: all three words", "cmd": "asr.keyhold", "key": "z", "seconds": 1.5 },
+    { "cmd": "wait", "seconds": 3 },
+    { "label": "the shout was let out", "cmd": "log", "lines": 40, "match": "the player shouted \\(Whirlwind Sprint", "expect": "lines.length >= 1" },
+    { "label": "the dash carried the player", "cmd": "log", "lines": 40, "match": "a shout carries the player", "expect": "lines.length >= 1" },
+    { "label": "and ended", "cmd": "log", "lines": 40, "match": "the dash is over", "expect": "lines.length >= 1" },
+    { "label": "CJ went well down the road", "cmd": "asr.since", "expect": "moved > 8" }
+  ]
+}
