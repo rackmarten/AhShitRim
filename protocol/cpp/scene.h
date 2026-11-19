@@ -105,7 +105,7 @@ namespace AhShitRim::Scene
     // CJ's feet in San Andreas can sit a little below Skyrim's floor (in Ustengrav's first chamber 13 units, outdoors about
     // 3), and Skyrim's player put there is sunk in the floor, where a shout's motion can't move it: the dash never
     // started indoors. While a dash may start, the player is put on Skyrim's own floor under CJ instead, when that is
-    // above his feet by no more than this (a floor further up is another storey, not the one he stands on).
+    // above his feet by no more than this (anything further up is a step, a ledge or an overhang, not the floor he stands on).
     inline constexpr float kDashLift = 40.0f;  // units
 
     // The height the hidden player is put at while a dash may start: Skyrim's floor under CJ when it's a little above his

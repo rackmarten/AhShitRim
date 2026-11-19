@@ -101,7 +101,7 @@ TEST_CASE("a shout that carries the player is a dash until it slows down, and on
     CHECK(std::strcmp(Scene::NameOf(Scene::Control::Dashing), "dashing") == 0);
 }
 
-TEST_CASE("the player stands on Skyrim's floor while a dash may start, never on another storey")
+TEST_CASE("the player stands on Skyrim's floor while a dash may start, never on a ledge above it")
 {
     constexpr float dt = 1.0f / 60.0f;
     const float     fast = 20.0f / Pose::kMetersPerUnit * dt;
@@ -127,7 +127,7 @@ TEST_CASE("the player stands on Skyrim's floor while a dash may start, never on 
 
     CHECK(Scene::DashFloor(466.8f, 479.6f) == doctest::Approx(479.6f));  // Ustengrav: 13 units up onto the floor
     CHECK(Scene::DashFloor(100.0f, 98.0f) == doctest::Approx(100.0f));   // a floor below his feet: his feet
-    CHECK(Scene::DashFloor(100.0f, 100.0f + Scene::kDashLift + 1.0f) == doctest::Approx(100.0f));  // another storey
+    CHECK(Scene::DashFloor(100.0f, 100.0f + Scene::kDashLift + 1.0f) == doctest::Approx(100.0f));  // a ledge above his feet
 }
 
 TEST_CASE("CJ turns to whoever talks the short way round, a step at a time")

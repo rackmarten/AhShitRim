@@ -543,7 +543,11 @@ namespace AhShitRim::Shots
             state.blows++;
             const RE::NiPoint3 point = a_anchor + RE::NiPoint3(a_shot.origin[0], a_shot.origin[1], a_shot.origin[2]);
             const RE::NiPoint3 facing(a_shot.direction[0], a_shot.direction[1], a_shot.direction[2]);
-            const float        ground = a_player->GetPosition().z;  // the player is placed at CJ's feet
+            // CJ's feet: the player is placed there, except while a shout may dash, when it stands on Skyrim's floor a little above.
+            RE::NiPoint3 feet = a_player->GetPosition();
+            float        unusedHeading = 0.0f;
+            PlayerSync::DebugCj(feet, unusedHeading);
+            const float        ground = feet.z;
             const bool         saw = a_shot.weaponType == Weapons::Chainsaw;
             const double       now = NowSeconds();
             if (saw) {
