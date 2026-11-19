@@ -1,0 +1,30 @@
+// A chunk denser than San Andreas can count: Ustengrav Depths has one of 33087 triangles (statics only), past the 32767
+// San Andreas reads right (Ground::kMaxMeshTriangles in protocol/cpp/ground.h). San Andreas crashed as soon as CJ stood
+// in it. CJ takes the player there and runs through it. scripts/skytest.ps1 run scenarios/dense-chunk.json
+// (scenarios/README.md).
+//
+// The checks: the dense chunk is read (Skyrim's log line for it), CJ runs his waypoints and stays on the floor, and
+// neither game crashes (the run would end with exit code 2).
+{
+  "name": "dense-chunk",
+  "steps": [
+    { "label": "nothing held from before", "cmd": "input", "release": true },
+    { "label": "no Skyrim menu left open (a menu pauses San Andreas)", "cmd": "asr.menus", "close": true, "expect": "menus.length == 0" },
+    { "label": "Skyrim takes the player", "cmd": "asr.cj", "on": false, "expect": "cj == false" },
+    { "label": "to Ustengrav Depths", "cmd": "console", "command": "coc Ustengrav02" },
+    { "cmd": "wait", "seconds": 8 },
+    { "cmd": "console", "command": "player.restoreav health 10000" },
+    { "label": "by its first chamber's dense chunk", "cmd": "console", "command": "player.setpos x -1868" },
+    { "cmd": "console", "command": "player.setpos y -20" },
+    { "cmd": "console", "command": "player.setpos z 1000" },
+    { "cmd": "wait", "seconds": 2 },
+    { "label": "in Ustengrav Depths", "cmd": "state", "ref": "player", "expect": ["cell == Ustengrav02", "dead == false"] },
+    { "label": "CJ takes it", "cmd": "asr.cj", "expect": "cj == true" },
+    { "label": "San Andreas builds CJ's ground", "cmd": "wait", "seconds": 6 },
+    { "label": "the dense chunk was read", "cmd": "log", "lines": 400, "match": "statics 33087 triangles", "expect": "lines.length >= 1" },
+    { "cmd": "asr.mark" },
+    { "label": "CJ runs through it and back", "cmd": "asr.walk", "points": "-1868,-400; -1868,-800; -1868,-20", "stuck": 6 },
+    { "label": "and stays on its floor", "cmd": "asr.since", "expect": ["climbed > -2", "climbed < 2"] },
+    { "label": "both games still up", "cmd": "asr.cj", "expect": "cj == true" }
+  ]
+}
