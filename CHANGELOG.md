@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- San Andreas crashed as CJ went into Ustengrav Depths, and anywhere else as dense: one of its chunks of ground had more triangles than San Andreas reads right (33087, over 32767). A chunk now keeps at most 32767, floors first and ceilings dropped first, and CJ walks there without a crash.
+
 ## [0.2.0] - 2026-11-18
 
 CJ settles in: San Andreas's camera and HUD texts, vehicle lights at night, parked bikes around the holds, the knife's stealth kill, the dead coming back an hour later, the first part of the Grove Street crew, and controller support.
