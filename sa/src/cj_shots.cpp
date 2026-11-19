@@ -79,7 +79,7 @@ namespace AhShitRim::CjShots
             std::set<Aim::Line>    loggedLines;
             unsigned               sent = 0;
             unsigned               dropped = 0;
-            std::uint32_t          bullets = 0;  // ever sent, for the pose's shots under infinite ammo
+            std::uint32_t          bullets = 0;  // CJ's own ever sent (not his homies'), for the pose's shots under infinite ammo
             std::uint64_t          summaryMs = 0;
             CWeapon*               firing = nullptr;  // FireInstantHit runs for this weapon
             CEntity*               firedBy = nullptr;
@@ -106,8 +106,8 @@ namespace AhShitRim::CjShots
                     return;
                 }
             }
-            if (a_shot.kind == Protocol::kShotBullet) {
-                state.bullets++;
+            if (a_shot.kind == Protocol::kShotBullet && a_shot.shooter == 0) {
+                state.bullets++;  // CJ's own: a homie's bullet flashed CJ's gun under infinite ammo, running or not
             }
             if (GetLink().Send(Protocol::MessageType::Shot, &a_shot, sizeof(a_shot))) {
                 state.sent++;

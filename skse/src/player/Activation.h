@@ -23,4 +23,26 @@ namespace AhShitRim::Activation
     bool Activate(RE::PlayerCharacter* a_player, Input::KeyLayout a_layout);
 
     void Clear();  // nothing picked (a handover ends or starts over)
+
+    // The test kit: what the last Update saw round CJ (form id, name, kind) and what it picked.
+    struct DebugCandidate
+    {
+        RE::FormID  id = 0;
+        std::string name;
+        const char* kind = "";
+        float       enter = -1.0f;  // where the crosshair's ray enters its box and leaves it, -1 when it misses
+        float       leave = -1.0f;
+        float       box[6] = {};  // its box's center and half extents (along its own axes)
+    };
+    struct DebugState
+    {
+        std::vector<DebugCandidate> candidates;
+        RE::FormID                  target = 0;
+        bool                        aimed = false;
+        std::string                 prompt;
+        RE::FormID                  hit = 0;            // what the crosshair's ray hit first (0: nothing, or no reference)
+        float                       hitDistance = -1.0f;  // how far along from the camera, -1 when it hit nothing
+        int                         hitLayer = -1;      // the collision layer of what it hit
+    };
+    DebugState Debug();
 }
