@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A test kit check for Whirlwind Sprint (`scenarios/whirlwind-sprint.json`): CJ shouts all three words on the road below the Whiterun stables and the dash carries him more than 8 m. `asr.equipshout` equips a shout as the player's power, which the console can't.
+
 ## [0.2.0] - 2026-11-18
 
 CJ settles in: San Andreas's camera and HUD texts, vehicle lights at night, parked bikes around the holds, the knife's stealth kill, the dead coming back an hour later, the first part of the Grove Street crew, and controller support.
