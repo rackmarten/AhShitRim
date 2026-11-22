@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-22
+
+Fixes from Ustengrav and Windhelm: the crash in Ustengrav Depths, Whirlwind Sprint indoors, the note on Jurgen Windcaller's tomb, the gun that flashed with the homies' shots, and bicycles' lights.
+
 ### Added
 
 - A test kit check for Whirlwind Sprint (`scenarios/whirlwind-sprint.json`): CJ shouts all three words on the road below the Whiterun stables and the dash carries him more than 8 m. `asr.equipshout` equips a shout as the player's power, which the console can't.
