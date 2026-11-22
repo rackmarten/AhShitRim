@@ -68,12 +68,29 @@ TEST_CASE("vehicle lights: San Andreas's rule for which lamps burn")
     smashed.smashed[2] = true;  // rear right
     CHECK(Lit(smashed) == (Protocol::kLightFrontRight | Protocol::kLightRearLeft));
 
-    // A bike has one of each; a BMX, with no light dummies, none.
+    // A bike has one of each; one without light dummies none.
     Lamps bike = car;
     bike.twin = false;
     CHECK(Lit(bike) == (Protocol::kLightFrontRight | Protocol::kLightRearRight));
     bike.hasFront = bike.hasRear = false;
     CHECK(Lit(bike) == 0);
+}
+
+TEST_CASE("vehicle lights: a bicycle has none, light dummies or not")
+{
+    Lamps bicycle;
+    bicycle.engineOn = true;  // as with any vehicle CJ is put on
+    bicycle.hasFront = bicycle.hasRear = true;
+    bicycle.bicycle = true;
+    bicycle.braking = true;
+    CHECK(Lit(bicycle) == 0);
+    CHECK(StateOf(bicycle) == 0);
+    bicycle.wanted = bicycle.forceOn = true;
+    CHECK(Lit(bicycle) == 0);
+    CHECK(StateOf(bicycle) == 0);
+    bicycle.bicycle = false;  // a motorbike the same way burns both
+    CHECK(Lit(bicycle) == (Protocol::kLightFrontRight | Protocol::kLightRearRight));
+    CHECK(StateOf(bicycle) == Protocol::kLightBraking);
 }
 
 TEST_CASE("vehicle lights: dummies packed in whole Skyrim units")

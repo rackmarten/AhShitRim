@@ -239,9 +239,9 @@ Log lines: `audio: sound on (effects N/64, music N/64)` / `audio: muted`, `audio
 
 | Offset | Field | Meaning |
 |---|---|---|
-| 0 | `front[3]` | i16, the model's main headlight dummy (`m_avDummyPos[0]`, `DUMMY_LIGHT_FRONT_MAIN`) in the vehicle's frame (`vehicleFrame`: x right, y forward, z up), whole Skyrim units; zero for a model without one (a BMX) |
+| 0 | `front[3]` | i16, the model's main headlight dummy (`m_avDummyPos[0]`, `DUMMY_LIGHT_FRONT_MAIN`) in the vehicle's frame (`vehicleFrame`: x right, y forward, z up), whole Skyrim units; zero for a model without one |
 | 6 | `rear[3]` | i16, the main tail light dummy (`m_avDummyPos[1]`), likewise |
-| 12 | `lit` | u8, the lamps burning now: `kLightFrontRight` (0x1, at `front`), `kLightFrontLeft` (0x2, at `front` with x negated), `kLightRearRight` (0x4), `kLightRearLeft` (0x8). San Andreas's rule (`VehicleLights::Lit`): none with the engine off, on a wreck or forced off (`FORCE_CAR_LIGHTS_OFF`, `ms_forceVehicleLightsOff`); otherwise, when `CVehicle::GetVehicleLightsStatus` says so or they are forced on, each lamp the model has a dummy for, the mirrored ones only on a `CAutomobile` (a bike has one of each), and none a car's damage manager has smashed (`GetLightStatus`) |
+| 12 | `lit` | u8, the lamps burning now: `kLightFrontRight` (0x1, at `front`), `kLightFrontLeft` (0x2, at `front` with x negated), `kLightRearRight` (0x4), `kLightRearLeft` (0x8). San Andreas's rule (`VehicleLights::Lit`): none with the engine off, on a wreck, on a bicycle (`VEHICLE_BMX`, whose models have the dummies all the same) or forced off (`FORCE_CAR_LIGHTS_OFF`, `ms_forceVehicleLightsOff`); otherwise, when `CVehicle::GetVehicleLightsStatus` says so or they are forced on, each lamp the model has a dummy for, the mirrored ones only on a `CAutomobile` (a bike has one of each), and none a car's damage manager has smashed (`GetLightStatus`) |
 | 13 | `state` | u8 (a reserved byte before, no layout change): `kLightBraking` (0x1), the tail lights burn for the brake (a driver on it, the handbrake off), by day too |
 | 14 | reserved | 2 bytes |
 

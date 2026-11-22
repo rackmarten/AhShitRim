@@ -102,6 +102,18 @@ namespace AhShitRim::Scene
     inline constexpr float kDashEndSpeed = 140.0f;       // 2 m/s: this slow ...
     inline constexpr float kDashEndSeconds = 0.2f;       // ... for this long ends it
     inline constexpr float kDashMaxSeconds = 3.0f;       // whatever happens
+    // CJ's feet in San Andreas can sit a little below Skyrim's floor (in Ustengrav's first chamber 13 units, outdoors about
+    // 3), and Skyrim's player put there is sunk in the floor, where a shout's motion can't move it: the dash never
+    // started indoors. While a dash may start, the player is put on Skyrim's own floor under CJ instead, when that is
+    // above his feet by no more than this (anything further up is a step, a ledge or an overhang, not the floor he stands on).
+    inline constexpr float kDashLift = 40.0f;  // units
+
+    // The height the hidden player is put at while a dash may start: Skyrim's floor under CJ when it's a little above his
+    // feet, else his feet.
+    constexpr float DashFloor(float a_feet, float a_floor)
+    {
+        return a_floor > a_feet && a_floor - a_feet <= kDashLift ? a_floor : a_feet;
+    }
 
     class Dash
     {
@@ -134,6 +146,9 @@ namespace AhShitRim::Scene
         }
 
         bool Active() const { return _active; }
+        // While the player shouts, or a dash may still start after it: Skyrim's player has to stand free on its own
+        // floor then (kDashLift), or the shout's motion can't move it.
+        bool MayStart() const { return !_active && _sinceShout <= kDashWindowSeconds; }
 
     private:
         float _sinceShout = kDashWindowSeconds + 1.0f;
