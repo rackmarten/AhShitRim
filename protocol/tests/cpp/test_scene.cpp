@@ -101,6 +101,35 @@ TEST_CASE("a shout that carries the player is a dash until it slows down, and on
     CHECK(std::strcmp(Scene::NameOf(Scene::Control::Dashing), "dashing") == 0);
 }
 
+TEST_CASE("the player stands on Skyrim's floor while a dash may start, never on a ledge above it")
+{
+    constexpr float dt = 1.0f / 60.0f;
+    const float     fast = 20.0f / Pose::kMetersPerUnit * dt;
+
+    Scene::Dash dash;
+    CHECK_FALSE(dash.MayStart());  // no shout yet
+    dash.Update(0.0f, dt, true, true);
+    CHECK(dash.MayStart());  // charging
+    dash.Update(0.0f, dt, true, false);
+    CHECK(dash.MayStart());  // just let out
+    dash.Update(fast, dt, true, false);
+    CHECK_FALSE(dash.MayStart());  // dashing: the player moves on its own
+    while (dash.Update(0.0f, dt, true, false)) {
+    }
+    CHECK_FALSE(dash.MayStart());  // over: one dash per shout
+
+    Scene::Dash late;
+    late.Update(0.0f, dt, true, true);
+    for (float t = 0.0f; t < Scene::kDashWindowSeconds + 0.1f; t += dt) {
+        late.Update(0.0f, dt, true, false);
+    }
+    CHECK_FALSE(late.MayStart());  // the window is over
+
+    CHECK(Scene::DashFloor(466.8f, 479.6f) == doctest::Approx(479.6f));  // Ustengrav: 13 units up onto the floor
+    CHECK(Scene::DashFloor(100.0f, 98.0f) == doctest::Approx(100.0f));   // a floor below his feet: his feet
+    CHECK(Scene::DashFloor(100.0f, 100.0f + Scene::kDashLift + 1.0f) == doctest::Approx(100.0f));  // a ledge above his feet
+}
+
 TEST_CASE("CJ turns to whoever talks the short way round, a step at a time")
 {
     CHECK(Scene::TurnToward(0.0f, 1.0f, 0.25f) == doctest::Approx(0.25f));
