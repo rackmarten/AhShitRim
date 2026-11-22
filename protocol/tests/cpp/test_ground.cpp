@@ -239,6 +239,69 @@ TEST_CASE("a mountain's huge face over the chunk is kept where it is near it")
     CHECK(mesh.vertices.size() / 3 < kMaxMeshVertices);
 }
 
+TEST_CASE("a chunk denser than San Andreas can count keeps its floors and drops its ceilings")
+{
+    // A dungeon's pile of grids sharing their vertices, as Skyrim's statics do (Ustengrav Depths had 33087 triangles in
+    // one chunk): 20000 floor triangles, 14000 wall ones and 10000 ceiling ones, 44000 past the 32767 San Andreas reads
+    // right.
+    Collision::Heightfield f;
+    f.Reset(0, 0, 1);
+    std::vector<float> statics;
+    const auto tri = [&](std::array<float, 3> a_a, std::array<float, 3> a_b, std::array<float, 3> a_c) {
+        statics.insert(statics.end(), { a_a[0], a_a[1], a_a[2], a_b[0], a_b[1], a_b[2], a_c[0], a_c[1], a_c[2] });
+    };
+    const float step = 35.0f;
+    for (int y = 0; y < 100; ++y) {  // floor at z 0, counterclockwise seen from above (Skyrim's way round)
+        for (int x = 0; x < 100; ++x) {
+            const float x0 = x * step, x1 = x0 + step, y0 = y * step, y1 = y0 + step;
+            tri({ x0, y0, 0 }, { x1, y0, 0 }, { x0, y1, 0 });
+            tri({ x1, y0, 0 }, { x1, y1, 0 }, { x0, y1, 0 });
+        }
+    }
+    for (int z = 0; z < 70; ++z) {  // a wall along y 0
+        for (int x = 0; x < 100; ++x) {
+            const float x0 = x * step, x1 = x0 + step, z0 = z * step + 10, z1 = z0 + step;
+            tri({ x0, 0, z0 }, { x1, 0, z0 }, { x0, 0, z1 });
+            tri({ x1, 0, z0 }, { x1, 0, z1 }, { x0, 0, z1 });
+        }
+    }
+    for (int y = 0; y < 50; ++y) {  // ceiling at z 300, clockwise seen from above
+        for (int x = 0; x < 100; ++x) {
+            const float x0 = x * step, x1 = x0 + step, y0 = y * step, y1 = y0 + step;
+            tri({ x0, y0, 300 }, { x0, y1, 300 }, { x1, y0, 300 });
+            tri({ x1, y0, 300 }, { x0, y1, 300 }, { x1, y1, 300 });
+        }
+    }
+    const auto payload = Collision::BuildChunkPayload(f, 0, 1, statics);
+    Chunk      chunk;
+    REQUIRE(ParseChunk(payload.data(), static_cast<std::uint32_t>(payload.size()), chunk));
+    REQUIRE(chunk.header.indexCount / 3 >= 44000);
+    const Mesh mesh = BuildMesh(chunk, At(0.0f, 0.0f, 0.0f));
+    CHECK(mesh.triangles.size() / 3 == kMaxMeshTriangles);
+    CHECK(mesh.dropped >= 44000 - kMaxMeshTriangles);
+    int floors = 0, walls = 0, ceilings = 0;
+    for (std::size_t t = 0; t < mesh.triangles.size() / 3; ++t) {
+        const Vec3  a = Unpack(mesh, mesh.triangles[t * 3]), b = Unpack(mesh, mesh.triangles[t * 3 + 1]), c = Unpack(mesh, mesh.triangles[t * 3 + 2]);
+        const float nz = (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);  // San Andreas's normal's z
+        floors += nz > 0.01f;
+        ceilings += nz < -0.01f;
+        walls += std::abs(nz) <= 0.01f;
+    }
+    CHECK(floors == 20000);                         // every floor kept
+    CHECK(walls == int(kMaxMeshTriangles) - 20000);  // the walls fill the rest
+    CHECK(ceilings == 0);                           // the ceilings went first
+}
+
+TEST_CASE("a chunk under San Andreas's count keeps every triangle")
+{
+    Mesh mesh;
+    mesh.vertices = { 0, 0, 0, 128, 0, 0, 0, 128, 0 };
+    mesh.triangles = { 0, 2, 1, 0, 1, 2 };
+    KeepFloorsFirst(mesh);
+    CHECK(mesh.triangles.size() == 6);
+    CHECK(mesh.dropped == 0);
+}
+
 // ---- Which chunks San Andreas keeps ----
 
 TEST_CASE("chunks of the current handover are built, older ones dropped, newer ones kept for later")

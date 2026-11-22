@@ -17,6 +17,7 @@
 #include <compare>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -152,6 +153,12 @@ namespace AhShitRim::Ground
     // over, and the parts in reach kept: dropped whole, thousands went at once at speed, rock faces by the road with them.
     inline constexpr int           kMaxSplits = 5;
     inline constexpr std::uint32_t kMaxMeshVertices = 65535;  // San Andreas indexes them with 16 bits
+    // San Andreas counts a model's triangles in 16 bits, but CCollisionData::SetLinkPtr (gta-reversed's 0x40F6C0; 1.0 US
+    // crashed in its code at 0x15689A5) reads the count sign-extended: past 32767 it writes its plane cache's link far
+    // before the planes, and San Andreas crashed the first time anything touched a dense chunk (Ustengrav Depths, 33087
+    // triangles in one chunk). 32767 itself is fine: the highest triangle index is then 32766, below the SHRT_MAX that
+    // CCollision's sphere cast cache reads as a back face.
+    inline constexpr std::uint32_t kMaxMeshTriangles = 32767;
 
     // A chunk in San Andreas's collision format.
     struct Mesh
@@ -162,6 +169,46 @@ namespace AhShitRim::Ground
         Vec3                       min, max;   // bounding box relative to position, metres
         std::uint32_t              dropped = 0;  // triangles flat after compression, or parts still past kVertexReach after kMaxSplits cuts
     };
+
+    // A mesh over kMaxMeshTriangles keeps the ones facing most upward (floors, then slopes and walls) and drops the rest,
+    // ceilings first, counted in dropped. The kept ones stay in their order; vertices only dropped ones used stay in.
+    inline void KeepFloorsFirst(Mesh& a_mesh)
+    {
+        const std::size_t count = a_mesh.triangles.size() / 3;
+        if (count <= kMaxMeshTriangles) {
+            return;
+        }
+        // How far up each one faces, San Andreas's way round: cross(c - a, b - a), normalised.
+        std::vector<float> up(count);
+        for (std::size_t t = 0; t < count; ++t) {
+            const auto corner = [&](int k) {
+                const std::size_t v = a_mesh.triangles[t * 3 + k] * std::size_t{ 3 };
+                return Vec3{ float(a_mesh.vertices[v]), float(a_mesh.vertices[v + 1]), float(a_mesh.vertices[v + 2]) };
+            };
+            const Vec3  a = corner(0), b = corner(1), c = corner(2);
+            const Vec3  e1{ c.x - a.x, c.y - a.y, c.z - a.z }, e2{ b.x - a.x, b.y - a.y, b.z - a.z };
+            const Vec3  n{ e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x };
+            const float length = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+            up[t] = length > 0.0f ? n.z / length : -2.0f;
+        }
+        std::vector<float> order = up;
+        std::nth_element(order.begin(), order.begin() + (kMaxMeshTriangles - 1), order.end(), std::greater<float>());
+        const float least = order[kMaxMeshTriangles - 1];  // the kMaxMeshTriangles-th most upward
+        std::size_t room = 0;  // how many of exactly `least` fit after every one above it
+        for (const float u : up) {
+            room += u > least;
+        }
+        room = kMaxMeshTriangles - room;
+        std::vector<std::uint16_t> kept;
+        kept.reserve(std::size_t{ kMaxMeshTriangles } * 3);
+        for (std::size_t t = 0; t < count; ++t) {
+            if (up[t] > least || (up[t] == least && room && room--)) {
+                kept.insert(kept.end(), a_mesh.triangles.begin() + t * 3, a_mesh.triangles.begin() + t * 3 + 3);
+            }
+        }
+        a_mesh.dropped += static_cast<std::uint32_t>(count - kept.size() / 3);
+        a_mesh.triangles = std::move(kept);
+    }
 
     // San Andreas faces a triangle where cross(c - a, b - a) points (gta-reversed's
     // CColTrianglePlane::Set), Skyrim where cross(b - a, c - a) does, so b and c swap.
@@ -276,6 +323,7 @@ namespace AhShitRim::Ground
                 mesh.triangles.push_back(static_cast<std::uint16_t>(remap[v]));
             }
         }
+        KeepFloorsFirst(mesh);
         return mesh;
     }
 
