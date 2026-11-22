@@ -77,6 +77,7 @@ namespace AhShitRim::VehicleLights
     {
         bool engineOn = false;
         bool wrecked = false;
+        bool bicycle = false;   // VEHICLE_BMX: no lamps at all, whatever its model's dummies say
         bool wanted = false;    // GetVehicleLightsStatus: night, wet roads
         bool forceOn = false;   // m_nOverrideLights FORCE_CAR_LIGHTS_ON (an interior)
         bool forceOff = false;  // FORCE_CAR_LIGHTS_OFF
@@ -93,7 +94,7 @@ namespace AhShitRim::VehicleLights
     // DoVehicleLights draws them (m_renderLights).
     constexpr std::uint8_t Lit(const Lamps& a_lamps)
     {
-        if (!a_lamps.engineOn || a_lamps.wrecked || a_lamps.forceOff) {
+        if (!a_lamps.engineOn || a_lamps.wrecked || a_lamps.bicycle || a_lamps.forceOff) {
             return 0;
         }
         const bool on = a_lamps.wanted || a_lamps.forceOn;

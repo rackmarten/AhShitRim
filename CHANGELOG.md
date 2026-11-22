@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Whirlwind Sprint didn't carry CJ indoors (Ustengrav): he shouted and stayed put. Skyrim's hidden player stood a little sunk in the floor at CJ's feet, where the shout couldn't move it; while a dash may start it now stands on Skyrim's own floor.
 - E couldn't read the note on Jurgen Windcaller's tomb in Ustengrav: it activated the tomb every time. The crosshair now goes through homies and invisible zones, an item lying on a tomb, a chest or a door wins over it, and small items (a note, a key) are easier to aim at.
 - CJ's gun flashed whenever his homies fired with infinite ammo on (FULLCLIP), even while he ran. Only his own bullets count now.
+- A bicycle's back lit up red as CJ braked, and at night it had a headlight and a tail light. Bicycles have no lights now.
 
 ## [0.2.0] - 2026-11-18
 

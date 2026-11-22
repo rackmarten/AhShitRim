@@ -705,6 +705,7 @@ namespace AhShitRim::Vehicles
             VehicleLights::Lamps lamps;
             lamps.engineOn = a_vehicle->bEngineOn;
             lamps.wrecked = Wrecked(a_vehicle);
+            lamps.bicycle = a_vehicle->m_nVehicleSubClass == VEHICLE_BMX;
             lamps.wanted = a_vehicle->GetVehicleLightsStatus();
             lamps.forceOn = a_vehicle->m_nOverrideLights == kForceLightsOn;
             lamps.forceOff = a_vehicle->m_nOverrideLights == kForceLightsOff || CVehicle::ms_forceVehicleLightsOff;
