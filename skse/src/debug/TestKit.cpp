@@ -1988,6 +1988,28 @@ namespace AhShitRim::TestKit
                     };
                 });
 
+            SkseTestKit::AddCommand("asr.equipshout", "<form>",
+                "Equips a shout the player knows (its form id, hex) as its power, as the favourites menu does; the console has no command for it",
+                [](Call& a_call) -> Json {
+                    const auto text = a_call.Text("form");
+                    RE::FormID id = 0;
+                    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), id, 16);
+                    auto*      shout = error == std::errc{} ? RE::TESForm::LookupByID<RE::TESShout>(id) : nullptr;
+                    auto*      player = RE::PlayerCharacter::GetSingleton();
+                    if (!shout || !player) {
+                        throw Error(std::format("'{}' isn't a shout", text));
+                    }
+                    RE::ActorEquipManager::GetSingleton()->EquipShout(player, shout);
+                    auto*     power = player->GetActorRuntimeData().selectedPower;
+                    JsonArray words;  // for the console's teachword and unlockword
+                    for (const auto& variation : shout->variations) {
+                        if (variation.word) {
+                            words.push_back(Json(std::format("{:X}", variation.word->GetFormID())));
+                        }
+                    }
+                    return JsonObject{ { "shout", shout->GetName() }, { "equipped", power == shout }, { "words", Json(std::move(words)) } };
+                });
+
             SkseTestKit::AddCommand("asr.activation", "",
                 "What E would act on now: the target (its form id, whether the crosshair is on it, its prompt) and every candidate round CJ "
                 "(form id, name, kind: person, body, furniture, item, other)",
