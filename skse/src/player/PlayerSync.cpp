@@ -935,9 +935,59 @@ namespace AhShitRim::PlayerSync
             return was;
         }
 
+        // Skyrim's floor under a point, from up to Scene::kDashLift above it down to a little below: the first solid thing
+        // the ray meets, going on through people (the player's own capsule), clutter and plants.
+        std::optional<float> FloorUnder(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_at)
+        {
+            auto* cell = a_player->GetParentCell();
+            auto* bhk = cell ? cell->GetbhkWorld() : nullptr;
+            auto* world = bhk ? bhk->GetWorld1() : nullptr;
+            if (!world) {
+                return std::nullopt;
+            }
+            RE::BSReadLockGuard lock(bhk->worldLock);
+            const float         scale = RE::bhkWorld::GetWorldScale();
+            const float         bottom = a_at.z - 20.0f;
+            float               top = a_at.z + Scene::kDashLift + 5.0f;
+            for (int pass = 0; pass < 6 && top > bottom; pass++) {
+                RE::hkpWorldRayCastInput input;
+                input.filterInfo.SetCollisionLayer(RE::COL_LAYER::kLOS);
+                input.from = RE::hkVector4(a_at.x * scale, a_at.y * scale, top * scale, 0.0f);
+                input.to = RE::hkVector4(a_at.x * scale, a_at.y * scale, bottom * scale, 0.0f);
+                RE::hkpWorldRayCastOutput output;
+                world->CastRay(input, output);
+                if (!output.HasHit()) {
+                    return std::nullopt;
+                }
+                const float z = top + (bottom - top) * output.hitFraction;
+                switch (output.rootCollidable ? output.rootCollidable->GetCollisionLayer() : RE::COL_LAYER::kUnidentified) {
+                case RE::COL_LAYER::kTrees:
+                case RE::COL_LAYER::kClutter:
+                case RE::COL_LAYER::kProps:
+                case RE::COL_LAYER::kDebrisSmall:
+                case RE::COL_LAYER::kDebrisLarge:
+                case RE::COL_LAYER::kBiped:
+                case RE::COL_LAYER::kDeadBip:
+                case RE::COL_LAYER::kCharController:
+                case RE::COL_LAYER::kTransparent:
+                case RE::COL_LAYER::kTransparentSmall:
+                    top = z - 1.0f;
+                    continue;
+                default: return z;
+                }
+            }
+            return std::nullopt;
+        }
+
         void Place(RE::PlayerCharacter* a_player, const Protocol::PlayerState& a_pose)
         {
             state.lastPlaced = state.anchor + RE::NiPoint3(a_pose.offset[0], a_pose.offset[1], a_pose.offset[2]);
+            // A shout that may carry the player (Whirlwind Sprint): put it on Skyrim's own floor, not sunk in it at CJ's feet.
+            if (state.dash.MayStart() && (a_pose.flags & Protocol::kPlayerInVehicle) == 0) {
+                if (const auto floor = FloorUnder(a_player, state.lastPlaced)) {
+                    state.lastPlaced.z = Scene::DashFloor(state.lastPlaced.z, *floor);
+                }
+            }
             state.placing = true;
             a_player->SetPosition(state.lastPlaced, true);
             state.placing = false;

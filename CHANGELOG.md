@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A test kit check for Whirlwind Sprint (`scenarios/whirlwind-sprint.json`): CJ shouts all three words on the road below the Whiterun stables and the dash carries him more than 8 m. `asr.equipshout` equips a shout as the player's power, which the console can't.
 
+### Fixed
+
+- San Andreas crashed as CJ went into Ustengrav Depths, and anywhere else as dense: one of its chunks of ground had more triangles than San Andreas reads right (33087, over 32767). A chunk now keeps at most 32767, floors first and ceilings dropped first, and CJ walks there without a crash.
+- Whirlwind Sprint didn't carry CJ indoors (Ustengrav): he shouted and stayed put. Skyrim's hidden player stood a little sunk in the floor at CJ's feet, where the shout couldn't move it; while a dash may start it now stands on Skyrim's own floor.
+- E couldn't read the note on Jurgen Windcaller's tomb in Ustengrav: it activated the tomb every time. The crosshair now goes through homies and invisible zones, an item lying on a tomb, a chest or a door wins over it, and small items (a note, a key) are easier to aim at.
+- CJ's gun flashed whenever his homies fired with infinite ammo on (FULLCLIP), even while he ran. Only his own bullets count now.
+- A bicycle's back lit up red as CJ braked, and at night it had a headlight and a tail light. Bicycles have no lights now.
+
 ## [0.2.0] - 2026-11-18
 
 CJ settles in: San Andreas's camera and HUD texts, vehicle lights at night, parked bikes around the holds, the knife's stealth kill, the dead coming back an hour later, the first part of the Grove Street crew, and controller support.
