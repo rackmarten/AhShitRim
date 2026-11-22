@@ -325,8 +325,8 @@ namespace AhShitRim::Activation
                     auto* actor = a_ref->As<RE::Actor>();
                     auto* base = a_ref->GetBaseObject();
                     auto  kind = Activate::Kind::Other;  // someone in a seat beats the seat (Activate::Pick)
-                    if (actor && !actor->IsDead()) {
-                        kind = Activate::Kind::Person;
+                    if (actor) {
+                        kind = actor->IsDead() ? Activate::Kind::Body : Activate::Kind::Person;
                     } else if (base && base->Is(RE::FormType::Furniture)) {
                         kind = Activate::Kind::Furniture;
                     } else if (base && IsItem(base->GetFormType())) {
@@ -337,7 +337,7 @@ namespace AhShitRim::Activation
                     if (state.debugOn) {
                         const auto& box = candidates.back().box;
                         state.debug.candidates.push_back({ a_ref->GetFormID(), a_ref->GetName() ? a_ref->GetName() : "",
-                            kind == Activate::Kind::Person ? "person" : kind == Activate::Kind::Furniture ? "furniture" : kind == Activate::Kind::Item ? "item" : "other", -1.0f, -1.0f,
+                            kind == Activate::Kind::Person ? "person" : kind == Activate::Kind::Body ? "body" : kind == Activate::Kind::Furniture ? "furniture" : kind == Activate::Kind::Item ? "item" : "other", -1.0f, -1.0f,
                             { box.center.x, box.center.y, box.center.z, box.half.x, box.half.y, box.half.z } });
                     }
                 }
@@ -361,8 +361,17 @@ namespace AhShitRim::Activation
 
         // What the crosshair is on first; else nearest first along his facing, the first one CJ sees.
         bool aimed = false;
-        if (const auto index = Aimed(a_player, a_anchor, *a_pose, origin, reach, candidates, refs)) {
+        while (const auto index = Aimed(a_player, a_anchor, *a_pose, origin, reach, candidates, refs)) {
             aimed = take(refs[*index]);
+            if (aimed || candidates[*index].kind != Activate::Kind::Item) {
+                break;
+            }
+            // An item Skyrim has no words for: what it lies on, or what else the crosshair is on.
+            candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(*index));
+            refs.erase(refs.begin() + static_cast<std::ptrdiff_t>(*index));
+            if (state.debugOn) {
+                state.debug.candidates.erase(state.debug.candidates.begin() + static_cast<std::ptrdiff_t>(*index));
+            }
         }
         while (!aimed && !candidates.empty()) {
             const auto picked = Activate::Pick(origin, dir, reach, candidates);

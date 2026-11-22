@@ -146,6 +146,7 @@ namespace AhShitRim::Activate
     {
         Other,
         Person,     // living
+        Body,       // dead: looted
         Furniture,  // a chair, a throne, a bench, a workbench
         Item,       // what can be picked up or read: a note, a book, a key, a weapon (clutter: the sight ray passes through it)
     };
@@ -218,8 +219,9 @@ namespace AhShitRim::Activate
     // Such an item is one whose box (ItemBox) the ray enters before the hit, or past it by no more than
     // kSightTolerance, or while still in the box of what it hit but no more than kItemPastHit past the hit (from San
     // Andreas's camera 3 m behind CJ the ray grazes the tomb's lid and hits its raised edge 25 units short of the
-    // note). Only over an activator, a door or a container (Kind::Other): a person is who CJ means, and a
-    // workbench's or an alchemy lab's clutter shouldn't keep him from using it. A closed display case (an activator)
+    // note). Only over an activator, a door or a container (Kind::Other): a person is who CJ means, a body is
+    // what he loots (its weapon often lies right behind it), and a workbench's or an alchemy lab's clutter shouldn't
+    // keep him from using it. A closed display case (an activator)
     // with things inside can still give one of them through its lid.
     inline std::optional<std::size_t> Aimed(const Vec3& a_camera, const Vec3& a_dir, const Vec3& a_chest, float a_reach,
         const std::vector<Candidate>& a_candidates, const CrosshairHit& a_hit)
