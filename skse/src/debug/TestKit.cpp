@@ -1990,7 +1990,7 @@ namespace AhShitRim::TestKit
 
             SkseTestKit::AddCommand("asr.activation", "",
                 "What E would act on now: the target (its form id, whether the crosshair is on it, its prompt) and every candidate round CJ "
-                "(form id, name, kind: person, furniture, item, other)",
+                "(form id, name, kind: person, body, furniture, item, other)",
                 [](Call&) -> Json {
                     const auto debug = Activation::Debug();
                     JsonArray  candidates;
